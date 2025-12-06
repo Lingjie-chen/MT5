@@ -1,0 +1,26 @@
+# Python虚拟环境
+venv/
+.env
+*.pyc
+__pycache__/
+
+# 日志文件
+*.log
+logs/
+
+# 回测报告
+backtest_reports/
+
+# MT5相关文件
+*.ex5
+*.mq5~
+*.mqh~
+*.ex5~
+
+# IDE配置
+.vscode/
+.idea/
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
