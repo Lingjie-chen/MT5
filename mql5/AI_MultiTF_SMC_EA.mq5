@@ -21,7 +21,7 @@ input string SymbolName = "GOLD";                // 交易品种
 input ENUM_TIMEFRAMES Timeframe = PERIOD_H1;      // 交易周期
 input double RiskPerTrade = 1.0;                  // 每笔交易风险百分比
 input double MaxDailyLoss = 2.0;                  // 每日最大亏损百分比
-input string PythonServerURL = "http://localhost:5000"; // Python服务URL
+input string PythonServerURL = "http://localhost:5001"; // 保持原有设置
 input int MagicNumber = 123456;                   // 魔术数字
 input bool EnableLogging = true;                  // 启用日志记录
 
@@ -62,6 +62,18 @@ int OnInit()
     EA_Running = true;
     
     return(INIT_SUCCEEDED);
+    // 在OnInit()函数中添加
+    void OnInit() {
+    string testURL = PythonServerURL + "/health";
+    string response = "";
+    int error = WebRequest("GET", testURL, "", NULL, 5000, NULL, 0, response);
+    
+    if(error == 0) {
+        Print("WebRequest test passed! Response: ", response);
+    } else {
+        Print("WebRequest test failed! Error: ", error, ", ", WebRequestLastError());
+    }
+ }
 }
 
 //+------------------------------------------------------------------+
