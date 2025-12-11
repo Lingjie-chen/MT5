@@ -59,15 +59,19 @@ class AIBacktester:
         self.equity_curve = []
         self.data_processor = MT5DataProcessor()
         
-        # 初始化AI客户端
+        # 初始化AI客户端 - 使用硅基流动API服务
+        siliconflow_api_key = os.getenv("SILICONFLOW_API_KEY", "your_siliconflow_api_key")
+        deepseek_model = os.getenv("DEEPSEEK_MODEL", "deepseek-ai/DeepSeek-V3.1-Terminus")
+        qwen_model = os.getenv("QWEN_MODEL", "Qwen/Qwen3-VL-235B-A22B-Thinking")
+        
         self.deepseek_client = DeepSeekClient(
-            api_key=os.getenv("DEEPSEEK_API_KEY", "your_deepseek_api_key"),
-            base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+            api_key=siliconflow_api_key,
+            model=deepseek_model
         )
         
         self.qwen_client = QwenClient(
-            api_key=os.getenv("QWEN_API_KEY", "your_qwen_api_key"),
-            base_url=os.getenv("QWEN_BASE_URL", "https://api.qwen.com/v1")
+            api_key=siliconflow_api_key,
+            model=qwen_model
         )
         
         logger.info(f"AIBacktester初始化完成，初始资金: {initial_capital}, 每笔风险: {risk_per_trade}%")

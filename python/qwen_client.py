@@ -10,17 +10,20 @@ logger = logging.getLogger(__name__)
 class QwenClient:
     """
     Qwen3 API客户端，用于策略逻辑优化、动态止盈止损生成和信号强度判断
+    使用硅基流动API服务
     """
-    def __init__(self, api_key: str, base_url: str = "https://api.qwen.com/v1"):
+    def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "Qwen/Qwen3-VL-235B-A22B-Thinking"):
         """
         初始化Qwen客户端
         
         Args:
-            api_key (str): Qwen API密钥
-            base_url (str): API基础URL，默认为https://api.qwen.com/v1
+            api_key (str): 硅基流动API密钥
+            base_url (str): API基础URL，默认为https://api.siliconflow.cn/v1
+            model (str): 使用的模型名称，默认为Qwen/Qwen3-VL-235B-A22B-Thinking
         """
         self.api_key = api_key
         self.base_url = base_url
+        self.model = model
         self.headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
@@ -93,7 +96,7 @@ class QwenClient:
         """
         
         payload = {
-            "model": "qwen-plus",
+            "model": self.model,
             "messages": [
                 {"role": "system", "content": "你是一位专业的量化交易策略优化专家，擅长基于市场分析结果调整交易参数。"},
                 {"role": "user", "content": prompt}
@@ -158,7 +161,7 @@ class QwenClient:
         """
         
         payload = {
-            "model": "qwen-plus",
+            "model": self.model,
             "messages": [
                 {"role": "system", "content": "你是一位专业的风险管理专家，擅长根据市场条件生成动态止盈止损参数。"},
                 {"role": "user", "content": prompt}
@@ -207,7 +210,7 @@ class QwenClient:
         """
         
         payload = {
-            "model": "qwen-plus",
+            "model": self.model,
             "messages": [
                 {"role": "system", "content": "你是一位专业的交易信号分析师，擅长评估交易信号的强度和可靠性。"},
                 {"role": "user", "content": prompt}
@@ -246,7 +249,7 @@ class QwenClient:
         """
         
         payload = {
-            "model": "qwen-plus",
+            "model": self.model,
             "messages": [
                 {"role": "system", "content": "你是一位专业的资金管理专家，擅长计算凯利准则。"},
                 {"role": "user", "content": prompt}

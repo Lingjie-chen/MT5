@@ -10,17 +10,20 @@ logger = logging.getLogger(__name__)
 class DeepSeekClient:
     """
     DeepSeek API客户端，用于市场分析和情绪得分生成
+    使用硅基流动API服务
     """
-    def __init__(self, api_key: str, base_url: str = "https://api.deepseek.com/v1"):
+    def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "deepseek-ai/DeepSeek-V3.1-Terminus"):
         """
         初始化DeepSeek客户端
         
         Args:
-            api_key (str): DeepSeek API密钥
-            base_url (str): API基础URL，默认为https://api.deepseek.com/v1
+            api_key (str): 硅基流动API密钥
+            base_url (str): API基础URL，默认为https://api.siliconflow.cn/v1
+            model (str): 使用的模型名称，默认为deepseek-ai/DeepSeek-V3.1-Terminus
         """
         self.api_key = api_key
         self.base_url = base_url
+        self.model = model
         self.headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
@@ -89,7 +92,7 @@ class DeepSeekClient:
         """
         
         payload = {
-            "model": "deepseek-chat",
+            "model": self.model,
             "messages": [
                 {"role": "system", "content": "你是一位专业的量化交易分析师，擅长市场结构分析和趋势识别。"},
                 {"role": "user", "content": prompt}
@@ -148,7 +151,7 @@ class DeepSeekClient:
         """
         
         payload = {
-            "model": "deepseek-chat",
+            "model": self.model,
             "messages": [
                 {"role": "system", "content": "你是一位专业的市场情绪分析师，擅长基于历史数据生成准确的情绪得分。"},
                 {"role": "user", "content": prompt}
@@ -195,7 +198,7 @@ class DeepSeekClient:
         """
         
         payload = {
-            "model": "deepseek-chat",
+            "model": self.model,
             "messages": [
                 {"role": "system", "content": "你是一位专业的数据分析师，擅长处理金融市场数据，为量化交易策略生成结构化输入。"},
                 {"role": "user", "content": prompt}

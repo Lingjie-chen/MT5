@@ -16,15 +16,19 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# 初始化客户端
+# 初始化客户端 - 使用硅基流动API服务
+siliconflow_api_key = os.getenv("SILICONFLOW_API_KEY", "your_siliconflow_api_key")
+deepseek_model = os.getenv("DEEPSEEK_MODEL", "deepseek-ai/DeepSeek-V3.1-Terminus")
+qwen_model = os.getenv("QWEN_MODEL", "Qwen/Qwen3-VL-235B-A22B-Thinking")
+
 deepseek_client = DeepSeekClient(
-    api_key=os.getenv("DEEPSEEK_API_KEY", "your_deepseek_api_key"),
-    base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+    api_key=siliconflow_api_key,
+    model=deepseek_model
 )
 
 qwen_client = QwenClient(
-    api_key=os.getenv("QWEN_API_KEY", "your_qwen_api_key"),
-    base_url=os.getenv("QWEN_BASE_URL", "https://api.qwen.com/v1")
+    api_key=siliconflow_api_key,
+    model=qwen_model
 )
 
 processor = MT5DataProcessor()
