@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration>
+  <Compiler>
+    <StrictMode>true</StrictMode>
+    <WarningsAsErrors>false</WarningsAsErrors>
+    <Optimize>true</Optimize>
+    <DebugInfo>false</DebugInfo>
+    <AllowDeprecatedFunctions>false</AllowDeprecatedFunctions>
+    <CheckUnusedVariables>true</CheckUnusedVariables>
+    <CheckUnusedFunctions>true</CheckUnusedFunctions>
+  </Compiler>
+  <Linker>
+    <ExportAllFunctions>false</ExportAllFunctions>
+    <IncludeDebugInfo>false</IncludeDebugInfo>
+  </Linker>
+  <WebRequest>
+    <AllowHTTP>true</AllowHTTP>
+    <AllowHTTPS>true</AllowHTTPS>
+    <AllowRedirects>true</AllowRedirects>
+  </WebRequest>
+</Configuration>

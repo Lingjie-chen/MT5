@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Project>
+  <PropertyGroup>
+    <Name>AI_MultiTF_SMC_EA</Name>
+    <Version>1.00</Version>
+    <Description>AI Multi-Timeframe Smart Money Concept EA</Description>
+    <Author>AI Quant Trading</Author>
+    <Url>https://github.com/ai-quant-trading</Url>
+  </PropertyGroup>
+  <Files>
+    <File Name="AI_MultiTF_SMC_EA.mq5" Type="Expert"/>
+  </Files>
+  <Dependencies>
+    <Dependency Name="stdlib" Type="Library" Version="1.0"/>
+  </Dependencies>
+  <CompilerOptions>
+    <Option Name="StrictMode" Value="true"/>
+    <Option Name="WarningsAsErrors" Value="false"/>
+    <Option Name="Optimize" Value="true"/>
+    <Option Name="DebugInfo" Value="false"/>
+  </CompilerOptions>
+</Project>
