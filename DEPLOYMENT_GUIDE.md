@@ -124,7 +124,7 @@
      - `Timeframe`：交易周期，如`PERIOD_H1`
      - `RiskPerTrade`：每笔交易风险，如`1.0`
      - `MaxDailyLoss`：每日最大亏损，如`2.0`
-     - `PythonServerURL`：Python服务URL，如`http://localhost:5000`
+     - `PythonServerURL`：Python服务URL，如`http://localhost:5001`
      - `MagicNumber`：魔术数字，如`123456`
      - `EnableLogging`：启用日志记录，勾选
 

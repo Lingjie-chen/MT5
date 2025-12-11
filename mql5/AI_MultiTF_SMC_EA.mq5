@@ -15,7 +15,7 @@ input string SymbolName = "GOLD";                // 交易品种
 input ENUM_TIMEFRAMES Timeframe = PERIOD_H1;      // 交易周期
 input double RiskPerTrade = 1.0;                  // 每笔交易风险百分比
 input double MaxDailyLoss = 2.0;                  // 每日最大亏损百分比
-input string PythonServerURL = "http://localhost:5001"; // Python服务URL
+input string PythonServerURL = "http://127.0.0.1:5001"; // Python服务URL (使用IP地址提高兼容性)
 input int MagicNumber = 123456;                   // 魔术数字
 input bool EnableLogging = true;                  // 启用日志记录
 
@@ -114,34 +114,24 @@ void OnTick()
 //+------------------------------------------------------------------+
 void TestPythonServerConnection()
 {
-    string testURL = PythonServerURL + "/health";
-    string response = "";
+    string urls[] = {
+        PythonServerURL + "/health",
+        "http://127.0.0.1:5001/health" // 备用URL
+    };
     
-    // 发送HTTP GET请求
-    int error = WebRequest(
-        "GET",
-        testURL,
-        "",
-        NULL,
-        5000,
-        NULL,
-        0,
-        response
-    );
+    bool connected = false;
     
-    if(error == 0)
+    // 尝试多个URL
+    for(int i = 0; i < ArraySize(urls) && !connected; i++)
     {
-        if(EnableLogging)
-            Print("Python服务器连接成功！响应: ", response);
-    } 
-    else
-    {
-        if(EnableLogging)
-            Print("Python服务器连接失败！错误: ", error, ", 描述: ", WebRequestLastError());
+        string testURL = urls[i];
+        string response = "";
         
-        // 尝试使用127.0.0.1
-        testURL = StringReplace(PythonServerURL, "localhost", "127.0.0.1") + "/health";
-        error = WebRequest(
+        if(EnableLogging)
+            Print("测试Python服务器连接: ", testURL);
+        
+        // 发送HTTP GET请求
+        int error = WebRequest(
             "GET",
             testURL,
             "",
@@ -155,14 +145,18 @@ void TestPythonServerConnection()
         if(error == 0)
         {
             if(EnableLogging)
-                Print("Python服务器连接成功(使用127.0.0.1)！响应: ", response);
-        }
+                Print("Python服务器连接成功！URL: ", testURL, ", 响应: ", response);
+            connected = true;
+        } 
         else
         {
             if(EnableLogging)
-                Print("Python服务器连接失败(使用127.0.0.1)！错误: ", error, ", 描述: ", WebRequestLastError());
+                Print("Python服务器连接失败！URL: ", testURL, ", 错误: ", error, ", 描述: ", WebRequestLastError());
         }
     }
+    
+    if(!connected && EnableLogging)
+        Print("警告: 所有URL连接尝试都失败了，EA将在运行时继续尝试连接");
 }
 
 //+------------------------------------------------------------------+
@@ -248,31 +242,77 @@ string GetAISignal(const MqlRates &rates[])
 //+------------------------------------------------------------------+
 //| 发送HTTP请求                                                     |
 //+------------------------------------------------------------------+
-string SendHTTPRequest(string url, string data)
+string SendHTTPRequest(string url, string data, int max_retries = 3)
 {
     string result = "";
     string headers = "Content-Type: application/json\r\n";
     
-    // 发送WebRequest
-    int error = WebRequest(
-        "POST",
-        url,
-        headers,
-        NULL,
-        5000,
-        data,
-        0,
-        result
-    );
-    
-    if(error != 0)
+    // 重试机制
+    for(int retry = 0; retry < max_retries; retry++)
     {
-        if(EnableLogging)
-            PrintFormat("WebRequest失败: 错误=%d, 描述=%s", error, WebRequestLastError());
-        return "";
+        if(EnableLogging && retry > 0)
+            PrintFormat("WebRequest重试 %d/%d: %s", retry+1, max_retries, url);
+        
+        // 发送WebRequest
+        int error = WebRequest(
+            "POST",
+            url,
+            headers,
+            NULL,
+            5000,
+            data,
+            0,
+            result
+        );
+        
+        if(error == 0)
+        {
+            if(EnableLogging && retry > 0)
+                Print("WebRequest重试成功！");
+            return result;
+        }
+        else
+        {
+            if(EnableLogging)
+                PrintFormat("WebRequest失败 %d/%d: 错误=%d, 描述=%s", retry+1, max_retries, error, WebRequestLastError());
+            
+            // 重试间隔
+            Sleep(1000 * (retry + 1)); // 指数退避
+        }
     }
     
-    return result;
+    // 尝试备用URL
+    string alternative_url = StringReplace(url, "localhost", "127.0.0.1");
+    if(alternative_url != url)
+    {
+        if(EnableLogging)
+            Print("尝试备用URL: ", alternative_url);
+        
+        int error = WebRequest(
+            "POST",
+            alternative_url,
+            headers,
+            NULL,
+            5000,
+            data,
+            0,
+            result
+        );
+        
+        if(error == 0)
+        {
+            if(EnableLogging)
+                Print("备用URL请求成功！");
+            return result;
+        }
+        else
+        {
+            if(EnableLogging)
+                PrintFormat("备用URL请求失败: 错误=%d, 描述=%s", error, WebRequestLastError());
+        }
+    }
+    
+    return "";
 }
 
 //+------------------------------------------------------------------+
