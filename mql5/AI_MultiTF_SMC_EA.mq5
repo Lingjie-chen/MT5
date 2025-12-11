@@ -8,11 +8,6 @@
 #property version   "1.00"
 #property strict
 
-// 包含必要的头文件
-#include <stdlib.mqh>
-#include <time.mqh>
-#include <Json/Json.mqh> // 添加JSON解析库
-
 //+------------------------------------------------------------------+
 //| EA输入参数                                                       |
 //+------------------------------------------------------------------+
@@ -211,69 +206,126 @@ void CheckDailyLoss()
 //+------------------------------------------------------------------+
 string GetAISignal(const MqlRates &rates[])
 {
-    // 构建JSON请求
-    JsonObject request_obj;
-    request_obj.Add("symbol", SymbolName);
-    request_obj.Add("timeframe", EnumToString(Timeframe));
+    // 构建JSON请求字符串
+    string request_data = "{\"symbol\":\"" + SymbolName + "\",\"timeframe\":\"" + EnumToString(Timeframe) + "\",\"rates\":[";
     
     // 添加最近20根K线数据
-    JsonArray rates_array;
     for(int i = 0; i < MathMin(20, ArraySize(rates)); i++)
     {
-        JsonObject rate_obj;
-        rate_obj.Add("time", (long)rates[i].time);
-        rate_obj.Add("open", rates[i].open);
-        rate_obj.Add("high", rates[i].high);
-        rate_obj.Add("low", rates[i].low);
-        rate_obj.Add("close", rates[i].close);
-        rate_obj.Add("volume", rates[i].tick_volume);
-        rates_array.Add(rate_obj);
+        request_data += "{\"time\":" + IntegerToString(rates[i].time) + ",";
+        request_data += "\"open\":" + DoubleToString(rates[i].open, 5) + ",";
+        request_data += "\"high\":" + DoubleToString(rates[i].high, 5) + ",";
+        request_data += "\"low\":" + DoubleToString(rates[i].low, 5) + ",";
+        request_data += "\"close\":" + DoubleToString(rates[i].close, 5) + ",";
+        request_data += "\"volume\":" + IntegerToString(rates[i].tick_volume) + "}";
+        
+        if(i < MathMin(20, ArraySize(rates)) - 1)
+            request_data += ",";
     }
-    request_obj.Add("rates", rates_array);
     
-    string request_data = request_obj.ToString();
-    string response = "";
+    request_data += "]}";
     
     // 发送HTTP请求
-    int error = WebRequest(
-        "POST",
-        PythonServerURL + "/get_signal",
-        "Content-Type: application/json\r\n",
-        NULL,
-        5000,  // 5秒超时
-        request_data,
-        0,
-        response
-    );
+    string response = SendHTTPRequest(PythonServerURL + "/get_signal", request_data);
     
-    if(error != 0)
+    if(response == "")
     {
         if(EnableLogging)
-            PrintFormat("Python服务请求失败: 错误=%d, 描述=%s", error, WebRequestLastError());
+            Print("Python服务请求失败");
         return "none";
     }
     
     if(EnableLogging)
         Print("Python服务响应: ", response);
     
-    // 解析响应
-    JsonObject response_obj;
-    if(!response_obj.Parse(response))
-    {
-        if(EnableLogging)
-            Print("无法解析Python服务响应");
-        return "none";
-    }
-    
-    // 获取信号和信号强度
-    string signal = "none";
-    if(response_obj.HasKey("signal"))
-        signal = response_obj["signal"].ToString();
-    
-    if(response_obj.HasKey("signal_strength"))
-        SignalStrength = response_obj["signal_strength"].ToInteger();
+    // 解析响应获取信号
+    string signal = ParseJSON(response, "signal");
+    SignalStrength = ParseJSONInt(response, "signal_strength");
     
     return signal;
+}
+
+//+------------------------------------------------------------------+
+//| 发送HTTP请求                                                     |
+//+------------------------------------------------------------------+
+string SendHTTPRequest(string url, string data)
+{
+    string result = "";
+    string headers = "Content-Type: application/json\r\n";
+    
+    // 发送WebRequest
+    int error = WebRequest(
+        "POST",
+        url,
+        headers,
+        NULL,
+        5000,
+        data,
+        0,
+        result
+    );
+    
+    if(error != 0)
+    {
+        if(EnableLogging)
+            PrintFormat("WebRequest失败: 错误=%d, 描述=%s", error, WebRequestLastError());
+        return "";
+    }
+    
+    return result;
+}
+
+//+------------------------------------------------------------------+
+//| 解析JSON字符串，获取字符串值                                     |
+//+------------------------------------------------------------------+
+string ParseJSON(string json, string key)
+{
+    string result = "none";
+    
+    // 构建搜索模式
+    string pattern = "\"" + key + "\":\"";
+    int start_pos = StringFind(json, pattern, 0);
+    
+    if(start_pos != -1)
+    {
+        int value_start = start_pos + StringLen(pattern);
+        int value_end = StringFind(json, "\"", value_start);
+        
+        if(value_end != -1)
+        {
+            result = StringSubstr(json, value_start, value_end - value_start);
+        }
+    }
+    
+    return result;
+}
+
+//+------------------------------------------------------------------+
+//| 解析JSON字符串，获取整数值                                       |
+//+------------------------------------------------------------------+
+int ParseJSONInt(string json, string key)
+{
+    int result = 0;
+    
+    // 构建搜索模式
+    string pattern = "\"" + key + "\":";
+    int start_pos = StringFind(json, pattern, 0);
+    
+    if(start_pos != -1)
+    {
+        int value_start = start_pos + StringLen(pattern);
+        int value_end = StringFind(json, ",", value_start);
+        if(value_end == -1)
+            value_end = StringFind(json, "}", value_start);
+        
+        if(value_end != -1)
+        {
+            string value_str = StringSubstr(json, value_start, value_end - value_start);
+            result = (int)StrToDouble(value_str);
+        }
+    }
+    
+    return result;
 }
 
 //+------------------------------------------------------------------+
@@ -367,8 +419,41 @@ bool ExecuteOrder(ENUM_ORDER_TYPE order_type)
     double atr = iATR(SymbolName, Timeframe, 14, 0);
     if(atr > 0)
     {
-        request.sl = order_type == ORDER_TYPE_BUY ? request.price - atr * 2 : request.price + atr * 2;
-        request.tp = order_type == ORDER_TYPE_BUY ? request.price + atr * 3 : request.price - atr * 3;
+        // 根据信号强度调整止盈止损比例
+        double sl_multiplier = 2.0;
+        double tp_multiplier = 3.0;
+        
+        // 信号强度高时，增加止盈比例，降低止损比例
+        if(SignalStrength >= 80)
+        {
+            tp_multiplier = 4.0;
+            sl_multiplier = 1.5;
+        }
+        // 信号强度中等时，保持默认比例
+        else if(SignalStrength >= 60)
+        {
+            tp_multiplier = 3.5;
+            sl_multiplier = 2.0;
+        }
+        // 信号强度低时，降低止盈比例，增加止损比例
+        else if(SignalStrength >= 40)
+        {
+            tp_multiplier = 2.5;
+            sl_multiplier = 2.5;
+        }
+        else
+        {
+            tp_multiplier = 2.0;
+            sl_multiplier = 3.0;
+        }
+        
+        // 根据ATR设置止盈止损
+        request.sl = order_type == ORDER_TYPE_BUY ? request.price - atr * sl_multiplier : request.price + atr * sl_multiplier;
+        request.tp = order_type == ORDER_TYPE_BUY ? request.price + atr * tp_multiplier : request.price - atr * tp_multiplier;
+        
+        if(EnableLogging)
+            PrintFormat("信号强度: %d, 止盈乘数: %.1f, 止损乘数: %.1f, ATR: %.5f", 
+                       SignalStrength, tp_multiplier, sl_multiplier, atr);
     }
     
     // 发送订单
@@ -380,8 +465,8 @@ bool ExecuteOrder(ENUM_ORDER_TYPE order_type)
     }
     
     if(EnableLogging)
-        PrintFormat("订单执行成功: 订单号=%d, 类型=%s, 手数=%.2f, 价格=%.5f", 
-                   result.order, EnumToString(order_type), lot_size, request.price);
+        PrintFormat("订单执行成功: 订单号=%d, 类型=%s, 手数=%.2f, 价格=%.5f, SL=%.5f, TP=%.5f", 
+                   result.order, EnumToString(order_type), lot_size, request.price, request.sl, request.tp);
     
     return true;
 }
@@ -463,117 +548,3 @@ void CloseAllShortPositions()
     {
         if(PositionSelectByTicket(PositionGetTicket(i)))
         {
-            if(PositionGetString(POSITION_SYMBOL) == SymbolName && PositionGetInteger(POSITION_MAGIC) == MagicNumber)
-            {
-                if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL)
-                {
-                    double volume = PositionGetDouble(POSITION_VOLUME);
-                    if(ClosePosition(PositionGetTicket(i), volume))
-                    {
-                        if(EnableLogging)
-                            Print("平仓成功，订单号: ", PositionGetTicket(i), ", 类型: 空头");
-                    }
-                    else
-                    {
-                        if(EnableLogging)
-                            Print("平仓失败，订单号: ", PositionGetTicket(i), ", 错误代码: ", GetLastError());
-                    }
-                }
-            }
-        }
-    }
-}
-
-//+------------------------------------------------------------------+
-//| 平仓所有头寸                                                     |
-//+------------------------------------------------------------------+
-void CloseAllPositions()
-{
-    CloseAllLongPositions();
-    CloseAllShortPositions();
-}
-
-//+------------------------------------------------------------------+
-//| 平仓单个仓位                                                     |
-//+------------------------------------------------------------------+
-bool ClosePosition(int ticket, double volume)
-{
-    // 准备订单请求
-    MqlTradeRequest request = {};
-    MqlTradeResult result = {};
-    
-    // 设置平仓参数
-    request.action = TRADE_ACTION_DEAL;
-    request.position = ticket;
-    request.volume = volume;
-    request.symbol = PositionGetString(POSITION_SYMBOL);
-    request.type = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
-    request.price = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY ? SymbolInfoDouble(request.symbol, SYMBOL_BID) : SymbolInfoDouble(request.symbol, SYMBOL_ASK);
-    request.deviation = 3;
-    request.magic = MagicNumber;
-    request.comment = "Close Position";
-    request.type_filling = ORDER_FILLING_IOC;
-    request.type_time = ORDER_TIME_GTC;
-    
-    // 发送平仓订单
-    if(!OrderSend(request, result))
-    {
-        return false;
-    }
-    
-    return result.retcode == TRADE_RETCODE_DONE;
-}
-
-//+------------------------------------------------------------------+
-//| 取消所有挂单                                                     |
-//+------------------------------------------------------------------+
-void DeleteAllPendingOrders()
-{
-    for(int i = OrdersTotal() - 1; i >= 0; i--)
-    {
-        if(OrderSelect(i, SELECT_BY_POS, MODE_ORDERS))
-        {
-            if(OrderGetString(ORDER_SYMBOL) == SymbolName && OrderGetInteger(ORDER_MAGIC) == MagicNumber)
-            {
-                if(OrderDelete(OrderGetInteger(ORDER_TICKET)))
-                {
-                    if(EnableLogging)
-                        Print("取消挂单成功，订单号: ", OrderGetInteger(ORDER_TICKET));
-                }
-                else
-                {
-                    if(EnableLogging)
-                        Print("取消挂单失败，订单号: ", OrderGetInteger(ORDER_TICKET), ", 错误代码: ", GetLastError());
-                }
-            }
-        }
-    }
-}
-
-//+------------------------------------------------------------------+
-//| 定时器函数                                                       |
-//+------------------------------------------------------------------+
-void OnTimer()
-{
-    // 可以在这里添加定时任务，例如定期更新模型或检查服务器连接
-}
-
-//+------------------------------------------------------------------+
-//| 订单变化事件                                                     |
-//+------------------------------------------------------------------+
-void OnTrade()
-{
-    // 可以在这里处理订单变化事件
-    if(EnableLogging)
-        Print("检测到订单变化");
-}
-
-//+------------------------------------------------------------------+
-//| 账户变化事件                                                     |
-//+------------------------------------------------------------------+
-void OnAccount()
-{
-    // 可以在这里处理账户变化事件
-    if(EnableLogging)
-        Print("检测到账户变化");
-}

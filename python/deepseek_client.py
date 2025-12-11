@@ -1,6 +1,7 @@
 import requests
 import json
 import logging
+import time
 from typing import Dict, Any, Optional
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -25,26 +26,36 @@ class DeepSeekClient:
             "Content-Type": "application/json"
         }
     
-    def _call_api(self, endpoint: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _call_api(self, endpoint: str, payload: Dict[str, Any], max_retries: int = 3) -> Optional[Dict[str, Any]]:
         """
-        调用DeepSeek API
+        调用DeepSeek API，支持重试机制
         
         Args:
             endpoint (str): API端点
             payload (Dict[str, Any]): 请求负载
+            max_retries (int): 最大重试次数，默认为3
         
         Returns:
             Optional[Dict[str, Any]]: API响应，失败返回None
         """
         url = f"{self.base_url}/{endpoint}"
         
-        try:
-            response = requests.post(url, headers=self.headers, json=payload)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"API调用失败: {e}")
-            return None
+        for retry in range(max_retries):
+            try:
+                response = requests.post(url, headers=self.headers, json=payload, timeout=10)
+                response.raise_for_status()
+                return response.json()
+            except requests.exceptions.RequestException as e:
+                logger.error(f"API调用失败 (重试 {retry+1}/{max_retries}): {e}")
+                if retry < max_retries - 1:
+                    # 指数退避重试
+                    time.sleep(2 ** retry)
+                else:
+                    logger.error(f"API调用失败，已达到最大重试次数")
+                    return None
+            except Exception as e:
+                logger.error(f"Unexpected error: {e}")
+                return None
     
     def analyze_market_structure(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
         """

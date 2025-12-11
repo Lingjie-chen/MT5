@@ -65,7 +65,9 @@ class MT5DataProcessor:
         close = 1900 + np.cumsum(np.random.randn(n) * 2)
         high = close + np.random.rand(n) * 3
         low = close - np.random.rand(n) * 3
-        open_price = close.shift(1).fillna(1900)
+        # 使用numpy实现shift功能
+        open_price = np.roll(close, 1)
+        open_price[0] = 1900  # 第一个元素设为初始值
         volume = np.random.randint(100000, 1000000, n)
         
         df = pd.DataFrame({
@@ -75,6 +77,7 @@ class MT5DataProcessor:
             'close': close,
             'volume': volume
         }, index=dates)
+        df.index.name = 'time'
         
         return df
 
