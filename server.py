@@ -1,8 +1,6 @@
 import sys
 import os
 import time
-# 将python目录添加到Python路径
-sys.path.append(os.path.join(os.path.dirname(__file__), 'python'))
 
 from flask import Flask, request, jsonify
 from data_processor import MT5DataProcessor
