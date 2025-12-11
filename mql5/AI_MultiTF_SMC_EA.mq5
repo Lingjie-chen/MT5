@@ -115,6 +115,9 @@ void OnTick()
 void TestPythonServerConnection()
 {
     string testURL = PythonServerURL + "/health";
+    string response_headers = "";
+    uchar request_data[];
+    uchar response_data[];
     string response = "";
     
     // 发送HTTP GET请求
@@ -122,15 +125,15 @@ void TestPythonServerConnection()
         "GET",
         testURL,
         "",
-        NULL,
         5000,
-        NULL,
-        0,
-        response
+        request_data,
+        response_data,
+        response_headers
     );
     
     if(error == 0)
     {
+        CharArrayToString(response_data, 0, WHOLE_ARRAY, response);
         if(EnableLogging)
             Print("Python服务器连接成功！响应: ", response);
     } 
@@ -145,15 +148,15 @@ void TestPythonServerConnection()
             "GET",
             testURL,
             "",
-            NULL,
             5000,
-            NULL,
-            0,
-            response
+            request_data,
+            response_data,
+            response_headers
         );
         
         if(error == 0)
         {
+            CharArrayToString(response_data, 0, WHOLE_ARRAY, response);
             if(EnableLogging)
                 Print("Python服务器连接成功(使用127.0.0.1)！响应: ", response);
         }
@@ -252,17 +255,22 @@ string SendHTTPRequest(string url, string data)
 {
     string result = "";
     string headers = "Content-Type: application/json\r\n";
+    uchar request_data[];
+    uchar response_data[];
+    string response_headers = "";
+    
+    // 将字符串转换为uchar数组
+    StringToCharArray(data, request_data);
     
     // 发送WebRequest
     int error = WebRequest(
         "POST",
         url,
         headers,
-        NULL,
         5000,
-        data,
-        0,
-        result
+        request_data,
+        response_data,
+        response_headers
     );
     
     if(error != 0)
@@ -271,6 +279,9 @@ string SendHTTPRequest(string url, string data)
             PrintFormat("WebRequest失败: 错误=%d, 描述=%s", error, WebRequestLastError());
         return "";
     }
+    
+    // 将uchar数组转换为字符串
+    CharArrayToString(response_data, 0, WHOLE_ARRAY, result);
     
     return result;
 }
@@ -337,18 +348,24 @@ void ProcessSignal(string signal)
         return;
     
     // 检查当前持仓
-    int position_count = PositionsTotal();
     bool has_long = false;
     bool has_short = false;
     
-    for(int i = 0; i < position_count; i++)
+    // 获取所有持仓
+    ulong position_tickets[];
+    int count = PositionsGetTicketList(position_tickets);
+    
+    for(int i = 0; i < count; i++)
     {
-        if(PositionGetSymbol(i) == SymbolName && PositionGetInteger(POSITION_MAGIC) == MagicNumber)
+        if(PositionSelect(position_tickets[i]))
         {
-            if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
-                has_long = true;
-            else if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL)
-                has_short = true;
+            if(PositionGetString(POSITION_SYMBOL) == SymbolName && PositionGetInteger(POSITION_MAGIC) == MagicNumber)
+            {
+                if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
+                    has_long = true;
+                else if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL)
+                    has_short = true;
+            }
         }
     }
     
@@ -416,7 +433,7 @@ bool ExecuteOrder(ENUM_ORDER_TYPE order_type)
     request.price = order_type == ORDER_TYPE_BUY ? SymbolInfoDouble(SymbolName, SYMBOL_ASK) : SymbolInfoDouble(SymbolName, SYMBOL_BID);
     
     // 计算ATR用于SL/TP
-    double atr = iATR(SymbolName, Timeframe, 14, 0);
+    double atr = iATR(SymbolName, Timeframe, 14);
     if(atr > 0)
     {
         request.sl = order_type == ORDER_TYPE_BUY ? request.price - atr * 2 : request.price + atr * 2;
@@ -451,7 +468,7 @@ double CalculateLotSize()
     double risk_amount = AccountBalance * (RiskPerTrade / 100.0);
     
     // 计算ATR
-    double atr = iATR(SymbolName, Timeframe, 14, 0);
+    double atr = iATR(SymbolName, Timeframe, 14);
     if(atr <= 0)
         atr = 0.01; // 默认ATR值
     
@@ -481,24 +498,28 @@ double CalculateLotSize()
 //+------------------------------------------------------------------+
 void CloseAllLongPositions()
 {
-    for(int i = PositionsTotal() - 1; i >= 0; i--)
+    // 获取所有持仓
+    ulong position_tickets[];
+    int count = PositionsGetTicketList(position_tickets);
+    
+    for(int i = count - 1; i >= 0; i--)
     {
-        if(PositionSelectByTicket(PositionGetTicket(i)))
+        if(PositionSelect(position_tickets[i]))
         {
             if(PositionGetString(POSITION_SYMBOL) == SymbolName && PositionGetInteger(POSITION_MAGIC) == MagicNumber)
             {
                 if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
                 {
                     double volume = PositionGetDouble(POSITION_VOLUME);
-                    if(ClosePosition(PositionGetTicket(i), volume))
+                    if(ClosePosition((int)position_tickets[i], volume))
                     {
                         if(EnableLogging)
-                            Print("平仓成功，订单号: ", PositionGetTicket(i), ", 类型: 多头");
+                            Print("平仓成功，订单号: ", (string)position_tickets[i], ", 类型: 多头");
                     }
                     else
                     {
                         if(EnableLogging)
-                            Print("平仓失败，订单号: ", PositionGetTicket(i), ", 错误代码: ", GetLastError());
+                            Print("平仓失败，订单号: ", (string)position_tickets[i], ", 错误代码: ", GetLastError());
                     }
                 }
             }
@@ -511,24 +532,28 @@ void CloseAllLongPositions()
 //+------------------------------------------------------------------+
 void CloseAllShortPositions()
 {
-    for(int i = PositionsTotal() - 1; i >= 0; i--)
+    // 获取所有持仓
+    ulong position_tickets[];
+    int count = PositionsGetTicketList(position_tickets);
+    
+    for(int i = count - 1; i >= 0; i--)
     {
-        if(PositionSelectByTicket(PositionGetTicket(i)))
+        if(PositionSelect(position_tickets[i]))
         {
             if(PositionGetString(POSITION_SYMBOL) == SymbolName && PositionGetInteger(POSITION_MAGIC) == MagicNumber)
             {
                 if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL)
                 {
                     double volume = PositionGetDouble(POSITION_VOLUME);
-                    if(ClosePosition(PositionGetTicket(i), volume))
+                    if(ClosePosition((int)position_tickets[i], volume))
                     {
                         if(EnableLogging)
-                            Print("平仓成功，订单号: ", PositionGetTicket(i), ", 类型: 空头");
+                            Print("平仓成功，订单号: ", (string)position_tickets[i], ", 类型: 空头");
                     }
                     else
                     {
                         if(EnableLogging)
-                            Print("平仓失败，订单号: ", PositionGetTicket(i), ", 错误代码: ", GetLastError());
+                            Print("平仓失败，订单号: ", (string)position_tickets[i], ", 错误代码: ", GetLastError());
                     }
                 }
             }
@@ -581,21 +606,25 @@ bool ClosePosition(int ticket, double volume)
 //+------------------------------------------------------------------+
 void DeleteAllPendingOrders()
 {
-    for(int i = OrdersTotal() - 1; i >= 0; i--)
+    // 获取所有订单
+    ulong order_tickets[];
+    int count = OrdersGetTicketList(order_tickets);
+    
+    for(int i = count - 1; i >= 0; i--)
     {
-        if(OrderSelect(i, SELECT_BY_POS, MODE_ORDERS))
+        if(OrderSelect(order_tickets[i], SELECT_BY_TICKET))
         {
             if(OrderGetString(ORDER_SYMBOL) == SymbolName && OrderGetInteger(ORDER_MAGIC) == MagicNumber)
             {
-                if(OrderDelete(OrderGetInteger(ORDER_TICKET)))
+                if(OrderDelete(order_tickets[i]))
                 {
                     if(EnableLogging)
-                        Print("取消挂单成功，订单号: ", OrderGetInteger(ORDER_TICKET));
+                        Print("取消挂单成功，订单号: ", order_tickets[i]);
                 }
                 else
                 {
                     if(EnableLogging)
-                        Print("取消挂单失败，订单号: ", OrderGetInteger(ORDER_TICKET), ", 错误代码: ", GetLastError());
+                        Print("取消挂单失败，订单号: ", order_tickets[i], ", 错误代码: ", GetLastError());
                 }
             }
         }
