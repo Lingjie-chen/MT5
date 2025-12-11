@@ -15,7 +15,7 @@ input string SymbolName = "GOLD";                // 交易品种
 input ENUM_TIMEFRAMES Timeframe = PERIOD_H1;      // 交易周期
 input double RiskPerTrade = 1.0;                  // 每笔交易风险百分比
 input double MaxDailyLoss = 2.0;                  // 每日最大亏损百分比
-input string PythonServerURL = "http://127.0.0.1:5001"; // Python服务URL (使用IP地址提高兼容性)
+input string PythonServerURL = "http://localhost:5001"; // Python服务URL
 input int MagicNumber = 123456;                   // 魔术数字
 input bool EnableLogging = true;                  // 启用日志记录
 
@@ -114,24 +114,34 @@ void OnTick()
 //+------------------------------------------------------------------+
 void TestPythonServerConnection()
 {
-    string urls[] = {
-        PythonServerURL + "/health",
-        "http://127.0.0.1:5001/health" // 备用URL
-    };
+    string testURL = PythonServerURL + "/health";
+    string response = "";
     
-    bool connected = false;
+    // 发送HTTP GET请求
+    int error = WebRequest(
+        "GET",
+        testURL,
+        "",
+        NULL,
+        5000,
+        NULL,
+        0,
+        response
+    );
     
-    // 尝试多个URL
-    for(int i = 0; i < ArraySize(urls) && !connected; i++)
+    if(error == 0)
     {
-        string testURL = urls[i];
-        string response = "";
-        
         if(EnableLogging)
-            Print("测试Python服务器连接: ", testURL);
+            Print("Python服务器连接成功！响应: ", response);
+    } 
+    else
+    {
+        if(EnableLogging)
+            Print("Python服务器连接失败！错误: ", error, ", 描述: ", WebRequestLastError());
         
-        // 发送HTTP GET请求
-        int error = WebRequest(
+        // 尝试使用127.0.0.1
+        testURL = StringReplace(PythonServerURL, "localhost", "127.0.0.1") + "/health";
+        error = WebRequest(
             "GET",
             testURL,
             "",
@@ -145,18 +155,14 @@ void TestPythonServerConnection()
         if(error == 0)
         {
             if(EnableLogging)
-                Print("Python服务器连接成功！URL: ", testURL, ", 响应: ", response);
-            connected = true;
-        } 
+                Print("Python服务器连接成功(使用127.0.0.1)！响应: ", response);
+        }
         else
         {
             if(EnableLogging)
-                Print("Python服务器连接失败！URL: ", testURL, ", 错误: ", error, ", 描述: ", WebRequestLastError());
+                Print("Python服务器连接失败(使用127.0.0.1)！错误: ", error, ", 描述: ", WebRequestLastError());
         }
     }
-    
-    if(!connected && EnableLogging)
-        Print("警告: 所有URL连接尝试都失败了，EA将在运行时继续尝试连接");
 }
 
 //+------------------------------------------------------------------+
@@ -242,77 +248,31 @@ string GetAISignal(const MqlRates &rates[])
 //+------------------------------------------------------------------+
 //| 发送HTTP请求                                                     |
 //+------------------------------------------------------------------+
-string SendHTTPRequest(string url, string data, int max_retries = 3)
+string SendHTTPRequest(string url, string data)
 {
     string result = "";
     string headers = "Content-Type: application/json\r\n";
     
-    // 重试机制
-    for(int retry = 0; retry < max_retries; retry++)
-    {
-        if(EnableLogging && retry > 0)
-            PrintFormat("WebRequest重试 %d/%d: %s", retry+1, max_retries, url);
-        
-        // 发送WebRequest
-        int error = WebRequest(
-            "POST",
-            url,
-            headers,
-            NULL,
-            5000,
-            data,
-            0,
-            result
-        );
-        
-        if(error == 0)
-        {
-            if(EnableLogging && retry > 0)
-                Print("WebRequest重试成功！");
-            return result;
-        }
-        else
-        {
-            if(EnableLogging)
-                PrintFormat("WebRequest失败 %d/%d: 错误=%d, 描述=%s", retry+1, max_retries, error, WebRequestLastError());
-            
-            // 重试间隔
-            Sleep(1000 * (retry + 1)); // 指数退避
-        }
-    }
+    // 发送WebRequest
+    int error = WebRequest(
+        "POST",
+        url,
+        headers,
+        NULL,
+        5000,
+        data,
+        0,
+        result
+    );
     
-    // 尝试备用URL
-    string alternative_url = StringReplace(url, "localhost", "127.0.0.1");
-    if(alternative_url != url)
+    if(error != 0)
     {
         if(EnableLogging)
-            Print("尝试备用URL: ", alternative_url);
-        
-        int error = WebRequest(
-            "POST",
-            alternative_url,
-            headers,
-            NULL,
-            5000,
-            data,
-            0,
-            result
-        );
-        
-        if(error == 0)
-        {
-            if(EnableLogging)
-                Print("备用URL请求成功！");
-            return result;
-        }
-        else
-        {
-            if(EnableLogging)
-                PrintFormat("备用URL请求失败: 错误=%d, 描述=%s", error, WebRequestLastError());
-        }
+            PrintFormat("WebRequest失败: 错误=%d, 描述=%s", error, WebRequestLastError());
+        return "";
     }
     
-    return "";
+    return result;
 }
 
 //+------------------------------------------------------------------+
@@ -323,7 +283,7 @@ string ParseJSON(string json, string key)
     string result = "none";
     
     // 构建搜索模式
-    string pattern = "\"" + key + "\":\"";
+    string pattern = "\"" + key + ":\"";
     int start_pos = StringFind(json, pattern, 0);
     
     if(start_pos != -1)
@@ -348,7 +308,7 @@ int ParseJSONInt(string json, string key)
     int result = 0;
     
     // 构建搜索模式
-    string pattern = "\"" + key + "\":";
+    string pattern = "\"" + key + ":";
     int start_pos = StringFind(json, pattern, 0);
     
     if(start_pos != -1)
@@ -459,41 +419,8 @@ bool ExecuteOrder(ENUM_ORDER_TYPE order_type)
     double atr = iATR(SymbolName, Timeframe, 14, 0);
     if(atr > 0)
     {
-        // 根据信号强度调整止盈止损比例
-        double sl_multiplier = 2.0;
-        double tp_multiplier = 3.0;
-        
-        // 信号强度高时，增加止盈比例，降低止损比例
-        if(SignalStrength >= 80)
-        {
-            tp_multiplier = 4.0;
-            sl_multiplier = 1.5;
-        }
-        // 信号强度中等时，保持默认比例
-        else if(SignalStrength >= 60)
-        {
-            tp_multiplier = 3.5;
-            sl_multiplier = 2.0;
-        }
-        // 信号强度低时，降低止盈比例，增加止损比例
-        else if(SignalStrength >= 40)
-        {
-            tp_multiplier = 2.5;
-            sl_multiplier = 2.5;
-        }
-        else
-        {
-            tp_multiplier = 2.0;
-            sl_multiplier = 3.0;
-        }
-        
-        // 根据ATR设置止盈止损
-        request.sl = order_type == ORDER_TYPE_BUY ? request.price - atr * sl_multiplier : request.price + atr * sl_multiplier;
-        request.tp = order_type == ORDER_TYPE_BUY ? request.price + atr * tp_multiplier : request.price - atr * tp_multiplier;
-        
-        if(EnableLogging)
-            PrintFormat("信号强度: %d, 止盈乘数: %.1f, 止损乘数: %.1f, ATR: %.5f", 
-                       SignalStrength, tp_multiplier, sl_multiplier, atr);
+        request.sl = order_type == ORDER_TYPE_BUY ? request.price - atr * 2 : request.price + atr * 2;
+        request.tp = order_type == ORDER_TYPE_BUY ? request.price + atr * 3 : request.price - atr * 3;
     }
     
     // 发送订单
@@ -505,8 +432,8 @@ bool ExecuteOrder(ENUM_ORDER_TYPE order_type)
     }
     
     if(EnableLogging)
-        PrintFormat("订单执行成功: 订单号=%d, 类型=%s, 手数=%.2f, 价格=%.5f, SL=%.5f, TP=%.5f", 
-                   result.order, EnumToString(order_type), lot_size, request.price, request.sl, request.tp);
+        PrintFormat("订单执行成功: 订单号=%d, 类型=%s, 手数=%.2f, 价格=%.5f", 
+                   result.order, EnumToString(order_type), lot_size, request.price);
     
     return true;
 }
@@ -588,3 +515,117 @@ void CloseAllShortPositions()
     {
         if(PositionSelectByTicket(PositionGetTicket(i)))
         {
+            if(PositionGetString(POSITION_SYMBOL) == SymbolName && PositionGetInteger(POSITION_MAGIC) == MagicNumber)
+            {
+                if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL)
+                {
+                    double volume = PositionGetDouble(POSITION_VOLUME);
+                    if(ClosePosition(PositionGetTicket(i), volume))
+                    {
+                        if(EnableLogging)
+                            Print("平仓成功，订单号: ", PositionGetTicket(i), ", 类型: 空头");
+                    }
+                    else
+                    {
+                        if(EnableLogging)
+                            Print("平仓失败，订单号: ", PositionGetTicket(i), ", 错误代码: ", GetLastError());
+                    }
+                }
+            }
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| 平仓所有头寸                                                     |
+//+------------------------------------------------------------------+
+void CloseAllPositions()
+{
+    CloseAllLongPositions();
+    CloseAllShortPositions();
+}
+
+//+------------------------------------------------------------------+
+//| 平仓单个仓位                                                     |
+//+------------------------------------------------------------------+
+bool ClosePosition(int ticket, double volume)
+{
+    // 准备订单请求
+    MqlTradeRequest request = {};
+    MqlTradeResult result = {};
+    
+    // 设置平仓参数
+    request.action = TRADE_ACTION_DEAL;
+    request.position = ticket;
+    request.volume = volume;
+    request.symbol = PositionGetString(POSITION_SYMBOL);
+    request.type = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+    request.price = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY ? SymbolInfoDouble(request.symbol, SYMBOL_BID) : SymbolInfoDouble(request.symbol, SYMBOL_ASK);
+    request.deviation = 3;
+    request.magic = MagicNumber;
+    request.comment = "Close Position";
+    request.type_filling = ORDER_FILLING_IOC;
+    request.type_time = ORDER_TIME_GTC;
+    
+    // 发送平仓订单
+    if(!OrderSend(request, result))
+    {
+        return false;
+    }
+    
+    return result.retcode == TRADE_RETCODE_DONE;
+}
+
+//+------------------------------------------------------------------+
+//| 取消所有挂单                                                     |
+//+------------------------------------------------------------------+
+void DeleteAllPendingOrders()
+{
+    for(int i = OrdersTotal() - 1; i >= 0; i--)
+    {
+        if(OrderSelect(i, SELECT_BY_POS, MODE_ORDERS))
+        {
+            if(OrderGetString(ORDER_SYMBOL) == SymbolName && OrderGetInteger(ORDER_MAGIC) == MagicNumber)
+            {
+                if(OrderDelete(OrderGetInteger(ORDER_TICKET)))
+                {
+                    if(EnableLogging)
+                        Print("取消挂单成功，订单号: ", OrderGetInteger(ORDER_TICKET));
+                }
+                else
+                {
+                    if(EnableLogging)
+                        Print("取消挂单失败，订单号: ", OrderGetInteger(ORDER_TICKET), ", 错误代码: ", GetLastError());
+                }
+            }
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| 定时器函数                                                       |
+//+------------------------------------------------------------------+
+void OnTimer()
+{
+    // 可以在这里添加定时任务，例如定期更新模型或检查服务器连接
+}
+
+//+------------------------------------------------------------------+
+//| 订单变化事件                                                     |
+//+------------------------------------------------------------------+
+void OnTrade()
+{
+    // 可以在这里处理订单变化事件
+    if(EnableLogging)
+        Print("检测到订单变化");
+}
+
+//+------------------------------------------------------------------+
+//| 账户变化事件                                                     |
+//+------------------------------------------------------------------+
+void OnAccount()
+{
+    // 可以在这里处理账户变化事件
+    if(EnableLogging)
+        Print("检测到账户变化");
+}
