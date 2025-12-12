@@ -316,8 +316,21 @@ string SendHTTPRequest(string url, string data)
     uchar response_data[];
     string response_headers = "";
     
+    // 检查URL格式
+    if(StringFind(url, "http://") != 0 && StringFind(url, "https://") != 0)
+    {
+        if(EnableLogging)
+            Print("WebRequest: URL格式无效，必须以http://或https://开头");
+        return "";
+    }
+    
     // 将字符串转换为uchar数组
-    StringToCharArray(data, request_data);
+    if(StringToCharArray(data, request_data) <= 0)
+    {
+        if(EnableLogging)
+            Print("WebRequest: 请求数据转换失败");
+        return "";
+    }
     
     // 发送WebRequest
     int error = WebRequest(
@@ -333,12 +346,49 @@ string SendHTTPRequest(string url, string data)
     if(error != 0)
     {
         if(EnableLogging)
-            PrintFormat("WebRequest失败: 错误=%d, 描述=%s", error, WebRequestLastError());
+            PrintFormat("WebRequest失败: 错误代码=%d, 错误描述=%s", error, WebRequestLastError());
+        
+        // 错误处理：根据不同错误类型进行不同处理
+        switch(error)
+        {
+            case 400:
+                Print("WebRequest: 请求参数错误");
+                break;
+            case 401:
+                Print("WebRequest: 未授权访问");
+                break;
+            case 403:
+                Print("WebRequest: 禁止访问");
+                break;
+            case 404:
+                Print("WebRequest: 请求的资源不存在");
+                break;
+            case 500:
+                Print("WebRequest: 服务器内部错误");
+                break;
+            default:
+                Print("WebRequest: 网络请求失败");
+                break;
+        }
+        
+        return "";
+    }
+    
+    // 检查响应数据
+    if(ArraySize(response_data) <= 0)
+    {
+        if(EnableLogging)
+            Print("WebRequest: 未收到响应数据");
         return "";
     }
     
     // 将uchar数组转换为字符串
-    CharArrayToString(response_data, 0, WHOLE_ARRAY, result);
+    if(CharArrayToString(response_data, 0, WHOLE_ARRAY, result) <= 0)
+    {
+        if(EnableLogging)
+            Print("WebRequest: 响应数据转换失败");
+        return "";
+    }
     
     return result;
 }
