@@ -7,6 +7,17 @@
 #property link      "https://github.com/ai-quant-trading"
 #property version   "1.00"
 #property strict
+#property expert
+#property indicator_separate_window
+#property indicator_buffers 0
+#property indicator_plots 0
+
+//+------------------------------------------------------------------+
+//| MT5 WebRequest URL白名单提示                                     |
+//| 请在MetaEditor中添加以下URL到WebRequest白名单：                   |
+//| http://localhost:5001                                            |
+//| http://127.0.0.1:5001                                            |
+//+------------------------------------------------------------------+
 
 //+------------------------------------------------------------------+
 //| EA输入参数                                                       |
@@ -33,18 +44,39 @@ int SignalStrength = 0;                           // 信号强度
 //+------------------------------------------------------------------+
 int OnInit()
 {
+    // 参数验证
+    if(RiskPerTrade <= 0 || RiskPerTrade > 10)
+    {
+        Print("警告: 每笔交易风险参数应在0-10%之间，当前值: ", RiskPerTrade, "%");
+        return(INIT_FAILED);
+    }
+    
+    if(MaxDailyLoss <= 0 || MaxDailyLoss > 5)
+    {
+        Print("警告: 每日最大亏损参数应在0-5%之间，当前值: ", MaxDailyLoss, "%");
+        return(INIT_FAILED);
+    }
+    
+    // 检查交易品种是否存在
+    if(!SymbolInfoInteger(SymbolName, SYMBOL_SELECT))
+    {
+        Print("错误: 交易品种 ", SymbolName, " 不存在或无法访问");
+        return(INIT_FAILED);
+    }
+    
     // 设置EA名称
-    IndicatorSetString(INDICATOR_SHORTNAME, "AI_MultiTF_SMC_EA");
+    ExpertSetString(EXPERT_NAME, "AI_MultiTF_SMC_EA");
     
     // 初始化日志
     if(EnableLogging)
     {
-        Print("AI_MultiTF_SMC_EA 初始化成功");
-        Print("交易品种: ", SymbolName);
-        Print("交易周期: ", EnumToString(Timeframe));
-        Print("每笔交易风险: ", RiskPerTrade, "%");
-        Print("每日最大亏损: ", MaxDailyLoss, "%");
-        Print("Python服务URL: ", PythonServerURL);
+        PrintFormat("AI_MultiTF_SMC_EA v%s 初始化成功", #property_version);
+        PrintFormat("交易品种: %s", SymbolName);
+        PrintFormat("交易周期: %s", EnumToString(Timeframe));
+        PrintFormat("每笔交易风险: %.2f%%", RiskPerTrade);
+        PrintFormat("每日最大亏损: %.2f%%", MaxDailyLoss);
+        PrintFormat("Python服务URL: %s", PythonServerURL);
+        PrintFormat("魔术数字: %d", MagicNumber);
     }
     
     // 获取初始账户余额
@@ -92,13 +124,38 @@ void OnTick()
     // 检查每日亏损
     CheckDailyLoss();
     
+    // 检查账户是否可用
+    if(AccountInfoInteger(ACCOUNT_TRADE_ALLOWED) != 1)
+    {
+        if(EnableLogging)
+            Print("交易功能不可用");
+        return;
+    }
+    
+    // 检查交易品种是否可用
+    if(!SymbolInfoInteger(SymbolName, SYMBOL_TRADE))
+    {
+        if(EnableLogging)
+            Print("交易品种 ", SymbolName, " 不可交易");
+        return;
+    }
+    
     // 获取当前市场数据
     MqlRates rates[];
     int count = CopyRates(SymbolName, Timeframe, 0, 100, rates);
     if(count <= 0)
     {
+        int error_code = GetLastError();
         if(EnableLogging)
-            Print("无法获取市场数据，错误代码: ", GetLastError());
+            PrintFormat("无法获取市场数据，错误代码: %d，错误描述: %s", error_code, ErrorDescription(error_code));
+        return;
+    }
+    
+    // 检查数据完整性
+    if(ArraySize(rates) < 20)
+    {
+        if(EnableLogging)
+            Print("市场数据不足，需要至少20根K线");
         return;
     }
     
@@ -403,7 +460,19 @@ bool ExecuteOrder(ENUM_ORDER_TYPE order_type)
 {
     // 检查EA是否运行
     if(!EA_Running)
+    {
+        if(EnableLogging)
+            Print("EA未运行，无法执行订单");
         return false;
+    }
+    
+    // 检查订单类型是否有效
+    if(order_type != ORDER_TYPE_BUY && order_type != ORDER_TYPE_SELL)
+    {
+        if(EnableLogging)
+            Print("无效的订单类型: ", EnumToString(order_type));
+        return false;
+    }
     
     // 计算仓位大小
     double lot_size = CalculateLotSize();
@@ -430,7 +499,17 @@ bool ExecuteOrder(ENUM_ORDER_TYPE order_type)
     request.type_time = ORDER_TIME_GTC;       // 直至取消
     
     // 获取当前价格
-    request.price = order_type == ORDER_TYPE_BUY ? SymbolInfoDouble(SymbolName, SYMBOL_ASK) : SymbolInfoDouble(SymbolName, SYMBOL_BID);
+    double bid_price = SymbolInfoDouble(SymbolName, SYMBOL_BID);
+    double ask_price = SymbolInfoDouble(SymbolName, SYMBOL_ASK);
+    
+    if(bid_price == 0.0 || ask_price == 0.0)
+    {
+        if(EnableLogging)
+            Print("无法获取有效的价格数据");
+        return false;
+    }
+    
+    request.price = order_type == ORDER_TYPE_BUY ? ask_price : bid_price;
     
     // 计算ATR用于SL/TP
     double atr = iATR(SymbolName, Timeframe, 14);
@@ -438,19 +517,53 @@ bool ExecuteOrder(ENUM_ORDER_TYPE order_type)
     {
         request.sl = order_type == ORDER_TYPE_BUY ? request.price - atr * 2 : request.price + atr * 2;
         request.tp = order_type == ORDER_TYPE_BUY ? request.price + atr * 3 : request.price - atr * 3;
+        
+        // 检查SL/TP是否有效
+        if(order_type == ORDER_TYPE_BUY)
+        {
+            if(request.sl >= request.price || request.tp <= request.price)
+            {
+                if(EnableLogging)
+                    Print("无效的SL/TP设置");
+                // 使用默认SL/TP
+                request.sl = 0.0;
+                request.tp = 0.0;
+            }
+        }
+        else
+        {
+            if(request.sl <= request.price || request.tp >= request.price)
+            {
+                if(EnableLogging)
+                    Print("无效的SL/TP设置");
+                // 使用默认SL/TP
+                request.sl = 0.0;
+                request.tp = 0.0;
+            }
+        }
     }
     
     // 发送订单
     if(!OrderSend(request, result))
     {
+        int error_code = GetLastError();
         if(EnableLogging)
-            PrintFormat("OrderSend失败: 错误=%d, 结果=%d, 评论=%s", GetLastError(), result.retcode, result.comment);
+            PrintFormat("OrderSend失败: 错误代码=%d, 错误描述=%s, 结果=%d, 评论=%s", 
+                      error_code, ErrorDescription(error_code), result.retcode, result.comment);
+        return false;
+    }
+    
+    // 检查订单执行结果
+    if(result.retcode != TRADE_RETCODE_DONE && result.retcode != TRADE_RETCODE_PLACED)
+    {
+        if(EnableLogging)
+            PrintFormat("订单执行失败: 结果代码=%d, 评论=%s", result.retcode, result.comment);
         return false;
     }
     
     if(EnableLogging)
-        PrintFormat("订单执行成功: 订单号=%d, 类型=%s, 手数=%.2f, 价格=%.5f", 
-                   result.order, EnumToString(order_type), lot_size, request.price);
+        PrintFormat("订单执行成功: 订单号=%d, 类型=%s, 手数=%.2f, 价格=%.5f, SL=%.5f, TP=%.5f", 
+                   result.order, EnumToString(order_type), lot_size, request.price, request.sl, request.tp);
     
     return true;
 }
@@ -575,6 +688,35 @@ void CloseAllPositions()
 //+------------------------------------------------------------------+
 bool ClosePosition(int ticket, double volume)
 {
+    // 检查仓位是否存在
+    if(!PositionSelect(ticket))
+    {
+        if(EnableLogging)
+            PrintFormat("无法找到仓位 #%d", ticket);
+        return false;
+    }
+    
+    // 验证仓位参数
+    if(volume <= 0)
+    {
+        if(EnableLogging)
+            Print("无效的平仓手数");
+        return false;
+    }
+    
+    // 获取仓位信息
+    string position_symbol = PositionGetString(POSITION_SYMBOL);
+    ENUM_POSITION_TYPE position_type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+    double position_volume = PositionGetDouble(POSITION_VOLUME);
+    
+    // 检查请求的手数是否超过可用手数
+    if(volume > position_volume)
+    {
+        if(EnableLogging)
+            PrintFormat("请求的平仓手数(%.2f)超过可用手数(%.2f)", volume, position_volume);
+        volume = position_volume;  // 调整为可用手数
+    }
+    
     // 准备订单请求
     MqlTradeRequest request = {};
     MqlTradeResult result = {};
@@ -583,22 +725,49 @@ bool ClosePosition(int ticket, double volume)
     request.action = TRADE_ACTION_DEAL;
     request.position = ticket;
     request.volume = volume;
-    request.symbol = PositionGetString(POSITION_SYMBOL);
-    request.type = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
-    request.price = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY ? SymbolInfoDouble(request.symbol, SYMBOL_BID) : SymbolInfoDouble(request.symbol, SYMBOL_ASK);
+    request.symbol = position_symbol;
+    request.type = position_type == POSITION_TYPE_BUY ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
     request.deviation = 3;
     request.magic = MagicNumber;
-    request.comment = "Close Position";
+    request.comment = "AI_MultiTF_SMC_EA - Close Position";
     request.type_filling = ORDER_FILLING_IOC;
     request.type_time = ORDER_TIME_GTC;
+    
+    // 获取当前价格
+    double bid_price = SymbolInfoDouble(position_symbol, SYMBOL_BID);
+    double ask_price = SymbolInfoDouble(position_symbol, SYMBOL_ASK);
+    
+    if(bid_price == 0.0 || ask_price == 0.0)
+    {
+        if(EnableLogging)
+            Print("无法获取有效的平仓价格");
+        return false;
+    }
+    
+    request.price = position_type == POSITION_TYPE_BUY ? bid_price : ask_price;
     
     // 发送平仓订单
     if(!OrderSend(request, result))
     {
+        int error_code = GetLastError();
+        if(EnableLogging)
+            PrintFormat("平仓订单发送失败: 错误代码=%d, 错误描述=%s", error_code, ErrorDescription(error_code));
         return false;
     }
     
-    return result.retcode == TRADE_RETCODE_DONE;
+    // 检查平仓结果
+    if(result.retcode != TRADE_RETCODE_DONE && result.retcode != TRADE_RETCODE_PLACED)
+    {
+        if(EnableLogging)
+            PrintFormat("平仓执行失败: 结果代码=%d, 评论=%s", result.retcode, result.comment);
+        return false;
+    }
+    
+    if(EnableLogging)
+        PrintFormat("平仓成功: 订单号=%d, 类型=%s, 手数=%.2f", 
+                   result.order, EnumToString(position_type), volume);
+    
+    return true;
 }
 
 //+------------------------------------------------------------------+
@@ -610,23 +779,47 @@ void DeleteAllPendingOrders()
     ulong order_tickets[];
     int count = OrdersGetTicketList(order_tickets);
     
+    if(count <= 0)
+    {
+        if(EnableLogging)
+            Print("没有找到挂单");
+        return;
+    }
+    
     for(int i = count - 1; i >= 0; i--)
     {
         if(OrderSelect(order_tickets[i], SELECT_BY_TICKET))
         {
+            // 检查订单是否属于当前EA
             if(OrderGetString(ORDER_SYMBOL) == SymbolName && OrderGetInteger(ORDER_MAGIC) == MagicNumber)
             {
-                if(OrderDelete(order_tickets[i]))
+                // 检查订单类型是否为挂单
+                ENUM_ORDER_TYPE order_type = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+                if(order_type == ORDER_TYPE_BUY_LIMIT || order_type == ORDER_TYPE_SELL_LIMIT ||
+                   order_type == ORDER_TYPE_BUY_STOP || order_type == ORDER_TYPE_SELL_STOP ||
+                   order_type == ORDER_TYPE_BUY_STOP_LIMIT || order_type == ORDER_TYPE_SELL_STOP_LIMIT)
                 {
-                    if(EnableLogging)
-                        Print("取消挂单成功，订单号: ", order_tickets[i]);
-                }
-                else
-                {
-                    if(EnableLogging)
-                        Print("取消挂单失败，订单号: ", order_tickets[i], ", 错误代码: ", GetLastError());
+                    if(OrderDelete(order_tickets[i]))
+                    {
+                        if(EnableLogging)
+                            PrintFormat("取消挂单成功，订单号: %d, 类型: %s", order_tickets[i], EnumToString(order_type));
+                    }
+                    else
+                    {
+                        int error_code = GetLastError();
+                        if(EnableLogging)
+                            PrintFormat("取消挂单失败，订单号: %d, 错误代码: %d, 错误描述: %s", 
+                                      order_tickets[i], error_code, ErrorDescription(error_code));
+                    }
                 }
             }
+        }
+        else
+        {
+            int error_code = GetLastError();
+            if(EnableLogging)
+                PrintFormat("无法选择订单 #%d, 错误代码: %d, 错误描述: %s", 
+                          order_tickets[i], error_code, ErrorDescription(error_code));
         }
     }
 }
