@@ -24,11 +24,26 @@
 //+------------------------------------------------------------------+
 input string SymbolName = "GOLD";                // 交易品种
 input ENUM_TIMEFRAMES Timeframe = PERIOD_H1;      // 交易周期
-input double RiskPerTrade = 1.0;                  // 每笔交易风险百分比
-input double MaxDailyLoss = 2.0;                  // 每日最大亏损百分比
+
+// 资金管理参数
+input double RiskPerTrade = 1.0;                  // 每笔交易风险百分比 (0-10)
+input double MaxDailyLoss = 2.0;                  // 每日最大亏损百分比 (0-5)
+input double MaxTotalRisk = 3.0;                  // 总风险百分比 (0-15)
+input int MaxPositions = 1;                       // 最大持仓数量
+input int MaxConsecutiveLosses = 3;              // 最大连续亏损次数
+
+// EA设置参数
 input string PythonServerURL = "http://localhost:5001"; // Python服务URL
 input int MagicNumber = 123456;                   // 魔术数字
 input bool EnableLogging = true;                  // 启用日志记录
+
+// 信号过滤参数
+input int MinSignalStrength = 70;                 // 最小信号强度
+input int SignalConfirmations = 1;                // 信号确认次数
+
+// 性能优化参数
+input int SignalCacheTime = 300;                  // 信号缓存时间(秒)
+input int NetworkTimeout = 5000;                  // 网络超时时间(毫秒)
 
 //+------------------------------------------------------------------+
 //| 全局变量                                                         |
@@ -39,6 +54,31 @@ double DailyLoss = 0.0;                           // 当日亏损
 datetime LastTradeDay = 0;                        // 最后交易日期
 int SignalStrength = 0;                           // 信号强度
 
+// 性能跟踪变量
+int ConsecutiveLosses = 0;                        // 连续亏损次数
+int TotalTrades = 0;                              // 总交易次数
+int WinningTrades = 0;                            // 盈利交易次数
+int LosingTrades = 0;                             // 亏损交易次数
+
+double TotalProfit = 0.0;                          // 总盈利
+double MaxDrawdown = 0.0;                          // 最大回撤
+
+double InitialBalance = 0.0;                        // 初始账户余额
+
+// 信号处理变量
+string LastSignal = "none";                        // 上一次信号
+int SignalConfirmCount = 0;                        // 信号确认计数
+int LastSignalTime = 0;                             // 上一次信号时间
+
+// 持仓跟踪变量
+int CurrentPositions = 0;                          // 当前持仓数量
+double TotalRiskExposure = 0.0;                    // 总风险暴露
+
+double CurrentEquity = 0.0;                        // 当前权益
+
+// 缓存设置
+int CACHE_EXPIRY = 300;                             // 信号缓存时间(秒)
+
 //+------------------------------------------------------------------+
 //| 初始化函数                                                       |
 //+------------------------------------------------------------------+
@@ -47,25 +87,46 @@ int OnInit()
     // 参数验证
     if(RiskPerTrade <= 0 || RiskPerTrade > 10)
     {
-        Print("警告: 每笔交易风险参数应在0-10%之间，当前值: ", RiskPerTrade, "%");
+        PrintFormat("警告: 每笔交易风险参数应在0-10%%之间，当前值: %.2f%%", RiskPerTrade);
         return(INIT_FAILED);
     }
     
     if(MaxDailyLoss <= 0 || MaxDailyLoss > 5)
     {
-        Print("警告: 每日最大亏损参数应在0-5%之间，当前值: ", MaxDailyLoss, "%");
+        PrintFormat("警告: 每日最大亏损参数应在0-5%%之间，当前值: %.2f%%", MaxDailyLoss);
+        return(INIT_FAILED);
+    }
+    
+    if(MaxTotalRisk <= 0 || MaxTotalRisk > 15)
+    {
+        PrintFormat("警告: 总风险参数应在0-15%%之间，当前值: %.2f%%", MaxTotalRisk);
+        return(INIT_FAILED);
+    }
+    
+    if(MaxPositions <= 0)
+    {
+        Print("错误: 最大持仓数量必须大于0");
         return(INIT_FAILED);
     }
     
     // 检查交易品种是否存在
     if(!SymbolInfoInteger(SymbolName, SYMBOL_SELECT))
     {
-        Print("错误: 交易品种 ", SymbolName, " 不存在或无法访问");
+        PrintFormat("错误: 交易品种 %s 不存在或无法访问", SymbolName);
         return(INIT_FAILED);
     }
     
     // 设置EA名称
     ExpertSetString(EXPERT_NAME, "AI_MultiTF_SMC_EA");
+    
+    // 初始化全局变量
+    InitialBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+    AccountBalance = InitialBalance;
+    CurrentEquity = InitialBalance;
+    CACHE_EXPIRY = SignalCacheTime;
+    
+    // 设置最后交易日期
+    LastTradeDay = TimeDay(TimeCurrent());
     
     // 初始化日志
     if(EnableLogging)
@@ -75,15 +136,15 @@ int OnInit()
         PrintFormat("交易周期: %s", EnumToString(Timeframe));
         PrintFormat("每笔交易风险: %.2f%%", RiskPerTrade);
         PrintFormat("每日最大亏损: %.2f%%", MaxDailyLoss);
+        PrintFormat("总风险百分比: %.2f%%", MaxTotalRisk);
+        PrintFormat("最大持仓数量: %d", MaxPositions);
+        PrintFormat("最小信号强度: %d", MinSignalStrength);
+        PrintFormat("信号确认次数: %d", SignalConfirmations);
         PrintFormat("Python服务URL: %s", PythonServerURL);
         PrintFormat("魔术数字: %d", MagicNumber);
+        PrintFormat("信号缓存时间: %d秒", SignalCacheTime);
+        PrintFormat("网络超时时间: %d毫秒", NetworkTimeout);
     }
-    
-    // 获取初始账户余额
-    AccountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
-    
-    // 设置最后交易日期
-    LastTradeDay = TimeDay(TimeCurrent());
     
     // 设置EA运行状态
     EA_Running = true;
@@ -121,6 +182,9 @@ void OnTick()
     if(!EA_Running)
         return;
     
+    // 更新当前权益
+    CurrentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+    
     // 检查每日亏损
     CheckDailyLoss();
     
@@ -136,7 +200,37 @@ void OnTick()
     if(!SymbolInfoInteger(SymbolName, SYMBOL_TRADE))
     {
         if(EnableLogging)
-            Print("交易品种 ", SymbolName, " 不可交易");
+            PrintFormat("交易品种 %s 不可交易", SymbolName);
+        return;
+    }
+    
+    // 检查连续亏损次数
+    if(ConsecutiveLosses >= MaxConsecutiveLosses)
+    {
+        if(EnableLogging)
+            PrintFormat("已达到最大连续亏损次数(%d)，停止交易", MaxConsecutiveLosses);
+        CloseAllPositions();
+        EA_Running = false;
+        return;
+    }
+    
+    // 检查当前持仓数量
+    CurrentPositions = PositionsTotal();
+    if(CurrentPositions >= MaxPositions)
+    {
+        if(EnableLogging)
+            PrintFormat("已达到最大持仓数量(%d)，暂不执行新订单", MaxPositions);
+        return;
+    }
+    
+    // 检查总风险暴露
+    double current_drawdown = (InitialBalance - CurrentEquity) / InitialBalance * 100;
+    if(current_drawdown >= MaxTotalRisk)
+    {
+        if(EnableLogging)
+            PrintFormat("总风险暴露(%.2f%%)已达到上限(%.2f%%)，停止交易", current_drawdown, MaxTotalRisk);
+        CloseAllPositions();
+        EA_Running = false;
         return;
     }
     
@@ -164,6 +258,9 @@ void OnTick()
     
     // 处理交易信号
     ProcessSignal(signal);
+    
+    // 更新最大回撤
+    UpdateMaxDrawdown();
 }
 
 //+------------------------------------------------------------------+
@@ -233,31 +330,71 @@ void CheckDailyLoss()
     datetime current_time = TimeCurrent();
     int current_day = TimeDay(current_time);
     
-    // 新的一天，重置每日亏损
+    // 新的一天，重置每日亏损和连续亏损次数
     if(current_day != LastTradeDay)
     {
         DailyLoss = 0.0;
+        ConsecutiveLosses = 0;
         LastTradeDay = current_day;
         if(EnableLogging)
-            Print("新的交易日，重置每日亏损");
+            Print("新的交易日，重置每日亏损和连续亏损计数");
         return;
     }
     
-    // 计算当前亏损
+    // 计算当前账户余额和权益
     double current_balance = AccountInfoDouble(ACCOUNT_BALANCE);
-    double drawdown = (AccountBalance - current_balance) / AccountBalance * 100;
+    CurrentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+    
+    // 计算当前亏损
+    double daily_drawdown = (InitialBalance - CurrentEquity) / InitialBalance * 100;
     
     // 检查是否超过每日最大亏损
-    if(drawdown >= MaxDailyLoss)
+    if(daily_drawdown >= MaxDailyLoss)
     {
         if(EnableLogging)
-            Print("达到每日最大亏损限制，EA将停止交易");
+            PrintFormat("达到每日最大亏损限制(%.2f%%)，EA将停止交易", daily_drawdown);
         
         // 平仓所有头寸
         CloseAllPositions();
         
         // 停止EA
         EA_Running = false;
+    }
+    
+    // 更新账户余额
+    if(current_balance > AccountBalance)
+    {
+        AccountBalance = current_balance;
+        ConsecutiveLosses = 0; // 重置连续亏损计数
+    }
+}
+
+//+------------------------------------------------------------------+
+//| 更新最大回撤                                                     |
+//+------------------------------------------------------------------+
+void UpdateMaxDrawdown()
+{
+    // 计算当前权益
+    CurrentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+    
+    // 计算当前回撤
+    double current_drawdown = (InitialBalance - CurrentEquity) / InitialBalance * 100;
+    
+    // 更新最大回撤
+    if(current_drawdown > MaxDrawdown)
+    {
+        MaxDrawdown = current_drawdown;
+        if(EnableLogging)
+            PrintFormat("更新最大回撤: %.2f%%", MaxDrawdown);
+    }
+    
+    // 更新总盈利
+    double current_profit = CurrentEquity - InitialBalance;
+    if(current_profit != TotalProfit)
+    {
+        TotalProfit = current_profit;
+        if(EnableLogging)
+            PrintFormat("更新总盈利: %.2f", TotalProfit);
     }
 }
 
@@ -454,6 +591,37 @@ void ProcessSignal(string signal)
     if(signal == "none" || !EA_Running)
         return;
     
+    // 检查信号强度
+    if(SignalStrength < MinSignalStrength)
+    {
+        if(EnableLogging)
+            PrintFormat("信号强度(%d)低于最小值(%d)，忽略信号", SignalStrength, MinSignalStrength);
+        return;
+    }
+    
+    // 信号确认逻辑
+    if(signal == LastSignal)
+    {
+        SignalConfirmCount++;
+        if(EnableLogging)
+            PrintFormat("信号确认计数: %d/%d", SignalConfirmCount, SignalConfirmations);
+    }
+    else
+    {
+        SignalConfirmCount = 1;
+        LastSignal = signal;
+        LastSignalTime = TimeCurrent();
+    }
+    
+    // 等待信号确认
+    if(SignalConfirmCount < SignalConfirmations)
+    {
+        return;
+    }
+    
+    // 重置信号确认计数
+    SignalConfirmCount = 0;
+    
     // 检查当前持仓
     bool has_long = false;
     bool has_short = false;
@@ -484,7 +652,12 @@ void ProcessSignal(string signal)
             CloseAllShortPositions();
         
         // 执行买入
-        ExecuteOrder(ORDER_TYPE_BUY);
+        if(ExecuteOrder(ORDER_TYPE_BUY))
+        {
+            TotalTrades++;
+            if(EnableLogging)
+                PrintFormat("执行买入信号，总交易次数: %d", TotalTrades);
+        }
     }
     // 处理卖出信号
     else if(signal == "sell" && !has_short)
@@ -494,12 +667,19 @@ void ProcessSignal(string signal)
             CloseAllLongPositions();
         
         // 执行卖出
-        ExecuteOrder(ORDER_TYPE_SELL);
+        if(ExecuteOrder(ORDER_TYPE_SELL))
+        {
+            TotalTrades++;
+            if(EnableLogging)
+                PrintFormat("执行卖出信号，总交易次数: %d", TotalTrades);
+        }
     }
     // 处理平仓信号
     else if(signal == "close_all")
     {
         CloseAllPositions();
+        if(EnableLogging)
+            Print("执行全平信号");
     }
 }
 
