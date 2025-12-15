@@ -6,11 +6,6 @@
 #property copyright "Copyright 2024, AI Quant Trading"
 #property link      "https://github.com/ai-quant-trading"
 #property version   "1.00"
-#property strict
-#property expert
-#property indicator_separate_window
-#property indicator_buffers 0
-#property indicator_plots 0
 
 //+------------------------------------------------------------------+
 //| MT5 WebRequest URL白名单提示                                     |
@@ -22,15 +17,15 @@
 //+------------------------------------------------------------------+
 //| EA输入参数                                                       |
 //+------------------------------------------------------------------+
-input string SymbolName = "GOLD";                // 交易品种
-input ENUM_TIMEFRAMES Timeframe = PERIOD_H1;      // 交易周期
+input string InputSymbol = "";                    // 交易品种（留空则使用当前图表品种）
+input ENUM_TIMEFRAMES InputTimeframe = PERIOD_H1; // 交易周期
 
 // 资金管理参数
 input double RiskPerTrade = 1.0;                  // 每笔交易风险百分比 (0-10)
 input double MaxDailyLoss = 2.0;                  // 每日最大亏损百分比 (0-5)
 input double MaxTotalRisk = 3.0;                  // 总风险百分比 (0-15)
 input int MaxPositions = 1;                       // 最大持仓数量
-input int MaxConsecutiveLosses = 3;              // 最大连续亏损次数
+input int MaxConsecutiveLosses = 3;               // 最大连续亏损次数
 
 // EA设置参数
 input string PythonServerURL = "http://localhost:5001"; // Python服务URL
@@ -48,10 +43,12 @@ input int NetworkTimeout = 5000;                  // 网络超时时间(毫秒)
 //+------------------------------------------------------------------+
 //| 全局变量                                                         |
 //+------------------------------------------------------------------+
+string TradingSymbol;                             // 实际使用的交易品种
+ENUM_TIMEFRAMES TradingTimeframe;                 // 实际使用的交易周期
 bool EA_Running = false;                          // EA运行状态
 double AccountBalance = 0.0;                      // 账户余额
 double DailyLoss = 0.0;                           // 当日亏损
-datetime LastTradeDay = 0;                        // 最后交易日期
+MqlDateTime LastTradeDay;                         // 最后交易日期
 int SignalStrength = 0;                           // 信号强度
 
 // 性能跟踪变量
@@ -60,30 +57,167 @@ int TotalTrades = 0;                              // 总交易次数
 int WinningTrades = 0;                            // 盈利交易次数
 int LosingTrades = 0;                             // 亏损交易次数
 
-double TotalProfit = 0.0;                          // 总盈利
-double MaxDrawdown = 0.0;                          // 最大回撤
+double TotalProfit = 0.0;                         // 总盈利
+double MaxDrawdown = 0.0;                         // 最大回撤
 
-double InitialBalance = 0.0;                        // 初始账户余额
+double InitialBalance = 0.0;                      // 初始账户余额
 
 // 信号处理变量
-string LastSignal = "none";                        // 上一次信号
-int SignalConfirmCount = 0;                        // 信号确认计数
-int LastSignalTime = 0;                             // 上一次信号时间
+string LastSignal = "none";                       // 上一次信号
+int SignalConfirmCount = 0;                       // 信号确认计数
+int LastSignalTime = 0;                           // 上一次信号时间
 
 // 持仓跟踪变量
-int CurrentPositions = 0;                          // 当前持仓数量
-double TotalRiskExposure = 0.0;                    // 总风险暴露
+int CurrentPositions = 0;                         // 当前持仓数量
+double TotalRiskExposure = 0.0;                   // 总风险暴露
 
-double CurrentEquity = 0.0;                        // 当前权益
+double CurrentEquity = 0.0;                       // 当前权益
 
 // 缓存设置
-int CACHE_EXPIRY = 300;                             // 信号缓存时间(秒)
+int CACHE_EXPIRY = 300;                           // 信号缓存时间(秒)
+
+//+------------------------------------------------------------------+
+//| 错误代码转字符串                                                  |
+//+------------------------------------------------------------------+
+string GetErrorDescription(int error_code)
+{
+    switch(error_code)
+    {
+        case 0:     return "No error";
+        case 1:     return "No error returned, but result is unknown";
+        case 2:     return "Common error";
+        case 3:     return "Invalid trade parameters";
+        case 4:     return "Trade server is busy";
+        case 5:     return "Old version of the client terminal";
+        case 6:     return "No connection with trade server";
+        case 7:     return "Not enough rights";
+        case 8:     return "Too frequent requests";
+        case 9:     return "Malfunctional trade operation";
+        case 64:    return "Account disabled";
+        case 65:    return "Invalid account";
+        case 128:   return "Trade timeout";
+        case 129:   return "Invalid price";
+        case 130:   return "Invalid stops";
+        case 131:   return "Invalid trade volume";
+        case 132:   return "Market is closed";
+        case 133:   return "Trade is disabled";
+        case 134:   return "Not enough money";
+        case 135:   return "Price changed";
+        case 136:   return "Off quotes";
+        case 137:   return "Broker is busy";
+        case 138:   return "Requote";
+        case 139:   return "Order is locked";
+        case 140:   return "Long positions only allowed";
+        case 141:   return "Too many requests";
+        case 145:   return "Modification denied because order is too close to market";
+        case 146:   return "Trade context is busy";
+        case 147:   return "Expirations are denied by broker";
+        case 148:   return "Too many open and pending orders";
+        case 149:   return "Hedging is prohibited";
+        case 150:   return "Prohibit closing by opposite";
+        case 4000:  return "No error";
+        case 4001:  return "Wrong function pointer";
+        case 4002:  return "Array index is out of range";
+        case 4003:  return "No memory for function call stack";
+        case 4004:  return "Recursive stack overflow";
+        case 4005:  return "Not enough stack for parameter";
+        case 4006:  return "No memory for parameter string";
+        case 4007:  return "No memory for temp string";
+        case 4008:  return "Not initialized string";
+        case 4009:  return "Not initialized string in array";
+        case 4010:  return "No memory for array string";
+        case 4011:  return "Too long string";
+        case 4012:  return "Remainder from zero divide";
+        case 4013:  return "Zero divide";
+        case 4014:  return "Unknown command";
+        case 4015:  return "Wrong jump (never generated error)";
+        case 4016:  return "Not initialized array";
+        case 4017:  return "DLL calls are not allowed";
+        case 4018:  return "Cannot load library";
+        case 4019:  return "Cannot call function";
+        case 4020:  return "Expert function calls are not allowed";
+        case 4021:  return "Not enough memory for temp string returned from function";
+        case 4022:  return "System is busy (never generated error)";
+        case 4050:  return "Invalid function parameters count";
+        case 4051:  return "Invalid function parameter value";
+        case 4052:  return "String function internal error";
+        case 4053:  return "Some array error";
+        case 4054:  return "Incorrect series array using";
+        case 4055:  return "Custom indicator error";
+        case 4056:  return "Arrays are incompatible";
+        case 4057:  return "Global variables processing error";
+        case 4058:  return "Global variable not found";
+        case 4059:  return "Function is not allowed in testing mode";
+        case 4060:  return "Function is not confirmed";
+        case 4061:  return "Send mail error";
+        case 4062:  return "String parameter expected";
+        case 4063:  return "Integer parameter expected";
+        case 4064:  return "Double parameter expected";
+        case 4065:  return "Array as parameter expected";
+        case 4066:  return "Requested history data is in update state";
+        case 4067:  return "Some error in trade operation";
+        case 4099:  return "End of file";
+        case 4100:  return "Some file error";
+        case 4101:  return "Wrong file name";
+        case 4102:  return "Too many opened files";
+        case 4103:  return "Cannot open file";
+        case 4104:  return "Incompatible access to a file";
+        case 4105:  return "No order selected";
+        case 4106:  return "Unknown symbol";
+        case 4107:  return "Invalid price parameter";
+        case 4108:  return "Invalid ticket";
+        case 4109:  return "Trade is not allowed";
+        case 4110:  return "Longs are not allowed";
+        case 4111:  return "Shorts are not allowed";
+        case 4200:  return "Object already exists";
+        case 4201:  return "Unknown object property";
+        case 4202:  return "Object does not exist";
+        case 4203:  return "Unknown object type";
+        case 4204:  return "No object name";
+        case 4205:  return "Object coordinates error";
+        case 4206:  return "No specified subwindow";
+        case 4207:  return "Some error in object function";
+        case 4250:  return "Unknown chart property";
+        case 4251:  return "Chart not found";
+        case 4252:  return "Chart subwindow not found";
+        case 4253:  return "Chart indicator not found";
+        case 4254:  return "Symbol select error";
+        case 5001:  return "Invalid URL";
+        case 5002:  return "Failed to connect";
+        case 5003:  return "Timeout";
+        case 5004:  return "HTTP request failed";
+        case 5005:  return "Failed to read HTTP response";
+        default:    return "Unknown error (" + IntegerToString(error_code) + ")";
+    }
+}
+
+//+------------------------------------------------------------------+
+//| WebRequest错误转字符串                                           |
+//+------------------------------------------------------------------+
+string GetWebRequestErrorDescription(int error_code)
+{
+    switch(error_code)
+    {
+        case 4001:  return "Invalid URL";
+        case 4002:  return "Failed to connect";
+        case 4003:  return "Timeout";
+        case 4004:  return "HTTP request failed";
+        case 4005:  return "Failed to read HTTP response";
+        case 4010:  return "Not allowed (URL not in the list of allowed URLs)";
+        case 4011:  return "Not allowed (URL is in the list of blocked URLs)";
+        default:    return "Unknown WebRequest error (" + IntegerToString(error_code) + ")";
+    }
+}
 
 //+------------------------------------------------------------------+
 //| 初始化函数                                                       |
 //+------------------------------------------------------------------+
 int OnInit()
 {
+    // 设置实际使用的交易品种和周期
+    TradingSymbol = (InputSymbol == "") ? Symbol() : InputSymbol;
+    TradingTimeframe = InputTimeframe;
+    
     // 参数验证
     if(RiskPerTrade <= 0 || RiskPerTrade > 10)
     {
@@ -110,14 +244,11 @@ int OnInit()
     }
     
     // 检查交易品种是否存在
-    if(!SymbolInfoInteger(SymbolName, SYMBOL_SELECT))
+    if(!SymbolSelect(TradingSymbol, true))
     {
-        PrintFormat("错误: 交易品种 %s 不存在或无法访问", SymbolName);
+        PrintFormat("错误: 交易品种 %s 不存在或无法访问", TradingSymbol);
         return(INIT_FAILED);
     }
-    
-    // 设置EA名称
-    ExpertSetString(EXPERT_NAME, "AI_MultiTF_SMC_EA");
     
     // 初始化全局变量
     InitialBalance = AccountInfoDouble(ACCOUNT_BALANCE);
@@ -126,14 +257,16 @@ int OnInit()
     CACHE_EXPIRY = SignalCacheTime;
     
     // 设置最后交易日期
-    LastTradeDay = TimeDay(TimeCurrent());
+    MqlDateTime current_time;
+    TimeToStruct(TimeCurrent(), current_time);
+    LastTradeDay = current_time;
     
     // 初始化日志
     if(EnableLogging)
     {
-        PrintFormat("AI_MultiTF_SMC_EA v%s 初始化成功", #property_version);
-        PrintFormat("交易品种: %s", SymbolName);
-        PrintFormat("交易周期: %s", EnumToString(Timeframe));
+        PrintFormat("AI_MultiTF_SMC_EA v%s 初始化成功");
+        PrintFormat("交易品种: %s", TradingSymbol);
+        PrintFormat("交易周期: %s", EnumToString(TradingTimeframe));
         PrintFormat("每笔交易风险: %.2f%%", RiskPerTrade);
         PrintFormat("每日最大亏损: %.2f%%", MaxDailyLoss);
         PrintFormat("总风险百分比: %.2f%%", MaxTotalRisk);
@@ -197,10 +330,11 @@ void OnTick()
     }
     
     // 检查交易品种是否可用
-    if(!SymbolInfoInteger(SymbolName, SYMBOL_TRADE))
+    long trade_mode = SymbolInfoInteger(TradingSymbol, SYMBOL_TRADE_MODE);
+    if(trade_mode == SYMBOL_TRADE_MODE_DISABLED)
     {
         if(EnableLogging)
-            PrintFormat("交易品种 %s 不可交易", SymbolName);
+            PrintFormat("交易品种 %s 不可交易", TradingSymbol);
         return;
     }
     
@@ -236,12 +370,12 @@ void OnTick()
     
     // 获取当前市场数据
     MqlRates rates[];
-    int count = CopyRates(SymbolName, Timeframe, 0, 100, rates);
+    int count = CopyRates(TradingSymbol, TradingTimeframe, 0, 100, rates);
     if(count <= 0)
     {
         int error_code = GetLastError();
         if(EnableLogging)
-            PrintFormat("无法获取市场数据，错误代码: %d，错误描述: %s", error_code, ErrorDescription(error_code));
+            PrintFormat("无法获取市场数据，错误代码: %d，错误描述: %s", error_code, GetErrorDescription(error_code));
         return;
     }
     
@@ -273,9 +407,10 @@ void TestPythonServerConnection()
     uchar request_data[];
     uchar response_data[];
     string response = "";
+    int error = 0;
     
     // 发送HTTP GET请求
-    int error = WebRequest(
+    error = WebRequest(
         "GET",
         testURL,
         "",
@@ -287,17 +422,20 @@ void TestPythonServerConnection()
     
     if(error == 0)
     {
-        CharArrayToString(response_data, 0, WHOLE_ARRAY, response);
+        response = CharArrayToString(response_data);
         if(EnableLogging)
             Print("Python服务器连接成功！响应: ", response);
     } 
     else
     {
         if(EnableLogging)
-            Print("Python服务器连接失败！错误: ", error, ", 描述: ", WebRequestLastError());
+            Print("Python服务器连接失败！错误: ", error, ", 描述: ", GetWebRequestErrorDescription(error));
         
-        // 尝试使用127.0.0.1
-        testURL = StringReplace(PythonServerURL, "localhost", "127.0.0.1") + "/health";
+        // 尝试使用127.0.0.1 - 修正StringReplace的用法
+        string newURL = PythonServerURL;
+        StringReplace(newURL, "localhost", "127.0.0.1");
+        testURL = newURL + "/health";
+        
         error = WebRequest(
             "GET",
             testURL,
@@ -310,14 +448,14 @@ void TestPythonServerConnection()
         
         if(error == 0)
         {
-            CharArrayToString(response_data, 0, WHOLE_ARRAY, response);
+            response = CharArrayToString(response_data);
             if(EnableLogging)
                 Print("Python服务器连接成功(使用127.0.0.1)！响应: ", response);
         }
         else
         {
             if(EnableLogging)
-                Print("Python服务器连接失败(使用127.0.0.1)！错误: ", error, ", 描述: ", WebRequestLastError());
+                Print("Python服务器连接失败(使用127.0.0.1)！错误: ", error, ", 描述: ", GetWebRequestErrorDescription(error));
         }
     }
 }
@@ -327,15 +465,15 @@ void TestPythonServerConnection()
 //+------------------------------------------------------------------+
 void CheckDailyLoss()
 {
-    datetime current_time = TimeCurrent();
-    int current_day = TimeDay(current_time);
+    MqlDateTime current_time;
+    TimeToStruct(TimeCurrent(), current_time);
     
     // 新的一天，重置每日亏损和连续亏损次数
-    if(current_day != LastTradeDay)
+    if(current_time.day != LastTradeDay.day)
     {
         DailyLoss = 0.0;
         ConsecutiveLosses = 0;
-        LastTradeDay = current_day;
+        LastTradeDay = current_time;
         if(EnableLogging)
             Print("新的交易日，重置每日亏损和连续亏损计数");
         return;
@@ -403,24 +541,38 @@ void UpdateMaxDrawdown()
 //+------------------------------------------------------------------+
 string GetAISignal(const MqlRates &rates[])
 {
-    // 构建JSON请求字符串
-    string request_data = "{\"symbol\":\"" + SymbolName + "\",\"timeframe\":\"" + EnumToString(Timeframe) + "\",\"rates\":[";
+    // 初始化JSON构建
+    string request_data = "{\"symbol\":\"" + TradingSymbol + "\",\"timeframe\":\"" + EnumToString(TradingTimeframe) + "\",\"rates\":[";
     
     // 添加最近20根K线数据
-    for(int i = 0; i < MathMin(20, ArraySize(rates)); i++)
+    int max_bars = MathMin(20, ArraySize(rates));
+    
+    for(int i = 0; i < max_bars; i++)
     {
-        request_data += "{\"time\":" + IntegerToString(rates[i].time) + ",";
-        request_data += "\"open\":" + DoubleToString(rates[i].open, 5) + ",";
-        request_data += "\"high\":" + DoubleToString(rates[i].high, 5) + ",";
-        request_data += "\"low\":" + DoubleToString(rates[i].low, 5) + ",";
-        request_data += "\"close\":" + DoubleToString(rates[i].close, 5) + ",";
-        request_data += "\"volume\":" + IntegerToString(rates[i].tick_volume) + "}";
-        
-        if(i < MathMin(20, ArraySize(rates)) - 1)
-            request_data += ",";
+        // 只添加有效时间的K线
+        if(rates[i].time > 0)
+        {
+            request_data += "{\"time\":" + IntegerToString(rates[i].time) + ",";
+            request_data += "\"open\":" + DoubleToString(rates[i].open, 5) + ",";
+            request_data += "\"high\":" + DoubleToString(rates[i].high, 5) + ",";
+            request_data += "\"low\":" + DoubleToString(rates[i].low, 5) + ",";
+            request_data += "\"close\":" + DoubleToString(rates[i].close, 5) + ",";
+            request_data += "\"tick_volume\":" + IntegerToString(rates[i].tick_volume) + "}";
+            
+            if(i < max_bars - 1 && (i + 1) < ArraySize(rates) && rates[i + 1].time > 0)
+                request_data += ",";
+        }
     }
     
     request_data += "]}";
+    
+    // 验证JSON格式
+    if(EnableLogging)
+    {
+        Print("构建的JSON长度: ", StringLen(request_data));
+        Print("JSON开头: ", StringSubstr(request_data, 0, 300));
+        Print("JSON结尾: ", StringSubstr(request_data, StringLen(request_data)-100, 100));
+    }
     
     // 发送HTTP请求
     string response = SendHTTPRequest(PythonServerURL + "/get_signal", request_data);
@@ -483,30 +635,7 @@ string SendHTTPRequest(string url, string data)
     if(error != 0)
     {
         if(EnableLogging)
-            PrintFormat("WebRequest失败: 错误代码=%d, 错误描述=%s", error, WebRequestLastError());
-        
-        // 错误处理：根据不同错误类型进行不同处理
-        switch(error)
-        {
-            case 400:
-                Print("WebRequest: 请求参数错误");
-                break;
-            case 401:
-                Print("WebRequest: 未授权访问");
-                break;
-            case 403:
-                Print("WebRequest: 禁止访问");
-                break;
-            case 404:
-                Print("WebRequest: 请求的资源不存在");
-                break;
-            case 500:
-                Print("WebRequest: 服务器内部错误");
-                break;
-            default:
-                Print("WebRequest: 网络请求失败");
-                break;
-        }
+            PrintFormat("WebRequest失败: 错误代码=%d, 错误描述=%s", error, GetWebRequestErrorDescription(error));
         
         return "";
     }
@@ -520,7 +649,8 @@ string SendHTTPRequest(string url, string data)
     }
     
     // 将uchar数组转换为字符串
-    if(CharArrayToString(response_data, 0, WHOLE_ARRAY, result) <= 0)
+    result = CharArrayToString(response_data);
+    if(result == "")
     {
         if(EnableLogging)
             Print("WebRequest: 响应数据转换失败");
@@ -538,7 +668,7 @@ string ParseJSON(string json, string key)
     string result = "none";
     
     // 构建搜索模式
-    string pattern = "\"" + key + ":\"";
+    string pattern = "\"" + key + "\":\"";
     int start_pos = StringFind(json, pattern, 0);
     
     if(start_pos != -1)
@@ -563,7 +693,7 @@ int ParseJSONInt(string json, string key)
     int result = 0;
     
     // 构建搜索模式
-    string pattern = "\"" + key + ":";
+    string pattern = "\"" + key + "\":";
     int start_pos = StringFind(json, pattern, 0);
     
     if(start_pos != -1)
@@ -576,7 +706,7 @@ int ParseJSONInt(string json, string key)
         if(value_end != -1)
         {
             string value_str = StringSubstr(json, value_start, value_end - value_start);
-            result = (int)StrToDouble(value_str);
+            result = (int)StringToInteger(value_str);
         }
     }
     
@@ -610,7 +740,7 @@ void ProcessSignal(string signal)
     {
         SignalConfirmCount = 1;
         LastSignal = signal;
-        LastSignalTime = TimeCurrent();
+        LastSignalTime = (int)TimeCurrent();
     }
     
     // 等待信号确认
@@ -627,14 +757,14 @@ void ProcessSignal(string signal)
     bool has_short = false;
     
     // 获取所有持仓
-    ulong position_tickets[];
-    int count = PositionsGetTicketList(position_tickets);
+    int positions_total = PositionsTotal();
     
-    for(int i = 0; i < count; i++)
+    for(int i = positions_total - 1; i >= 0; i--)
     {
-        if(PositionSelect(position_tickets[i]))
+        if(PositionGetSymbol(i) == TradingSymbol)
         {
-            if(PositionGetString(POSITION_SYMBOL) == SymbolName && PositionGetInteger(POSITION_MAGIC) == MagicNumber)
+            ulong ticket = PositionGetTicket(i);
+            if(PositionGetInteger(POSITION_MAGIC) == MagicNumber)
             {
                 if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
                     has_long = true;
@@ -719,7 +849,7 @@ bool ExecuteOrder(ENUM_ORDER_TYPE order_type)
     
     // 设置订单参数
     request.action = TRADE_ACTION_DEAL;
-    request.symbol = SymbolName;
+    request.symbol = TradingSymbol;
     request.volume = lot_size;
     request.type = order_type;
     request.deviation = 3;  // 3点滑点
@@ -729,8 +859,8 @@ bool ExecuteOrder(ENUM_ORDER_TYPE order_type)
     request.type_time = ORDER_TIME_GTC;       // 直至取消
     
     // 获取当前价格
-    double bid_price = SymbolInfoDouble(SymbolName, SYMBOL_BID);
-    double ask_price = SymbolInfoDouble(SymbolName, SYMBOL_ASK);
+    double bid_price = SymbolInfoDouble(TradingSymbol, SYMBOL_BID);
+    double ask_price = SymbolInfoDouble(TradingSymbol, SYMBOL_ASK);
     
     if(bid_price == 0.0 || ask_price == 0.0)
     {
@@ -742,11 +872,20 @@ bool ExecuteOrder(ENUM_ORDER_TYPE order_type)
     request.price = order_type == ORDER_TYPE_BUY ? ask_price : bid_price;
     
     // 计算ATR用于SL/TP
-    double atr = iATR(SymbolName, Timeframe, 14);
-    if(atr > 0)
+    int atr_handle = iATR(TradingSymbol, TradingTimeframe, 14);
+    double atr[1];
+    if(CopyBuffer(atr_handle, 0, 0, 1, atr) > 0 && atr[0] > 0)
     {
-        request.sl = order_type == ORDER_TYPE_BUY ? request.price - atr * 2 : request.price + atr * 2;
-        request.tp = order_type == ORDER_TYPE_BUY ? request.price + atr * 3 : request.price - atr * 3;
+        if(order_type == ORDER_TYPE_BUY)
+        {
+            request.sl = request.price - atr[0] * 2;
+            request.tp = request.price + atr[0] * 3;
+        }
+        else
+        {
+            request.sl = request.price + atr[0] * 2;
+            request.tp = request.price - atr[0] * 3;
+        }
         
         // 检查SL/TP是否有效
         if(order_type == ORDER_TYPE_BUY)
@@ -772,6 +911,11 @@ bool ExecuteOrder(ENUM_ORDER_TYPE order_type)
             }
         }
     }
+    else
+    {
+        request.sl = 0.0;
+        request.tp = 0.0;
+    }
     
     // 发送订单
     if(!OrderSend(request, result))
@@ -779,7 +923,7 @@ bool ExecuteOrder(ENUM_ORDER_TYPE order_type)
         int error_code = GetLastError();
         if(EnableLogging)
             PrintFormat("OrderSend失败: 错误代码=%d, 错误描述=%s, 结果=%d, 评论=%s", 
-                      error_code, ErrorDescription(error_code), result.retcode, result.comment);
+                      error_code, GetErrorDescription(error_code), result.retcode, result.comment);
         return false;
     }
     
@@ -803,37 +947,56 @@ bool ExecuteOrder(ENUM_ORDER_TYPE order_type)
 //+------------------------------------------------------------------+
 double CalculateLotSize()
 {
-    // 计算每手的价值
-    double tick_value = SymbolInfoDouble(SymbolName, SYMBOL_TRADE_TICK_VALUE);
-    double tick_size = SymbolInfoDouble(SymbolName, SYMBOL_TRADE_TICK_SIZE);
+    // 获取交易品种信息
+    double tick_value = SymbolInfoDouble(TradingSymbol, SYMBOL_TRADE_TICK_VALUE);
+    double tick_size = SymbolInfoDouble(TradingSymbol, SYMBOL_TRADE_TICK_SIZE);
+    
+    if(tick_size == 0.0)
+    {
+        if(EnableLogging)
+            Print("无法获取有效的tick size");
+        return 0.0;
+    }
     
     // 计算风险金额
     double risk_amount = AccountBalance * (RiskPerTrade / 100.0);
     
     // 计算ATR
-    double atr = iATR(SymbolName, Timeframe, 14);
-    if(atr <= 0)
-        atr = 0.01; // 默认ATR值
+    int atr_handle = iATR(TradingSymbol, TradingTimeframe, 14);
+    double atr[1];
+    if(CopyBuffer(atr_handle, 0, 0, 1, atr) > 0 && atr[0] > 0)
+    {
+        // 计算止损点数
+        double stop_loss_points = atr[0] / tick_size;
+        
+        // 计算每手风险
+        double risk_per_lot = stop_loss_points * tick_value;
+        
+        if(risk_per_lot <= 0.0)
+        {
+            if(EnableLogging)
+                Print("风险计算错误: risk_per_lot <= 0");
+            return 0.0;
+        }
+        
+        // 计算仓位大小
+        double lot_size = risk_amount / risk_per_lot;
+        
+        // 获取最小和最大仓位
+        double min_lot = SymbolInfoDouble(TradingSymbol, SYMBOL_VOLUME_MIN);
+        double max_lot = SymbolInfoDouble(TradingSymbol, SYMBOL_VOLUME_MAX);
+        double lot_step = SymbolInfoDouble(TradingSymbol, SYMBOL_VOLUME_STEP);
+        
+        // 调整仓位大小
+        lot_size = MathMax(min_lot, MathMin(max_lot, lot_size));
+        lot_size = lot_step * MathRound(lot_size / lot_step);
+        
+        return lot_size;
+    }
     
-    // 计算止损点数
-    double stop_loss_points = atr / tick_size;
-    
-    // 计算每手风险
-    double risk_per_lot = stop_loss_points * tick_value;
-    
-    // 计算仓位大小
-    double lot_size = risk_amount / risk_per_lot;
-    
-    // 获取最小和最大仓位
-    double min_lot = SymbolInfoDouble(SymbolName, SYMBOL_VOLUME_MIN);
-    double max_lot = SymbolInfoDouble(SymbolName, SYMBOL_VOLUME_MAX);
-    double lot_step = SymbolInfoDouble(SymbolName, SYMBOL_VOLUME_STEP);
-    
-    // 调整仓位大小
-    lot_size = MathMax(min_lot, MathMin(max_lot, lot_size));
-    lot_size = lot_step * MathRound(lot_size / lot_step);
-    
-    return lot_size;
+    if(EnableLogging)
+        Print("无法计算ATR，使用默认仓位");
+    return SymbolInfoDouble(TradingSymbol, SYMBOL_VOLUME_MIN);
 }
 
 //+------------------------------------------------------------------+
@@ -842,28 +1005,26 @@ double CalculateLotSize()
 void CloseAllLongPositions()
 {
     // 获取所有持仓
-    ulong position_tickets[];
-    int count = PositionsGetTicketList(position_tickets);
+    int positions_total = PositionsTotal();
     
-    for(int i = count - 1; i >= 0; i--)
+    for(int i = positions_total - 1; i >= 0; i--)
     {
-        if(PositionSelect(position_tickets[i]))
+        if(PositionGetSymbol(i) == TradingSymbol)
         {
-            if(PositionGetString(POSITION_SYMBOL) == SymbolName && PositionGetInteger(POSITION_MAGIC) == MagicNumber)
+            ulong ticket = PositionGetTicket(i);
+            if(PositionGetInteger(POSITION_MAGIC) == MagicNumber && PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
             {
-                if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
+                double volume = PositionGetDouble(POSITION_VOLUME);
+                if(ClosePosition(ticket, volume))
                 {
-                    double volume = PositionGetDouble(POSITION_VOLUME);
-                    if(ClosePosition((int)position_tickets[i], volume))
-                    {
-                        if(EnableLogging)
-                            Print("平仓成功，订单号: ", (string)position_tickets[i], ", 类型: 多头");
-                    }
-                    else
-                    {
-                        if(EnableLogging)
-                            Print("平仓失败，订单号: ", (string)position_tickets[i], ", 错误代码: ", GetLastError());
-                    }
+                    if(EnableLogging)
+                        Print("平仓成功，订单号: ", ticket, ", 类型: 多头");
+                }
+                else
+                {
+                    int error_code = GetLastError();
+                    if(EnableLogging)
+                        Print("平仓失败，订单号: ", ticket, ", 错误代码: ", error_code, " - ", GetErrorDescription(error_code));
                 }
             }
         }
@@ -876,28 +1037,26 @@ void CloseAllLongPositions()
 void CloseAllShortPositions()
 {
     // 获取所有持仓
-    ulong position_tickets[];
-    int count = PositionsGetTicketList(position_tickets);
+    int positions_total = PositionsTotal();
     
-    for(int i = count - 1; i >= 0; i--)
+    for(int i = positions_total - 1; i >= 0; i--)
     {
-        if(PositionSelect(position_tickets[i]))
+        if(PositionGetSymbol(i) == TradingSymbol)
         {
-            if(PositionGetString(POSITION_SYMBOL) == SymbolName && PositionGetInteger(POSITION_MAGIC) == MagicNumber)
+            ulong ticket = PositionGetTicket(i);
+            if(PositionGetInteger(POSITION_MAGIC) == MagicNumber && PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL)
             {
-                if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL)
+                double volume = PositionGetDouble(POSITION_VOLUME);
+                if(ClosePosition(ticket, volume))
                 {
-                    double volume = PositionGetDouble(POSITION_VOLUME);
-                    if(ClosePosition((int)position_tickets[i], volume))
-                    {
-                        if(EnableLogging)
-                            Print("平仓成功，订单号: ", (string)position_tickets[i], ", 类型: 空头");
-                    }
-                    else
-                    {
-                        if(EnableLogging)
-                            Print("平仓失败，订单号: ", (string)position_tickets[i], ", 错误代码: ", GetLastError());
-                    }
+                    if(EnableLogging)
+                        Print("平仓成功，订单号: ", ticket, ", 类型: 空头");
+                }
+                else
+                {
+                    int error_code = GetLastError();
+                    if(EnableLogging)
+                        Print("平仓失败，订单号: ", ticket, ", 错误代码: ", error_code, " - ", GetErrorDescription(error_code));
                 }
             }
         }
@@ -916,10 +1075,10 @@ void CloseAllPositions()
 //+------------------------------------------------------------------+
 //| 平仓单个仓位                                                     |
 //+------------------------------------------------------------------+
-bool ClosePosition(int ticket, double volume)
+bool ClosePosition(ulong ticket, double volume)
 {
     // 检查仓位是否存在
-    if(!PositionSelect(ticket))
+    if(!PositionSelectByTicket(ticket))
     {
         if(EnableLogging)
             PrintFormat("无法找到仓位 #%d", ticket);
@@ -981,7 +1140,7 @@ bool ClosePosition(int ticket, double volume)
     {
         int error_code = GetLastError();
         if(EnableLogging)
-            PrintFormat("平仓订单发送失败: 错误代码=%d, 错误描述=%s", error_code, ErrorDescription(error_code));
+            PrintFormat("平仓订单发送失败: 错误代码=%d, 错误描述=%s", error_code, GetErrorDescription(error_code));
         return false;
     }
     
@@ -1006,50 +1165,50 @@ bool ClosePosition(int ticket, double volume)
 void DeleteAllPendingOrders()
 {
     // 获取所有订单
-    ulong order_tickets[];
-    int count = OrdersGetTicketList(order_tickets);
+    int orders_total = OrdersTotal();
     
-    if(count <= 0)
+    if(orders_total <= 0)
     {
         if(EnableLogging)
             Print("没有找到挂单");
         return;
     }
     
-    for(int i = count - 1; i >= 0; i--)
+    for(int i = orders_total - 1; i >= 0; i--)
     {
-        if(OrderSelect(order_tickets[i], SELECT_BY_TICKET))
+        ulong order_ticket = OrderGetTicket(i);
+        string order_symbol = OrderGetString(ORDER_SYMBOL);
+        long order_magic = OrderGetInteger(ORDER_MAGIC);
+        ENUM_ORDER_TYPE order_type = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+        
+        // 检查订单是否属于当前EA
+        if(order_symbol == TradingSymbol && order_magic == MagicNumber)
         {
-            // 检查订单是否属于当前EA
-            if(OrderGetString(ORDER_SYMBOL) == SymbolName && OrderGetInteger(ORDER_MAGIC) == MagicNumber)
+            // 检查订单类型是否为挂单
+            if(order_type == ORDER_TYPE_BUY_LIMIT || order_type == ORDER_TYPE_SELL_LIMIT ||
+               order_type == ORDER_TYPE_BUY_STOP || order_type == ORDER_TYPE_SELL_STOP ||
+               order_type == ORDER_TYPE_BUY_STOP_LIMIT || order_type == ORDER_TYPE_SELL_STOP_LIMIT)
             {
-                // 检查订单类型是否为挂单
-                ENUM_ORDER_TYPE order_type = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
-                if(order_type == ORDER_TYPE_BUY_LIMIT || order_type == ORDER_TYPE_SELL_LIMIT ||
-                   order_type == ORDER_TYPE_BUY_STOP || order_type == ORDER_TYPE_SELL_STOP ||
-                   order_type == ORDER_TYPE_BUY_STOP_LIMIT || order_type == ORDER_TYPE_SELL_STOP_LIMIT)
+                MqlTradeRequest request = {};
+                MqlTradeResult result = {};
+                
+                request.action = TRADE_ACTION_REMOVE;
+                request.order = order_ticket;
+                request.magic = MagicNumber;
+                
+                if(OrderSend(request, result))
                 {
-                    if(OrderDelete(order_tickets[i]))
-                    {
-                        if(EnableLogging)
-                            PrintFormat("取消挂单成功，订单号: %d, 类型: %s", order_tickets[i], EnumToString(order_type));
-                    }
-                    else
-                    {
-                        int error_code = GetLastError();
-                        if(EnableLogging)
-                            PrintFormat("取消挂单失败，订单号: %d, 错误代码: %d, 错误描述: %s", 
-                                      order_tickets[i], error_code, ErrorDescription(error_code));
-                    }
+                    if(EnableLogging)
+                        PrintFormat("取消挂单成功，订单号: %d, 类型: %s", order_ticket, EnumToString(order_type));
+                }
+                else
+                {
+                    int error_code = GetLastError();
+                    if(EnableLogging)
+                        PrintFormat("取消挂单失败，订单号: %d, 错误代码: %d, 错误描述: %s", 
+                                  order_ticket, error_code, GetErrorDescription(error_code));
                 }
             }
-        }
-        else
-        {
-            int error_code = GetLastError();
-            if(EnableLogging)
-                PrintFormat("无法选择订单 #%d, 错误代码: %d, 错误描述: %s", 
-                          order_tickets[i], error_code, ErrorDescription(error_code));
         }
     }
 }
@@ -1065,7 +1224,9 @@ void OnTimer()
 //+------------------------------------------------------------------+
 //| 订单变化事件                                                     |
 //+------------------------------------------------------------------+
-void OnTrade()
+void OnTradeTransaction(const MqlTradeTransaction& trans,
+                        const MqlTradeRequest& request,
+                        const MqlTradeResult& result)
 {
     // 可以在这里处理订单变化事件
     if(EnableLogging)
