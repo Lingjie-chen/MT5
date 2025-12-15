@@ -49,7 +49,8 @@ class DeepSeekClient:
         
         for retry in range(max_retries):
             try:
-                response = requests.post(url, headers=self.headers, json=payload, timeout=15)
+                # 增加超时时间到30秒，提高在网络不稳定情况下的成功率
+                response = requests.post(url, headers=self.headers, json=payload, timeout=30)
                 
                 # 详细记录响应状态
                 logger.debug(f"API响应状态码: {response.status_code}, 模型: {self.model}, 重试: {retry+1}/{max_retries}")
@@ -97,8 +98,8 @@ class DeepSeekClient:
                 return None
             
             if retry < max_retries - 1:
-                # 指数退避重试，ValueCell推荐的重试策略
-                retry_delay = min(2 ** retry, 16)  # 最大16秒
+                # 线性延迟重试，提高网络不稳定情况下的成功率
+                retry_delay = min(5 * (retry + 1), 30)  # 每次增加5秒，最大30秒
                 logger.info(f"等待 {retry_delay} 秒后重试...")
                 time.sleep(retry_delay)
             else:

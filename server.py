@@ -499,7 +499,7 @@ def get_signal():
 if __name__ == '__main__':
     # 配置服务器
     host = os.getenv("SERVER_HOST", "0.0.0.0")  # 监听所有网络接口
-    port = int(os.getenv("SERVER_PORT", 5001))
+    port = int(os.getenv("SERVER_PORT", 5002))
     
     print("服务器配置:")
     print(f"  监听地址: {host}")
