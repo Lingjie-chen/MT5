@@ -3,10 +3,26 @@ venv/
 .env
 *.pyc
 __pycache__/
+.pytest_cache/
+.coverage
 
 # 日志文件
 *.log
 logs/
+
+# 数据文件和缓存
+*.csv
+*.json
+*.pkl
+*.h5
+*.feather
+cache/
+data/
+
+# 可视化图表文件
+figures/
+charts/
+reports/
 
 # 回测报告
 backtest_reports/
@@ -24,3 +40,13 @@ backtest_reports/
 # 操作系统文件
 .DS_Store
 Thumbs.db
+
+# 临时文件
+*.tmp
+*.temp
+
+# 机器学习模型文件
+*.joblib
+*.pth
+*.hdf5
+models/

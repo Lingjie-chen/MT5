@@ -202,6 +202,43 @@ class MT5DataProcessor:
             X.append(df[features].iloc[i-lookback_period:i].values.flatten())
         return np.array(X)
 
+    def convert_to_dataframe(self, rates_data: list) -> pd.DataFrame:
+        """将MT5发送的rates数据转换为DataFrame
+        
+        Args:
+            rates_data (list): MT5发送的K线数据列表
+            
+        Returns:
+            pd.DataFrame: 包含OHLCV数据的DataFrame
+        """
+        if not rates_data:
+            return pd.DataFrame()
+        
+        # 转换为DataFrame
+        df = pd.DataFrame(rates_data)
+        
+        # 确保必要的列存在
+        required_columns = ['time', 'open', 'high', 'low', 'close', 'tick_volume']
+        for col in required_columns:
+            if col not in df.columns:
+                # 如果缺少必要列，尝试使用默认值
+                if col == 'tick_volume':
+                    df[col] = 1000  # 默认成交量
+                else:
+                    df[col] = 1900  # 默认价格值
+        
+        # 转换时间戳为datetime
+        df['time'] = pd.to_datetime(df['time'], unit='s')
+        df.set_index('time', inplace=True)
+        
+        # 重命名列以保持一致性
+        df.rename(columns={'tick_volume': 'volume'}, inplace=True)
+        
+        # 确保数据按时间排序
+        df.sort_index(inplace=True)
+        
+        return df
+
     def close(self):
         """Close MT5 connection if open"""
         if self.initialized and mt5 is not None:
