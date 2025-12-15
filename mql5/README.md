@@ -40,8 +40,8 @@ MT5的WebRequest函数需要将URL添加到白名单才能正常工作。
 2. 选择 "EA交易" 标签页
 3. 点击 "允许WebRequest用于以下URL"
 4. 添加以下URL：
-   - `http://localhost:5001`
-   - `http://127.0.0.1:5001`
+   - `http://localhost:5002`
+   - `http://127.0.0.1:5002`
 5. 点击 "确定" 保存设置
 
 ### 3.2 在MT5终端中启用EA交易
@@ -64,7 +64,7 @@ MT5的WebRequest函数需要将URL添加到白名单才能正常工作。
    - SymbolName: 交易品种（如 "GOLD" 或 "XAUUSD"）
    - Timeframe: 交易周期（如 PERIOD_H1）
    - RiskPerTrade: 每笔交易风险百分比
-   - PythonServerURL: Python服务URL（默认 "http://localhost:5001"）
+   - PythonServerURL: Python服务URL（默认 "http://localhost:5002"）
    - MagicNumber: 魔术数字
    - EnableLogging: 是否启用日志记录
 5. 点击 "确定" 运行EA
@@ -86,7 +86,7 @@ MT5的WebRequest函数需要将URL添加到白名单才能正常工作。
 **解决方案**：
 1. 确保Python服务已启动
 2. 检查PythonServerURL参数是否正确
-3. 尝试使用IP地址 `http://127.0.0.1:5001` 替代 `http://localhost:5001`
+3. 尝试使用IP地址 `http://127.0.0.1:5002` 替代 `http://localhost:5002`
 
 #### 错误：OrderSend失败，错误代码 10013
 **原因**：无效的价格或超出允许的偏差

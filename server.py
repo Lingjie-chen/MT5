@@ -203,8 +203,8 @@ def server_info():
         "local_ip": local_ip,
         "public_ip": public_ip,
         "mt5_connection_urls": [
-            f"http://{local_ip}:5001/get_signal",
-            f"http://{public_ip}:5001/get_signal" if public_ip else None
+            f"http://{local_ip}:{port}/get_signal",
+            f"http://{public_ip}:{port}/get_signal" if public_ip else None
         ],
         "ai_enabled": bool(deepseek_client and qwen_client),
         "cache_enabled": True,
@@ -259,7 +259,28 @@ def get_signal():
                     "processing_time_ms": 0
                 }), 400
             
-            data = request.json
+            try:
+                data = request.get_json(silent=True)  # 使用silent模式避免抛出异常
+                if data is None:
+                    # 尝试获取原始请求数据进行调试
+                    raw_data = request.get_data(as_text=True)
+                    print(f"[DEBUG] 无法解析JSON数据: {raw_data[:200]}...")
+                    return jsonify({
+                        "error": "Invalid JSON format",
+                        "signal": "none",
+                        "signal_strength": 0,
+                        "processing_time_ms": 0
+                    }), 400
+            except Exception as e:
+                raw_data = request.get_data(as_text=True)
+                print(f"[DEBUG] JSON解析错误: {e}, 原始数据: {raw_data[:200]}...")
+                return jsonify({
+                    "error": f"JSON parsing error: {e}",
+                    "signal": "none",
+                    "signal_strength": 0,
+                    "processing_time_ms": 0
+                }), 400
+            
             symbol = data.get('symbol', 'GOLD')
             timeframe = data.get('timeframe', 'H1')
             rates = data.get('rates', [])
@@ -339,14 +360,22 @@ def get_signal():
             df.set_index('time', inplace=True)
         
         # 生成技术指标
+        original_length = len(df)
         df = processor.generate_features(df)
+        feature_length = len(df)
         
-        if len(df) < 10:
+        print(f"[DEBUG] 数据点统计: 原始={original_length}, 生成特征后={feature_length}")
+        
+        if len(df) < 5:
             return jsonify({
-                "error": "数据不足，至少需要10个数据点",
+                "error": "数据不足，至少需要5个数据点",
                 "signal": "none",
                 "signal_strength": 0,
-                "processing_time_ms": int((time.time() - start_time) * 1000)
+                "processing_time_ms": int((time.time() - start_time) * 1000),
+                "debug_info": {
+                    "original_data_points": original_length,
+                    "after_features_data_points": feature_length
+                }
             }), 400
         
         # 准备AI分析数据

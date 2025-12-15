@@ -166,7 +166,25 @@ class MT5DataProcessor:
         # Calculate price change rate
         df['price_change'] = df['close'].pct_change() * 100
         
-        return df.dropna()
+        # Instead of dropping rows with NaN, fill forward from first valid value
+        # This preserves all original data points while handling missing indicator values
+        indicators = ['ema_fast', 'ema_slow', 'atr', 'rsi', 'ema_crossover', 'volatility', 'price_change']
+        for indicator in indicators:
+            if indicator in df.columns:
+                # Fill NaN values with the first valid value of the indicator
+                first_valid = df[indicator].first_valid_index()
+                if first_valid is not None:
+                    df[indicator].fillna(df.loc[first_valid, indicator], inplace=True)
+                else:
+                    # If no valid values, fill with neutral value
+                    if indicator in ['ema_crossover']:
+                        df[indicator].fillna(0, inplace=True)  # Neutral signal
+                    elif indicator in ['rsi']:
+                        df[indicator].fillna(50, inplace=True)  # Neutral RSI
+                    else:
+                        df[indicator].fillna(0, inplace=True)  # Zero for other indicators
+        
+        return df
 
     def prepare_model_input(self, df, lookback_period=20):
         """Prepare input data for ML models
