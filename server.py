@@ -251,7 +251,15 @@ def get_signal():
             print(f"[GET] 收到请求: symbol={symbol}, timeframe={timeframe}")
         else:
             # 处理POST请求
+            print(f"[POST] 收到请求: {request.remote_addr}")
+            
+            # 记录原始请求头信息
+            if request.headers:
+                print(f"[DEBUG] 请求头: {dict(request.headers)}")
+            
             if not request.is_json:
+                raw_data = request.get_data(as_text=True)
+                print(f"[ERROR] 无效的请求格式，期望JSON但收到: {raw_data[:100]}...")
                 return jsonify({
                     "error": "Request must be JSON",
                     "signal": "none",

@@ -549,47 +549,20 @@ void UpdateMaxDrawdown()
     TotalProfit = CurrentEquity - InitialBalance;
 }
 
-//+------------------------------------------------------------------+
-//| 调用Python服务获取交易信号                                       |
-//+------------------------------------------------------------------+
-string GetAISignal(const MqlRates &rates[])
-{
-    // 如果服务器未连接，返回中性信号
-    if(!ServerConnected)
-    {
-        if(EnableLogging)
-            Print("服务器未连接，返回中性信号");
-        SignalStrength = 50;
-        return "none";
-    }
+//+------------------------------------------------------------------+//| 调用Python服务获取交易信号                                       |//+------------------------------------------------------------------+string GetAISignal(const MqlRates &rates[]){    // 如果服务器未连接，返回中性信号    if(!ServerConnected)    {        if(EnableLogging)            Print("服务器未连接，返回中性信号");        SignalStrength = 50;        return "none";    }
     
-    // 初始化JSON构建
-    string request_data = "{\"symbol\":\"" + TradingSymbol + "\",\"timeframe\":\"" + EnumToString(TradingTimeframe) + "\",\"rates\":[";
+    // 初始化JSON构建    string request_data = "{\"symbol\":\"" + TradingSymbol + "\",\"timeframe\":\"" + EnumToString(TradingTimeframe) + "\",\"rates\":[";
     
-    // 添加最近20根K线数据
-    int max_bars = MathMin(20, ArraySize(rates));
+    // 添加最近20根K线数据    int max_bars = MathMin(20, ArraySize(rates));
     
-    for(int i = 0; i < max_bars; i++)
-    {
-        // 只添加有效时间的K线
-        if(rates[i].time > 0)
-        {
-            request_data += "{\"time\":" + IntegerToString(rates[i].time) + ",";
-            request_data += "\"open\":" + DoubleToString(rates[i].open, _Digits) + ",";
-            request_data += "\"high\":" + DoubleToString(rates[i].high, _Digits) + ",";
-            request_data += "\"low\":" + DoubleToString(rates[i].low, _Digits) + ",";
-            request_data += "\"close\":" + DoubleToString(rates[i].close, _Digits) + ",";
-            request_data += "\"tick_volume\":" + IntegerToString(rates[i].tick_volume) + "}";
-            
-            if(i < max_bars - 1 && (i + 1) < ArraySize(rates) && rates[i + 1].time > 0)
-                request_data += ",";
-        }
-    }
+    for(int i = 0; i < max_bars; i++)    {        // 只添加有效时间的K线        if(rates[i].time > 0)        {            request_data += "{\"time\":" + IntegerToString(rates[i].time) + ",";            request_data += "\"open\":" + DoubleToString(rates[i].open, _Digits) + ",";            request_data += "\"high\":" + DoubleToString(rates[i].high, _Digits) + ",";            request_data += "\"low\":" + DoubleToString(rates[i].low, _Digits) + ",";            request_data += "\"close\":" + DoubleToString(rates[i].close, _Digits) + ",";            request_data += "\"tick_volume\":" + IntegerToString(rates[i].tick_volume) + "}";            
+            if(i < max_bars - 1 && (i + 1) < ArraySize(rates) && rates[i + 1].time > 0)                request_data += ",";        }    }
     
     request_data += "]}";
     
-    // 发送HTTP请求
-    string response = SendHTTPRequest(PythonServerURL + "/get_signal", request_data);
+    // 调试信息：打印请求数据    if(EnableLogging)    {        PrintFormat("发送到Python服务器的数据 (长度: %d): %s...", StringLen(request_data), StringSubstr(request_data, 0, 100));    }
+    
+    // 发送HTTP请求    string response = SendHTTPRequest(PythonServerURL + "/get_signal", request_data);
     
     if(response == "")
     {
