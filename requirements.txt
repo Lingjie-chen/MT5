@@ -1,8 +1,7 @@
-# MetaTrader5库仅支持Windows系统，非Windows系统可以注释掉
-# MetaTrader5
-requests>=2.31.0
-pandas>=2.1.4
-numpy>=1.26.4
-matplotlib>=3.8.2
-Flask>=3.0.2
+flask>=2.3.0
+flask-cors>=4.0.0
+pandas>=2.0.0
+numpy>=1.24.0
 python-dotenv>=1.0.0
+requests>=2.31.0
+ta-lib>=0.4.26  # 技术分析库

@@ -19,8 +19,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from data_processor import MT5DataProcessor
-from deepseek_client import DeepSeekClient
-from qwen_client import QwenClient
+from ai_client_factory import initialize_ai_clients
 from dotenv import load_dotenv
 
 # 加载环境变量
@@ -59,20 +58,15 @@ class AIBacktester:
         self.equity_curve = []
         self.data_processor = MT5DataProcessor()
         
-        # 初始化AI客户端 - 使用硅基流动API服务
-        siliconflow_api_key = os.getenv("SILICONFLOW_API_KEY", "your_siliconflow_api_key")
-        deepseek_model = os.getenv("DEEPSEEK_MODEL", "deepseek-ai/DeepSeek-V3.1-Terminus")
-        qwen_model = os.getenv("QWEN_MODEL", "Qwen/Qwen3-VL-235B-A22B-Thinking")
+        # 初始化AI客户端 - 使用硅基流动API服务，基于ValueCell的模型工厂模式
+        ai_clients = initialize_ai_clients()
         
-        self.deepseek_client = DeepSeekClient(
-            api_key=siliconflow_api_key,
-            model=deepseek_model
-        )
+        self.deepseek_client = ai_clients.get('deepseek')
+        self.qwen_client = ai_clients.get('qwen')
         
-        self.qwen_client = QwenClient(
-            api_key=siliconflow_api_key,
-            model=qwen_model
-        )
+        # 验证客户端初始化成功
+        if not self.deepseek_client or not self.qwen_client:
+            logger.error("AI客户端初始化失败，使用模拟数据进行回测")
         
         logger.info(f"AIBacktester初始化完成，初始资金: {initial_capital}, 每笔风险: {risk_per_trade}%")
     
@@ -105,6 +99,11 @@ class AIBacktester:
             str: 交易信号 (buy, sell, none)
             int: 信号强度 (0-100)
         """
+        # 检查AI客户端是否初始化成功
+        if not self.deepseek_client or not self.qwen_client:
+            logger.error("AI客户端未初始化，无法生成交易信号")
+            return "none", 50
+        
         # 生成特征
         df_with_features = self.data_processor.generate_features(df)
         
@@ -114,21 +113,25 @@ class AIBacktester:
         df_tail_reset['time'] = df_tail_reset['time'].astype(str)
         model_input = df_tail_reset.to_dict(orient='records')
         
-        # 使用DeepSeek分析市场结构
-        deepseek_analysis = self.deepseek_client.analyze_market_structure(model_input)
-        
-        # 使用Qwen3优化策略
-        optimized_strategy = self.qwen_client.optimize_strategy_logic(deepseek_analysis, model_input)
-        
-        # 生成信号
-        signal = "none"
-        if optimized_strategy["signal_strength"] > 70:
-            if df_with_features['ema_fast'].iloc[-1] > df_with_features['ema_slow'].iloc[-1]:
-                signal = "buy"
-            else:
-                signal = "sell"
-        
-        return signal, optimized_strategy["signal_strength"]
+        try:
+            # 使用DeepSeek分析市场结构
+            deepseek_analysis = self.deepseek_client.analyze_market_structure(model_input)
+            
+            # 使用Qwen3优化策略
+            optimized_strategy = self.qwen_client.optimize_strategy_logic(deepseek_analysis, model_input)
+            
+            # 生成信号
+            signal = "none"
+            if optimized_strategy["signal_strength"] > 70:
+                if df_with_features['ema_fast'].iloc[-1] > df_with_features['ema_slow'].iloc[-1]:
+                    signal = "buy"
+                else:
+                    signal = "sell"
+            
+            return signal, optimized_strategy["signal_strength"]
+        except Exception as e:
+            logger.error(f"AI信号生成失败: {e}")
+            return "none", 50
     
     def calculate_position_size(self, atr):
         """

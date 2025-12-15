@@ -8,13 +8,6 @@
 #property version   "1.00"
 
 //+------------------------------------------------------------------+
-//| MT5 WebRequest URL白名单提示                                     |
-//| 请在MetaEditor中添加以下URL到WebRequest白名单：                   |
-//| http://localhost:5001                                            |
-//| http://127.0.0.1:5001                                            |
-//+------------------------------------------------------------------+
-
-//+------------------------------------------------------------------+
 //| EA输入参数                                                       |
 //+------------------------------------------------------------------+
 input string InputSymbol = "";                    // 交易品种（留空则使用当前图表品种）
@@ -27,13 +20,18 @@ input double MaxTotalRisk = 3.0;                  // 总风险百分比 (0-15)
 input int MaxPositions = 1;                       // 最大持仓数量
 input int MaxConsecutiveLosses = 3;               // 最大连续亏损次数
 
+// 服务器连接参数
+input string ServerIP = "198.18.0.1";          // 服务器IP地址（重要！）
+input int ServerPort = 5001;                      // 服务器端口
+input bool UseAutoDetectIP = True;               // 启用自动检测服务器IP
+input bool EnableSSL = True;                    // 启用SSL/HTTPS（如果服务器支持）
+
 // EA设置参数
-input string PythonServerURL = "http://localhost:5001"; // Python服务URL
 input int MagicNumber = 123456;                   // 魔术数字
 input bool EnableLogging = true;                  // 启用日志记录
 
 // 信号过滤参数
-input int MinSignalStrength = 70;                 // 最小信号强度
+input int MinSignalStrength = 60;                 // 最小信号强度
 input int SignalConfirmations = 1;                // 信号确认次数
 
 // 性能优化参数
@@ -46,6 +44,9 @@ input int NetworkTimeout = 5000;                  // 网络超时时间(毫秒)
 string TradingSymbol;                             // 实际使用的交易品种
 ENUM_TIMEFRAMES TradingTimeframe;                 // 实际使用的交易周期
 bool EA_Running = false;                          // EA运行状态
+string PythonServerURL;                           // Python服务器URL（动态生成）
+
+// 账户管理变量
 double AccountBalance = 0.0;                      // 账户余额
 double DailyLoss = 0.0;                           // 当日亏损
 MqlDateTime LastTradeDay;                         // 最后交易日期
@@ -56,11 +57,10 @@ int ConsecutiveLosses = 0;                        // 连续亏损次数
 int TotalTrades = 0;                              // 总交易次数
 int WinningTrades = 0;                            // 盈利交易次数
 int LosingTrades = 0;                             // 亏损交易次数
-
 double TotalProfit = 0.0;                         // 总盈利
 double MaxDrawdown = 0.0;                         // 最大回撤
-
 double InitialBalance = 0.0;                      // 初始账户余额
+double CurrentEquity = 0.0;                       // 当前权益
 
 // 信号处理变量
 string LastSignal = "none";                       // 上一次信号
@@ -71,124 +71,172 @@ int LastSignalTime = 0;                           // 上一次信号时间
 int CurrentPositions = 0;                         // 当前持仓数量
 double TotalRiskExposure = 0.0;                   // 总风险暴露
 
-double CurrentEquity = 0.0;                       // 当前权益
-
 // 缓存设置
 int CACHE_EXPIRY = 300;                           // 信号缓存时间(秒)
+
+//+------------------------------------------------------------------+
+//| 服务器IP工具函数                                                 |
+//+------------------------------------------------------------------+
+
+// 获取本地可能的IP地址列表
+string GetLocalIPAddresses()
+{
+    string ipList = "";
+    
+    // 尝试可能的局域网IP段
+    string ipPrefixes[] = {
+        "192.168.1.",    // 最常见的家庭网络
+        "192.168.0.",    // 第二常见的家庭网络
+        "10.0.0.",       // 公司网络
+        "172.16.0.",     // 大型网络
+        "169.254.",      // 自动配置IP
+        "127.0.0.1"      // 本地回环
+    };
+    
+    for(int i = 0; i < ArraySize(ipPrefixes); i++)
+    {
+        ipList += ipPrefixes[i] + "XXX"; // 占位符，实际使用时需要测试
+        if(i < ArraySize(ipPrefixes) - 1)
+            ipList += ", ";
+    }
+    
+    return ipList;
+}
+
+// 构建服务器URL
+string BuildServerURL()
+{
+    string protocol = EnableSSL ? "https://" : "http://";
+    string url = protocol + ServerIP + ":" + IntegerToString(ServerPort);
+    
+    if(EnableLogging)
+        PrintFormat("服务器URL构建为: %s", url);
+    
+    return url;
+}
 
 //+------------------------------------------------------------------+
 //| 错误代码转字符串                                                  |
 //+------------------------------------------------------------------+
 string GetErrorDescription(int error_code)
 {
-    switch(error_code)
+    // 错误代码映射表
+    string errors[][2] = {
+        {"0", "No error"},
+        {"1", "No error returned, but result is unknown"},
+        {"2", "Common error"},
+        {"3", "Invalid trade parameters"},
+        {"4", "Trade server is busy"},
+        {"5", "Old version of the client terminal"},
+        {"6", "No connection with trade server"},
+        {"7", "Not enough rights"},
+        {"8", "Too frequent requests"},
+        {"9", "Malfunctional trade operation"},
+        {"64", "Account disabled"},
+        {"65", "Invalid account"},
+        {"128", "Trade timeout"},
+        {"129", "Invalid price"},
+        {"130", "Invalid stops"},
+        {"131", "Invalid trade volume"},
+        {"132", "Market is closed"},
+        {"133", "Trade is disabled"},
+        {"134", "Not enough money"},
+        {"135", "Price changed"},
+        {"136", "Off quotes"},
+        {"137", "Broker is busy"},
+        {"138", "Requote"},
+        {"139", "Order is locked"},
+        {"140", "Long positions only allowed"},
+        {"141", "Too many requests"},
+        {"145", "Modification denied because order is too close to market"},
+        {"146", "Trade context is busy"},
+        {"147", "Expirations are denied by broker"},
+        {"148", "Too many open and pending orders"},
+        {"149", "Hedging is prohibited"},
+        {"150", "Prohibit closing by opposite"},
+        {"4000", "No error"},
+        {"4001", "Wrong function pointer"},
+        {"4002", "Array index is out of range"},
+        {"4003", "No memory for function call stack"},
+        {"4004", "Recursive stack overflow"},
+        {"4005", "Not enough stack for parameter"},
+        {"4006", "No memory for parameter string"},
+        {"4007", "No memory for temp string"},
+        {"4008", "Not initialized string"},
+        {"4009", "Not initialized string in array"},
+        {"4010", "No memory for array string"},
+        {"4011", "Too long string"},
+        {"4012", "Remainder from zero divide"},
+        {"4013", "Zero divide"},
+        {"4014", "Unknown command"},
+        {"4015", "Wrong jump (never generated error)"},
+        {"4016", "Not initialized array"},
+        {"4017", "DLL calls are not allowed"},
+        {"4018", "Cannot load library"},
+        {"4019", "Cannot call function"},
+        {"4020", "Expert function calls are not allowed"},
+        {"4021", "Not enough memory for temp string returned from function"},
+        {"4022", "System is busy (never generated error)"},
+        {"4050", "Invalid function parameters count"},
+        {"4051", "Invalid function parameter value"},
+        {"4052", "String function internal error"},
+        {"4053", "Some array error"},
+        {"4054", "Incorrect series array using"},
+        {"4055", "Custom indicator error"},
+        {"4056", "Arrays are incompatible"},
+        {"4057", "Global variables processing error"},
+        {"4058", "Global variable not found"},
+        {"4059", "Function is not allowed in testing mode"},
+        {"4060", "Function is not confirmed"},
+        {"4061", "Send mail error"},
+        {"4062", "String parameter expected"},
+        {"4063", "Integer parameter expected"},
+        {"4064", "Double parameter expected"},
+        {"4065", "Array as parameter expected"},
+        {"4066", "Requested history data is in update state"},
+        {"4067", "Some error in trade operation"},
+        {"4099", "End of file"},
+        {"4100", "Some file error"},
+        {"4101", "Wrong file name"},
+        {"4102", "Too many opened files"},
+        {"4103", "Cannot open file"},
+        {"4104", "Incompatible access to a file"},
+        {"4105", "No order selected"},
+        {"4106", "Unknown symbol"},
+        {"4107", "Invalid price parameter"},
+        {"4108", "Invalid ticket"},
+        {"4109", "Trade is not allowed"},
+        {"4110", "Longs are not allowed"},
+        {"4111", "Shorts are not allowed"},
+        {"4200", "Object already exists"},
+        {"4201", "Unknown object property"},
+        {"4202", "Object does not exist"},
+        {"4203", "Unknown object type"},
+        {"4204", "No object name"},
+        {"4205", "Object coordinates error"},
+        {"4206", "No specified subwindow"},
+        {"4207", "Some error in object function"},
+        {"4250", "Unknown chart property"},
+        {"4251", "Chart not found"},
+        {"4252", "Chart subwindow not found"},
+        {"4253", "Chart indicator not found"},
+        {"4254", "Symbol select error"},
+        {"5001", "Invalid URL"},
+        {"5002", "Failed to connect"},
+        {"5003", "Timeout"},
+        {"5004", "HTTP request failed"},
+        {"5005", "Failed to read HTTP response"},
+        {"4010", "URL not in the list of allowed URLs"},
+        {"4011", "URL is in the list of blocked URLs"}
+    };
+    
+    for(int i = 0; i < ArraySize(errors); i++)
     {
-        case 0:     return "No error";
-        case 1:     return "No error returned, but result is unknown";
-        case 2:     return "Common error";
-        case 3:     return "Invalid trade parameters";
-        case 4:     return "Trade server is busy";
-        case 5:     return "Old version of the client terminal";
-        case 6:     return "No connection with trade server";
-        case 7:     return "Not enough rights";
-        case 8:     return "Too frequent requests";
-        case 9:     return "Malfunctional trade operation";
-        case 64:    return "Account disabled";
-        case 65:    return "Invalid account";
-        case 128:   return "Trade timeout";
-        case 129:   return "Invalid price";
-        case 130:   return "Invalid stops";
-        case 131:   return "Invalid trade volume";
-        case 132:   return "Market is closed";
-        case 133:   return "Trade is disabled";
-        case 134:   return "Not enough money";
-        case 135:   return "Price changed";
-        case 136:   return "Off quotes";
-        case 137:   return "Broker is busy";
-        case 138:   return "Requote";
-        case 139:   return "Order is locked";
-        case 140:   return "Long positions only allowed";
-        case 141:   return "Too many requests";
-        case 145:   return "Modification denied because order is too close to market";
-        case 146:   return "Trade context is busy";
-        case 147:   return "Expirations are denied by broker";
-        case 148:   return "Too many open and pending orders";
-        case 149:   return "Hedging is prohibited";
-        case 150:   return "Prohibit closing by opposite";
-        case 4000:  return "No error";
-        case 4001:  return "Wrong function pointer";
-        case 4002:  return "Array index is out of range";
-        case 4003:  return "No memory for function call stack";
-        case 4004:  return "Recursive stack overflow";
-        case 4005:  return "Not enough stack for parameter";
-        case 4006:  return "No memory for parameter string";
-        case 4007:  return "No memory for temp string";
-        case 4008:  return "Not initialized string";
-        case 4009:  return "Not initialized string in array";
-        case 4010:  return "No memory for array string";
-        case 4011:  return "Too long string";
-        case 4012:  return "Remainder from zero divide";
-        case 4013:  return "Zero divide";
-        case 4014:  return "Unknown command";
-        case 4015:  return "Wrong jump (never generated error)";
-        case 4016:  return "Not initialized array";
-        case 4017:  return "DLL calls are not allowed";
-        case 4018:  return "Cannot load library";
-        case 4019:  return "Cannot call function";
-        case 4020:  return "Expert function calls are not allowed";
-        case 4021:  return "Not enough memory for temp string returned from function";
-        case 4022:  return "System is busy (never generated error)";
-        case 4050:  return "Invalid function parameters count";
-        case 4051:  return "Invalid function parameter value";
-        case 4052:  return "String function internal error";
-        case 4053:  return "Some array error";
-        case 4054:  return "Incorrect series array using";
-        case 4055:  return "Custom indicator error";
-        case 4056:  return "Arrays are incompatible";
-        case 4057:  return "Global variables processing error";
-        case 4058:  return "Global variable not found";
-        case 4059:  return "Function is not allowed in testing mode";
-        case 4060:  return "Function is not confirmed";
-        case 4061:  return "Send mail error";
-        case 4062:  return "String parameter expected";
-        case 4063:  return "Integer parameter expected";
-        case 4064:  return "Double parameter expected";
-        case 4065:  return "Array as parameter expected";
-        case 4066:  return "Requested history data is in update state";
-        case 4067:  return "Some error in trade operation";
-        case 4099:  return "End of file";
-        case 4100:  return "Some file error";
-        case 4101:  return "Wrong file name";
-        case 4102:  return "Too many opened files";
-        case 4103:  return "Cannot open file";
-        case 4104:  return "Incompatible access to a file";
-        case 4105:  return "No order selected";
-        case 4106:  return "Unknown symbol";
-        case 4107:  return "Invalid price parameter";
-        case 4108:  return "Invalid ticket";
-        case 4109:  return "Trade is not allowed";
-        case 4110:  return "Longs are not allowed";
-        case 4111:  return "Shorts are not allowed";
-        case 4200:  return "Object already exists";
-        case 4201:  return "Unknown object property";
-        case 4202:  return "Object does not exist";
-        case 4203:  return "Unknown object type";
-        case 4204:  return "No object name";
-        case 4205:  return "Object coordinates error";
-        case 4206:  return "No specified subwindow";
-        case 4207:  return "Some error in object function";
-        case 4250:  return "Unknown chart property";
-        case 4251:  return "Chart not found";
-        case 4252:  return "Chart subwindow not found";
-        case 4253:  return "Chart indicator not found";
-        case 4254:  return "Symbol select error";
-        case 5001:  return "Invalid URL";
-        case 5002:  return "Failed to connect";
-        case 5003:  return "Timeout";
-        case 5004:  return "HTTP request failed";
-        case 5005:  return "Failed to read HTTP response";
-        default:    return "Unknown error (" + IntegerToString(error_code) + ")";
+        if(StringToInteger(errors[i][0]) == error_code)
+            return errors[i][1];
     }
+    
+    return "Unknown error (" + IntegerToString(error_code) + ")";
 }
 
 //+------------------------------------------------------------------+
@@ -214,6 +262,9 @@ string GetWebRequestErrorDescription(int error_code)
 //+------------------------------------------------------------------+
 int OnInit()
 {
+    // 构建服务器URL
+    PythonServerURL = BuildServerURL();
+    
     // 设置实际使用的交易品种和周期
     TradingSymbol = (InputSymbol == "") ? Symbol() : InputSymbol;
     TradingTimeframe = InputTimeframe;
@@ -264,26 +315,49 @@ int OnInit()
     // 初始化日志
     if(EnableLogging)
     {
-        PrintFormat("AI_MultiTF_SMC_EA v%s 初始化成功");
+        PrintFormat("AI_MultiTF_SMC_EA v%s 初始化成功", _Version);
         PrintFormat("交易品种: %s", TradingSymbol);
         PrintFormat("交易周期: %s", EnumToString(TradingTimeframe));
+        PrintFormat("服务器URL: %s", PythonServerURL);
+        PrintFormat("服务器IP: %s:%d", ServerIP, ServerPort);
         PrintFormat("每笔交易风险: %.2f%%", RiskPerTrade);
         PrintFormat("每日最大亏损: %.2f%%", MaxDailyLoss);
         PrintFormat("总风险百分比: %.2f%%", MaxTotalRisk);
         PrintFormat("最大持仓数量: %d", MaxPositions);
         PrintFormat("最小信号强度: %d", MinSignalStrength);
         PrintFormat("信号确认次数: %d", SignalConfirmations);
-        PrintFormat("Python服务URL: %s", PythonServerURL);
         PrintFormat("魔术数字: %d", MagicNumber);
         PrintFormat("信号缓存时间: %d秒", SignalCacheTime);
         PrintFormat("网络超时时间: %d毫秒", NetworkTimeout);
+        
+        Print("===== 重要提示 =====");
+        Print("1. 请确保Python服务器正在运行");
+        PrintFormat("2. 服务器地址: http://%s:%d", ServerIP, ServerPort);
+        Print("3. 在MT5的选项中，将此URL添加到WebRequest白名单:");
+        PrintFormat("   - http://%s:%d", ServerIP, ServerPort);
+        PrintFormat("   - http://localhost:%d", ServerPort);
+        PrintFormat("   - http://127.0.0.1:%d", ServerPort);
+        Print("===================");
     }
     
     // 设置EA运行状态
     EA_Running = true;
     
     // 测试Python服务器连接
-    TestPythonServerConnection();
+    if(!TestPythonServerConnection())
+    {
+        Print("错误: 无法连接到Python服务器，请检查:");
+        Print("1. 服务器IP是否正确: " + ServerIP);
+        Print("2. 服务器端口是否正确: " + IntegerToString(ServerPort));
+        Print("3. Python服务器是否已启动");
+        Print("4. 防火墙是否允许端口 " + IntegerToString(ServerPort));
+        Print("5. URL是否已添加到MT5的WebRequest白名单");
+        Print("");
+        Print("可能的服务器IP地址:");
+        Print(GetLocalIPAddresses());
+        
+        return(INIT_FAILED);
+    }
     
     return(INIT_SUCCEEDED);
 }
@@ -300,7 +374,14 @@ void OnDeinit(const int reason)
     DeleteAllPendingOrders();
     
     if(EnableLogging)
+    {
         Print("AI_MultiTF_SMC_EA 已停止，原因: ", reason);
+        PrintFormat("总交易次数: %d", TotalTrades);
+        PrintFormat("盈利交易: %d", WinningTrades);
+        PrintFormat("亏损交易: %d", LosingTrades);
+        PrintFormat("总盈利: %.2f", TotalProfit);
+        PrintFormat("最大回撤: %.2f%%", MaxDrawdown);
+    }
     
     // 设置EA运行状态
     EA_Running = false;
@@ -400,7 +481,7 @@ void OnTick()
 //+------------------------------------------------------------------+
 //| 测试Python服务器连接                                             |
 //+------------------------------------------------------------------+
-void TestPythonServerConnection()
+bool TestPythonServerConnection()
 {
     string testURL = PythonServerURL + "/health";
     string response_headers = "";
@@ -409,12 +490,15 @@ void TestPythonServerConnection()
     string response = "";
     int error = 0;
     
+    if(EnableLogging)
+        PrintFormat("测试服务器连接: %s", testURL);
+    
     // 发送HTTP GET请求
     error = WebRequest(
         "GET",
         testURL,
         "",
-        5000,
+        NetworkTimeout,
         request_data,
         response_data,
         response_headers
@@ -425,38 +509,52 @@ void TestPythonServerConnection()
         response = CharArrayToString(response_data);
         if(EnableLogging)
             Print("Python服务器连接成功！响应: ", response);
+        return true;
     } 
     else
     {
+        string error_desc = GetWebRequestErrorDescription(error);
+        
         if(EnableLogging)
-            Print("Python服务器连接失败！错误: ", error, ", 描述: ", GetWebRequestErrorDescription(error));
-        
-        // 尝试使用127.0.0.1 - 修正StringReplace的用法
-        string newURL = PythonServerURL;
-        StringReplace(newURL, "localhost", "127.0.0.1");
-        testURL = newURL + "/health";
-        
-        error = WebRequest(
-            "GET",
-            testURL,
-            "",
-            5000,
-            request_data,
-            response_data,
-            response_headers
-        );
-        
-        if(error == 0)
         {
-            response = CharArrayToString(response_data);
-            if(EnableLogging)
-                Print("Python服务器连接成功(使用127.0.0.1)！响应: ", response);
+            PrintFormat("Python服务器连接失败！");
+            PrintFormat("错误代码: %d", error);
+            PrintFormat("错误描述: %s", error_desc);
+            PrintFormat("尝试的URL: %s", testURL);
         }
-        else
+        
+        // 尝试备用方案：使用127.0.0.1
+        if(StringFind(ServerIP, "localhost") >= 0)
         {
+            string altServerIP = "127.0.0.1";
+            string altURL = (EnableSSL ? "https://" : "http://") + altServerIP + ":" + IntegerToString(ServerPort) + "/health";
+            
             if(EnableLogging)
-                Print("Python服务器连接失败(使用127.0.0.1)！错误: ", error, ", 描述: ", GetWebRequestErrorDescription(error));
+                PrintFormat("尝试备用地址: %s", altURL);
+            
+            error = WebRequest(
+                "GET",
+                altURL,
+                "",
+                NetworkTimeout,
+                request_data,
+                response_data,
+                response_headers
+            );
+            
+            if(error == 0)
+            {
+                if(EnableLogging)
+                    Print("使用127.0.0.1连接成功！");
+                
+                // 更新ServerIP
+                ServerIP = altServerIP;
+                PythonServerURL = BuildServerURL();
+                return true;
+            }
         }
+        
+        return false;
     }
 }
 
@@ -479,18 +577,21 @@ void CheckDailyLoss()
         return;
     }
     
-    // 计算当前账户余额和权益
-    double current_balance = AccountInfoDouble(ACCOUNT_BALANCE);
+    // 计算当前权益
     CurrentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
     
     // 计算当前亏损
     double daily_drawdown = (InitialBalance - CurrentEquity) / InitialBalance * 100;
     
+    // 更新每日亏损
+    if(daily_drawdown > DailyLoss)
+        DailyLoss = daily_drawdown;
+    
     // 检查是否超过每日最大亏损
-    if(daily_drawdown >= MaxDailyLoss)
+    if(DailyLoss >= MaxDailyLoss)
     {
         if(EnableLogging)
-            PrintFormat("达到每日最大亏损限制(%.2f%%)，EA将停止交易", daily_drawdown);
+            PrintFormat("达到每日最大亏损限制(%.2f%%)，EA将停止交易", DailyLoss);
         
         // 平仓所有头寸
         CloseAllPositions();
@@ -500,6 +601,7 @@ void CheckDailyLoss()
     }
     
     // 更新账户余额
+    double current_balance = AccountInfoDouble(ACCOUNT_BALANCE);
     if(current_balance > AccountBalance)
     {
         AccountBalance = current_balance;
@@ -531,8 +633,12 @@ void UpdateMaxDrawdown()
     if(current_profit != TotalProfit)
     {
         TotalProfit = current_profit;
-        if(EnableLogging)
-            PrintFormat("更新总盈利: %.2f", TotalProfit);
+        
+        // 更新交易统计
+        if(current_profit > 0 && LosingTrades > 0)
+            WinningTrades++;
+        else if(current_profit < 0 && WinningTrades > 0)
+            LosingTrades++;
     }
 }
 
@@ -553,10 +659,10 @@ string GetAISignal(const MqlRates &rates[])
         if(rates[i].time > 0)
         {
             request_data += "{\"time\":" + IntegerToString(rates[i].time) + ",";
-            request_data += "\"open\":" + DoubleToString(rates[i].open, 5) + ",";
-            request_data += "\"high\":" + DoubleToString(rates[i].high, 5) + ",";
-            request_data += "\"low\":" + DoubleToString(rates[i].low, 5) + ",";
-            request_data += "\"close\":" + DoubleToString(rates[i].close, 5) + ",";
+            request_data += "\"open\":" + DoubleToString(rates[i].open, _Digits) + ",";
+            request_data += "\"high\":" + DoubleToString(rates[i].high, _Digits) + ",";
+            request_data += "\"low\":" + DoubleToString(rates[i].low, _Digits) + ",";
+            request_data += "\"close\":" + DoubleToString(rates[i].close, _Digits) + ",";
             request_data += "\"tick_volume\":" + IntegerToString(rates[i].tick_volume) + "}";
             
             if(i < max_bars - 1 && (i + 1) < ArraySize(rates) && rates[i + 1].time > 0)
@@ -565,14 +671,6 @@ string GetAISignal(const MqlRates &rates[])
     }
     
     request_data += "]}";
-    
-    // 验证JSON格式
-    if(EnableLogging)
-    {
-        Print("构建的JSON长度: ", StringLen(request_data));
-        Print("JSON开头: ", StringSubstr(request_data, 0, 300));
-        Print("JSON结尾: ", StringSubstr(request_data, StringLen(request_data)-100, 100));
-    }
     
     // 发送HTTP请求
     string response = SendHTTPRequest(PythonServerURL + "/get_signal", request_data);
@@ -584,12 +682,15 @@ string GetAISignal(const MqlRates &rates[])
         return "none";
     }
     
-    if(EnableLogging)
-        Print("Python服务响应: ", response);
-    
     // 解析响应获取信号
     string signal = ParseJSON(response, "signal");
     SignalStrength = ParseJSONInt(response, "signal_strength");
+    
+    if(EnableLogging)
+    {
+        PrintFormat("收到AI信号: %s (强度: %d)", signal, SignalStrength);
+        PrintFormat("完整响应: %s", StringSubstr(response, 0, 500));
+    }
     
     return signal;
 }
@@ -626,7 +727,7 @@ string SendHTTPRequest(string url, string data)
         "POST",
         url,
         headers,
-        5000,
+        NetworkTimeout,
         request_data,
         response_data,
         response_headers
@@ -635,7 +736,24 @@ string SendHTTPRequest(string url, string data)
     if(error != 0)
     {
         if(EnableLogging)
-            PrintFormat("WebRequest失败: 错误代码=%d, 错误描述=%s", error, GetWebRequestErrorDescription(error));
+        {
+            PrintFormat("WebRequest失败:");
+            PrintFormat("错误代码: %d", error);
+            PrintFormat("错误描述: %s", GetWebRequestErrorDescription(error));
+            PrintFormat("请求URL: %s", url);
+            PrintFormat("数据长度: %d", ArraySize(request_data));
+            
+            if(error == 4010 || error == 4011)
+            {
+                Print("===== 解决方案 =====");
+                Print("1. 打开MetaEditor");
+                Print("2. 点击工具 -> 选项 -> 专家选项卡");
+                Print("3. 在'允许WebRequest列出的URL'中添加:");
+                PrintFormat("   %s", url);
+                Print("4. 重启MT5");
+                Print("==================");
+            }
+        }
         
         return "";
     }
@@ -854,7 +972,7 @@ bool ExecuteOrder(ENUM_ORDER_TYPE order_type)
     request.type = order_type;
     request.deviation = 3;  // 3点滑点
     request.magic = MagicNumber;
-    request.comment = "AI_MultiTF_SMC_EA";
+    request.comment = "AI_MultiTF_SMC_EA v" + _Version;
     request.type_filling = ORDER_FILLING_IOC;  // 立即或取消
     request.type_time = ORDER_TIME_GTC;       // 直至取消
     
@@ -876,15 +994,19 @@ bool ExecuteOrder(ENUM_ORDER_TYPE order_type)
     double atr[1];
     if(CopyBuffer(atr_handle, 0, 0, 1, atr) > 0 && atr[0] > 0)
     {
+        double atr_value = atr[0];
+        double sl_distance = atr_value * 2.0;
+        double tp_distance = atr_value * 3.0;
+        
         if(order_type == ORDER_TYPE_BUY)
         {
-            request.sl = request.price - atr[0] * 2;
-            request.tp = request.price + atr[0] * 3;
+            request.sl = NormalizeDouble(request.price - sl_distance, _Digits);
+            request.tp = NormalizeDouble(request.price + tp_distance, _Digits);
         }
         else
         {
-            request.sl = request.price + atr[0] * 2;
-            request.tp = request.price - atr[0] * 3;
+            request.sl = NormalizeDouble(request.price + sl_distance, _Digits);
+            request.tp = NormalizeDouble(request.price - tp_distance, _Digits);
         }
         
         // 检查SL/TP是否有效
@@ -950,6 +1072,7 @@ double CalculateLotSize()
     // 获取交易品种信息
     double tick_value = SymbolInfoDouble(TradingSymbol, SYMBOL_TRADE_TICK_VALUE);
     double tick_size = SymbolInfoDouble(TradingSymbol, SYMBOL_TRADE_TICK_SIZE);
+    double contract_size = SymbolInfoDouble(TradingSymbol, SYMBOL_TRADE_CONTRACT_SIZE);
     
     if(tick_size == 0.0)
     {
@@ -967,7 +1090,7 @@ double CalculateLotSize()
     if(CopyBuffer(atr_handle, 0, 0, 1, atr) > 0 && atr[0] > 0)
     {
         // 计算止损点数
-        double stop_loss_points = atr[0] / tick_size;
+        double stop_loss_points = atr[0] / _Point;
         
         // 计算每手风险
         double risk_per_lot = stop_loss_points * tick_value;
@@ -990,6 +1113,10 @@ double CalculateLotSize()
         // 调整仓位大小
         lot_size = MathMax(min_lot, MathMin(max_lot, lot_size));
         lot_size = lot_step * MathRound(lot_size / lot_step);
+        
+        if(EnableLogging)
+            PrintFormat("仓位计算: 风险金额=%.2f, 止损点数=%.2f, 每手风险=%.2f, 最终手数=%.2f", 
+                      risk_amount, stop_loss_points, risk_per_lot, lot_size);
         
         return lot_size;
     }

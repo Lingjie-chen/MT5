@@ -2,7 +2,7 @@ import requests
 import json
 import logging
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class DeepSeekClient:
     """
     DeepSeek API客户端，用于市场分析和情绪得分生成
-    使用硅基流动API服务
+    使用硅基流动API服务，遵循ValueCell的API调用模式
     """
     def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "deepseek-ai/DeepSeek-V3.1-Terminus"):
         """
@@ -28,10 +28,14 @@ class DeepSeekClient:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
+        
+        # 启用JSON模式，遵循ValueCell的实现
+        self.enable_json_mode = True
     
     def _call_api(self, endpoint: str, payload: Dict[str, Any], max_retries: int = 3) -> Optional[Dict[str, Any]]:
         """
         调用DeepSeek API，支持重试机制
+        基于ValueCell的API调用模式，增强了错误处理和日志记录
         
         Args:
             endpoint (str): API端点
@@ -45,24 +49,66 @@ class DeepSeekClient:
         
         for retry in range(max_retries):
             try:
-                response = requests.post(url, headers=self.headers, json=payload, timeout=10)
-                response.raise_for_status()
-                return response.json()
-            except requests.exceptions.RequestException as e:
-                logger.error(f"API调用失败 (重试 {retry+1}/{max_retries}): {e}")
-                if retry < max_retries - 1:
-                    # 指数退避重试
-                    time.sleep(2 ** retry)
-                else:
-                    logger.error(f"API调用失败，已达到最大重试次数")
+                response = requests.post(url, headers=self.headers, json=payload, timeout=15)
+                
+                # 详细记录响应状态
+                logger.debug(f"API响应状态码: {response.status_code}, 模型: {self.model}, 重试: {retry+1}/{max_retries}")
+                
+                # 处理不同状态码
+                if response.status_code == 401:
+                    logger.error(f"API认证失败，状态码: {response.status_code}，请检查API密钥是否正确")
                     return None
+                elif response.status_code == 403:
+                    logger.error(f"API访问被拒绝，状态码: {response.status_code}，请检查API密钥权限")
+                    return None
+                elif response.status_code == 429:
+                    logger.warning(f"API请求频率过高，状态码: {response.status_code}，进入退避重试")
+                elif response.status_code >= 500:
+                    logger.error(f"API服务器错误，状态码: {response.status_code}")
+                
+                response.raise_for_status()
+                
+                # 解析响应并添加调试信息
+                response_json = response.json()
+                logger.info(f"API调用成功，状态码: {response.status_code}, 模型: {self.model}")
+                return response_json
+            except requests.exceptions.ConnectionError as e:
+                logger.error(f"API连接失败 (重试 {retry+1}/{max_retries}): {e}")
+                logger.error(f"请求URL: {url}")
+                logger.error("请检查网络连接和API服务可用性")
+            except requests.exceptions.Timeout as e:
+                logger.error(f"API请求超时 (重试 {retry+1}/{max_retries}): {e}")
+                logger.error(f"请求URL: {url}")
+                logger.error("请检查网络连接和API服务响应时间")
+            except requests.exceptions.HTTPError as e:
+                logger.error(f"API HTTP错误 (重试 {retry+1}/{max_retries}): {e}")
+                logger.error(f"请求URL: {url}")
+                logger.error(f"响应内容: {response.text[:200]}...")
+            except requests.exceptions.RequestException as e:
+                logger.error(f"API请求异常 (重试 {retry+1}/{max_retries}): {e}")
+                logger.error(f"请求URL: {url}")
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON解析失败: {e}")
+                logger.error(f"响应内容: {response.text}")
+                return None
             except Exception as e:
-                logger.error(f"Unexpected error: {e}")
+                logger.error(f"API调用意外错误: {e}")
+                logger.exception("完整错误堆栈:")
+                return None
+            
+            if retry < max_retries - 1:
+                # 指数退避重试，ValueCell推荐的重试策略
+                retry_delay = min(2 ** retry, 16)  # 最大16秒
+                logger.info(f"等待 {retry_delay} 秒后重试...")
+                time.sleep(retry_delay)
+            else:
+                logger.error(f"API调用失败，已达到最大重试次数 {max_retries}")
                 return None
     
     def analyze_market_structure(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         分析市场结构，识别趋势与震荡行情
+        基于ValueCell的实现，支持JSON模式输出
         
         Args:
             market_data (Dict[str, Any]): 市场数据，包含价格、成交量、指标等
@@ -91,6 +137,7 @@ class DeepSeekClient:
         - indicator_analysis: str
         """
         
+        # 构建payload，遵循ValueCell的实现
         payload = {
             "model": self.model,
             "messages": [
@@ -98,16 +145,25 @@ class DeepSeekClient:
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.3,
-            "max_tokens": 1000
+            "max_tokens": 1500,
+            "stream": False
         }
+        
+        # 启用JSON模式，ValueCell推荐使用JSON模式处理结构化输出
+        if self.enable_json_mode:
+            payload["response_format"] = {"type": "json_object"}
         
         response = self._call_api("chat/completions", payload)
         if response and "choices" in response:
             try:
-                analysis_result = json.loads(response["choices"][0]["message"]["content"])
+                message_content = response["choices"][0]["message"]["content"]
+                logger.info(f"收到模型响应: {message_content[:200]}...")
+                
+                analysis_result = json.loads(message_content)
                 return analysis_result
             except json.JSONDecodeError as e:
                 logger.error(f"解析DeepSeek响应失败: {e}")
+                logger.error(f"原始响应: {response}")
                 # 如果解析失败，返回默认值
                 return {
                     "market_state": "neutral",
