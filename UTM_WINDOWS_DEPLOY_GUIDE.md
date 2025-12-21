@@ -33,7 +33,9 @@
 *   安装时一路点击 "Next" 即可。
 
 ### 2. 安装 Python
-*   下载 [Python 3.10 或 3.11](https://www.python.org/downloads/windows/) (Windows 64-bit installer)。
+*   **关键步骤**: 请务必下载 **Windows installer (64-bit)** (即 x86-64 版本)，**不要**下载 ARM64 版本。
+    *   *原因*: MetaTrader 5 的 Python 库目前只提供 x64 架构的包，没有原生 ARM64 包。Windows 11 ARM 版可以完美模拟运行 x64 版本的 Python。
+*   推荐下载 [Python 3.10 或 3.11](https://www.python.org/downloads/windows/)。
 *   **重要**: 安装时务必勾选 **"Add Python to PATH"** (将 Python 添加到环境变量)。
 *   点击 "Install Now"。
 
