@@ -5,3 +5,4 @@ numpy>=1.24.0
 python-dotenv>=1.0.0
 requests>=2.31.0
 ta-lib>=0.4.26  # 技术分析库
+MetaTrader5>=5.0.0; sys_platform == 'win32'  # MT5 Python库，仅Windows系统可用

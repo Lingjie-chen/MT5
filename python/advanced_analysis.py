@@ -322,6 +322,78 @@ class AdvancedMarketAnalysis:
             "volatility": 0.2, "sharpe_ratio": 0, "max_drawdown": 0,
             "var_95": -2, "expected_shortfall": -3, "skewness": 0, "kurtosis": 0
         }
+    
+    def generate_analysis_summary(self, df: pd.DataFrame) -> Dict[str, any]:
+        """
+        生成综合分析摘要
+        
+        Args:
+            df: 价格数据DataFrame
+            
+        Returns:
+            分析摘要字典
+        """
+        if len(df) < 20:
+            return {
+                "summary": "数据不足，无法生成分析摘要",
+                "recommendation": "hold",
+                "confidence": 0.0
+            }
+        
+        # 计算各种分析指标
+        indicators = self.calculate_technical_indicators(df)
+        market_regime = self.detect_market_regime(df)
+        risk_metrics = self.calculate_risk_metrics(df)
+        support_resistance = self.generate_support_resistance(df)
+        signal_info = self.generate_signal_from_indicators(indicators)
+        
+        # 生成综合分析摘要
+        current_price = df['close'].iloc[-1]
+        price_change_1d = (df['close'].iloc[-1] / df['close'].iloc[-2] - 1) * 100
+        price_change_5d = (df['close'].iloc[-1] / df['close'].iloc[-6] - 1) * 100
+        
+        # 生成交易建议
+        if signal_info['signal'] == 'buy' and signal_info['strength'] > 60:
+            recommendation = "强烈买入"
+        elif signal_info['signal'] == 'buy':
+            recommendation = "买入"
+        elif signal_info['signal'] == 'sell' and signal_info['strength'] > 60:
+            recommendation = "强烈卖出"
+        elif signal_info['signal'] == 'sell':
+            recommendation = "卖出"
+        else:
+            recommendation = "持有"
+        
+        # 生成市场状态描述
+        regime_descriptions = {
+            "trending": "市场处于趋势状态，适合趋势跟踪策略",
+            "ranging": "市场处于震荡状态，适合区间交易策略",
+            "high_volatility": "市场波动性较高，注意风险管理",
+            "unknown": "市场状态不明确，建议谨慎操作"
+        }
+        
+        regime_desc = regime_descriptions.get(market_regime['regime'], "市场状态分析中")
+        
+        # 构建摘要
+        summary = {
+            "summary": f"当前价格: {current_price:.4f} ({price_change_1d:+.2f}% 1日, {price_change_5d:+.2f}% 5日)",
+            "market_regime": market_regime['description'],
+            "regime_analysis": regime_desc,
+            "recommendation": recommendation,
+            "confidence": signal_info['confidence'],
+            "risk_level": "高" if risk_metrics['volatility'] > 0.3 else "中" if risk_metrics['volatility'] > 0.15 else "低",
+            "key_indicators": {
+                "RSI": f"{indicators['rsi']:.1f}",
+                "MACD": f"{indicators['macd']:.4f}",
+                "ATR": f"{indicators['atr']:.4f}",
+                "波动率": f"{risk_metrics['volatility']:.2%}"
+            },
+            "support_levels": support_resistance['support_levels'],
+            "resistance_levels": support_resistance['resistance_levels'],
+            "timestamp": pd.Timestamp.now().isoformat()
+        }
+        
+        return summary
 
 # 使用示例
 def create_sample_data():

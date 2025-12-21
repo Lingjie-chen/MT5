@@ -9,8 +9,9 @@ import os
 import json
 import time
 import logging
+import sys
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from flask import Flask, request, jsonify
 import pandas as pd
 import numpy as np
@@ -20,6 +21,11 @@ from sklearn.model_selection import train_test_split
 import warnings
 warnings.filterwarnings('ignore')
 
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
 # 导入自定义模块
 from python.advanced_analysis import AdvancedMarketAnalysis
 from python.data_processor import MT5DataProcessor
@@ -27,11 +33,206 @@ from python.data_processor import MT5DataProcessor
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('server.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# 服务器启动时间
+app_start_time = time.time()
+
+# 请求统计
+request_stats = {
+    'total_requests': 0,
+    'successful_requests': 0,
+    'failed_requests': 0,
+    'last_request_time': None,
+    'average_response_time': 0.0
+}
+
+# 性能监控
+performance_stats = {
+    'ml_predictions': 0,
+    'technical_analysis': 0,
+    'market_regime_detections': 0,
+    'cache_hits': 0,
+    'cache_misses': 0
+}
+
+def convert_numpy_types(obj):
+    """将numpy类型转换为原生Python类型"""
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {k: convert_numpy_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(v) for v in obj]
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    else:
+        return obj
+
+def validate_request_data(data: Dict[str, Any]) -> Tuple[bool, str]:
+    """验证请求数据的安全性和完整性"""
+    try:
+        # 检查必需字段
+        required_fields = ['symbol', 'timeframe', 'count', 'rates']
+        for field in required_fields:
+            if field not in data:
+                return False, f"缺少必需字段: {field}"
+        
+        # 验证symbol格式
+        symbol = str(data['symbol']).strip()
+        if len(symbol) == 0 or len(symbol) > 20:
+            return False, f"无效的交易品种格式: '{symbol}' (长度: {len(symbol)})"
+        
+        # 验证时间周期格式
+        timeframe = str(data['timeframe']).strip()
+        valid_timeframes = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1', 'MN1']
+        if timeframe not in valid_timeframes:
+            return False, f"无效的时间周期: {timeframe} (有效值: {valid_timeframes})"
+        
+        # 验证数据条数
+        count = int(data['count'])
+        if count < 10 or count > 1000:
+            return False, f"数据条数超出范围: {count} (有效范围: 10-1000)"
+        
+        # 验证rates数组
+        rates = data['rates']
+        if not isinstance(rates, list):
+            return False, f"rates不是数组类型，实际类型: {type(rates)} (值: {rates})"
+        if len(rates) != count:
+            return False, f"rates数组长度({len(rates)})与指定的count({count})不匹配"
+        
+        # 验证每个rate条目的完整性
+        for i, rate in enumerate(rates):
+            if not isinstance(rate, dict):
+                return False, f"第{i}个rate条目格式错误，不是字典类型，实际类型: {type(rate)} (值: {rate})"
+            
+            required_rate_fields = ['time', 'open', 'high', 'low', 'close', 'tick_volume']
+            for field in required_rate_fields:
+                if field not in rate:
+                    return False, f"第{i}个rate条目缺少字段: {field} (当前字段: {list(rate.keys())})"
+            
+            # 验证数值范围
+            time_val = int(rate['time'])
+            if time_val < 0 or time_val > 2000000000:  # 合理的时间戳范围
+                return False, f"第{i}个rate条目的时间戳无效: {time_val} (有效范围: 0-2000000000)"
+            
+            open_val = float(rate['open'])
+            high_val = float(rate['high'])
+            low_val = float(rate['low'])
+            close_val = float(rate['close'])
+            
+            if not (0 < open_val < 1000000 and 0 < high_val < 1000000 and 
+                    0 < low_val < 1000000 and 0 < close_val < 1000000):
+                return False, f"第{i}个rate条目的价格值超出合理范围: open={open_val}, high={high_val}, low={low_val}, close={close_val} (有效范围: 0-1000000)"
+            
+            if not (low_val <= open_val <= high_val and low_val <= close_val <= high_val):
+                return False, f"第{i}个rate条目的价格逻辑错误: open={open_val}, high={high_val}, low={low_val}, close={close_val} (应满足: low <= open <= high 且 low <= close <= high)"
+            
+            volume_val = int(rate['tick_volume'])
+            if volume_val < 0 or volume_val > 1000000000:
+                return False, f"第{i}个rate条目的成交量无效: {volume_val} (有效范围: 0-1000000000)"
+        
+        return True, "数据验证通过"
+        
+    except (ValueError, TypeError) as e:
+        return False, f"数据验证异常: {e} (数据类型错误)"
+    except Exception as e:
+        return False, f"未知验证错误: {e} (其他错误)"
+
+def sanitize_input(data: Dict[str, Any]) -> Dict[str, Any]:
+    """清理和标准化输入数据"""
+    sanitized = {}
+    
+    # 清理symbol
+    if 'symbol' in data:
+        sanitized['symbol'] = str(data['symbol']).strip().upper()
+    
+    # 清理timeframe
+    if 'timeframe' in data:
+        sanitized['timeframe'] = str(data['timeframe']).strip().upper()
+    
+    # 清理count
+    if 'count' in data:
+        try:
+            sanitized['count'] = max(10, min(1000, int(data['count'])))
+        except (ValueError, TypeError):
+            sanitized['count'] = 100
+    
+    # 清理rates数据
+    if 'rates' in data and isinstance(data['rates'], list):
+        sanitized_rates = []
+        for rate in data['rates']:
+            if isinstance(rate, dict):
+                sanitized_rate = {}
+                for key in ['time', 'open', 'high', 'low', 'close', 'tick_volume']:
+                    if key in rate:
+                        try:
+                            if key == 'time' or key == 'tick_volume':
+                                sanitized_rate[key] = int(rate[key])
+                            else:
+                                sanitized_rate[key] = float(rate[key])
+                        except (ValueError, TypeError):
+                            # 使用默认值
+                            if key == 'time':
+                                sanitized_rate[key] = 0
+                            elif key == 'tick_volume':
+                                sanitized_rate[key] = 0
+                            else:
+                                sanitized_rate[key] = 0.0
+                
+                # 确保价格逻辑正确
+                if all(k in sanitized_rate for k in ['open', 'high', 'low', 'close']):
+                    sanitized_rate['low'] = min(sanitized_rate['low'], sanitized_rate['open'], sanitized_rate['close'])
+                    sanitized_rate['high'] = max(sanitized_rate['high'], sanitized_rate['open'], sanitized_rate['close'])
+                
+                sanitized_rates.append(sanitized_rate)
+        
+        sanitized['rates'] = sanitized_rates
+    
+    return sanitized
+
+def monitor_request(func):
+    """请求监控装饰器"""
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        request_stats['total_requests'] += 1
+        request_stats['last_request_time'] = datetime.now().isoformat()
+        
+        try:
+            result = func(*args, **kwargs)
+            request_stats['successful_requests'] += 1
+            
+            # 更新平均响应时间
+            response_time = time.time() - start_time
+            if request_stats['average_response_time'] == 0:
+                request_stats['average_response_time'] = response_time
+            else:
+                request_stats['average_response_time'] = (
+                    request_stats['average_response_time'] * 0.9 + response_time * 0.1
+                )
+            
+            logger.info(f"请求处理成功: {func.__name__}, 耗时: {response_time:.3f}s")
+            return result
+            
+        except Exception as e:
+            request_stats['failed_requests'] += 1
+            logger.error(f"请求处理失败: {func.__name__}, 错误: {e}")
+            raise
+    
+    wrapper.__name__ = func.__name__
+    return wrapper
 
 class MLSignalGenerator:
     """机器学习信号生成器"""
@@ -207,6 +408,14 @@ class EnhancedSignalGenerator:
         # 性能跟踪
         self.signal_history = []
         self.max_history_size = 1000
+    
+    def _timeframe_to_int(self, timeframe: str) -> int:
+        """将时间周期字符串转换为整数表示"""
+        timeframe_map = {
+            'M1': 1, 'M5': 5, 'M15': 15, 'M30': 30,
+            'H1': 60, 'H4': 240, 'D1': 1440, 'W1': 10080, 'MN1': 43200
+        }
+        return timeframe_map.get(timeframe.upper(), 60)  # 默认H1
     
     def _perform_technical_analysis(self, df: pd.DataFrame) -> Dict[str, Any]:
         """执行技术分析"""
@@ -460,45 +669,146 @@ class EnhancedSignalGenerator:
 signal_generator = EnhancedSignalGenerator()
 
 @app.route('/health', methods=['GET'])
+@monitor_request
 def health_check():
     """健康检查端点"""
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
-        'version': '2.0.0'
+        'version': '2.0.0',
+        'request_stats': request_stats,
+        'performance_stats': performance_stats,
+        'uptime': time.time() - app_start_time if 'app_start_time' in globals() else 0
+    })
+
+@app.route('/stats', methods=['GET'])
+@monitor_request
+def get_stats():
+    """获取详细统计信息"""
+    return jsonify({
+        'request_stats': request_stats,
+        'performance_stats': performance_stats,
+        'system_info': {
+            'python_version': sys.version,
+            'platform': sys.platform,
+            'memory_usage': psutil.Process().memory_info().rss / 1024 / 1024 if 'psutil' in sys.modules else 'N/A'
+        }
     })
 
 @app.route('/get_signal', methods=['POST'])
+@app.route('/signal', methods=['POST'])  # 添加兼容性端点
+@monitor_request
 def get_signal():
     """获取交易信号端点"""
     try:
-        data = request.get_json()
+        # 增强JSON解析容错性
+        if not request.data:
+            return jsonify({
+                'error': '请求体为空',
+                'timestamp': datetime.now().isoformat()
+            }), 400
+        
+        try:
+            data = request.get_json()
+            logger.info(f"JSON解析成功，数据类型: {type(data)}")
+            if data:
+                logger.info(f"解析后的数据: symbol={data.get('symbol', 'N/A')}, timeframe={data.get('timeframe', 'N/A')}, count={data.get('count', 'N/A')}")
+        except Exception as json_error:
+            logger.warning(f"JSON解析失败 (request.get_json()): {json_error}")
+            logger.warning(f"请求头: {request.headers}")
+            logger.warning(f"请求体前200字符: {request.data.decode('utf-8')[:200]}...")
+            # 尝试手动解析JSON
+            try:
+                data = json.loads(request.data.decode('utf-8'))
+                logger.info(f"手动JSON解析成功")
+                if data:
+                    logger.info(f"手动解析后的数据: symbol={data.get('symbol', 'N/A')}, timeframe={data.get('timeframe', 'N/A')}, count={data.get('count', 'N/A')}")
+            except Exception as manual_error:
+                logger.error(f"手动JSON解析失败: {manual_error}")
+                logger.error(f"完整请求体: {request.data.decode('utf-8')}")
+                return jsonify({
+                    'error': f'无效的JSON格式: {str(manual_error)}',
+                    'timestamp': datetime.now().isoformat()
+                }), 400
         
         if not data:
+            logger.warning("解析后的数据为空")
             return jsonify({
                 'error': '无效的请求数据',
                 'timestamp': datetime.now().isoformat()
             }), 400
         
-        symbol = data.get('symbol', 'GOLD')
-        timeframe = data.get('timeframe', 'H1')
-        rates = data.get('rates', [])
-        
-        if not rates:
+        # 数据验证
+        is_valid, validation_message = validate_request_data(data)
+        if not is_valid:
+            logger.warning(f"数据验证失败: {validation_message}")
+            logger.warning(f"验证失败的数据结构: symbol={data.get('symbol', 'N/A')}, timeframe={data.get('timeframe', 'N/A')}, count={data.get('count', 'N/A')}")
+            logger.warning(f"rates数组长度: {len(data.get('rates', [])) if isinstance(data.get('rates'), list) else 'N/A'}")
+            if data.get('rates') and isinstance(data.get('rates'), list) and len(data.get('rates')) > 0:
+                first_rate = data['rates'][0]
+                logger.warning(f"第一个rate条目: {first_rate}")
+            # 添加更多调试信息
+            logger.warning(f"完整数据结构: {data}")
+            # 特别记录原始请求数据用于调试
+            raw_data_str = request.data.decode('utf-8') if request.data else "无原始数据"
+            logger.warning(f"原始请求数据: {raw_data_str[:500]}...")  # 只记录前500个字符
             return jsonify({
-                'error': '缺少K线数据',
-                'timestamp': datetime.now().isoformat()
+                'error': f'数据验证失败: {validation_message}',
+                'timestamp': datetime.now().isoformat(),
+                'details': {
+                    'symbol': data.get('symbol', 'N/A'),
+                    'timeframe': data.get('timeframe', 'N/A'),
+                    'count': data.get('count', 'N/A'),
+                    'rates_length': len(data.get('rates', [])) if isinstance(data.get('rates'), list) else 'N/A'
+                }
             }), 400
+        
+        # 数据清理和标准化
+        sanitized_data = sanitize_input(data)
+        
+        symbol = sanitized_data.get('symbol', 'EURUSD')
+        timeframe = sanitized_data.get('timeframe', 'H1')
+        count = sanitized_data.get('count', 100)
+        rates = sanitized_data.get('rates', [])
+        
+        # 如果没有提供rates数据，则自动生成或从MT5获取
+        if not rates:
+            # 尝试从MT5获取数据，如果失败则使用模拟数据
+            from datetime import datetime as dt, timedelta
+            end_date = dt.now()
+            start_date = end_date - timedelta(days=30)  # 默认30天数据
+            
+            # 使用数据处理器获取数据
+            df = signal_generator.data_processor.get_historical_data(
+                symbol, 
+                signal_generator._timeframe_to_int(timeframe), 
+                start_date, 
+                end_date
+            )
+            
+            # 转换为rates格式
+            rates = df.reset_index().to_dict('records')
         
         # 生成交易信号
         signal = signal_generator.generate_comprehensive_signal(symbol, timeframe, rates)
+        
+        # 转换numpy类型为原生Python类型，解决"Object of type int64 is not JSON serializable"错误
+        signal = convert_numpy_types(signal)
+        
+        # 添加安全审计信息
+        signal['security_audit'] = {
+            'data_validated': True,
+            'data_sanitized': True,
+            'validation_message': validation_message,
+            'request_timestamp': datetime.now().isoformat()
+        }
         
         return jsonify(signal)
         
     except Exception as e:
         logger.error(f"获取信号失败: {e}")
         return jsonify({
-            'error': f'服务器内部错误: {e}',
+            'error': f'内部服务器错误: {str(e)}',
             'timestamp': datetime.now().isoformat()
         }), 500
 
@@ -518,14 +828,29 @@ def get_detailed_analysis():
         timeframe = data.get('timeframe', 'H1')
         rates = data.get('rates', [])
         
+        # 如果没有提供rates数据，则自动生成或从MT5获取
         if not rates:
-            return jsonify({
-                'error': '缺少K线数据',
-                'timestamp': datetime.now().isoformat()
-            }), 400
+            # 尝试从MT5获取数据，如果失败则使用模拟数据
+            from datetime import datetime, timedelta
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=30)  # 默认30天数据
+            
+            # 使用数据处理器获取数据
+            df = signal_generator.data_processor.get_historical_data(
+                symbol, 
+                signal_generator._timeframe_to_int(timeframe), 
+                start_date, 
+                end_date
+            )
+            
+            # 转换为rates格式
+            rates = df.reset_index().to_dict('records')
         
         # 生成详细分析报告
         analysis = signal_generator.get_detailed_analysis(symbol, timeframe, rates)
+        
+        # 转换numpy类型为原生Python类型
+        analysis = convert_numpy_types(analysis)
         
         return jsonify(analysis)
         
@@ -554,18 +879,6 @@ def train_model():
             'error': f'模型训练失败: {e}',
             'timestamp': datetime.now().isoformat()
         }), 500
-
-@app.route('/stats', methods=['GET'])
-def get_stats():
-    """获取服务器统计信息"""
-    return jsonify({
-        'signal_history_count': len(signal_generator.signal_history),
-        'cache_size': len(signal_generator.signal_cache),
-        'ml_model_trained': signal_generator.ml_generator.is_trained,
-        'last_training_time': signal_generator.ml_generator.last_training_time,
-        'training_data_size': len(signal_generator.ml_generator.training_data),
-        'timestamp': datetime.now().isoformat()
-    })
 
 if __name__ == '__main__':
     logger.info("启动增强版Python服务器...")
