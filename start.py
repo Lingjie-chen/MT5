@@ -1060,9 +1060,6 @@ class MTFAnalyzer:
              if dir_curr == 0 or dir_curr == dir_htf1:
                  confirmed_dir = dir_htf1
         
-        if confirmed_dir == 0:
-             return {"signal": "neutral", "reason": "MTF Misaligned"}
-             
         # 2. Zone Check
         if time.time() - self.last_zone_update > 900: 
             self.update_zones(symbol)
