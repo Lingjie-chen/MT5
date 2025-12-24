@@ -2012,7 +2012,7 @@ class AI_MT5_Bot:
 
         # 评分公式
         if total_trades == 0:
-            return -100
+            return -100.0
             
         # 最终得分基于净值增长
         net_profit = balance - 10000.0
@@ -2021,7 +2021,13 @@ class AI_MT5_Bot:
         win_rate = win_trades / total_trades
         score = net_profit * (1 + win_rate)
         
-        return score
+        # 归一化/限制分数范围，避免数值过大
+        # 假设最大合理利润为 20% (2000刀)，最大得分为 4000 左右
+        # 超过一定范围进行压缩 (Log Scale or Clipping)
+        if score > 5000:
+            score = 5000 + np.log10(score - 4999) * 100
+            
+        return float(score)
 
     def optimize_strategy_parameters(self):
         """
