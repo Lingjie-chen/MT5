@@ -2382,40 +2382,22 @@ class AI_MT5_Bot:
                         self.send_telegram_message(analysis_msg)
                         
                         # 4. 执行交易
+                        # 修正逻辑: 优先尊重 Qwen 的信号和参数
+                        # 如果 Qwen 明确说 "hold" 或 "neutral"，即使 final_signal 是 buy/sell，也应该谨慎
+                        # 但如果 final_signal 极强 (如 100.0)，我们可能还是想交易
+                        # 现在的逻辑是: 交易方向以 final_signal 为准 (因为它是混合投票的结果，Qwen 也是其中一票)
+                        # 但 参数 (Entry/Exit) 必须优先使用 Qwen 的建议
+                        
                         if final_signal != 'hold':
-                            # 仅当 Qwen 的方向与最终决策一致 (或 Qwen 不反对) 时，才使用 Qwen 的参数
-                            # 否则使用默认的 Entry/Exit 逻辑 (传入 None)
                             entry_params = strategy.get('entry_conditions')
                             exit_params = strategy.get('exit_conditions')
                             
-                            # 检查一致性
-                            use_qwen_params = False
-                            if qw_signal == final_signal:
-                                use_qwen_params = True
-                            elif qw_signal == 'neutral' or qw_signal == 'hold':
-                                # Qwen 中立，可以使用其参数(如果存在)
-                                use_qwen_params = True
-                                
-                            # 即使 Qwen 方向不一致，如果 Qwen 明确给出了针对当前 final_signal 的建议，也可以采纳
-                            # 但目前 Qwen 是一次性返回，通常针对它自己判断的方向
+                            # 强制使用 Qwen 的参数，不再进行一致性回退检查
+                            # 除非 Qwen 建议的参数明显不可用 (如 None)
                             
-                            # 如果 Qwen 建议 limit order 且方向一致，则必须使用 Qwen 参数
-                            
-                            if not use_qwen_params:
-                                logger.warning(f"Qwen 信号 ({qw_signal}) 与最终决策 ({final_signal}) 不一致，回退到默认参数")
-                                entry_params = None
-                                exit_params = None # 将导致 execute_trade 使用 ATR 默认值
-                            
-                            # 强制使用 Qwen 参数 (如果存在且合理)，即使用户之前要求一致性，
-                            # 但如果 AI 最终决定确实非常强 (如 100.0)，且 Qwen 提供了参数，
-                            # 我们应该尝试使用 Qwen 的参数，或者至少尊重 final_signal
-                            # 
-                            # 修正逻辑: 
-                            # 如果 AI 最终决定是 SELL，不管 Qwen 说什么，我们都要执行 SELL。
-                            # Qwen 提供的参数 (entry/exit) 如果是针对 SELL 的，就用；否则用默认。
-                            # 在本例中，Qwen 虽然说 "等待突破"，但 action 可能是 hold 或 neutral，
-                            # 而最终决定是 SELL 100.0。
-                            # 这种情况下，我们应该执行 SELL，并使用默认参数 (因为 Qwen 没有给 SELL 的参数)。
+                            # 日志记录差异，但不阻止使用参数
+                            if qw_signal != final_signal and qw_signal not in ['neutral', 'hold']:
+                                logger.warning(f"Qwen 信号 ({qw_signal}) 与最终决策 ({final_signal}) 不一致，但仍优先使用 Qwen 参数")
                             
                             trade_res = self.execute_trade(
                                 final_signal, 
