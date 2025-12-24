@@ -174,15 +174,16 @@ class MT5DataProcessor:
                 # Fill NaN values with the first valid value of the indicator
                 first_valid = df[indicator].first_valid_index()
                 if first_valid is not None:
-                    df[indicator].fillna(df.loc[first_valid, indicator], inplace=True)
+                    # Fix FutureWarning: use assignment instead of inplace=True
+                    df[indicator] = df[indicator].fillna(df.loc[first_valid, indicator])
                 else:
                     # If no valid values, fill with neutral value
                     if indicator in ['ema_crossover']:
-                        df[indicator].fillna(0, inplace=True)  # Neutral signal
+                        df[indicator] = df[indicator].fillna(0)  # Neutral signal
                     elif indicator in ['rsi']:
-                        df[indicator].fillna(50, inplace=True)  # Neutral RSI
+                        df[indicator] = df[indicator].fillna(50)  # Neutral RSI
                     else:
-                        df[indicator].fillna(0, inplace=True)  # Zero for other indicators
+                        df[indicator] = df[indicator].fillna(0)  # Zero for other indicators
         
         return df
 

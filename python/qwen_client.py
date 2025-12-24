@@ -40,7 +40,7 @@ class QwenClient:
         Args:
             endpoint (str): API端点
             payload (Dict[str, Any]): 请求负载
-            max_retries (int): 最大重试次数，默认为3
+            max_retries (int): 最大尝试次数，默认为3 (增强稳定性)
         
         Returns:
             Optional[Dict[str, Any]]: API响应，失败返回None
@@ -48,9 +48,10 @@ class QwenClient:
         url = f"{self.base_url}/{endpoint}"
         
         for retry in range(max_retries):
+            response = None
             try:
-                # 增加超时时间到30秒，提高在网络不稳定情况下的成功率
-                response = requests.post(url, headers=self.headers, json=payload, timeout=30)
+                # 增加超时时间到60秒，提高在网络不稳定情况下的成功率
+                response = requests.post(url, headers=self.headers, json=payload, timeout=60)
                 
                 # 详细记录响应状态
                 logger.debug(f"API响应状态码: {response.status_code}, 模型: {self.model}, 重试: {retry+1}/{max_retries}")
@@ -84,13 +85,15 @@ class QwenClient:
             except requests.exceptions.HTTPError as e:
                 logger.error(f"API HTTP错误 (重试 {retry+1}/{max_retries}): {e}")
                 logger.error(f"请求URL: {url}")
-                logger.error(f"响应内容: {response.text[:200]}...")
+                if response:
+                    logger.error(f"响应内容: {response.text[:200]}...")
             except requests.exceptions.RequestException as e:
                 logger.error(f"API请求异常 (重试 {retry+1}/{max_retries}): {e}")
                 logger.error(f"请求URL: {url}")
             except json.JSONDecodeError as e:
                 logger.error(f"JSON解析失败: {e}")
-                logger.error(f"响应内容: {response.text}")
+                if response:
+                    logger.error(f"响应内容: {response.text}")
                 return None
             except Exception as e:
                 logger.error(f"API调用意外错误: {e}")
@@ -106,7 +109,7 @@ class QwenClient:
                 logger.error(f"API调用失败，已达到最大重试次数 {max_retries}")
                 return None
     
-    def optimize_strategy_logic(self, deepseek_analysis: Dict[str, Any], current_market_data: Dict[str, Any]) -> Dict[str, Any]:
+    def optimize_strategy_logic(self, deepseek_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         优化策略逻辑，基于DeepSeek的情绪得分调整入场条件
         基于ValueCell的实现，支持JSON模式输出
@@ -114,25 +117,60 @@ class QwenClient:
         Args:
             deepseek_analysis (Dict[str, Any]): DeepSeek的市场分析结果
             current_market_data (Dict[str, Any]): 当前市场数据
+            technical_signals (Optional[Dict[str, Any]]): 其他技术模型的信号（CRT, Price Equation等）
         
         Returns:
             Dict[str, Any]: 优化后的策略参数
         """
+        tech_context = ""
+        perf_context = ""
+        
+        if technical_signals:
+            # 提取性能统计 (如果存在) 并单独处理，避免被 json.dumps 混淆
+            perf_stats = technical_signals.get('performance_stats')
+            if perf_stats:
+                perf_context = (
+                    f"\n历史交易绩效参考 (用于优化 SL/TP):\n"
+                    f"- 平均 MFE (最大有利波动): {perf_stats.get('avg_mfe', 0):.2f}%\n"
+                    f"- 平均 MAE (最大不利波动): {perf_stats.get('avg_mae', 0):.2f}%\n"
+                    f"- 平均利润: {perf_stats.get('avg_profit', 0):.2f}\n"
+                    f"- 样本交易数: {perf_stats.get('trade_count', 0)}\n"
+                )
+                # 从 technical_signals 中移除 stats 以免重复 (浅拷贝处理)
+                sigs_copy = technical_signals.copy()
+                if 'performance_stats' in sigs_copy:
+                    del sigs_copy['performance_stats']
+                tech_context = f"\n其他技术模型信号 (CRT/PriceEq/Hybrid):\n{json.dumps(sigs_copy, indent=2)}\n"
+            else:
+                tech_context = f"\n其他技术模型信号 (CRT/PriceEq/Hybrid):\n{json.dumps(technical_signals, indent=2)}\n"
+
         prompt = f"""
-        作为专业的量化交易策略优化专家，请根据DeepSeek的市场分析结果和当前市场数据，优化以下策略逻辑：
+        作为专业的量化交易策略优化专家，你是混合交易系统的核心决策层。请根据DeepSeek的市场分析结果、当前市场数据以及其他技术模型的信号，优化策略逻辑。
         
         DeepSeek市场分析结果：
         {json.dumps(deepseek_analysis, indent=2)}
         
         当前市场数据：
         {json.dumps(current_market_data, indent=2)}
+        {tech_context}
+        {perf_context}
         
-        请提供以下优化结果：
-        1. 入场条件：基于情绪得分和技术指标的优化入场规则
-        2. 出场条件：止盈止损参数
+        请综合考虑所有信号：
+        1. DeepSeek 提供宏观结构和趋势判断。
+        2. CRT (Candle Range Theory) 提供流动性猎取和反转信号。
+        3. Price Equation 提供纯数学的动量预测。
+        4. Hybrid Optimizer 提供加权共识。
+        5. MFE/MAE 历史数据 (如有) 提供止盈止损优化的参考依据。
+           - 如果平均 MFE 较高，可适当放宽 TP。
+           - 如果平均 MAE 较低但频繁止损，可适当放宽 SL 或优化入场。
+        
+        请提供以下优化结果，并确保分析全面、逻辑严密，不要使用省略号或简化描述：
+        1. 入场条件：基于情绪得分和技术指标的优化入场规则，详细说明触发条件
+        2. 出场条件：止盈止损参数，给出具体的数值或计算逻辑
         3. 仓位大小：基于市场波动率的最优仓位
         4. 交易信号强度：0-100的得分，表示信号的可靠性
         5. 风险管理建议：针对当前市场状态的风险控制措施
+        6. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)
         
         请以JSON格式返回结果，包含以下字段：
         - entry_conditions: dict
@@ -140,6 +178,7 @@ class QwenClient:
         - position_size: float
         - signal_strength: int
         - risk_management: dict
+        - strategy_rationale: str
         """
         
         # 构建payload，遵循ValueCell的实现
@@ -162,7 +201,8 @@ class QwenClient:
         if response and "choices" in response:
             try:
                 message_content = response["choices"][0]["message"]["content"]
-                logger.info(f"收到模型响应: {message_content[:200]}...")
+                # Log full response for detailed analysis
+                logger.info(f"收到模型响应: {message_content}")
                 
                 optimized_strategy = json.loads(message_content)
                 return optimized_strategy

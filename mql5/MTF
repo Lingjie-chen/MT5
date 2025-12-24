@@ -1,0 +1,2708 @@
+//+------------------------------------------------------------------+
+//|                                                  MTF_Primary_EA.mq5 |
+//|                                    Copyright 2025, MetaQuotes Ltd. |
+//|                                              https://www.mql5.com  |
+//+------------------------------------------------------------------+
+#property copyright "Copyright 2025, MetaQuotes Ltd."
+#property link      "https://www.mql5.com"
+#property version   "4.10"
+#property description "MTF-Primary EA: MTF Confirmation as CORE Signal, S&D as Auxiliary Filter + Multi-Stage Take Profit"
+//+------------------------------------------------------------------+
+//| Include Files                                                    |
+//+------------------------------------------------------------------+
+#include <Trade\Trade.mqh>
+#include <Trade\PositionInfo.mqh>
+#include <Trade\DealInfo.mqh>
+#include <Arrays\ArrayDouble.mqh>
+#include <Math\Stat\Math.mqh>
+#include <Arrays\ArrayInt.mqh>
+#include <ChartObjects\ChartObjectsTxtControls.mqh>
+//+------------------------------------------------------------------+
+//| Global Trade Objects                                             |
+//+------------------------------------------------------------------+
+CTrade trade;
+CPositionInfo position;
+CDealInfo deal;
+//+------------------------------------------------------------------+
+//| Input Parameters - Timeframe Visual Analyzer                     |
+//+------------------------------------------------------------------+
+input group "=== Multi-Timeframe Visual Settings ==="
+input ENUM_TIMEFRAMES HTF1 = PERIOD_M5;          // Higher Timeframe 1
+input ENUM_TIMEFRAMES HTF2 = PERIOD_M15;         // Higher Timeframe 2
+input int BarsToDraw = 500;                      // Bars to draw for HTF
+input bool DrawOnlyVisible = true;               // Draw only visible bars
+input int RefreshSeconds = 1;                    // Refresh rate in seconds
+input group "=== Wick Settings ==="
+input int WickWidth = 5;                         // Wick width
+input bool ExtendWicks = true;                   // Extend wicks slightly
+input group "=== HTF1 Visual Style ==="
+input color HTF1_BullishBodyColor = clrLimeGreen;
+input color HTF1_BearishBodyColor = clrRed;
+input color HTF1_BullishWickColor = clrLime;
+input color HTF1_BearishWickColor = clrBlack;
+input uint HTF1_Alpha = 160;
+input group "=== HTF2 Visual Style ==="
+input color HTF2_BullishBodyColor = clrDodgerBlue;
+input color HTF2_BearishBodyColor = clrOrangeRed;
+input color HTF2_BullishWickColor = clrDeepSkyBlue;
+input color HTF2_BearishWickColor = clrDarkOrange;
+input uint HTF2_Alpha = 220;
+input group "=== Multi-Timeframe Alert Settings ==="
+input bool AlertOnConfirmationInput = true;
+input bool AlertOnOpposite = false;
+input int MinPipsForSignal = 0;
+input group "=== Signal Confirmations Settings ==="
+input int SignalConfirmationsRequired = 1;      // Number of consecutive signal confirmations required
+input group "=== Notification Methods ==="
+input bool UseSound = true;
+input string SoundFile = "alert.wav";
+input bool UsePush = true;
+input bool UseMail = false;
+input group "=== Telegram Notification Settings ==="
+input bool UseTelegram = true;                  // 启用Telegram通知
+input string TelegramBotToken = "8253887074:AAE_o7hfEb6iJCZ2MdVIezOC_E0OnTCvCzY"; // Telegram Bot Token
+input string TelegramChatID = "5254086791";               // Telegram Chat ID (例如: "-1001234567890")
+//+------------------------------------------------------------------+
+//| Input Parameters - SMC Supply & Demand System (AUXILIARY)       |
+//+------------------------------------------------------------------+
+input group "=== Supply & Demand Configuration (AUX) ==="
+input int Swing_Length = 20;
+input int History_To_Keep = 500;
+input double Box_Width = 1.0;
+input int Zone_Tolerance_Points = 50;
+input group "=== Trade Configuration ==="
+input double Lot_Size = 0.01;
+input int Stop_Loss = 300;
+input int Take_Profit = 500;
+input int Magic_Number = 56544;
+input int Max_Spread = 100;
+input bool Use_Risk_Percent = true;
+input double Risk_Percent = 2.0;
+input group "=== Kelly Criterion Money Management ==="
+input bool Use_Kelly_Criterion = true;
+input double Max_Kelly_Fraction = 0.25;
+input double Win_Rate = 0.60;
+input double Win_Loss_Ratio = 1.5;
+input bool Use_Adaptive_Kelly = true;
+input group "=== Market Adaptation ==="
+input bool Use_Dynamic_Parameters = true;
+input int Volatility_Period = 50;
+input double High_Volatility_Multiplier = 1.5;
+input double Low_Volatility_Multiplier = 0.7;
+input bool Use_Market_Regime_Detection = true;
+input group "=== Multi-layer Risk Management ==="
+input double Daily_Risk_Limit = 2.0;
+input double Max_Drawdown_Limit = 10.0;
+input bool Use_Correlation_Protection = true;
+input double Max_Portfolio_Risk = 15.0;
+input int Max_Positions = 3;
+input group "=== Dynamic Exit Strategies ==="
+input bool Use_Trailing_Stop = true;
+input int Trailing_Start = 50;
+input int Trailing_Step = 20;
+input bool Use_Time_Exit = true;
+input int Max_Trade_Hours = 24;
+input bool Use_Volatility_Exit = true;
+input bool Use_BreakEven_Stop = true;
+input int BreakEven_Trigger = 30;
+input bool Use_Price_Action_Exit = true;
+input group "=== Multi-Stage Take Profit Settings ==="
+input bool Use_Multi_Stage_TP = true;            // Enable multi-stage take profit
+input double TP1_Percentage = 50.0;             // Percentage of position to close at TP1
+input int TP1_Pips = 100;                        // Pips to first take profit level
+input double TP2_Percentage = 30.0;             // Percentage of position to close at TP2
+input int TP2_Pips = 200;                        // Pips to second take profit level
+input double TP3_Percentage = 20.0;             // Percentage of position to close at TP3
+input int TP3_Pips = 300;                        // Pips to third take profit level
+input bool Use_TP_Modification = true;          // Modify remaining position's TP after partial close
+input group "=== Performance Tracking & Optimization ==="
+input bool Enable_Performance_Tracking = true;
+input int Optimization_Period = 100;
+input bool Adaptive_WinRate = true;
+input bool Use_Machine_Learning = false;
+input int Learning_Period = 500;
+input group "=== MTF Signal Display Settings ==="
+input bool Show_MTF_Signal_Table = true;
+input color MTF_Bullish_Color = clrLime;
+input color MTF_Bearish_Color = clrRed;
+input color MTF_Neutral_Color = clrGray;
+input int MTF_Table_X = 10;
+input int MTF_Table_Y = 120;
+//+------------------------------------------------------------------+
+//| Input Parameters - MTF Confirmation Trading (PRIMARY)           |
+//+------------------------------------------------------------------+
+input group "=== MTF Confirmation Trading Settings ==="
+input bool Use_MTF_for_Trading = true;           // MUST be true
+input double MTF_Weight = 0.7;
+input bool Pure_MTF_Trades = true;               // NOW DEFAULT: true
+input double Zone_Boost_Factor = 1.3;            // Boost when price in aligned zone
+input double Zone_Dampen_Factor = 0.7;           // Dampen when price in opposite zone
+//+------------------------------------------------------------------+
+//| Global Variables                                                |
+//+------------------------------------------------------------------+
+// Timeframe Visual Analyzer Variables
+string PREFIX = "_MTF_EA_";
+string BTN_PREFIX = "_MTF_EA_BTN_";
+long lastChartID = 0;
+bool ShowHTF1 = true;
+bool ShowHTF2 = true;
+bool AlertOnConfirmation = true;
+int lastSignalDir = 0;
+datetime lastSignalTime = 0;
+// MTF Signal History
+struct MTFSignal {
+   datetime time;
+   int direction;
+   string symbol;
+   string htf1;
+   string htf2;
+};
+MTFSignal mtfSignals[50];
+int mtfSignalCount = 0;
+// Supply & Demand Variables
+double demandZones[];                            // Array to store demand zones [top, bottom]
+double supplyZones[];                            // Array to store supply zones [top, bottom]
+datetime zoneTimes[];                            // Array to store zone times
+int demandCount = 0;                             // Count of active demand zones
+int supplyCount = 0;                             // Count of active supply zones
+double historicalDemandZones[][2];               // [top, bottom] store historical demand zones
+double historicalSupplyZones[][2];               // [top, bottom] store historical supply zones
+datetime historicalZoneTimes[];                  // Store historical zone times
+int historicalDemandCount = 0;                   // Historical demand zone count
+int historicalSupplyCount = 0;                   // Historical supply zone count
+// Indicator Handles
+int atrHandle;                                   // ATR indicator handle
+int volatilityHandle;                            // Volatility indicator handle
+int rsiHandle;                                   // RSI for market state
+int maFastHandle, maSlowHandle;                  // Moving averages for trend
+// Risk Management Variables
+double dailyPnL = 0.0;                           // Today's P&L
+double accountPeakBalance = 0.0;                 // Peak account balance for drawdown calc
+int consecutiveLosses = 0;                       // Consecutive losses counter
+datetime lastTradeTime = 0;                      // Time of last trade
+double currentVolatility = 0.0;                  // Current market volatility
+datetime lastDailyReset = 0;                     // Last daily reset time
+int totalTradesToday = 0;                        // Trades today counter
+double maxSingleRisk = 0.0;                      // Maximum single trade risk
+// Performance Tracking Variables
+int totalTrades = 0;
+int winningTrades = 0;
+double totalProfit = 0.0;
+double totalLoss = 0.0;
+double currentWinRate = 0.0;
+double currentProfitFactor = 0.0;
+double bestWinRate = 0.0;
+double worstDrawdown = 0.0;
+double sharpeRatio = 0.0;                        // Risk-adjusted performance
+double expectancy = 0.0;                         // Trade expectancy
+// Market State Variables
+enum MARKET_STATE {
+   MARKET_TRENDING_UP,
+   MARKET_TRENDING_DOWN,
+   MARKET_RANGING,
+   MARKET_HIGH_VOLATILITY,
+   MARKET_LOW_VOLATILITY,
+   MARKET_BREAKOUT,
+   MARKET_MEAN_REVERSION
+};
+MARKET_STATE currentMarketState = MARKET_RANGING;
+MARKET_STATE previousMarketState = MARKET_RANGING;
+// Learning Variables
+double patternSuccessRates[10];                  // Success rates for different patterns
+double zoneEffectiveness[20];                    // Effectiveness of different zones
+int learningSamples = 0;                         // Number of learning samples
+// Drawing Variables
+bool zonesInitialized = false;
+int lastDemandCount = -1;
+int lastSupplyCount = -1;
+int lastHistoricalDemandCount = -1;
+int lastHistoricalSupplyCount = -1;
+// Multi-Stage Take Profit Variables
+struct TakeProfitLevel {
+   double percentage;
+   int pips;
+   bool reached;
+};
+TakeProfitLevel tpLevels[3];
+bool EnableDebug = false;
+// Signal Confirmation Variables
+int consecutiveBullishSignals = 0;
+int consecutiveBearishSignals = 0;
+datetime lastSignalBarTime = 0;
+//+------------------------------------------------------------------+
+//| Expert initialization function                                   |
+//+------------------------------------------------------------------+
+int OnInit()
+{
+   Print("Initializing MTF-Primary EA v4.10 with Signal Confirmation...");
+   // Initialize arrays
+   ArrayResize(demandZones, History_To_Keep * 2);
+   ArrayResize(supplyZones, History_To_Keep * 2);
+   ArrayResize(zoneTimes, History_To_Keep * 2);
+   // Initialize historical zones arrays
+   ArrayResize(historicalDemandZones, History_To_Keep * 4, 100);
+   ArrayResize(historicalSupplyZones, History_To_Keep * 4, 100);
+   ArrayResize(historicalZoneTimes, History_To_Keep * 8, 100);
+   // Initialize learning arrays
+   ArrayInitialize(patternSuccessRates, 0.5);
+   ArrayInitialize(zoneEffectiveness, 0.5);
+   // Initialize take profit levels
+   tpLevels[0].percentage = TP1_Percentage / 100.0;
+   tpLevels[0].pips = TP1_Pips;
+   tpLevels[0].reached = false;
+   tpLevels[1].percentage = TP2_Percentage / 100.0;
+   tpLevels[1].pips = TP2_Pips;
+   tpLevels[1].reached = false;
+   tpLevels[2].percentage = TP3_Percentage / 100.0;
+   tpLevels[2].pips = TP3_Pips;
+   tpLevels[2].reached = false;
+   // Initialize indicator handles
+   atrHandle = iATR(_Symbol, _Period, 14);
+   volatilityHandle = iATR(_Symbol, _Period, Volatility_Period);
+   rsiHandle = iRSI(_Symbol, _Period, 14, PRICE_CLOSE);
+   maFastHandle = iMA(_Symbol, _Period, 20, 0, MODE_SMA, PRICE_CLOSE);
+   maSlowHandle = iMA(_Symbol, _Period, 50, 0, MODE_SMA, PRICE_CLOSE);
+   if(atrHandle == INVALID_HANDLE || volatilityHandle == INVALID_HANDLE)
+   {
+      Print("Error creating indicator handles");
+      return(INIT_FAILED);
+   }
+   // Set trade parameters
+   trade.SetExpertMagicNumber(Magic_Number);
+   trade.SetMarginMode();
+   trade.SetTypeFillingBySymbol(_Symbol);
+   trade.SetExpertMagicNumber(Magic_Number);
+   trade.SetMarginMode();
+   trade.SetTypeFillingBySymbol(_Symbol);
+   accountPeakBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+   lastDailyReset = iTime(_Symbol, PERIOD_D1, 0);
+   if(Enable_Performance_Tracking)
+   {
+      LoadPerformanceStatistics();
+      LoadLearningData();
+   }
+   // Clear chart objects
+   ObjectsDeleteAll(0, -1, OBJ_RECTANGLE);
+   ObjectsDeleteAll(0, -1, OBJ_HLINE);
+   ObjectsDeleteAll(0, -1, OBJ_LABEL);
+   // Initialize Timeframe Visual Analyzer
+   lastChartID = ChartID();
+   AlertOnConfirmation = AlertOnConfirmationInput;
+   LoadToggleState();
+   CreateToggleButtons();
+   ClearMTFObjects();
+   // Initialize MTF signal table
+   if(Show_MTF_Signal_Table)
+   {
+      CreateMTFSignalTable();
+   }
+   // Set timer for visual updates
+   EventSetTimer(MathMax(1, RefreshSeconds));
+   Print("MTF-Primary EA v4.10 with Signal Confirmation initialized successfully");
+   Print("Account Balance: ", AccountInfoDouble(ACCOUNT_BALANCE));
+   Print("Market State: ", GetMarketStateString());
+   Print("Multi-Stage TP Enabled: ", Use_Multi_Stage_TP ? "YES" : "NO");
+   Print("Signal Confirmations Required: ", SignalConfirmationsRequired);
+   Print("Telegram Notifications: ", UseTelegram ? "ENABLED" : "DISABLED");
+   if(UseTelegram && TelegramChatID == "")
+      Print("WARNING: Telegram Chat ID is not set! Telegram notifications will not work.");
+   return(INIT_SUCCEEDED);
+}
+//+------------------------------------------------------------------+
+//| Expert deinitialization function                                 |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+{
+   Print("Deinitializing MTF-Primary EA with Signal Confirmation...");
+   // Release indicator handles
+   if(atrHandle != INVALID_HANDLE) IndicatorRelease(atrHandle);
+   if(volatilityHandle != INVALID_HANDLE) IndicatorRelease(volatilityHandle);
+   if(rsiHandle != INVALID_HANDLE) IndicatorRelease(rsiHandle);
+   if(maFastHandle != INVALID_HANDLE) IndicatorRelease(maFastHandle);
+   if(maSlowHandle != INVALID_HANDLE) IndicatorRelease(maSlowHandle);
+   // Clean up chart objects
+   ObjectsDeleteAll(0, -1, OBJ_RECTANGLE);
+   ObjectsDeleteAll(0, -1, OBJ_HLINE);
+   ObjectsDeleteAll(0, -1, OBJ_LABEL);
+   // Clean up Timeframe Visual Analyzer objects
+   EventKillTimer();
+   ClearMTFObjects();
+   ObjectDelete(0, BTN_PREFIX + "HTF1");
+   ObjectDelete(0, BTN_PREFIX + "HTF2");
+   ObjectDelete(0, BTN_PREFIX + "ALRT");
+   RemoveConfirmationLabel();
+   // Clean up MTF signal table
+   RemoveMTFSignalTable();
+   SaveToggleState();
+   // Save performance statistics and learning data
+   if(Enable_Performance_Tracking)
+   {
+      SavePerformanceStatistics();
+      SaveLearningData();
+   }
+   Print("EA deinitialized. Final Performance - Total Trades: ", totalTrades,
+         " Win Rate: ", DoubleToString(currentWinRate * 100, 2), "%");
+}
+//+------------------------------------------------------------------+
+//| Timer function for visual updates                               |
+//+------------------------------------------------------------------+
+void OnTimer()
+{
+   // Update chart ID if changed
+   long currentChartID = ChartID();
+   if(currentChartID != lastChartID)
+   {
+      lastChartID = currentChartID;
+   }
+   // Update visual elements
+   CreateToggleButtons();
+   ClearMTFObjects();
+   DrawHTF("HTF1", HTF1, HTF1_BullishBodyColor, HTF1_BearishBodyColor, 
+           HTF1_BullishWickColor, HTF1_BearishWickColor, HTF1_Alpha, ShowHTF1);
+   DrawHTF("HTF2", HTF2, HTF2_BullishBodyColor, HTF2_BearishBodyColor, 
+           HTF2_BullishWickColor, HTF2_BearishWickColor, HTF2_Alpha, ShowHTF2);
+   // Update MTF signal table
+   if(Show_MTF_Signal_Table)
+   {
+      UpdateMTFSignalTable();
+   }
+   // Check for MTF alerts
+   if(AlertOnConfirmation || AlertOnOpposite)
+      CheckAndAlertMTF();
+}
+//+------------------------------------------------------------------+
+//| OnTick function - Main trading logic                            |
+//+------------------------------------------------------------------+
+void OnTick()
+{
+   static datetime lastBarTime = 0;
+   datetime currentBarTime = iTime(_Symbol, _Period, 0);
+   // Update market data
+   UpdateMarketData();
+   bool isNewBar = (lastBarTime != currentBarTime);
+   if(isNewBar)
+   {
+      lastBarTime = currentBarTime;
+      // Update supply and demand zones
+      UpdateSupplyDemandZones();
+      // Update market state
+      UpdateMarketState();
+      // Check trading signals
+      CheckTradingSignals();
+   }
+   // Manage existing positions
+   ManageOpenPositions();
+   // Draw zones on chart
+   DrawZonesOnChart();
+   // Update performance display
+   UpdatePerformanceDisplay();
+}
+//+------------------------------------------------------------------+
+//| Chart event handler                                              |
+//+------------------------------------------------------------------+
+void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
+{
+   if(id == CHARTEVENT_OBJECT_CLICK)
+   {
+      string name = sparam;
+      // Handle Timeframe Visual Analyzer buttons
+      if(StringFind(name, BTN_PREFIX) == 0)
+      {
+         if(name == BTN_PREFIX + "HTF1")
+         {
+            ShowHTF1 = !ShowHTF1;
+            ObjectSetString(0, name, OBJPROP_TEXT, ShowHTF1 ? "HTF1: ON" : "HTF1: OFF");
+            ObjectSetInteger(0, name, OBJPROP_BGCOLOR, ShowHTF1 ? clrLimeGreen : clrRed);
+            SaveToggleState();
+         }
+         else if(name == BTN_PREFIX + "HTF2")
+         {
+            ShowHTF2 = !ShowHTF2;
+            ObjectSetString(0, name, OBJPROP_TEXT, ShowHTF2 ? "HTF2: ON" : "HTF2: OFF");
+            ObjectSetInteger(0, name, OBJPROP_BGCOLOR, ShowHTF2 ? clrLimeGreen : clrRed);
+            SaveToggleState();
+         }
+         else if(name == BTN_PREFIX + "ALRT")
+         {
+            AlertOnConfirmation = !AlertOnConfirmation;
+            ObjectSetString(0, name, OBJPROP_TEXT, AlertOnConfirmation ? "ALRT: ON" : "ALRT: OFF");
+            ObjectSetInteger(0, name, OBJPROP_BGCOLOR, AlertOnConfirmation ? clrLimeGreen : clrRed);
+            SaveToggleState();
+         }
+         // Refresh visual elements
+         ClearMTFObjects();
+         DrawHTF("HTF1", HTF1, HTF1_BullishBodyColor, HTF1_BearishBodyColor, 
+                 HTF1_BullishWickColor, HTF1_BearishWickColor, HTF1_Alpha, ShowHTF1);
+         DrawHTF("HTF2", HTF2, HTF2_BullishBodyColor, HTF2_BearishBodyColor, 
+                 HTF2_BullishWickColor, HTF2_BearishWickColor, HTF2_Alpha, ShowHTF2);
+      }
+   }
+}
+//+------------------------------------------------------------------+
+//| Trade event handler for performance tracking                    |
+//+------------------------------------------------------------------+
+void OnTrade()
+{
+   if(Enable_Performance_Tracking)
+   {
+      HistorySelect(TimeCurrent()-3600, TimeCurrent());
+      int deals = HistoryDealsTotal();
+      if(deals > 0)
+      {
+         ulong ticket = HistoryDealGetTicket(deals-1);
+         if(HistoryDealGetInteger(ticket, DEAL_MAGIC) == Magic_Number)
+         {
+            double profit = HistoryDealGetDouble(ticket, DEAL_PROFIT);
+            UpdatePerformanceStatistics(profit);
+         }
+      }
+   }
+}
+//+------------------------------------------------------------------+
+//| MTF Signal Table Functions                                      |
+//+------------------------------------------------------------------+
+void CreateMTFSignalTable()
+{
+   if(!Show_MTF_Signal_Table) return;
+   // Create table background
+   string bgName = "MTF_Table_BG";
+   if(ObjectCreate(0, bgName, OBJ_RECTANGLE_LABEL, 0, 0, 0))
+   {
+      ObjectSetInteger(0, bgName, OBJPROP_XDISTANCE, MTF_Table_X);
+      ObjectSetInteger(0, bgName, OBJPROP_YDISTANCE, MTF_Table_Y);
+      ObjectSetInteger(0, bgName, OBJPROP_XSIZE, 250);
+      ObjectSetInteger(0, bgName, OBJPROP_YSIZE, 180);
+      ObjectSetInteger(0, bgName, OBJPROP_BGCOLOR, clrWhite);
+      ObjectSetInteger(0, bgName, OBJPROP_BORDER_COLOR, clrGray);
+      ObjectSetInteger(0, bgName, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+      ObjectSetInteger(0, bgName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, bgName, OBJPROP_BACK, false);
+      ObjectSetInteger(0, bgName, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, bgName, OBJPROP_HIDDEN, false);
+   }
+   // Create table header
+   string headerName = "MTF_Table_Header";
+   if(ObjectCreate(0, headerName, OBJ_LABEL, 0, 0, 0))
+   {
+      ObjectSetInteger(0, headerName, OBJPROP_XDISTANCE, MTF_Table_X + 5);
+      ObjectSetInteger(0, headerName, OBJPROP_YDISTANCE, MTF_Table_Y + 5);
+      ObjectSetInteger(0, headerName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, headerName, OBJPROP_BACK, false);
+      ObjectSetInteger(0, headerName, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, headerName, OBJPROP_FONTSIZE, 10);
+      ObjectSetInteger(0, headerName, OBJPROP_COLOR, clrBlack);
+      ObjectSetString(0, headerName, OBJPROP_TEXT, "Multi-Timeframe Signals");
+      ObjectSetString(0, headerName, OBJPROP_FONT, "Arial Bold");
+   }
+   // Create column headers
+   string timeHeader = "MTF_Table_Time_Header";
+   if(ObjectCreate(0, timeHeader, OBJ_LABEL, 0, 0, 0))
+   {
+      ObjectSetInteger(0, timeHeader, OBJPROP_XDISTANCE, MTF_Table_X + 10);
+      ObjectSetInteger(0, timeHeader, OBJPROP_YDISTANCE, MTF_Table_Y + 25);
+      ObjectSetInteger(0, timeHeader, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, timeHeader, OBJPROP_BACK, false);
+      ObjectSetInteger(0, timeHeader, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, timeHeader, OBJPROP_FONTSIZE, 8);
+      ObjectSetInteger(0, timeHeader, OBJPROP_COLOR, clrBlack);
+      ObjectSetString(0, timeHeader, OBJPROP_TEXT, "Time");
+   }
+   string signalHeader = "MTF_Table_Signal_Header";
+   if(ObjectCreate(0, signalHeader, OBJ_LABEL, 0, 0, 0))
+   {
+      ObjectSetInteger(0, signalHeader, OBJPROP_XDISTANCE, MTF_Table_X + 120);
+      ObjectSetInteger(0, signalHeader, OBJPROP_YDISTANCE, MTF_Table_Y + 25);
+      ObjectSetInteger(0, signalHeader, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, signalHeader, OBJPROP_BACK, false);
+      ObjectSetInteger(0, signalHeader, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, signalHeader, OBJPROP_FONTSIZE, 8);
+      ObjectSetInteger(0, signalHeader, OBJPROP_COLOR, clrBlack);
+      ObjectSetString(0, signalHeader, OBJPROP_TEXT, "Signal");
+   }
+   string tfHeader = "MTF_Table_TF_Header";
+   if(ObjectCreate(0, tfHeader, OBJ_LABEL, 0, 0, 0))
+   {
+      ObjectSetInteger(0, tfHeader, OBJPROP_XDISTANCE, MTF_Table_X + 180);
+      ObjectSetInteger(0, tfHeader, OBJPROP_YDISTANCE, MTF_Table_Y + 25);
+      ObjectSetInteger(0, tfHeader, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, tfHeader, OBJPROP_BACK, false);
+      ObjectSetInteger(0, tfHeader, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, tfHeader, OBJPROP_FONTSIZE, 8);
+      ObjectSetInteger(0, tfHeader, OBJPROP_COLOR, clrBlack);
+      ObjectSetString(0, tfHeader, OBJPROP_TEXT, "Timeframes");
+   }
+}
+void UpdateMTFSignalTable()
+{
+   if(!Show_MTF_Signal_Table) return;
+   // Clear existing signal rows
+   for(int i = 0; i < 10; i++)
+   {
+      ObjectDelete(0, "MTF_Table_Time_" + IntegerToString(i));
+      ObjectDelete(0, "MTF_Table_Signal_" + IntegerToString(i));
+      ObjectDelete(0, "MTF_Table_TF_" + IntegerToString(i));
+   }
+   // Display latest signals (max 10)
+   int startIndex = MathMax(0, mtfSignalCount - 10);
+   int displayCount = MathMin(10, mtfSignalCount);
+   for(int i = 0; i < displayCount; i++)
+   {
+      int signalIndex = startIndex + i;
+      int rowY = MTF_Table_Y + 45 + (i * 12);
+      // Time column
+      string timeName = "MTF_Table_Time_" + IntegerToString(i);
+      if(ObjectCreate(0, timeName, OBJ_LABEL, 0, 0, 0))
+      {
+         ObjectSetInteger(0, timeName, OBJPROP_XDISTANCE, MTF_Table_X + 10);
+         ObjectSetInteger(0, timeName, OBJPROP_YDISTANCE, rowY);
+         ObjectSetInteger(0, timeName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+         ObjectSetInteger(0, timeName, OBJPROP_BACK, false);
+         ObjectSetInteger(0, timeName, OBJPROP_SELECTABLE, false);
+         ObjectSetInteger(0, timeName, OBJPROP_FONTSIZE, 7);
+         ObjectSetInteger(0, timeName, OBJPROP_COLOR, clrBlack);
+         ObjectSetString(0, timeName, OBJPROP_TEXT, TimeToString(mtfSignals[signalIndex].time, TIME_MINUTES));
+      }
+      // Signal column with confirmation count
+      string signalName = "MTF_Table_Signal_" + IntegerToString(i);
+      if(ObjectCreate(0, signalName, OBJ_LABEL, 0, 0, 0))
+      {
+         ObjectSetInteger(0, signalName, OBJPROP_XDISTANCE, MTF_Table_X + 120);
+         ObjectSetInteger(0, signalName, OBJPROP_YDISTANCE, rowY);
+         ObjectSetInteger(0, signalName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+         ObjectSetInteger(0, signalName, OBJPROP_BACK, false);
+         ObjectSetInteger(0, signalName, OBJPROP_SELECTABLE, false);
+         ObjectSetInteger(0, signalName, OBJPROP_FONTSIZE, 7);
+         color signalColor = MTF_Neutral_Color;
+         string signalText = "NEUTRAL";
+         
+         // Calculate confirmation status
+         string confirmationText = "";
+         if(mtfSignals[signalIndex].direction != 0)
+         {
+            int confirmationCount = GetConfirmationCountForSignal(mtfSignals[signalIndex].direction, mtfSignals[signalIndex].time);
+            confirmationText = " (" + IntegerToString(confirmationCount) + "/" + IntegerToString(SignalConfirmationsRequired) + ")";
+         }
+         
+         if(mtfSignals[signalIndex].direction > 0)
+         {
+            signalColor = MTF_Bullish_Color;
+            signalText = "BULL" + confirmationText;
+         }
+         else if(mtfSignals[signalIndex].direction < 0)
+         {
+            signalColor = MTF_Bearish_Color;
+            signalText = "BEAR" + confirmationText;
+         }
+         ObjectSetInteger(0, signalName, OBJPROP_COLOR, signalColor);
+         ObjectSetString(0, signalName, OBJPROP_TEXT, signalText);
+      }
+      // Timeframe column
+      string tfName = "MTF_Table_TF_" + IntegerToString(i);
+      if(ObjectCreate(0, tfName, OBJ_LABEL, 0, 0, 0))
+      {
+         ObjectSetInteger(0, tfName, OBJPROP_XDISTANCE, MTF_Table_X + 180);
+         ObjectSetInteger(0, tfName, OBJPROP_YDISTANCE, rowY);
+         ObjectSetInteger(0, tfName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+         ObjectSetInteger(0, tfName, OBJPROP_BACK, false);
+         ObjectSetInteger(0, tfName, OBJPROP_SELECTABLE, false);
+         ObjectSetInteger(0, tfName, OBJPROP_FONTSIZE, 7);
+         ObjectSetInteger(0, tfName, OBJPROP_COLOR, clrBlack);
+         ObjectSetString(0, tfName, OBJPROP_TEXT, mtfSignals[signalIndex].htf1 + "/" + mtfSignals[signalIndex].htf2);
+      }
+   }
+}
+// Helper function to get confirmation count for a specific signal
+int GetConfirmationCountForSignal(int direction, datetime signalTime)
+{
+   // This is a simplified implementation
+   // In a real EA, you would track the exact confirmation history
+   if(direction > 0)
+      return consecutiveBullishSignals;
+   else if(direction < 0)
+      return consecutiveBearishSignals;
+   return 0;
+}
+void RemoveMTFSignalTable()
+{
+   // Remove table background and headers
+   ObjectDelete(0, "MTF_Table_BG");
+   ObjectDelete(0, "MTF_Table_Header");
+   ObjectDelete(0, "MTF_Table_Time_Header");
+   ObjectDelete(0, "MTF_Table_Signal_Header");
+   ObjectDelete(0, "MTF_Table_TF_Header");
+   // Remove all signal rows
+   for(int i = 0; i < 10; i++)
+   {
+      ObjectDelete(0, "MTF_Table_Time_" + IntegerToString(i));
+      ObjectDelete(0, "MTF_Table_Signal_" + IntegerToString(i));
+      ObjectDelete(0, "MTF_Table_TF_" + IntegerToString(i));
+   }
+}
+void AddMTFSignal(int direction)
+{
+   // Shift array if full
+   if(mtfSignalCount >= ArraySize(mtfSignals))
+   {
+      for(int i = 0; i < ArraySize(mtfSignals) - 1; i++)
+      {
+         mtfSignals[i] = mtfSignals[i + 1];
+      }
+      mtfSignalCount = ArraySize(mtfSignals) - 1;
+   }
+   // Add new signal
+   mtfSignals[mtfSignalCount].time = TimeCurrent();
+   mtfSignals[mtfSignalCount].direction = direction;
+   mtfSignals[mtfSignalCount].symbol = _Symbol;
+   mtfSignals[mtfSignalCount].htf1 = TFToString(HTF1);
+   mtfSignals[mtfSignalCount].htf2 = TFToString(HTF2);
+   mtfSignalCount++;
+   // Update table display
+   if(Show_MTF_Signal_Table)
+   {
+      UpdateMTFSignalTable();
+   }
+}
+//+------------------------------------------------------------------+
+//| Timeframe Visual Analyzer Functions                             |
+//+------------------------------------------------------------------+
+void DebugLog(string message)
+{
+   if(EnableDebug)
+   {
+      Print(TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS), " - MTF_Primary_EA - ", message);
+   }
+}
+uint ColorARGB(color baseColor, uint alpha)
+{
+   return ((alpha & 0xFF) << 24) | (uint(baseColor) & 0x00FFFFFF);
+}
+string GVName(string key)
+{
+   return StringFormat("MTF_Primary_EA_%s_%d_%s", key, (int)ChartID(), _Symbol);
+}
+void SaveToggleState()
+{
+   GlobalVariableSet(GVName("HTF1"), ShowHTF1 ? 1.0 : 0.0);
+   GlobalVariableSet(GVName("HTF2"), ShowHTF2 ? 1.0 : 0.0);
+   GlobalVariableSet(GVName("ALRT"), AlertOnConfirmation ? 1.0 : 0.0);
+}
+void LoadToggleState()
+{
+   if(GlobalVariableCheck(GVName("HTF1")))
+      ShowHTF1 = (GlobalVariableGet(GVName("HTF1")) > 0.5);
+   if(GlobalVariableCheck(GVName("HTF2")))
+      ShowHTF2 = (GlobalVariableGet(GVName("HTF2")) > 0.5);
+   if(GlobalVariableCheck(GVName("ALRT")))
+      AlertOnConfirmation = (GlobalVariableGet(GVName("ALRT")) > 0.5);
+}
+string TFToString(ENUM_TIMEFRAMES tf)
+{
+   switch(tf)
+   {
+      case PERIOD_M1: return "M1";
+      case PERIOD_M2: return "M2";
+      case PERIOD_M3: return "M3";
+      case PERIOD_M4: return "M4";
+      case PERIOD_M5: return "M5";
+      case PERIOD_M6: return "M6";
+      case PERIOD_M10: return "M10";
+      case PERIOD_M12: return "M12";
+      case PERIOD_M15: return "M15";
+      case PERIOD_M20: return "M20";
+      case PERIOD_M30: return "M30";
+      case PERIOD_H1: return "H1";
+      case PERIOD_H2: return "H2";
+      case PERIOD_H3: return "H3";
+      case PERIOD_H4: return "H4";
+      case PERIOD_H6: return "H6";
+      case PERIOD_H8: return "H8";
+      case PERIOD_H12: return "H12";
+      case PERIOD_D1: return "D1";
+      case PERIOD_W1: return "W1";
+      case PERIOD_MN1: return "MN";
+      default: return IntegerToString((int)tf);
+   }
+}
+void CreateOrUpdateCandle(string prefix, ENUM_TIMEFRAMES htf, int idx,
+                         datetime tOpen, double openP, double closeP, double highP, double lowP,
+                         uint bodyARGB, uint wickARGB)
+{
+   string nameUpperWick = prefix + "_UW_" + IntegerToString((int)htf) + "_" + IntegerToString(idx);
+   string nameLowerWick = prefix + "_LW_" + IntegerToString((int)htf) + "_" + IntegerToString(idx);
+   string nameBody = prefix + "_B_" + IntegerToString((int)htf) + "_" + IntegerToString(idx);
+   datetime tClose = tOpen + PeriodSeconds(htf) - 1;
+   datetime tMid = tOpen + (PeriodSeconds(htf) / 2);
+   double top = MathMax(openP, closeP);
+   double bottom = MathMin(openP, closeP);
+   double point = _Point;
+   double wickExtension = ExtendWicks ? (point * 0.5) : 0;
+   if(top == bottom)
+   {
+      top = bottom + point;
+      uint dojiWickARGB = ColorARGB(clrGray, (wickARGB >> 24) & 0xFF);
+      if(ObjectFind(0, nameUpperWick) < 0)
+         ObjectCreate(0, nameUpperWick, OBJ_TREND, 0, tMid, highP, tMid, top + wickExtension);
+      else
+      {
+         ObjectSetInteger(0, nameUpperWick, OBJPROP_TIME, 0, tMid);
+         ObjectSetDouble(0, nameUpperWick, OBJPROP_PRICE, 0, highP);
+         ObjectSetInteger(0, nameUpperWick, OBJPROP_TIME, 1, tMid);
+         ObjectSetDouble(0, nameUpperWick, OBJPROP_PRICE, 1, top + wickExtension);
+      }
+      ObjectSetInteger(0, nameUpperWick, OBJPROP_COLOR, (int)(dojiWickARGB & 0x00FFFFFF));
+      ObjectSetInteger(0, nameUpperWick, OBJPROP_STYLE, STYLE_SOLID);
+      ObjectSetInteger(0, nameUpperWick, OBJPROP_WIDTH, WickWidth);
+      ObjectSetInteger(0, nameUpperWick, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, nameUpperWick, OBJPROP_HIDDEN, true);
+      ObjectSetInteger(0, nameUpperWick, OBJPROP_RAY, false);
+      if(ObjectFind(0, nameLowerWick) < 0)
+         ObjectCreate(0, nameLowerWick, OBJ_TREND, 0, tMid, bottom - wickExtension, tMid, lowP);
+      else
+      {
+         ObjectSetInteger(0, nameLowerWick, OBJPROP_TIME, 0, tMid);
+         ObjectSetDouble(0, nameLowerWick, OBJPROP_PRICE, 0, bottom - wickExtension);
+         ObjectSetInteger(0, nameLowerWick, OBJPROP_TIME, 1, tMid);
+         ObjectSetDouble(0, nameLowerWick, OBJPROP_PRICE, 1, lowP);
+      }
+      ObjectSetInteger(0, nameLowerWick, OBJPROP_COLOR, (int)(dojiWickARGB & 0x00FFFFFF));
+      ObjectSetInteger(0, nameLowerWick, OBJPROP_STYLE, STYLE_SOLID);
+      ObjectSetInteger(0, nameLowerWick, OBJPROP_WIDTH, WickWidth);
+      ObjectSetInteger(0, nameLowerWick, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, nameLowerWick, OBJPROP_HIDDEN, true);
+      ObjectSetInteger(0, nameLowerWick, OBJPROP_RAY, false);
+   }
+   else
+   {
+      if(ObjectFind(0, nameUpperWick) < 0)
+         ObjectCreate(0, nameUpperWick, OBJ_TREND, 0, tMid, highP, tMid, top + wickExtension);
+      else
+      {
+         ObjectSetInteger(0, nameUpperWick, OBJPROP_TIME, 0, tMid);
+         ObjectSetDouble(0, nameUpperWick, OBJPROP_PRICE, 0, highP);
+         ObjectSetInteger(0, nameUpperWick, OBJPROP_TIME, 1, tMid);
+         ObjectSetDouble(0, nameUpperWick, OBJPROP_PRICE, 1, top + wickExtension);
+      }
+      ObjectSetInteger(0, nameUpperWick, OBJPROP_COLOR, (int)(wickARGB & 0x00FFFFFF));
+      ObjectSetInteger(0, nameUpperWick, OBJPROP_STYLE, STYLE_SOLID);
+      ObjectSetInteger(0, nameUpperWick, OBJPROP_WIDTH, WickWidth);
+      ObjectSetInteger(0, nameUpperWick, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, nameUpperWick, OBJPROP_HIDDEN, true);
+      ObjectSetInteger(0, nameUpperWick, OBJPROP_RAY, false);
+      if(ObjectFind(0, nameLowerWick) < 0)
+         ObjectCreate(0, nameLowerWick, OBJ_TREND, 0, tMid, bottom - wickExtension, tMid, lowP);
+      else
+      {
+         ObjectSetInteger(0, nameLowerWick, OBJPROP_TIME, 0, tMid);
+         ObjectSetDouble(0, nameLowerWick, OBJPROP_PRICE, 0, bottom - wickExtension);
+         ObjectSetInteger(0, nameLowerWick, OBJPROP_TIME, 1, tMid);
+         ObjectSetDouble(0, nameLowerWick, OBJPROP_PRICE, 1, lowP);
+      }
+      ObjectSetInteger(0, nameLowerWick, OBJPROP_COLOR, (int)(wickARGB & 0x00FFFFFF));
+      ObjectSetInteger(0, nameLowerWick, OBJPROP_STYLE, STYLE_SOLID);
+      ObjectSetInteger(0, nameLowerWick, OBJPROP_WIDTH, WickWidth);
+      ObjectSetInteger(0, nameLowerWick, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, nameLowerWick, OBJPROP_HIDDEN, true);
+      ObjectSetInteger(0, nameLowerWick, OBJPROP_RAY, false);
+   }
+   if(ObjectFind(0, nameBody) < 0)
+      ObjectCreate(0, nameBody, OBJ_RECTANGLE, 0, tOpen, top, tClose, bottom);
+   else
+   {
+      ObjectSetInteger(0, nameBody, OBJPROP_TIME, 0, tOpen);
+      ObjectSetDouble(0, nameBody, OBJPROP_PRICE, 0, top);
+      ObjectSetInteger(0, nameBody, OBJPROP_TIME, 1, tClose);
+      ObjectSetDouble(0, nameBody, OBJPROP_PRICE, 1, bottom);
+   }
+   ObjectSetInteger(0, nameBody, OBJPROP_COLOR, (int)(bodyARGB & 0x00FFFFFF));
+   ObjectSetInteger(0, nameBody, OBJPROP_BGCOLOR, (int)(bodyARGB & 0x00FFFFFF));
+   ObjectSetInteger(0, nameBody, OBJPROP_WIDTH, 1);
+   ObjectSetInteger(0, nameBody, OBJPROP_STYLE, STYLE_SOLID);
+   ObjectSetInteger(0, nameBody, OBJPROP_BACK, true);
+   ObjectSetInteger(0, nameBody, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, nameBody, OBJPROP_HIDDEN, true);
+   ObjectSetInteger(0, nameBody, OBJPROP_FILL, true);
+}
+void ClearMTFObjects()
+{
+   int total = ObjectsTotal(0);
+   for(int i = total - 1; i >= 0; i--)
+   {
+      string name = ObjectName(0, i);
+      if(StringFind(name, PREFIX) == 0 && StringFind(name, BTN_PREFIX) != 0)
+         ObjectDelete(0, name);
+   }
+}
+double GetPriceData(ENUM_TIMEFRAMES timeframe, int price_type, int shift)
+{
+   double price[];
+   int copied = 0;
+   switch(price_type)
+   {
+      case 0: copied = CopyOpen(_Symbol, timeframe, shift, 1, price); break;
+      case 1: copied = CopyHigh(_Symbol, timeframe, shift, 1, price); break;
+      case 2: copied = CopyLow(_Symbol, timeframe, shift, 1, price); break;
+      case 3: copied = CopyClose(_Symbol, timeframe, shift, 1, price); break;
+   }
+   if(copied > 0 && ArraySize(price) > 0)
+      return price[0];
+   return 0;
+}
+datetime GetTimeData(ENUM_TIMEFRAMES timeframe, int shift)
+{
+   datetime time[];
+   int copied = CopyTime(_Symbol, timeframe, shift, 1, time);
+   if(copied > 0 && ArraySize(time) > 0)
+      return time[0];
+   return 0;
+}
+int GetBarsCount(ENUM_TIMEFRAMES timeframe)
+{
+   return Bars(_Symbol, timeframe);
+}
+void DrawHTF(string tag, ENUM_TIMEFRAMES htf, color bullishBodyClr,
+            color bearishBodyClr, color bullishWickClr, color bearishWickClr,
+            uint alpha, bool enabled)
+{
+   if(!enabled) return;
+   int totalBars = GetBarsCount(htf);
+   if(totalBars == 0) return;
+   int limit = MathMin(BarsToDraw, totalBars);
+   if(limit < 1) limit = 1;
+   if(DrawOnlyVisible)
+   {
+      long firstBar_long = ChartGetInteger(0, CHART_FIRST_VISIBLE_BAR);
+      long visible_long = ChartGetInteger(0, CHART_VISIBLE_BARS);
+      int firstBar = (int)MathMin(firstBar_long, 2147483647);
+      int visible = (int)MathMin(visible_long, 2147483647);
+      if(firstBar < 0) firstBar = 0;
+      if(visible > 0)
+         limit = MathMin(limit, visible + 50);
+   }
+   int drawnCount = 0;
+   for(int i = 0; i < limit; i++)
+   {
+      if(i >= totalBars) break;
+      datetime tOpen = GetTimeData(htf, i);
+      if(tOpen == 0) break;
+      double o = GetPriceData(htf, 0, i);
+      double c = GetPriceData(htf, 3, i);
+      double h = GetPriceData(htf, 1, i);
+      double l = GetPriceData(htf, 2, i);
+      if(o == 0 && c == 0 && h == 0 && l == 0) continue;
+      bool isBullish = (c > o);
+      color bodyColor = isBullish ? bullishBodyClr : bearishBodyClr;
+      color wickColor = isBullish ? bullishWickClr : bearishWickClr;
+      uint bodyARGB = ColorARGB(bodyColor, alpha);
+      uint wickARGB = ColorARGB(wickColor, alpha);
+      CreateOrUpdateCandle(PREFIX + tag, htf, i, tOpen, o, c, h, l, bodyARGB, wickARGB);
+      drawnCount++;
+   }
+}
+void CreateToggleButtons()
+{
+   string b1 = BTN_PREFIX + "HTF1";
+   string b2 = BTN_PREFIX + "HTF2";
+   string b3 = BTN_PREFIX + "ALRT";
+   // Create HTF1 toggle button
+   if(ObjectFind(0, b1) < 0)
+   {
+      ObjectCreate(0, b1, OBJ_BUTTON, 0, 0, 0);
+      ObjectSetInteger(0, b1, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, b1, OBJPROP_XDISTANCE, 10);
+      ObjectSetInteger(0, b1, OBJPROP_YDISTANCE, 30);
+      ObjectSetInteger(0, b1, OBJPROP_XSIZE, 84);
+      ObjectSetInteger(0, b1, OBJPROP_YSIZE, 20);
+      ObjectSetInteger(0, b1, OBJPROP_FONTSIZE, 10);
+      ObjectSetInteger(0, b1, OBJPROP_BGCOLOR, ShowHTF1 ? clrLimeGreen : clrRed);
+      ObjectSetInteger(0, b1, OBJPROP_COLOR, clrWhite);
+      ObjectSetString(0, b1, OBJPROP_TEXT, ShowHTF1 ? "HTF1: ON" : "HTF1: OFF");
+      ObjectSetInteger(0, b1, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, b1, OBJPROP_HIDDEN, false);
+   }
+   else
+   {
+      ObjectSetString(0, b1, OBJPROP_TEXT, ShowHTF1 ? "HTF1: ON" : "HTF1: OFF");
+      ObjectSetInteger(0, b1, OBJPROP_BGCOLOR, ShowHTF1 ? clrLimeGreen : clrRed);
+   }
+   // Create HTF2 toggle button
+   if(ObjectFind(0, b2) < 0)
+   {
+      ObjectCreate(0, b2, OBJ_BUTTON, 0, 0, 0);
+      ObjectSetInteger(0, b2, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, b2, OBJPROP_XDISTANCE, 10);
+      ObjectSetInteger(0, b2, OBJPROP_YDISTANCE, 60);
+      ObjectSetInteger(0, b2, OBJPROP_XSIZE, 84);
+      ObjectSetInteger(0, b2, OBJPROP_YSIZE, 20);
+      ObjectSetInteger(0, b2, OBJPROP_FONTSIZE, 10);
+      ObjectSetInteger(0, b2, OBJPROP_BGCOLOR, ShowHTF2 ? clrLimeGreen : clrRed);
+      ObjectSetInteger(0, b2, OBJPROP_COLOR, clrWhite);
+      ObjectSetString(0, b2, OBJPROP_TEXT, ShowHTF2 ? "HTF2: ON" : "HTF2: OFF");
+      ObjectSetInteger(0, b2, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, b2, OBJPROP_HIDDEN, false);
+   }
+   else
+   {
+      ObjectSetString(0, b2, OBJPROP_TEXT, ShowHTF2 ? "HTF2: ON" : "HTF2: OFF");
+      ObjectSetInteger(0, b2, OBJPROP_BGCOLOR, ShowHTF2 ? clrLimeGreen : clrRed);
+   }
+   // Create Alert toggle button
+   if(ObjectFind(0, b3) < 0)
+   {
+      ObjectCreate(0, b3, OBJ_BUTTON, 0, 0, 0);
+      ObjectSetInteger(0, b3, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, b3, OBJPROP_XDISTANCE, 10);
+      ObjectSetInteger(0, b3, OBJPROP_YDISTANCE, 90);
+      ObjectSetInteger(0, b3, OBJPROP_XSIZE, 84);
+      ObjectSetInteger(0, b3, OBJPROP_YSIZE, 20);
+      ObjectSetInteger(0, b3, OBJPROP_FONTSIZE, 10);
+      ObjectSetInteger(0, b3, OBJPROP_BGCOLOR, AlertOnConfirmation ? clrLimeGreen : clrRed);
+      ObjectSetInteger(0, b3, OBJPROP_COLOR, clrWhite);
+      ObjectSetString(0, b3, OBJPROP_TEXT, AlertOnConfirmation ? "ALRT: ON" : "ALRT: OFF");
+      ObjectSetInteger(0, b3, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, b3, OBJPROP_HIDDEN, false);
+   }
+   else
+   {
+      ObjectSetString(0, b3, OBJPROP_TEXT, AlertOnConfirmation ? "ALRT: ON" : "ALRT: OFF");
+      ObjectSetInteger(0, b3, OBJPROP_BGCOLOR, AlertOnConfirmation ? clrLimeGreen : clrRed);
+   }
+}
+int CandleDirection(ENUM_TIMEFRAMES tf, int index)
+{
+   int totalBars = GetBarsCount(tf);
+   if(totalBars <= index) return 0;
+   double o = GetPriceData(tf, 0, index);
+   double c = GetPriceData(tf, 3, index);
+   if(o == 0 && c == 0) return 0;
+   double diff = c - o;
+   double pips = MathAbs(diff) / _Point;
+   if(MinPipsForSignal > 0 && pips < MinPipsForSignal) return 0;
+   if(diff > 0) return 1;
+   if(diff < 0) return -1;
+   return 0;
+}
+void ShowConfirmationLabel(int direction)
+{
+   string name = PREFIX + "CONF_LABEL";
+   string text = direction > 0 ? "MTF CONFIRM: BULL" : "MTF CONFIRM: BEAR";
+   datetime nowt = TimeCurrent();
+   if(ObjectFind(0, name) < 0)
+   {
+      ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+      ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, name, OBJPROP_XDISTANCE, 100);
+      ObjectSetInteger(0, name, OBJPROP_YDISTANCE, 10);
+      ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 11);
+      ObjectSetInteger(0, name, OBJPROP_COLOR, direction > 0 ? clrLime : clrRed);
+      ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, name, OBJPROP_HIDDEN, false);
+   }
+   ObjectSetString(0, name, OBJPROP_TEXT, text + " (" + TimeToString(nowt, TIME_DATE|TIME_SECONDS) + ")");
+   ObjectSetInteger(0, name, OBJPROP_COLOR, direction > 0 ? clrLime : clrRed);
+}
+void RemoveConfirmationLabel()
+{
+   string name = PREFIX + "CONF_LABEL";
+   if(ObjectFind(0, name) >= 0)
+      ObjectDelete(0, name);
+}
+void FireAlerts(int direction)
+{
+   if(!AlertOnConfirmation) return;
+   string dirText = (direction > 0) ? "BULL" : "BEAR";
+   string msg = StringFormat("MTF confirmation: %s on %s (HTF1=%s, HTF2=%s)", 
+                            dirText, _Symbol, TFToString(HTF1), TFToString(HTF2));
+   datetime nowt = TimeCurrent();
+   if(nowt == lastSignalTime) return;
+   lastSignalTime = nowt;
+   // Add to signal history
+   AddMTFSignal(direction);
+   if(UseSound) PlaySound(SoundFile);
+   if(UsePush) SendNotification(msg);
+   if(UseMail) SendMail(StringFormat("MTF Confirm %s", _Symbol), msg);
+   ShowConfirmationLabel(direction);
+}
+void CheckAndAlertMTF()
+{
+   int dirHTF1 = CandleDirection(HTF1, 1);
+   int dirHTF2 = CandleDirection(HTF2, 1);
+   int dirNow = CandleDirection(_Period, 1);
+   if(dirHTF1 == 0 || dirHTF2 == 0 || dirNow == 0)
+   {
+      if(lastSignalDir != 0)
+      {
+         RemoveConfirmationLabel();
+         lastSignalDir = 0;
+      }
+      return;
+   }
+   if(dirHTF1 == dirHTF2 && dirHTF1 == dirNow)
+   {
+      int dir = dirNow;
+      if(dir != lastSignalDir)
+      {
+         FireAlerts(dir);
+         lastSignalDir = dir;
+      }
+   }
+   else
+   {
+      if(AlertOnOpposite && lastSignalDir != 0)
+      {
+         if(dirHTF1 == dirHTF2 && dirHTF1 == -lastSignalDir)
+         {
+            FireAlerts(-lastSignalDir);
+            lastSignalDir = -lastSignalDir;
+         }
+      }
+      else if(lastSignalDir != 0)
+      {
+         RemoveConfirmationLabel();
+         lastSignalDir = 0;
+      }
+   }
+}
+//+------------------------------------------------------------------+
+//| Fundamental Risk Management Functions                           |
+//+------------------------------------------------------------------+
+bool IsSufficientFunds(double lotSize, ENUM_ORDER_TYPE orderType)
+{
+   double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double accountEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+   double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   // Calculate margin requirement
+   double marginRequired = 0;
+   double price = (orderType == ORDER_TYPE_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   if(!OrderCalcMargin(orderType, _Symbol, lotSize, price, marginRequired))
+   {
+       Print("Error calculating margin requirement. Error: ", GetLastError());
+       return false;
+   }
+   // Check if funds are sufficient
+   if(freeMargin < marginRequired)
+   {
+       Print("Insufficient funds: Free Margin(", freeMargin, ") < Required Margin(", marginRequired, ")");
+       Print("Account Balance: ", accountBalance, " Equity: ", accountEquity);
+       return false;
+   }
+   // Check for buffer safety margin
+   if(freeMargin < (marginRequired * 1.5))
+   {
+       Print("Warning: Low free margin. Free: ", freeMargin, " Required: ", marginRequired);
+   }
+   return true;
+}
+//+------------------------------------------------------------------+
+//| Calculate maximum lot size based on available margin           |
+//+------------------------------------------------------------------+
+double CalculateMaxLotByMargin(ENUM_ORDER_TYPE orderType)
+{
+   double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   double price = (orderType == ORDER_TYPE_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   // Reserve 50% of free margin for safety
+   double availableMargin = freeMargin * 0.5;
+   // Calculate margin per lot
+   double marginPerLot = 0;
+   if(OrderCalcMargin(orderType, _Symbol, 1.0, price, marginPerLot))
+   {
+       if(marginPerLot > 0)
+       {
+           double maxLots = availableMargin / marginPerLot;
+           // Apply broker limits
+           double maxAllowedByBroker = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+           maxLots = MathMin(maxLots, maxAllowedByBroker);
+           return maxLots;
+       }
+   }
+   Print("Error calculating margin per lot. Using conservative default.");
+   return 0.1; // Conservative default
+}
+//+------------------------------------------------------------------+
+//| Calculate conservative lot size when funds are insufficient    |
+//+------------------------------------------------------------------+
+double CalculateConservativeLotSize(ENUM_ORDER_TYPE orderType)
+{
+   double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double maxLotByMargin = CalculateMaxLotByMargin(orderType);
+   // Use minimum of conservative values
+   double conservativeLot = MathMax(minLot, MathMin(0.1, maxLotByMargin));
+   // Ensure valid lot size
+   double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   conservativeLot = MathFloor(conservativeLot / lotStep) * lotStep;
+   return NormalizeDouble(conservativeLot, 2);
+}
+double CalculateLotSizeFromRisk(double riskAmount, ENUM_ORDER_TYPE orderType)
+{
+   double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   double stopLossDistance = CalculateDynamicStopLoss(orderType) * _Point;
+   if(tickValue <= 0 || tickSize <= 0 || stopLossDistance <= 0)
+   {
+       Print("Invalid tick data for lot calculation");
+       return 0.01; // Fallback to small lot size
+   }
+   double ticksToStopLoss = stopLossDistance / tickSize;
+   double riskPerLot = ticksToStopLoss * tickValue;
+   if(riskPerLot <= 0) 
+   {
+       Print("Invalid risk per lot calculation");
+       return 0.01;
+   }
+   double calculatedLotSize = riskAmount / riskPerLot;
+   // Apply broker margin limits
+   double maxLotByMargin = CalculateMaxLotByMargin(orderType);
+   calculatedLotSize = MathMin(calculatedLotSize, maxLotByMargin);
+   // Normalize lot size according to symbol requirements
+   double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   // Ensure lot size is within allowed range
+   calculatedLotSize = MathMax(minLot, MathMin(maxLot, calculatedLotSize));
+   // Round to the nearest lot step
+   if(lotStep > 0)
+   {
+       calculatedLotSize = MathRound(calculatedLotSize / lotStep) * lotStep;
+   }
+   // Check minimum lot size
+   if(calculatedLotSize < minLot)
+   {
+       Print("Calculated lot size (", calculatedLotSize, ") is below minimum (", minLot, "). Using minimum lot.");
+       calculatedLotSize = minLot;
+   }
+   // Check if we have enough margin
+   double marginRequired = 0;
+   double price = (orderType == ORDER_TYPE_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   if(!OrderCalcMargin(orderType, _Symbol, calculatedLotSize, price, marginRequired))
+   {
+       Print("Error calculating margin. Using minimum lot.");
+       calculatedLotSize = minLot;
+   }
+   double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   if(marginRequired > freeMargin * 0.8) // Use 80% of free margin as safety limit
+   {
+       Print("Not enough margin for lot size ", calculatedLotSize, ". Reducing...");
+       // Calculate maximum lot we can afford
+       double maxAffordableLot = (freeMargin * 0.8) / (marginRequired / calculatedLotSize);
+       maxAffordableLot = MathRound(maxAffordableLot / lotStep) * lotStep;
+       maxAffordableLot = MathMax(minLot, maxAffordableLot);
+       if(maxAffordableLot >= minLot)
+       {
+           calculatedLotSize = maxAffordableLot;
+           Print("Adjusted lot size to ", calculatedLotSize);
+       }
+       else
+       {
+           Print("Cannot open trade: insufficient margin even for minimum lot");
+           return 0;
+       }
+   }
+   return NormalizeDouble(calculatedLotSize, 2);
+}
+bool ValidateLotSize(double &lotSize, ENUM_ORDER_TYPE orderType)
+{
+   double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   // Apply limits
+   lotSize = MathMax(minLot, MathMin(maxLot, lotSize));
+   // Round to nearest lot step
+   if(lotStep > 0)
+   {
+       lotSize = MathRound(lotSize / lotStep) * lotStep;
+   }
+   // Final validation
+   if(lotSize < minLot || lotSize > maxLot)
+   {
+       Print("Lot size (", lotSize, ") out of allowed range [", minLot, ", ", maxLot, "]");
+       return false;
+   }
+   // Check margin
+   double marginRequired = 0;
+   double price = (orderType == ORDER_TYPE_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   if(!OrderCalcMargin(orderType, _Symbol, lotSize, price, marginRequired))
+   {
+       Print("Cannot calculate margin for lot size ", lotSize);
+       return false;
+   }
+   double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   if(marginRequired > freeMargin)
+   {
+       Print("Insufficient margin. Required: ", marginRequired, ", Free: ", freeMargin);
+       return false;
+   }
+   return true;
+}
+//+------------------------------------------------------------------+
+//| Error description helper function                              |
+//+------------------------------------------------------------------+
+string ErrorDescription(int errorCode)
+{
+   switch(errorCode)
+   {
+       case 0:     return "No error";
+       case 1:     return "No error returned, but the result is unknown";
+       case 2:     return "Common error";
+       case 3:     return "Invalid trade parameters";
+       case 4:     return "Trade server is busy";
+       case 5:     return "Old version of the client terminal";
+       case 6:     return "No connection with trade server";
+       case 7:     return "Not enough rights";
+       case 8:     return "Too frequent requests";
+       case 9:     return "Malfunctional trade operation";
+       case 64:    return "Account disabled";
+       case 65:    return "Invalid account";
+       case 128:   return "Trade timeout";
+       case 129:   return "Invalid price";
+       case 130:   return "Invalid stops";
+       case 131:   return "Invalid trade volume";
+       case 132:   return "Market is closed";
+       case 133:   return "Trade is disabled";
+       case 134:   return "Not enough money";
+       case 135:   return "Price changed";
+       case 136:   return "Off quotes";
+       case 137:   return "Broker is busy";
+       case 138:   return "Requote";
+       case 139:   return "Order is locked";
+       case 140:   return "Long positions only allowed";
+       case 141:   return "Too many requests";
+       case 145:   return "Modification denied because order is too close to market";
+       case 146:   return "Trade context is busy";
+       case 147:   return "Expirations are denied by broker";
+       case 148:   return "The amount of open and pending orders has reached the limit";
+       case 149:   return "Hedging is prohibited";
+       case 150:   return "Prohibited by FIFO rule";
+       default:    return "Unknown error " + IntegerToString(errorCode);
+   }
+}
+//+------------------------------------------------------------------+
+//| Telegram Notification Functions                                 |
+//+------------------------------------------------------------------+
+bool SendTelegramSignal(string message)
+{
+   if(!UseTelegram || TelegramChatID == "") 
+   {
+      if(UseTelegram && TelegramChatID == "")
+         Print("⚠️ Telegram Chat ID is not set. Telegram notifications disabled.");
+      return false;
+   }
+   // 构建请求URL和参数
+   string url = "https://api.telegram.org/bot" + TelegramBotToken + "/sendMessage";
+   string params = "chat_id=" + TelegramChatID + "&text=" + message + "&parse_mode=HTML";
+   char data[];
+   int result = StringToCharArray(params, data, 0, StringLen(params));
+   // 发送 WebRequest
+   char response[];
+   string headers;
+   int res = WebRequest("POST", url, headers, 5000, data, response, headers);
+   // 处理结果
+   if(res == -1) // 请求失败
+   {
+      Print("❌ Telegram 发送失败: 网络错误. 错误代码: ", GetLastError());
+      Print("🔍 请检查: 1) MT5终端 [工具] -> [选项] -> [智能交易系统] 中，");
+      Print("是否已允许URL 'https://api.telegram.org' 。");
+      return false;
+   }
+   else if(res == 200) // HTTP 200 OK 表示成功
+   {
+      Print("✅ Telegram信号已发送: ", message);
+      return true;
+   }
+   else // 其他HTTP错误
+   {
+      Print("❌ Telegram发送返回HTTP错误: ", res);
+      return false;
+   }
+}
+//+------------------------------------------------------------------+
+//| Execute buy trade with proper risk management                   |
+//+------------------------------------------------------------------+
+void ExecuteBuyTrade(double lotSize, string comment)
+{
+   // Validate lot size
+   if(!ValidateLotSize(lotSize, ORDER_TYPE_BUY))
+   {
+       Print("❌ Invalid lot size for BUY trade: ", lotSize);
+       return;
+   }
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   int dynamicSL = CalculateDynamicStopLoss(ORDER_TYPE_BUY);
+   int dynamicTP = CalculateDynamicTakeProfit(ORDER_TYPE_BUY);
+   double stopLoss = ask - dynamicSL * _Point;
+   double takeProfit = ask + dynamicTP * _Point;
+   // Validate price levels
+   if(stopLoss <= 0 || takeProfit <= 0 || ask <= 0)
+   {
+       Print("❌ Invalid price levels for buy trade");
+       return;
+   }
+   // Check trade conditions
+   if(IsTradeAllowed() && IsSufficientFunds(lotSize, ORDER_TYPE_BUY))
+   {
+       if(trade.Buy(lotSize, _Symbol, ask, stopLoss, takeProfit, comment))
+       {
+           lastTradeTime = TimeCurrent();
+           Print("✅ BUY EXECUTED: ", comment,
+                 " | Lot: ", DoubleToString(lotSize, 2),
+                 " | Price: ", DoubleToString(ask, _Digits),
+                 " | SL: ", DoubleToString(stopLoss, _Digits),
+                 " | TP: ", DoubleToString(takeProfit, _Digits));
+           // 发送Telegram通知
+           if(UseTelegram)
+           {
+               string tgMsg = StringFormat("<b>MTF-Primary 买入信号 (确认: %d/%d)</b>\n" +
+                                          "⏰ 时间: %s\n" +
+                                          "📦 品种: %s\n" +
+                                          "📈 方向: BUY\n" +
+                                          "📊 手数: %.2f\n" +
+                                          "💰 价格: %.5f\n" +
+                                          "⛔ 止损: %.5f\n" +
+                                          "🎯 止盈: %.5f\n" +
+                                          "📝 备注: %s",
+                                          consecutiveBullishSignals,
+                                          SignalConfirmationsRequired,
+                                          TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS),
+                                          _Symbol,
+                                          lotSize,
+                                          ask,
+                                          stopLoss,
+                                          takeProfit,
+                                          comment);
+               SendTelegramSignal(tgMsg);
+           }
+       }
+       else
+       {
+           int error = GetLastError();
+           Print("❌ BUY FAILED: ", comment,
+                 " | Error: ", error, " - ", ErrorDescription(error));
+       }
+   }
+   else
+   {
+       Print("⚠️ Trade not allowed or insufficient funds");
+   }
+}
+void ExecuteSellTrade(double lotSize, string comment)
+{
+   // Validate lot size
+   if(!ValidateLotSize(lotSize, ORDER_TYPE_SELL))
+   {
+       Print("❌ Invalid lot size for SELL trade: ", lotSize);
+       return;
+   }
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   int dynamicSL = CalculateDynamicStopLoss(ORDER_TYPE_SELL);
+   int dynamicTP = CalculateDynamicTakeProfit(ORDER_TYPE_SELL);
+   double stopLoss = bid + dynamicSL * _Point;
+   double takeProfit = bid - dynamicTP * _Point;
+   if(stopLoss <= 0 || takeProfit <= 0 || bid <= 0)
+   {
+       Print("❌ Invalid price levels for sell trade");
+       return;
+   }
+   // Execute trade
+   if(IsTradeAllowed() && IsSufficientFunds(lotSize, ORDER_TYPE_SELL))
+   {
+       if(trade.Sell(lotSize, _Symbol, bid, stopLoss, takeProfit, comment))
+       {
+           lastTradeTime = TimeCurrent();
+           Print("✅ SELL EXECUTED: ", comment,
+                 " | Lot: ", DoubleToString(lotSize, 2),
+                 " | Price: ", DoubleToString(bid, _Digits),
+                 " | SL: ", DoubleToString(stopLoss, _Digits),
+                 " | TP: ", DoubleToString(takeProfit, _Digits));
+           // 发送Telegram通知
+           if(UseTelegram)
+           {
+               string tgMsg = StringFormat("<b>MTF-Primary 卖出信号 (确认: %d/%d)</b>\n" +
+                                          "⏰ 时间: %s\n" +
+                                          "📦 品种: %s\n" +
+                                          "📉 方向: SELL\n" +
+                                          "📊 手数: %.2f\n" +
+                                          "💰 价格: %.5f\n" +
+                                          "⛔ 止损: %.5f\n" +
+                                          "🎯 止盈: %.5f\n" +
+                                          "📝 备注: %s",
+                                          consecutiveBearishSignals,
+                                          SignalConfirmationsRequired,
+                                          TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS),
+                                          _Symbol,
+                                          lotSize,
+                                          bid,
+                                          stopLoss,
+                                          takeProfit,
+                                          comment);
+               SendTelegramSignal(tgMsg);
+           }
+       }
+       else
+       {
+           int error = GetLastError();
+           Print("❌ SELL FAILED: ", comment,
+                 " | Error: ", error, " - ", ErrorDescription(error));
+       }
+   }
+   else
+   {
+       Print("⚠️ Trade not allowed or insufficient funds");
+   }
+}
+//+------------------------------------------------------------------+
+//| Supply & Demand System Functions                                |
+//+------------------------------------------------------------------+
+double CalculateKellyLotSize(ENUM_ORDER_TYPE orderType)
+{
+   if(!Use_Kelly_Criterion)
+      return CalculateStandardLotSize(orderType);
+   double effectiveWinRate = currentWinRate;
+   if(!Adaptive_WinRate || totalTrades < 10)
+   {
+      effectiveWinRate = Win_Rate;
+   }
+   if(Use_Market_Regime_Detection)
+   {
+      effectiveWinRate = AdjustWinRateByMarketState(effectiveWinRate, orderType);
+   }
+   double kellyFraction = (effectiveWinRate * (Win_Loss_Ratio + 1) - 1) / Win_Loss_Ratio;
+   kellyFraction = MathMin(kellyFraction, Max_Kelly_Fraction);
+   kellyFraction = MathMax(kellyFraction, 0.01);
+   if(Use_Dynamic_Parameters)
+   {
+      double volatilityAdjustment = GetVolatilityAdjustment();
+      kellyFraction *= volatilityAdjustment;
+   }
+   double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double riskAmount = accountBalance * kellyFraction;
+   double lotSize = CalculateLotSizeFromRisk(riskAmount, orderType);
+   return lotSize;
+}
+double AdjustWinRateByMarketState(double baseWinRate, ENUM_ORDER_TYPE orderType)
+{
+   double adjustedWinRate = baseWinRate;
+   switch(currentMarketState)
+   {
+      case MARKET_TRENDING_UP:
+         adjustedWinRate *= (orderType == ORDER_TYPE_BUY) ? 1.2 : 0.8;
+         break;
+      case MARKET_TRENDING_DOWN:
+         adjustedWinRate *= (orderType == ORDER_TYPE_SELL) ? 1.2 : 0.8;
+         break;
+      case MARKET_HIGH_VOLATILITY:
+         adjustedWinRate *= 0.9;
+         break;
+      case MARKET_LOW_VOLATILITY:
+         adjustedWinRate *= 1.1;
+         break;
+      case MARKET_BREAKOUT:
+         adjustedWinRate *= 1.15;
+         break;
+   }
+   return MathMax(0.1, MathMin(0.9, adjustedWinRate));
+}
+double CalculateStandardLotSize(ENUM_ORDER_TYPE orderType)
+{
+   if(!Use_Risk_Percent)
+      return Lot_Size;
+   double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double riskAmount = accountBalance * (Risk_Percent / 100.0);
+   return CalculateLotSizeFromRisk(riskAmount, orderType);
+}
+int CalculateDynamicStopLoss(ENUM_ORDER_TYPE orderType)
+{
+   double atrValue[1];
+   if(CopyBuffer(atrHandle, 0, 0, 1, atrValue) != 1)
+      return Stop_Loss;
+   double volatility[1];
+   if(CopyBuffer(volatilityHandle, 0, 0, 1, volatility) == 1)
+   {
+      currentVolatility = volatility[0];
+   }
+   int dynamicStopLoss = Stop_Loss;
+   if(Use_Dynamic_Parameters)
+   {
+      double volatilityMultiplier = 1.0;
+      switch(currentMarketState)
+      {
+         case MARKET_HIGH_VOLATILITY:
+            volatilityMultiplier = High_Volatility_Multiplier;
+            break;
+         case MARKET_LOW_VOLATILITY:
+            volatilityMultiplier = Low_Volatility_Multiplier;
+            break;
+         case MARKET_BREAKOUT:
+            volatilityMultiplier = 1.3;
+            break;
+         default:
+            volatilityMultiplier = 1.0;
+      }
+      dynamicStopLoss = (int)(Stop_Loss * volatilityMultiplier);
+      double atrMultiplier = atrValue[0] / (SymbolInfoDouble(_Symbol, SYMBOL_POINT) * 100);
+      dynamicStopLoss = (int)(dynamicStopLoss * atrMultiplier);
+      dynamicStopLoss = MathMax(dynamicStopLoss, 10);
+      dynamicStopLoss = MathMin(dynamicStopLoss, 500);
+   }
+   return dynamicStopLoss;
+}
+int CalculateDynamicTakeProfit(ENUM_ORDER_TYPE orderType)
+{
+   int dynamicStopLoss = CalculateDynamicStopLoss(orderType);
+   double ratioMultiplier = 1.0;
+   switch(currentMarketState)
+   {
+      case MARKET_TRENDING_UP:
+      case MARKET_TRENDING_DOWN:
+         ratioMultiplier = 1.3;
+         break;
+      case MARKET_RANGING:
+         ratioMultiplier = 0.8;
+         break;
+      case MARKET_BREAKOUT:
+         ratioMultiplier = 1.5;
+         break;
+   }
+   return (int)(dynamicStopLoss * Win_Loss_Ratio * ratioMultiplier);
+}
+//+------------------------------------------------------------------+
+//| Risk Management Functions                                       |
+//+------------------------------------------------------------------+
+bool IsTradeAllowed()
+{
+   if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED))
+   {
+      Print("⚠️ Trade context is busy");
+      return false;
+   }
+   // Free margin check
+   double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   if(freeMargin < (balance * 0.05)) // Reserve 5% of balance as safety margin
+   {
+      Print("⚠️ Insufficient free margin: ", freeMargin, " Balance: ", balance);
+      return false;
+   }
+   if(SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) > Max_Spread)
+   {
+      Print("⚠️ Spread too high: ", SymbolInfoInteger(_Symbol, SYMBOL_SPREAD));
+      return false;
+   }
+   CheckDailyReset();
+   if(Daily_Risk_Limit > 0)
+   {
+      double currentBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+      double dailyRisk = (accountPeakBalance - currentBalance) / accountPeakBalance * 100;
+      if(dailyRisk >= Daily_Risk_Limit)
+      {
+         Print("⚠️ Daily risk limit reached: ", DoubleToString(dailyRisk, 2), "%");
+         return false;
+      }
+   }
+   if(Max_Drawdown_Limit > 0)
+   {
+      double currentBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+      double drawdown = (accountPeakBalance - currentBalance) / accountPeakBalance * 100;
+      if(drawdown >= Max_Drawdown_Limit)
+      {
+         Print("⚠️ Maximum drawdown limit reached: ", DoubleToString(drawdown, 2), "%");
+         return false;
+      }
+   }
+   if(totalTradesToday >= 2000)
+   {
+      Print("⚠️ Daily trade limit reached: ", totalTradesToday);
+      return false;
+   }
+   if(lastTradeTime > 0)
+   {
+      datetime currentTime = TimeCurrent();
+      if((currentTime - lastTradeTime) < 300)
+      {
+         Print("⚠️ Trade cooldown period active");
+         return false;
+      }
+   }
+   if(PositionsTotal() >= Max_Positions)
+   {
+      Print("⚠️ Maximum positions reached: ", PositionsTotal());
+      return false;
+   }
+   if(Use_Correlation_Protection && HasCorrelatedPositions())
+   {
+      Print("⚠️ Correlated positions detected");
+      return false;
+   }
+   return true;
+}
+bool HasCorrelatedPositions()
+{
+   int buyPositions = 0;
+   int sellPositions = 0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(PositionSelectByTicket(ticket) && PositionGetInteger(POSITION_MAGIC) == Magic_Number)
+      {
+         if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
+            buyPositions++;
+         else if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL)
+            sellPositions++;
+      }
+   }
+   return (buyPositions > 0 && sellPositions > 0);
+}
+void CheckDailyReset()
+{
+   datetime currentDailyTime = iTime(_Symbol, PERIOD_D1, 0);
+   if(currentDailyTime > lastDailyReset)
+   {
+      dailyPnL = 0.0;
+      totalTradesToday = 0;
+      accountPeakBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+      lastDailyReset = currentDailyTime;
+      Print("🔄 Daily reset completed. New peak balance: ", accountPeakBalance);
+   }
+}
+//+------------------------------------------------------------------+
+//| Position Management Functions                                   |
+//+------------------------------------------------------------------+
+void ManageOpenPositions()
+{
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(PositionSelectByTicket(ticket) && PositionGetInteger(POSITION_MAGIC) == Magic_Number)
+      {
+         ManageTrailingStop(ticket);
+         ManageBreakEvenStop(ticket);
+         ManageTimeExit(ticket);
+         ManageVolatilityExit(ticket);
+         ManagePriceActionExit(ticket);
+         ManageMultiStageTakeProfit(ticket); // New function for multi-stage TP
+      }
+   }
+}
+// New function: Multi-Stage Take Profit Management
+void ManageMultiStageTakeProfit(ulong ticket)
+{
+   if(!Use_Multi_Stage_TP) return;
+   // Get position details
+   if(!PositionSelectByTicket(ticket)) return;
+   ENUM_POSITION_TYPE posType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+   double currentPrice = (posType == POSITION_TYPE_BUY) ? 
+                        SymbolInfoDouble(_Symbol, SYMBOL_BID) : 
+                        SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+   double currentProfit = PositionGetDouble(POSITION_PROFIT);
+   double currentVolume = PositionGetDouble(POSITION_VOLUME);
+   double points = MathAbs(currentPrice - openPrice) / _Point;
+   // Determine direction for TP levels
+   bool isLong = (posType == POSITION_TYPE_BUY);
+   double directionMultiplier = isLong ? 1 : -1;
+   // Check for TP1 hit
+   if(!tpLevels[0].reached && points >= TP1_Pips)
+   {
+      double volumeToClose = currentVolume * tpLevels[0].percentage;
+      if(volumeToClose > 0 && ClosePartialPosition(ticket, volumeToClose, "TP1 Hit"))
+      {
+         tpLevels[0].reached = true;
+         Print("📊 TP1 HIT: Closed ", DoubleToString(volumeToClose, 2), " lots of position ", ticket);
+         // Modify remaining position's TP if enabled
+         if(Use_TP_Modification && MathAbs(currentVolume - volumeToClose) > 0.001)
+         {
+            double newTP = 0;
+            if(isLong)
+               newTP = openPrice + TP3_Pips * _Point;
+            else
+               newTP = openPrice - TP3_Pips * _Point;
+            trade.PositionModify(ticket, PositionGetDouble(POSITION_SL), newTP);
+            Print("🔧 Modified remaining position TP to: ", DoubleToString(newTP, _Digits));
+         }
+         // 发送Telegram通知
+         if(UseTelegram)
+         {
+            string tgMsg = StringFormat("🎯 <b>TP1 Hit</b>\n" +
+                                       "📊 品种: %s\n" +
+                                       "📈 方向: %s\n" +
+                                       "💰 利润: $%.2f\n" +
+                                       "📊 关闭手数: %.2f\n" +
+                                       "🎯 剩余手数: %.2f",
+                                       _Symbol,
+                                       isLong ? "BUY" : "SELL",
+                                       currentProfit,
+                                       volumeToClose,
+                                       currentVolume - volumeToClose);
+            SendTelegramSignal(tgMsg);
+         }
+      }
+   }
+   // Check for TP2 hit
+   if(tpLevels[0].reached && !tpLevels[1].reached && points >= TP2_Pips)
+   {
+      double remainingVolume = PositionGetDouble(POSITION_VOLUME);
+      double volumeToClose = remainingVolume * (tpLevels[1].percentage / (1 - tpLevels[0].percentage));
+      if(volumeToClose > 0 && ClosePartialPosition(ticket, volumeToClose, "TP2 Hit"))
+      {
+         tpLevels[1].reached = true;
+         Print("📊 TP2 HIT: Closed ", DoubleToString(volumeToClose, 2), " lots of position ", ticket);
+         // Modify remaining position's TP if enabled
+         if(Use_TP_Modification && MathAbs(remainingVolume - volumeToClose) > 0.001)
+         {
+            double newTP = 0;
+            if(isLong)
+               newTP = openPrice + TP3_Pips * _Point;
+            else
+               newTP = openPrice - TP3_Pips * _Point;
+            trade.PositionModify(ticket, PositionGetDouble(POSITION_SL), newTP);
+            Print("🔧 Modified remaining position TP to: ", DoubleToString(newTP, _Digits));
+         }
+         // 发送Telegram通知
+         if(UseTelegram)
+         {
+            string tgMsg = StringFormat("🎯 <b>TP2 Hit</b>\n" +
+                                       "📊 品种: %s\n" +
+                                       "📈 方向: %s\n" +
+                                       "💰 利润: $%.2f\n" +
+                                       "📊 关闭手数: %.2f\n" +
+                                       "🎯 剩余手数: %.2f",
+                                       _Symbol,
+                                       isLong ? "BUY" : "SELL",
+                                       currentProfit,
+                                       volumeToClose,
+                                       remainingVolume - volumeToClose);
+            SendTelegramSignal(tgMsg);
+         }
+      }
+   }
+   // Check for TP3 hit
+   if(tpLevels[1].reached && !tpLevels[2].reached && points >= TP3_Pips)
+   {
+      double remainingVolume = PositionGetDouble(POSITION_VOLUME);
+      if(remainingVolume > 0 && trade.PositionClose(ticket))
+      {
+         tpLevels[2].reached = true;
+         Print("📊 TP3 HIT: Closed final ", DoubleToString(remainingVolume, 2), " lots of position ", ticket);
+         // 发送Telegram通知
+         if(UseTelegram)
+         {
+            string tgMsg = StringFormat("🎉 <b>TP3 Hit - 仓位完全平仓</b>\n" +
+                                       "📊 品种: %s\n" +
+                                       "📈 方向: %s\n" +
+                                       "💰 总利润: $%.2f\n" +
+                                       "📊 关闭手数: %.2f\n" +
+                                       "✅ 交易完成",
+                                       _Symbol,
+                                       isLong ? "BUY" : "SELL",
+                                       currentProfit,
+                                       remainingVolume);
+            SendTelegramSignal(tgMsg);
+         }
+      }
+   }
+   // Reset take profit levels if position is closed
+   if(PositionGetInteger(POSITION_TYPE) != POSITION_TYPE_BUY && 
+      PositionGetInteger(POSITION_TYPE) != POSITION_TYPE_SELL)
+   {
+      ResetTakeProfitLevels();
+   }
+}
+// Helper function to close partial position
+bool ClosePartialPosition(ulong ticket, double volumeToClose, string comment)
+{
+   if(volumeToClose <= 0) return false;
+   ENUM_POSITION_TYPE posType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+   double price = (posType == POSITION_TYPE_BUY) ? 
+                 SymbolInfoDouble(_Symbol, SYMBOL_BID) : 
+                 SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   // Execute partial close
+   if(trade.PositionClosePartial(ticket, volumeToClose, price))
+   {
+      Print("✅ PARTIAL CLOSE: ", comment, " | Volume: ", DoubleToString(volumeToClose, 2));
+      return true;
+   }
+   else
+   {
+      int error = GetLastError();
+      Print("❌ PARTIAL CLOSE FAILED: ", comment, " | Error: ", error, " - ", ErrorDescription(error));
+      return false;
+   }
+}
+// Helper function to reset take profit levels
+void ResetTakeProfitLevels()
+{
+   tpLevels[0].reached = false;
+   tpLevels[1].reached = false;
+   tpLevels[2].reached = false;
+}
+void ManageTrailingStop(ulong ticket)
+{
+   if(!Use_Trailing_Stop) return;
+   double currentPrice = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY ?
+                        SymbolInfoDouble(_Symbol, SYMBOL_BID) :
+                        SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+   double currentSL = PositionGetDouble(POSITION_SL);
+   double pointsProfit = MathAbs(currentPrice - openPrice) / _Point;
+   if(pointsProfit >= Trailing_Start)
+   {
+      double newSL = 0;
+      if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
+      {
+         newSL = currentPrice - Trailing_Step * _Point;
+         if(newSL > (currentSL > 0 ? currentSL : openPrice))
+         {
+            if(trade.PositionModify(ticket, newSL, PositionGetDouble(POSITION_TP)))
+            {
+               Print("🔧 Trailing stop updated for BUY position ", ticket, " New SL: ", DoubleToString(newSL, _Digits));
+            }
+         }
+      }
+      else
+      {
+         newSL = currentPrice + Trailing_Step * _Point;
+         if(newSL < (currentSL > 0 ? currentSL : openPrice))
+         {
+            if(trade.PositionModify(ticket, newSL, PositionGetDouble(POSITION_TP)))
+            {
+               Print("🔧 Trailing stop updated for SELL position ", ticket, " New SL: ", DoubleToString(newSL, _Digits));
+            }
+         }
+      }
+   }
+}
+void ManageBreakEvenStop(ulong ticket)
+{
+   if(!Use_BreakEven_Stop) return;
+   double currentPrice = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY ?
+                        SymbolInfoDouble(_Symbol, SYMBOL_BID) :
+                        SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+   double currentSL = PositionGetDouble(POSITION_SL);
+   double pointsProfit = MathAbs(currentPrice - openPrice) / _Point;
+   if(pointsProfit >= BreakEven_Trigger)
+   {
+      double newSL = openPrice;
+      if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
+      {
+         if(newSL > (currentSL > 0 ? currentSL : 0))
+         {
+            if(trade.PositionModify(ticket, newSL, PositionGetDouble(POSITION_TP)))
+            {
+               Print("🔒 Break-even stop activated for BUY position ", ticket);
+            }
+         }
+      }
+      else
+      {
+         if(newSL < (currentSL > 0 ? currentSL : 0) || currentSL == 0)
+         {
+            if(trade.PositionModify(ticket, newSL, PositionGetDouble(POSITION_TP)))
+            {
+               Print("🔒 Break-even stop activated for SELL position ", ticket);
+            }
+         }
+      }
+   }
+}
+void ManageTimeExit(ulong ticket)
+{
+   if(!Use_Time_Exit) return;
+   datetime openTime = (datetime)PositionGetInteger(POSITION_TIME);
+   datetime currentTime = TimeCurrent();
+   double hoursOpen = (currentTime - openTime) / 3600.0;
+   if(hoursOpen >= Max_Trade_Hours)
+   {
+      if(trade.PositionClose(ticket))
+      {
+         Print("⏰ Time-based exit for position: ", ticket, " after ", DoubleToString(hoursOpen, 1), " hours");
+      }
+   }
+}
+void ManageVolatilityExit(ulong ticket)
+{
+   if(!Use_Volatility_Exit) return;
+   double currentVol[1];
+   if(CopyBuffer(volatilityHandle, 0, 0, 1, currentVol) == 1)
+   {
+      double volatilityChange = MathAbs(currentVol[0] - currentVolatility) / currentVolatility;
+      if(volatilityChange > 0.5)
+      {
+         double profit = PositionGetDouble(POSITION_PROFIT);
+         if(profit > 0)
+         {
+            if(trade.PositionClose(ticket))
+            {
+               Print("🌪️ Volatility-based exit for position: ", ticket, " Volatility change: ", DoubleToString(volatilityChange * 100, 1), "%");
+            }
+         }
+      }
+   }
+}
+void ManagePriceActionExit(ulong ticket)
+{
+   if(!Use_Price_Action_Exit) return;
+   ENUM_POSITION_TYPE posType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+   double currentPrice = (posType == POSITION_TYPE_BUY) ?
+                        SymbolInfoDouble(_Symbol, SYMBOL_BID) :
+                        SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   MqlRates rates[];
+   if(CopyRates(_Symbol, _Period, 0, 3, rates) < 3) return;
+   bool reversalSignal = false;
+   if(posType == POSITION_TYPE_BUY)
+   {
+      reversalSignal = (rates[0].close < rates[0].open && rates[1].close > rates[1].open &&
+                       rates[0].close < rates[1].open);
+   }
+   else
+   {
+      reversalSignal = (rates[0].close > rates[0].open && rates[1].close < rates[1].open &&
+                       rates[0].close > rates[1].open);
+   }
+   if(reversalSignal)
+   {
+      double profit = PositionGetDouble(POSITION_PROFIT);
+      if(profit > 0)
+      {
+         if(trade.PositionClose(ticket))
+         {
+            Print("🔄 Price action exit for position: ", ticket, " Reversal signal detected");
+         }
+      }
+   }
+}
+//+------------------------------------------------------------------+
+//| Market Analysis Functions                                       |
+//+------------------------------------------------------------------+
+double GetVolatilityAdjustment()
+{
+   double adjustment = 1.0;
+   if(currentVolatility > 0)
+   {
+      double normalVolatility = SymbolInfoDouble(_Symbol, SYMBOL_POINT) * 100;
+      double volatilityRatio = currentVolatility / normalVolatility;
+      if(volatilityRatio > 1.5)
+         adjustment = 0.7;
+      else if(volatilityRatio < 0.7)
+         adjustment = 1.2;
+   }
+   return adjustment;
+}
+void UpdateMarketState()
+{
+   previousMarketState = currentMarketState;
+   double atrValues[20];
+   double closePrices[50];
+   double rsiValues[5];
+   if(CopyBuffer(atrHandle, 0, 0, 20, atrValues) == 20 &&
+      CopyClose(_Symbol, _Period, 0, 50, closePrices) == 50 &&
+      CopyBuffer(rsiHandle, 0, 0, 5, rsiValues) == 5)
+   {
+      double avgVolatility = 0;
+      for(int i = 0; i < 20; i++) avgVolatility += atrValues[i];
+      avgVolatility /= 20;
+      double sma20 = 0, sma50 = 0;
+      for(int i = 0; i < 20; i++) sma20 += closePrices[i];
+      for(int i = 0; i < 50; i++) sma50 += closePrices[i];
+      sma20 /= 20;
+      sma50 /= 50;
+      double highestHigh = closePrices[ArrayMaximum(closePrices, 0, 20)];
+      double lowestLow = closePrices[ArrayMinimum(closePrices, 0, 20)];
+      if(currentVolatility > avgVolatility * 1.5)
+      {
+         currentMarketState = MARKET_HIGH_VOLATILITY;
+      }
+      else if(currentVolatility < avgVolatility * 0.5)
+      {
+         currentMarketState = MARKET_LOW_VOLATILITY;
+      }
+      else if(sma20 > sma50 * 1.02 && closePrices[0] > highestHigh * 0.98)
+      {
+         currentMarketState = MARKET_TRENDING_UP;
+      }
+      else if(sma20 < sma50 * 0.98 && closePrices[0] < lowestLow * 1.02)
+      {
+         currentMarketState = MARKET_TRENDING_DOWN;
+      }
+      else if(MathAbs(sma20 - sma50) / sma50 < 0.005)
+      {
+         currentMarketState = MARKET_RANGING;
+      }
+      else if(closePrices[0] > highestHigh || closePrices[0] < lowestLow)
+      {
+         currentMarketState = MARKET_BREAKOUT;
+      }
+      else
+      {
+         currentMarketState = MARKET_MEAN_REVERSION;
+      }
+   }
+   if(currentMarketState != previousMarketState)
+   {
+      Print("📈 Market state changed from ", GetMarketStateString(previousMarketState),
+            " to ", GetMarketStateString(currentMarketState));
+   }
+}
+string GetMarketStateString(MARKET_STATE state = MARKET_RANGING)
+{
+   if(state == MARKET_RANGING) state = currentMarketState;
+   switch(state)
+   {
+      case MARKET_TRENDING_UP: return "Trending Up";
+      case MARKET_TRENDING_DOWN: return "Trending Down";
+      case MARKET_RANGING: return "Ranging";
+      case MARKET_HIGH_VOLATILITY: return "High Volatility";
+      case MARKET_LOW_VOLATILITY: return "Low Volatility";
+      case MARKET_BREAKOUT: return "Breakout";
+      case MARKET_MEAN_REVERSION: return "Mean Reversion";
+      default: return "Unknown";
+   }
+}
+//+------------------------------------------------------------------+
+//| Get MTF Confirmation Signal                                    |
+//+------------------------------------------------------------------+
+int GetMTFConfirmation()
+{
+   int dirHTF1 = CandleDirection(HTF1, 1);  // Previous candle on HTF1
+   int dirHTF2 = CandleDirection(HTF2, 1);  // Previous candle on HTF2
+   int dirCurrent = CandleDirection(_Period, 0);  // Current candle on working timeframe
+   // Strong: ALL three agree
+   if(dirHTF1 == dirHTF2 && dirHTF1 == dirCurrent && dirHTF1 != 0)
+      return dirHTF1;
+   // Medium: HTF1 == HTF2 (current may be forming)
+   if(dirHTF1 == dirHTF2 && dirHTF1 != 0)
+      return dirHTF1;
+   return 0;
+}
+//+------------------------------------------------------------------+
+//| Track consecutive signal confirmations                         |
+//+------------------------------------------------------------------+
+void TrackConsecutiveMTFSignals()
+{
+   int mtfDir = GetMTFConfirmation();
+   
+   // Reset counters when signal direction changes
+   if(mtfDir > 0) 
+   {
+      consecutiveBullishSignals++;
+      consecutiveBearishSignals = 0;
+      
+      if(EnableDebug)
+         Print("📈 Bullish MTF signal detected. Confirmations: ", consecutiveBullishSignals, "/", SignalConfirmationsRequired);
+   }
+   else if(mtfDir < 0) 
+   {
+      consecutiveBearishSignals++;
+      consecutiveBullishSignals = 0;
+      
+      if(EnableDebug)
+         Print("📉 Bearish MTF signal detected. Confirmations: ", consecutiveBearishSignals, "/", SignalConfirmationsRequired);
+   }
+   else 
+   {
+      // No clear signal, reset counters
+      consecutiveBullishSignals = 0;
+      consecutiveBearishSignals = 0;
+      
+      if(EnableDebug)
+         Print("⚪ No clear MTF signal. Resetting confirmation counters.");
+   }
+}
+//+------------------------------------------------------------------+
+//| Get confirmed signal direction if enough confirmations         |
+//+------------------------------------------------------------------+
+int GetConfirmedSignalDirection()
+{
+   if(consecutiveBullishSignals >= SignalConfirmationsRequired)
+      return 1;
+   else if(consecutiveBearishSignals >= SignalConfirmationsRequired)
+      return -1;
+   return 0;
+}
+//+------------------------------------------------------------------+
+//| Supply & Demand Zone Functions                                  |
+//+------------------------------------------------------------------+
+void UpdateSupplyDemandZones()
+{
+   double atrValue[1];
+   if(CopyBuffer(atrHandle, 0, 0, 1, atrValue) != 1) return;
+   DetectSwingPoints(atrValue[0]);
+   CheckBrokenZones();
+}
+void DetectSwingPoints(double atr)
+{
+   demandCount = 0;
+   supplyCount = 0;
+   int bars = MathMin(200, Bars(_Symbol, _Period));
+   // Detect demand zones (swing lows)
+   for(int i = Swing_Length; i < bars - Swing_Length; i++)
+   {
+      bool isSwingLow = true;
+      double currentLow = iLow(_Symbol, _Period, i);
+      for(int j = 1; j <= Swing_Length; j++)
+      {
+         if(currentLow >= iLow(_Symbol, _Period, i - j))
+         {
+            isSwingLow = false;
+            break;
+         }
+      }
+      if(isSwingLow)
+      {
+         for(int j = 1; j <= Swing_Length; j++)
+         {
+            if(currentLow >= iLow(_Symbol, _Period, i + j))
+            {
+               isSwingLow = false;
+               break;
+            }
+         }
+      }
+      if(isSwingLow && demandCount < History_To_Keep)
+      {
+         CreateDemandZone(currentLow, (datetime)iTime(_Symbol, _Period, i), atr);
+      }
+   }
+   // Detect supply zones (swing highs)
+   for(int i = Swing_Length; i < bars - Swing_Length; i++)
+   {
+      bool isSwingHigh = true;
+      double currentHigh = iHigh(_Symbol, _Period, i);
+      for(int j = 1; j <= Swing_Length; j++)
+      {
+         if(currentHigh <= iHigh(_Symbol, _Period, i - j))
+         {
+            isSwingHigh = false;
+            break;
+         }
+      }
+      if(isSwingHigh)
+      {
+         for(int j = 1; j <= Swing_Length; j++)
+         {
+            if(currentHigh <= iHigh(_Symbol, _Period, i + j))
+            {
+               isSwingHigh = false;
+               break;
+            }
+         }
+      }
+      if(isSwingHigh && supplyCount < History_To_Keep)
+      {
+         CreateSupplyZone(currentHigh, (datetime)iTime(_Symbol, _Period, i), atr);
+      }
+   }
+}
+void CreateDemandZone(double swingLowPrice, datetime swingLowTime, double atr)
+{
+   double atrBuffer = atr * Box_Width;
+   double zoneBottom = swingLowPrice;
+   double zoneTop = zoneBottom + atrBuffer;
+   for(int i = 0; i < demandCount; i++)
+   {
+      double existingBottom = demandZones[i * 2 + 1];
+      double existingTop = demandZones[i * 2];
+      if(zoneTop >= existingBottom && zoneBottom <= existingTop)
+      {
+         return;
+      }
+   }
+   demandZones[demandCount * 2] = zoneTop;
+   demandZones[demandCount * 2 + 1] = zoneBottom;
+   zoneTimes[demandCount] = swingLowTime;
+   demandCount++;
+}
+void CreateSupplyZone(double swingHighPrice, datetime swingHighTime, double atr)
+{
+   double atrBuffer = atr * Box_Width;
+   double zoneTop = swingHighPrice;
+   double zoneBottom = zoneTop - atrBuffer;
+   for(int i = 0; i < supplyCount; i++)
+   {
+      double existingBottom = supplyZones[i * 2 + 1];
+      double existingTop = supplyZones[i * 2];
+      if(zoneTop >= existingBottom && zoneBottom <= existingTop)
+      {
+         return;
+      }
+   }
+   supplyZones[supplyCount * 2] = zoneTop;
+   supplyZones[supplyCount * 2 + 1] = zoneBottom;
+   zoneTimes[History_To_Keep + supplyCount] = swingHighTime;
+   supplyCount++;
+}
+void CheckBrokenZones()
+{
+   double currentPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   // Check demand zones
+   for(int i = 0; i < demandCount; i++)
+   {
+      double zoneBottom = demandZones[i * 2 + 1];
+      if(currentPrice < zoneBottom)
+      {
+         if(historicalDemandCount < ArrayRange(historicalDemandZones, 0))
+         {
+            historicalDemandZones[historicalDemandCount][0] = demandZones[i * 2];
+            historicalDemandZones[historicalDemandCount][1] = zoneBottom;
+            historicalZoneTimes[historicalDemandCount] = zoneTimes[i];
+            historicalDemandCount++;
+         }
+         for(int j = i; j < demandCount - 1; j++)
+         {
+            demandZones[j * 2] = demandZones[(j + 1) * 2];
+            demandZones[j * 2 + 1] = demandZones[(j + 1) * 2 + 1];
+            zoneTimes[j] = zoneTimes[j + 1];
+         }
+         demandCount--;
+         i--;
+      }
+   }
+   // Check supply zones
+   for(int i = 0; i < supplyCount; i++)
+   {
+      double zoneTop = supplyZones[i * 2];
+      if(currentPrice > zoneTop)
+      {
+         if(historicalSupplyCount < ArrayRange(historicalSupplyZones, 0))
+         {
+            historicalSupplyZones[historicalSupplyCount][0] = zoneTop;
+            historicalSupplyZones[historicalSupplyCount][1] = supplyZones[i * 2 + 1];
+            historicalZoneTimes[History_To_Keep + historicalSupplyCount] = zoneTimes[History_To_Keep + i];
+            historicalSupplyCount++;
+         }
+         for(int j = i; j < supplyCount - 1; j++)
+         {
+            supplyZones[j * 2] = supplyZones[(j + 1) * 2];
+            supplyZones[j * 2 + 1] = supplyZones[(j + 1) * 2 + 1];
+            zoneTimes[History_To_Keep + j] = zoneTimes[History_To_Keep + j + 1];
+         }
+         supplyCount--;
+         i--;
+      }
+   }
+}
+bool IsPriceInDemandZone(double price)
+{
+   double zoneTolerance = Zone_Tolerance_Points * _Point;
+   for(int i = 0; i < demandCount; i++)
+   {
+      double zoneTop = demandZones[i * 2];
+      double zoneBottom = demandZones[i * 2 + 1];
+      if(price >= (zoneBottom - zoneTolerance) && price <= (zoneTop + zoneTolerance))
+      {
+         return true;
+      }
+   }
+   return false;
+}
+bool IsPriceInSupplyZone(double price)
+{
+   double zoneTolerance = Zone_Tolerance_Points * _Point;
+   for(int i = 0; i < supplyCount; i++)
+   {
+      double zoneTop = supplyZones[i * 2];
+      double zoneBottom = supplyZones[i * 2 + 1];
+      if(price >= (zoneBottom - zoneTolerance) && price <= (zoneTop + zoneTolerance))
+      {
+         return true;
+      }
+   }
+   return false;
+}
+//+------------------------------------------------------------------+
+//| 🔑 CORE: MTF-Primary Trading Logic with Confirmations          |
+//+------------------------------------------------------------------+
+void CheckTradingSignals()
+{
+   // STEP 1: Update zones (for filtering only)
+   UpdateSupplyDemandZones();
+   
+   // STEP 2: Track consecutive MTF signals
+   TrackConsecutiveMTFSignals();
+   
+   // STEP 3: Check if we have enough confirmations
+   int confirmedDir = GetConfirmedSignalDirection();
+   
+   if(confirmedDir == 0) 
+   {
+      if(EnableDebug)
+         Print("🔍 No confirmed signal yet. Current confirmations - Bullish: ", consecutiveBullishSignals, 
+               " Bearish: ", consecutiveBearishSignals,
+               " Required: ", SignalConfirmationsRequired);
+      return;
+   }
+   
+   // STEP 4: Check trade conditions
+   if(!IsTradeAllowed() || !Use_MTF_for_Trading || !Pure_MTF_Trades) 
+   {
+      // Reset counters if not allowed to trade
+      consecutiveBullishSignals = 0;
+      consecutiveBearishSignals = 0;
+      return;
+   }
+   
+   datetime barTime = iTime(_Symbol, _Period, 0);
+   static datetime lastConfirmedBar = 0;
+   
+   // Prevent trading on the same bar
+   if(barTime == lastConfirmedBar) 
+   {
+      if(EnableDebug)
+         Print("⚠️ Already traded on this bar. Skipping.");
+      return;
+   }
+   
+   lastConfirmedBar = barTime;
+   
+   double price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   bool inDemand = IsPriceInDemandZone(price);
+   bool inSupply = IsPriceInSupplyZone(price);
+   double zoneFactor = 1.0;
+   string zoneMsg = "";
+   
+   if(confirmedDir > 0) // Bullish
+   {
+      if(inDemand)      { zoneFactor = Zone_Boost_Factor;  zoneMsg = "✅ (In Demand Zone)"; }
+      else if(inSupply) { zoneFactor = Zone_Dampen_Factor; zoneMsg = "⚠️ (In Supply Zone!)"; }
+   }
+   else // Bearish
+   {
+      if(inSupply)      { zoneFactor = Zone_Boost_Factor;  zoneMsg = "✅ (In Supply Zone)"; }
+      else if(inDemand) { zoneFactor = Zone_Dampen_Factor; zoneMsg = "⚠️ (In Demand Zone!)"; }
+   }
+   
+   double baseLot = CalculateKellyLotSize(confirmedDir > 0 ? ORDER_TYPE_BUY : ORDER_TYPE_SELL);
+   if(baseLot <= 0) 
+   {
+      Print("❌ Unable to calculate lot size. Skipping trade.");
+      // Reset confirmation counters
+      consecutiveBullishSignals = 0;
+      consecutiveBearishSignals = 0;
+      return;
+   }
+   
+   double finalLot = baseLot * zoneFactor;
+   
+   // Ensure compliance with broker limits
+   if(!ValidateLotSize(finalLot, confirmedDir > 0 ? ORDER_TYPE_BUY : ORDER_TYPE_SELL))
+   {
+      Print("❌ Lot size validation failed. Using base lot size.");
+      finalLot = baseLot; // fallback
+      if(!ValidateLotSize(finalLot, confirmedDir > 0 ? ORDER_TYPE_BUY : ORDER_TYPE_SELL)) 
+      {
+         Print("❌ Base lot size validation also failed. Skipping trade.");
+         // Reset confirmation counters
+         consecutiveBullishSignals = 0;
+         consecutiveBearishSignals = 0;
+         return;
+      }
+   }
+   
+   string comment = (confirmedDir > 0 ? "MTF Bullish" : "MTF Bearish") + zoneMsg + 
+                   " (" + IntegerToString(SignalConfirmationsRequired) + " confirmations)";
+   
+   Print("🎯 MTF Signal CONFIRMED: ", (confirmedDir > 0 ? "BULL" : "BEAR"), 
+         " | Zone: ", zoneMsg,
+         " | Confirmations: ", IntegerToString(SignalConfirmationsRequired),
+         " | BaseLot: ", DoubleToString(baseLot, 2),
+         " | FinalLot: ", DoubleToString(finalLot, 2));
+   
+   if(confirmedDir > 0)
+      ExecuteBuyTrade(finalLot, comment);
+   else
+      ExecuteSellTrade(finalLot, comment);
+   
+   // Reset confirmation counters after trade execution
+   consecutiveBullishSignals = 0;
+   consecutiveBearishSignals = 0;
+   
+   // Trigger alert & log
+   FireAlerts(confirmedDir);
+}
+//+------------------------------------------------------------------+
+//| Drawing Functions                                               |
+//+------------------------------------------------------------------+
+void DrawZonesOnChart()
+{
+   if(!zonesInitialized ||
+      demandCount != lastDemandCount ||
+      supplyCount != lastSupplyCount)
+   {
+      ObjectsDeleteAll(0, "SMC_");
+      ObjectsDeleteAll(0, "DEMAND_");
+      ObjectsDeleteAll(0, "SUPPLY_");
+      ObjectsDeleteAll(0, "POI_");
+      DrawActiveZones();
+      DrawPOILines();
+      CreateZoneLegend();
+      lastDemandCount = demandCount;
+      lastSupplyCount = supplyCount;
+      zonesInitialized = true;
+   }
+}
+void DrawActiveZones()
+{
+   datetime endTime = TimeCurrent() + PeriodSeconds(_Period) * 50;
+   // Draw demand zones
+   for(int i = 0; i < demandCount; i++)
+   {
+      double top = demandZones[i * 2];
+      double bottom = demandZones[i * 2 + 1];
+      datetime startTime = zoneTimes[i];
+      string rectName = "SMC_DEMAND_" + IntegerToString(i);
+      if(ObjectCreate(0, rectName, OBJ_RECTANGLE, 0, startTime, bottom, endTime, top))
+      {
+         ObjectSetInteger(0, rectName, OBJPROP_COLOR, clrDodgerBlue);
+         ObjectSetInteger(0, rectName, OBJPROP_BGCOLOR, clrDodgerBlue);
+         ObjectSetInteger(0, rectName, OBJPROP_BACK, false);
+         ObjectSetInteger(0, rectName, OBJPROP_SELECTABLE, false);
+         ObjectSetInteger(0, rectName, OBJPROP_FILL, true);
+         ObjectSetInteger(0, rectName, OBJPROP_WIDTH, 1);
+         ObjectSetInteger(0, rectName, OBJPROP_STYLE, STYLE_SOLID);
+         ObjectSetInteger(0, rectName, OBJPROP_ZORDER, 1);
+      }
+   }
+   // Draw supply zones
+   for(int i = 0; i < supplyCount; i++)
+   {
+      double top = supplyZones[i * 2];
+      double bottom = supplyZones[i * 2 + 1];
+      datetime startTime = zoneTimes[History_To_Keep + i];
+      string rectName = "SMC_SUPPLY_" + IntegerToString(i);
+      if(ObjectCreate(0, rectName, OBJ_RECTANGLE, 0, startTime, bottom, endTime, top))
+      {
+         ObjectSetInteger(0, rectName, OBJPROP_COLOR, clrTomato);
+         ObjectSetInteger(0, rectName, OBJPROP_BGCOLOR, clrTomato);
+         ObjectSetInteger(0, rectName, OBJPROP_BACK, false);
+         ObjectSetInteger(0, rectName, OBJPROP_SELECTABLE, false);
+         ObjectSetInteger(0, rectName, OBJPROP_FILL, true);
+         ObjectSetInteger(0, rectName, OBJPROP_WIDTH, 1);
+         ObjectSetInteger(0, rectName, OBJPROP_STYLE, STYLE_SOLID);
+         ObjectSetInteger(0, rectName, OBJPROP_ZORDER, 1);
+      }
+   }
+}
+void DrawPOILines()
+{
+   for(int i = 0; i < demandCount; i++)
+   {
+      double top = demandZones[i * 2];
+      double bottom = demandZones[i * 2 + 1];
+      double poiLevel = (top + bottom) / 2.0;
+      string name = "POI_DEMAND_" + IntegerToString(i);
+      if(ObjectCreate(0, name, OBJ_HLINE, 0, 0, poiLevel))
+      {
+         ObjectSetInteger(0, name, OBJPROP_COLOR, clrGreen);
+         ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_DASH);
+         ObjectSetInteger(0, name, OBJPROP_WIDTH, 2);
+         ObjectSetInteger(0, name, OBJPROP_BACK, false);
+         ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+      }
+   }
+   for(int i = 0; i < supplyCount; i++)
+   {
+      double top = supplyZones[i * 2];
+      double bottom = supplyZones[i * 2 + 1];
+      double poiLevel = (top + bottom) / 2.0;
+      string name = "POI_SUPPLY_" + IntegerToString(i);
+      if(ObjectCreate(0, name, OBJ_HLINE, 0, 0, poiLevel))
+      {
+         ObjectSetInteger(0, name, OBJPROP_COLOR, clrRed);
+         ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_DASH);
+         ObjectSetInteger(0, name, OBJPROP_WIDTH, 2);
+         ObjectSetInteger(0, name, OBJPROP_BACK, false);
+         ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+      }
+   }
+}
+void CreateZoneLegend()
+{
+   int xPos = 20;
+   int yPos = 30;
+   int lineHeight = 20;
+   ObjectsDeleteAll(0, "SMC_LEGEND_");
+   string statsName = "SMC_LEGEND_STATS";
+   if(ObjectCreate(0, statsName, OBJ_LABEL, 0, 0, 0))
+   {
+      string statsText = StringFormat("Active Zones: Demand(%d) Supply(%d)\nConfirmations: %d/%d",
+                                     demandCount, supplyCount,
+                                     (consecutiveBullishSignals > 0) ? consecutiveBullishSignals : consecutiveBearishSignals,
+                                     SignalConfirmationsRequired);
+      ObjectSetInteger(0, statsName, OBJPROP_XDISTANCE, xPos);
+      ObjectSetInteger(0, statsName, OBJPROP_YDISTANCE, yPos);
+      ObjectSetInteger(0, statsName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, statsName, OBJPROP_BACK, false);
+      ObjectSetInteger(0, statsName, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, statsName, OBJPROP_FONTSIZE, 9);
+      ObjectSetString(0, statsName, OBJPROP_TEXT, statsText);
+      ObjectSetInteger(0, statsName, OBJPROP_COLOR, clrBlack);
+   }
+}
+//+------------------------------------------------------------------+
+//| Performance Tracking Functions                                  |
+//+------------------------------------------------------------------+
+void UpdatePerformanceStatistics(double profit)
+{
+   if(!Enable_Performance_Tracking) return;
+   totalTrades++;
+   totalTradesToday++;
+   if(profit > 0)
+   {
+      winningTrades++;
+      totalProfit += profit;
+      consecutiveLosses = 0;
+   }
+   else
+   {
+      totalLoss += MathAbs(profit);
+      consecutiveLosses++;
+   }
+   currentWinRate = totalTrades > 0 ? (double)winningTrades / totalTrades : 0;
+   currentProfitFactor = totalLoss > 0 ? totalProfit / totalLoss : (totalProfit > 0 ? 100 : 0);
+   double avgWin = winningTrades > 0 ? totalProfit / winningTrades : 0;
+   double avgLoss = (totalTrades - winningTrades) > 0 ? totalLoss / (totalTrades - winningTrades) : 0;
+   expectancy = (currentWinRate * avgWin) - ((1 - currentWinRate) * avgLoss);
+   if(currentWinRate > bestWinRate)
+   {
+      bestWinRate = currentWinRate;
+   }
+   double currentBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+   if(currentBalance > accountPeakBalance)
+   {
+      accountPeakBalance = currentBalance;
+   }
+   double drawdown = (accountPeakBalance - currentBalance) / accountPeakBalance * 100;
+   if(drawdown > worstDrawdown)
+   {
+      worstDrawdown = drawdown;
+   }
+   if(totalTrades % 10 == 0)
+   {
+      SavePerformanceStatistics();
+   }
+}
+void SavePerformanceStatistics()
+{
+   int fileHandle = FileOpen("MTF_SMC_Performance_" + IntegerToString(Magic_Number) + ".csv", FILE_WRITE|FILE_CSV);
+   if(fileHandle != INVALID_HANDLE)
+   {
+      FileWrite(fileHandle, "TotalTrades", "WinRate", "ProfitFactor", "TotalProfit", "TotalLoss",
+                "BestWinRate", "WorstDrawdown", "Expectancy", "SharpeRatio");
+      FileWrite(fileHandle, totalTrades, currentWinRate, currentProfitFactor, totalProfit, totalLoss,
+                bestWinRate, worstDrawdown, expectancy, sharpeRatio);
+      FileClose(fileHandle);
+   }
+}
+void LoadPerformanceStatistics()
+{
+   int fileHandle = FileOpen("MTF_SMC_Performance_" + IntegerToString(Magic_Number) + ".csv", FILE_READ|FILE_CSV);
+   if(fileHandle != INVALID_HANDLE)
+   {
+      FileReadString(fileHandle);
+      string data = FileReadString(fileHandle);
+      string values[];
+      int count = StringSplit(data, ',', values);
+      if(count >= 9)
+      {
+         totalTrades = (int)StringToInteger(values[0]);
+         currentWinRate = StringToDouble(values[1]);
+         currentProfitFactor = StringToDouble(values[2]);
+         totalProfit = StringToDouble(values[3]);
+         totalLoss = StringToDouble(values[4]);
+         bestWinRate = StringToDouble(values[5]);
+         worstDrawdown = StringToDouble(values[6]);
+         expectancy = StringToDouble(values[7]);
+         sharpeRatio = StringToDouble(values[8]);
+         winningTrades = (int)(totalTrades * currentWinRate);
+      }
+      FileClose(fileHandle);
+   }
+}
+void SaveLearningData()
+{
+   int fileHandle = FileOpen("MTF_SMC_Learning_" + IntegerToString(Magic_Number) + ".bin", FILE_WRITE|FILE_BIN);
+   if(fileHandle != INVALID_HANDLE)
+   {
+      FileWriteArray(fileHandle, patternSuccessRates);
+      FileWriteArray(fileHandle, zoneEffectiveness);
+      FileWriteDouble(fileHandle, learningSamples);
+      FileClose(fileHandle);
+   }
+}
+void LoadLearningData()
+{
+   int fileHandle = FileOpen("MTF_SMC_Learning_" + IntegerToString(Magic_Number) + ".bin", FILE_READ|FILE_BIN);
+   if(fileHandle != INVALID_HANDLE)
+   {
+      FileReadArray(fileHandle, patternSuccessRates);
+      FileReadArray(fileHandle, zoneEffectiveness);
+      learningSamples = (int)FileReadDouble(fileHandle);
+      FileClose(fileHandle);
+   }
+}
+void UpdateLearningData(int patternType, int zoneIndex, bool wasSuccessful)
+{
+   if(!Use_Machine_Learning) return;
+   if(patternType >= 0 && patternType < ArraySize(patternSuccessRates))
+   {
+      double currentRate = patternSuccessRates[patternType];
+      patternSuccessRates[patternType] = (currentRate * learningSamples + (wasSuccessful ? 1 : 0)) / (learningSamples + 1);
+   }
+   if(zoneIndex >= 0 && zoneIndex < ArraySize(zoneEffectiveness))
+   {
+      double currentEffectiveness = zoneEffectiveness[zoneIndex];
+      zoneEffectiveness[zoneIndex] = (currentEffectiveness * learningSamples + (wasSuccessful ? 1 : 0)) / (learningSamples + 1);
+   }
+   learningSamples++;
+   if(learningSamples % 100 == 0)
+   {
+      SaveLearningData();
+   }
+}
+//+------------------------------------------------------------------+
+//| Display Functions                                               |
+//+------------------------------------------------------------------+
+void UpdatePerformanceDisplay()
+{
+   string performanceText = "MTF-Primary EA v4.10 with Signal Confirmation\n" +
+                           "■ Total Trades: " + IntegerToString(totalTrades) + "\n" +
+                           "■ Win Rate: " + DoubleToString(currentWinRate * 100, 1) + "%\n" +
+                           "■ Profit Factor: " + DoubleToString(currentProfitFactor, 2) + "\n" +
+                           "■ Expectancy: $" + DoubleToString(expectancy, 2) + "\n" +
+                           "■ Market: " + GetMarketStateString() + "\n" +
+                           "■ Daily Drawdown: " + DoubleToString(((accountPeakBalance - AccountInfoDouble(ACCOUNT_BALANCE)) / accountPeakBalance * 100), 2) + "%\n" +
+                           "■ Volatility: " + DoubleToString(currentVolatility, 5) + "\n" +
+                           "■ Active Zones: D(" + IntegerToString(demandCount) + ") S(" + IntegerToString(supplyCount) + ")\n" +
+                           "■ Confirmations: " + IntegerToString(SignalConfirmationsRequired) + "\n" +
+                           "■ Telegram: " + (UseTelegram ? "ON" : "OFF");
+   if(ObjectFind(0, "MTF_SMC_PerformanceLabel") < 0)
+   {
+      ObjectCreate(0, "MTF_SMC_PerformanceLabel", OBJ_LABEL, 0, 0, 0);
+   }
+   ObjectSetInteger(0, "MTF_SMC_PerformanceLabel", OBJPROP_CORNER, CORNER_RIGHT_UPPER);
+   ObjectSetInteger(0, "MTF_SMC_PerformanceLabel", OBJPROP_XDISTANCE, 10);
+   ObjectSetInteger(0, "MTF_SMC_PerformanceLabel", OBJPROP_YDISTANCE, 30);
+   ObjectSetInteger(0, "MTF_SMC_PerformanceLabel", OBJPROP_BACK, true);
+   ObjectSetInteger(0, "MTF_SMC_PerformanceLabel", OBJPROP_SELECTABLE, false);
+   color bgColor = clrDarkSlateGray;
+   // Color coding for risk management
+   if(currentWinRate > 0.6) bgColor = clrDarkGreen;
+   ObjectSetInteger(0, "MTF_SMC_PerformanceLabel", OBJPROP_BGCOLOR, bgColor);
+   ObjectSetInteger(0, "MTF_SMC_PerformanceLabel", OBJPROP_BORDER_TYPE, BORDER_SUNKEN);
+   ObjectSetInteger(0, "MTF_SMC_PerformanceLabel", OBJPROP_BORDER_COLOR, clrGray);
+   ObjectSetInteger(0, "MTF_SMC_PerformanceLabel", OBJPROP_FONTSIZE, 9);
+   ObjectSetString(0, "MTF_SMC_PerformanceLabel", OBJPROP_TEXT, performanceText);
+   ObjectSetString(0, "MTF_SMC_PerformanceLabel", OBJPROP_FONT, "Consolas");
+   ObjectSetInteger(0, "MTF_SMC_PerformanceLabel", OBJPROP_COLOR, clrBlack);
+}
+void UpdateMarketData()
+{
+   double volatility[1];
+   if(CopyBuffer(volatilityHandle, 0, 0, 1, volatility) == 1)
+   {
+      currentVolatility = volatility[0];
+   }
+   double currentBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+   if(currentBalance > accountPeakBalance)
+   {
+      accountPeakBalance = currentBalance;
+   }
+}
+//+------------------------------------------------------------------+

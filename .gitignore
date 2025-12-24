@@ -18,6 +18,9 @@ logs/
 *.feather
 cache/
 data/
+trading_data.db
+trading_data.db-shm
+trading_data.db-wal
 
 # 可视化图表文件
 figures/

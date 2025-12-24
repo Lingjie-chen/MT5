@@ -21,7 +21,7 @@
 #include <Indicators/Trend.mqh>
 #include <Indicators/Oscilators.mqh>
 #include <Arrays/ArrayObj.mqh>
-#include <Include/fixed_json_functions.mqh>
+#include <fixed_json_functions.mqh>
 
 //+------------------------------------------------------------------+
 //| 结构定义                                                         |
@@ -53,7 +53,7 @@ SWebRequestConnection WebRequestConn;
 //+------------------------------------------------------------------+
 //| WebRequest通信函数                                               |
 //+------------------------------------------------------------------+
-bool WebRequestSend(string request, string &response, int timeout_ms = 5000)
+bool WebRequestSend(string request, string &response, int timeout_ms = 45000)
 {
     // 检查是否在短时间内重复请求
     if(TimeCurrent() - WebRequestConn.last_request_time < 1)
@@ -69,7 +69,12 @@ bool WebRequestSend(string request, string &response, int timeout_ms = 5000)
     
     // 发送WebRequest
     char data[], result[];
-    StringToCharArray(request, data);
+    int len = StringToCharArray(request, data);
+    
+    // 移除字符串末尾的空字符（\0），避免发送额外数据导致JSON解析错误
+    if(len > 0)
+        ArrayResize(data, len - 1);
+        
     string result_headers;
     
     int res = WebRequest("POST", url, headers, timeout_ms, data, result, result_headers);
@@ -196,12 +201,15 @@ bool ValidateSignalResult(string signal, int strength, string analysis)
 {
     // 验证信号结果的有效性
     
-    // 验证信号类型
-    string valid_signals[] = {"buy", "sell", "hold", "none"};
+    // 验证信号类型 (不区分大小写)
+    string upper_signal = signal;
+    StringToUpper(upper_signal);
+    
+    string valid_signals[] = {"BUY", "SELL", "HOLD", "NONE"};
     bool signal_valid = false;
     for(int i = 0; i < ArraySize(valid_signals); i++)
     {
-        if(signal == valid_signals[i])
+        if(upper_signal == valid_signals[i])
         {
             signal_valid = true;
             break;
@@ -664,11 +672,880 @@ public:
 };
 
 //+------------------------------------------------------------------+
+//| PEM 引擎类                                                       |
+//+------------------------------------------------------------------+
+class CPEMEngine
+{
+private:
+    string m_symbol;
+    ENUM_TIMEFRAMES m_timeframe;
+    int m_ma_fast_handle;
+    int m_ma_slow_handle;
+    int m_adx_handle;
+    
+    // PEM Coefficients
+    double m_coeffs[7];
+    
+    // Trend Filter Params
+    int m_ma_fast_period;
+    int m_ma_slow_period;
+    double m_adx_threshold;
+
+public:
+    CPEMEngine(string symbol, ENUM_TIMEFRAMES tf, int fast_ma, int slow_ma, double adx_thresh) :
+        m_symbol(symbol), m_timeframe(tf), 
+        m_ma_fast_period(fast_ma), m_ma_slow_period(slow_ma), m_adx_threshold(adx_thresh)
+    {
+        // Initialize coefficients
+        m_coeffs[0] = 0.2752466;
+        m_coeffs[1] = 0.01058082;
+        m_coeffs[2] = 0.55162082;
+        m_coeffs[3] = 0.03687016;
+        m_coeffs[4] = 0.27721318;
+        m_coeffs[5] = 0.1483476;
+        m_coeffs[6] = 0.0008025;
+        
+        // Initialize indicators
+        m_ma_fast_handle = iMA(m_symbol, m_timeframe, m_ma_fast_period, 0, MODE_SMA, PRICE_CLOSE);
+        m_ma_slow_handle = iMA(m_symbol, m_timeframe, m_ma_slow_period, 0, MODE_SMA, PRICE_CLOSE);
+        m_adx_handle = iADX(m_symbol, m_timeframe, 14);
+    }
+    
+    ~CPEMEngine()
+    {
+        if(m_ma_fast_handle != INVALID_HANDLE) IndicatorRelease(m_ma_fast_handle);
+        if(m_ma_slow_handle != INVALID_HANDLE) IndicatorRelease(m_ma_slow_handle);
+        if(m_adx_handle != INVALID_HANDLE) IndicatorRelease(m_adx_handle);
+    }
+    
+    void Update(string &signal, int &strength, string &analysis)
+    {
+        signal = "none";
+        strength = 0;
+        analysis = "";
+        
+        // 1. Calculate Prediction
+        double price_t1 = iClose(m_symbol, m_timeframe, 1);
+        double price_t2 = iClose(m_symbol, m_timeframe, 2);
+        
+        if (price_t1 == 0 || price_t2 == 0) return;
+        
+        double predicted_price = GetPrediction(price_t1, price_t2);
+        double current_price = SymbolInfoDouble(m_symbol, SYMBOL_ASK);
+        
+        bool raw_buy = predicted_price > current_price;
+        bool raw_sell = predicted_price < current_price;
+        
+        // 2. Trend Filter
+        double ma_fast_val = GetIndicatorValue(m_ma_fast_handle, 0);
+        double ma_slow_val = GetIndicatorValue(m_ma_slow_handle, 0);
+        double adx_val = GetIndicatorValue(m_adx_handle, 0); // ADX main line
+        
+        bool is_strong_trend = adx_val >= m_adx_threshold;
+        bool is_uptrend = ma_fast_val > ma_slow_val;
+        bool is_downtrend = ma_fast_val < ma_slow_val;
+        
+        // 3. Final Signal
+        if (raw_buy && is_strong_trend && is_uptrend)
+        {
+            signal = "BUY";
+            strength = 75; // Trend following + Prediction
+            analysis = StringFormat("PEM: Predicted %.5f > Current %.5f | Trend UP (ADX: %.1f)", 
+                predicted_price, current_price, adx_val);
+        }
+        else if (raw_sell && is_strong_trend && is_downtrend)
+        {
+            signal = "SELL";
+            strength = 75;
+            analysis = StringFormat("PEM: Predicted %.5f < Current %.5f | Trend DOWN (ADX: %.1f)", 
+                predicted_price, current_price, adx_val);
+        }
+    }
+    
+private:
+    double GetPrediction(double t1, double t2)
+    {
+        return m_coeffs[0] * t1 +
+               m_coeffs[1] * MathPow(t1, 2) +
+               m_coeffs[2] * t2 +
+               m_coeffs[3] * MathPow(t2, 2) +
+               m_coeffs[4] * (t1 - t2) +
+               m_coeffs[5] * MathSin(t1) +
+               m_coeffs[6];
+    }
+    
+    double GetIndicatorValue(int handle, int buffer_num, int index=0)
+    {
+        double buffer[];
+        if(CopyBuffer(handle, buffer_num, index, 1, buffer) > 0)
+            return buffer[0];
+        return 0.0;
+    }
+};
+
+//+------------------------------------------------------------------+
+//| SMC 引擎类                                                       |
+//+------------------------------------------------------------------+
+class CSMCEngine
+{
+private:
+    string m_symbol;
+    ENUM_TIMEFRAMES m_tf; // Current TF
+    
+    // Sentiment Settings
+    ENUM_TIMEFRAMES m_tf_htf;
+    ENUM_TIMEFRAMES m_tf_ltf1;
+    ENUM_TIMEFRAMES m_tf_ltf2;
+    int m_ma_period;
+    
+    // Indicators
+    int m_handle_htf;
+    int m_handle_ltf1;
+    int m_handle_ltf2;
+    
+    // Strategy Flags
+    bool m_use_sentiment;
+    bool m_allow_bos;
+    bool m_allow_ob;
+    bool m_allow_fvg;
+    
+    // State
+    int m_current_sentiment; // 1:Bull, -1:Bear, 2:RiskOn, -2:RiskOff, 0:Neutral
+    string m_sentiment_text;
+    string m_active_strategy;
+    datetime m_last_update;
+
+public:
+    CSMCEngine(string symbol, ENUM_TIMEFRAMES tf, 
+               ENUM_TIMEFRAMES htf, ENUM_TIMEFRAMES ltf1, ENUM_TIMEFRAMES ltf2,
+               int ma_period, bool use_sent, bool allow_bos, bool allow_ob, bool allow_fvg) :
+        m_symbol(symbol), m_tf(tf), 
+        m_tf_htf(htf), m_tf_ltf1(ltf1), m_tf_ltf2(ltf2),
+        m_ma_period(ma_period), m_use_sentiment(use_sent),
+        m_allow_bos(allow_bos), m_allow_ob(allow_ob), m_allow_fvg(allow_fvg)
+    {
+        m_handle_htf = iMA(m_symbol, m_tf_htf, m_ma_period, 0, MODE_EMA, PRICE_CLOSE);
+        m_handle_ltf1 = iMA(m_symbol, m_tf_ltf1, m_ma_period, 0, MODE_EMA, PRICE_CLOSE);
+        m_handle_ltf2 = iMA(m_symbol, m_tf_ltf2, m_ma_period, 0, MODE_EMA, PRICE_CLOSE);
+        
+        m_last_update = 0;
+        m_current_sentiment = 0;
+        m_sentiment_text = "Neutral";
+        m_active_strategy = "OB";
+    }
+    
+    ~CSMCEngine()
+    {
+        IndicatorRelease(m_handle_htf);
+        IndicatorRelease(m_handle_ltf1);
+        IndicatorRelease(m_handle_ltf2);
+    }
+    
+    void Update(string &signal, int &strength, string &analysis)
+    {
+        signal = "none";
+        strength = 0;
+        analysis = "";
+        
+        // 1. Calculate Sentiment
+        CalculateSentiment();
+        
+        // 2. Select Strategy
+        SelectStrategy();
+        
+        // 3. Execute Strategy
+        bool signal_found = false;
+        
+        // Priority based on active strategy
+        if (m_active_strategy == "BOS" && m_allow_bos) {
+            signal_found = DetectBOS(signal, strength, analysis);
+        } else if (m_active_strategy == "FVG" && m_allow_fvg) {
+            signal_found = DetectFVG(signal, strength, analysis);
+        } else if (m_active_strategy == "OB" && m_allow_ob) {
+            signal_found = DetectOB(signal, strength, analysis);
+        }
+        
+        // If primary strategy yields nothing, try others with lower priority/strength
+        if (!signal_found) {
+            if (m_allow_fvg && DetectFVG(signal, strength, analysis)) {
+                strength = 60; // Lower strength for secondary
+                analysis = "Secondary FVG: " + analysis;
+            } else if (m_allow_ob && DetectOB(signal, strength, analysis)) {
+                strength = 60;
+                analysis = "Secondary OB: " + analysis;
+            }
+        }
+    }
+
+private:
+    void CalculateSentiment()
+    {
+        if (TimeCurrent() - m_last_update < 60) return;
+        m_last_update = TimeCurrent();
+        
+        double ma_htf = GetMA(m_handle_htf);
+        double price_htf = iClose(m_symbol, m_tf_htf, 0);
+        
+        // Bias
+        int bias = 0;
+        if (price_htf > ma_htf) bias = 1;
+        else if (price_htf < ma_htf) bias = -1;
+        
+        // Structure (Simplified for performance: Check Higher Highs/Lower Lows on LTF1)
+        bool bullish_structure = IsBullishStructure(m_tf_ltf1);
+        bool bearish_structure = IsBearishStructure(m_tf_ltf1);
+        
+        // Breakout
+        bool breakout = HasBreakout(m_tf_ltf1, bias);
+        
+        // Logic from SMC_Sent.mq5
+        m_current_sentiment = 0;
+        m_sentiment_text = "Neutral";
+        
+        if (bias == 1 && bullish_structure) { m_current_sentiment = 1; m_sentiment_text = "Bullish"; }
+        else if (bias == -1 && bearish_structure) { m_current_sentiment = -1; m_sentiment_text = "Bearish"; }
+        
+        if (bias == 1 && breakout) { m_current_sentiment = 2; m_sentiment_text = "Risk-On"; }
+        else if (bias == -1 && breakout) { m_current_sentiment = -2; m_sentiment_text = "Risk-Off"; }
+    }
+    
+    void SelectStrategy()
+    {
+        if (!m_use_sentiment) {
+            m_active_strategy = "ALL";
+            return;
+        }
+        
+        switch(m_current_sentiment) {
+            case 1: case -1: m_active_strategy = "BOS"; break;
+            case 2: case -2: m_active_strategy = "FVG"; break;
+            default: m_active_strategy = "OB"; break;
+        }
+    }
+    
+    bool DetectOB(string &signal, int &strength, string &analysis)
+    {
+        // Check recent candles for OB pattern
+        for(int i = 2; i < 10; i++) {
+            // Bullish OB: Bear followed by Strong Bull
+            if(iClose(m_symbol, m_tf, i) > iOpen(m_symbol, m_tf, i) && 
+               iClose(m_symbol, m_tf, i+1) < iOpen(m_symbol, m_tf, i+1)) {
+                
+                double body_bull = MathAbs(iClose(m_symbol, m_tf, i) - iOpen(m_symbol, m_tf, i));
+                double body_bear = MathAbs(iClose(m_symbol, m_tf, i+1) - iOpen(m_symbol, m_tf, i+1));
+                
+                if(body_bull > body_bear * 1.2) { // 1.2x engulfing
+                    double ob_high = iHigh(m_symbol, m_tf, i+1);
+                    double ob_low = iLow(m_symbol, m_tf, i+1);
+                    double current = SymbolInfoDouble(m_symbol, SYMBOL_ASK);
+                    
+                    // Retest
+                    if(current <= ob_high && current >= ob_low) {
+                        signal = "BUY";
+                        strength = 75;
+                        analysis = "SMC OB: Bullish Retest (" + m_sentiment_text + ")";
+                        return true;
+                    }
+                }
+            }
+            // Bearish OB
+            if(iClose(m_symbol, m_tf, i) < iOpen(m_symbol, m_tf, i) && 
+               iClose(m_symbol, m_tf, i+1) > iOpen(m_symbol, m_tf, i+1)) {
+                
+                double body_bear = MathAbs(iClose(m_symbol, m_tf, i) - iOpen(m_symbol, m_tf, i));
+                double body_bull = MathAbs(iClose(m_symbol, m_tf, i+1) - iOpen(m_symbol, m_tf, i+1));
+                
+                if(body_bear > body_bull * 1.2) {
+                    double ob_high = iHigh(m_symbol, m_tf, i+1);
+                    double ob_low = iLow(m_symbol, m_tf, i+1);
+                    double current = SymbolInfoDouble(m_symbol, SYMBOL_BID);
+                    
+                    if(current >= ob_low && current <= ob_high) {
+                        signal = "SELL";
+                        strength = 75;
+                        analysis = "SMC OB: Bearish Retest (" + m_sentiment_text + ")";
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+    
+    bool DetectFVG(string &signal, int &strength, string &analysis)
+    {
+        // Check recent candles for FVG
+        for(int i = 1; i < 5; i++) {
+            // Bullish FVG: Low[i] > High[i+2]
+            double low_i = iLow(m_symbol, m_tf, i);
+            double high_i2 = iHigh(m_symbol, m_tf, i+2);
+            
+            if (low_i > high_i2) {
+                double current = SymbolInfoDouble(m_symbol, SYMBOL_ASK);
+                // Retest
+                if (current <= low_i && current >= high_i2) {
+                    signal = "BUY";
+                    strength = 85;
+                    analysis = "SMC FVG: Bullish Retest (" + m_sentiment_text + ")";
+                    return true;
+                }
+            }
+            
+            // Bearish FVG: High[i] < Low[i+2]
+            double high_i = iHigh(m_symbol, m_tf, i);
+            double low_i2 = iLow(m_symbol, m_tf, i+2);
+            
+            if (high_i < low_i2) {
+                double current = SymbolInfoDouble(m_symbol, SYMBOL_BID);
+                if (current >= high_i && current <= low_i2) {
+                    signal = "SELL";
+                    strength = 85;
+                    analysis = "SMC FVG: Bearish Retest (" + m_sentiment_text + ")";
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    
+    bool DetectBOS(string &signal, int &strength, string &analysis)
+    {
+        // Simple 5-bar Fractal BOS
+        int high_idx = iHighest(m_symbol, m_tf, MODE_HIGH, 20, 1);
+        int low_idx = iLowest(m_symbol, m_tf, MODE_LOW, 20, 1);
+        
+        if (high_idx < 0 || low_idx < 0) return false;
+        
+        double swing_high = iHigh(m_symbol, m_tf, high_idx);
+        double swing_low = iLow(m_symbol, m_tf, low_idx);
+        double current = iClose(m_symbol, m_tf, 0);
+        
+        if (current > swing_high) {
+            signal = "BUY";
+            strength = 80;
+            analysis = "SMC BOS: Breakout Up (" + m_sentiment_text + ")";
+            return true;
+        }
+        
+        if (current < swing_low) {
+            signal = "SELL";
+            strength = 80;
+            analysis = "SMC BOS: Breakout Down (" + m_sentiment_text + ")";
+            return true;
+        }
+        
+        return false;
+    }
+
+    // Helpers
+    double GetMA(int handle) {
+        double buf[1];
+        if(CopyBuffer(handle, 0, 0, 1, buf) > 0) return buf[0];
+        return 0;
+    }
+    
+    bool IsBullishStructure(ENUM_TIMEFRAMES tf) {
+        // Higher Highs & Higher Lows logic simplified
+        double h1 = iHigh(m_symbol, tf, iHighest(m_symbol, tf, MODE_HIGH, 10, 1));
+        double h2 = iHigh(m_symbol, tf, iHighest(m_symbol, tf, MODE_HIGH, 10, 11));
+        double l1 = iLow(m_symbol, tf, iLowest(m_symbol, tf, MODE_LOW, 10, 1));
+        double l2 = iLow(m_symbol, tf, iLowest(m_symbol, tf, MODE_LOW, 10, 11));
+        return (h1 > h2 && l1 > l2);
+    }
+    
+    bool IsBearishStructure(ENUM_TIMEFRAMES tf) {
+        double h1 = iHigh(m_symbol, tf, iHighest(m_symbol, tf, MODE_HIGH, 10, 1));
+        double h2 = iHigh(m_symbol, tf, iHighest(m_symbol, tf, MODE_HIGH, 10, 11));
+        double l1 = iLow(m_symbol, tf, iLowest(m_symbol, tf, MODE_LOW, 10, 1));
+        double l2 = iLow(m_symbol, tf, iLowest(m_symbol, tf, MODE_LOW, 10, 11));
+        return (h1 < h2 && l1 < l2);
+    }
+    
+    bool HasBreakout(ENUM_TIMEFRAMES tf, int bias) {
+        double current = iClose(m_symbol, tf, 0);
+        if (bias == 1) {
+            double h = iHigh(m_symbol, tf, iHighest(m_symbol, tf, MODE_HIGH, 10, 1));
+            return current > h;
+        } else if (bias == -1) {
+            double l = iLow(m_symbol, tf, iLowest(m_symbol, tf, MODE_LOW, 10, 1));
+            return current < l;
+        }
+        return false;
+    }
+};
+
+//+------------------------------------------------------------------+
+//| MTF 引擎类                                                       |
+//+------------------------------------------------------------------+
+class CMTFEngine
+{
+private:
+    string m_symbol;
+    ENUM_TIMEFRAMES m_htf1;
+    ENUM_TIMEFRAMES m_htf2;
+    int m_swing_length;
+    
+    double m_demand_zones[]; // [top, bottom, top, bottom...]
+    double m_supply_zones[];
+    int m_demand_count;
+    int m_supply_count;
+    
+    int m_atr_handle;
+    datetime m_last_zone_update;
+    
+public:
+    CMTFEngine(string symbol, ENUM_TIMEFRAMES htf1, ENUM_TIMEFRAMES htf2, int swing_len) : 
+        m_symbol(symbol), m_htf1(htf1), m_htf2(htf2), m_swing_length(swing_len)
+    {
+        m_demand_count = 0;
+        m_supply_count = 0;
+        ArrayResize(m_demand_zones, 200); // Max 100 zones
+        ArrayResize(m_supply_zones, 200);
+        m_atr_handle = iATR(m_symbol, Period(), 14);
+        m_last_zone_update = 0;
+    }
+    
+    ~CMTFEngine()
+    {
+        if(m_atr_handle != INVALID_HANDLE) IndicatorRelease(m_atr_handle);
+    }
+    
+    void Update(string &signal, int &strength, string &analysis)
+    {
+        signal = "none";
+        strength = 0;
+        analysis = "";
+        
+        // 1. MTF Alignment
+        // HTF1 & HTF2 必须同向 (上一根已完成K线)
+        int dir_htf1 = GetCandleDirection(m_htf1, 1);
+        int dir_htf2 = GetCandleDirection(m_htf2, 1);
+        
+        // 当前周期K线也最好同向，或者是刚开始
+        int dir_curr = GetCandleDirection(Period(), 0);
+        
+        int confirmed_dir = 0;
+        if (dir_htf1 == dir_htf2 && dir_htf1 != 0) {
+            // 如果当前K线反向，则暂时观望，除非它很弱
+            if (dir_curr == 0 || dir_curr == dir_htf1) {
+                confirmed_dir = dir_htf1;
+            }
+        }
+        
+        if (confirmed_dir == 0) return;
+        
+        // 2. Zone Check (Supply/Demand)
+        UpdateZones();
+        double current_price = SymbolInfoDouble(m_symbol, SYMBOL_BID);
+        bool in_demand = IsInZone(current_price, true);
+        bool in_supply = IsInZone(current_price, false);
+        
+        // 3. Signal Generation
+        if (confirmed_dir > 0) { // Bullish
+            if (in_supply) {
+                // 多头趋势但撞上供给区 -> 风险
+                return;
+            }
+            
+            signal = "BUY";
+            strength = 70;
+            string zone_info = "";
+            
+            if (in_demand) {
+                strength = 85; // 在需求区获得支撑 -> 强信号
+                zone_info = " (In Demand Zone)";
+            }
+            
+            analysis = StringFormat("MTF: Bullish Alignment [%s=%s, %s=%s]%s", 
+                EnumToString(m_htf1), "UP", EnumToString(m_htf2), "UP", zone_info);
+                
+        } else { // Bearish
+            if (in_demand) {
+                // 空头趋势但撞上需求区 -> 风险
+                return;
+            }
+            
+            signal = "SELL";
+            strength = 70;
+            string zone_info = "";
+            
+            if (in_supply) {
+                strength = 85; // 在供给区受阻 -> 强信号
+                zone_info = " (In Supply Zone)";
+            }
+            
+            analysis = StringFormat("MTF: Bearish Alignment [%s=%s, %s=%s]%s", 
+                EnumToString(m_htf1), "DOWN", EnumToString(m_htf2), "DOWN", zone_info);
+        }
+    }
+    
+private:
+    int GetCandleDirection(ENUM_TIMEFRAMES tf, int index)
+    {
+        double open = iOpen(m_symbol, tf, index);
+        double close = iClose(m_symbol, tf, index);
+        if (close > open) return 1;
+        if (close < open) return -1;
+        return 0;
+    }
+    
+    void UpdateZones()
+    {
+        // 仅在新K线时更新，或每隔一段时间更新
+        datetime current_bar_time = iTime(m_symbol, Period(), 0);
+        if (current_bar_time == m_last_zone_update) return;
+        m_last_zone_update = current_bar_time;
+        
+        // 获取ATR用于计算区域宽度
+        double atr_values[1];
+        if(CopyBuffer(m_atr_handle, 0, 0, 1, atr_values) != 1) return;
+        double atr = atr_values[0];
+        double box_width = atr * 1.0; // 默认 Box_Width = 1.0
+        
+        m_demand_count = 0;
+        m_supply_count = 0;
+        
+        int bars = MathMin(500, Bars(m_symbol, Period())); // 扫描最近500根
+        int swing_len = m_swing_length;
+        
+        // 简化的 Swing 检测
+        for(int i = swing_len; i < bars - swing_len; i++)
+        {
+            // Swing Low (Demand)
+            bool is_swing_low = true;
+            double low_i = iLow(m_symbol, Period(), i);
+            
+            for(int j = 1; j <= swing_len; j++) {
+                if(low_i >= iLow(m_symbol, Period(), i - j) || low_i >= iLow(m_symbol, Period(), i + j)) {
+                    is_swing_low = false; break;
+                }
+            }
+            
+            if(is_swing_low && m_demand_count < 50) {
+                // 添加 Demand Zone
+                double bottom = low_i;
+                double top = bottom + box_width;
+                // 检查重叠 (简单跳过)
+                m_demand_zones[m_demand_count * 2] = top;
+                m_demand_zones[m_demand_count * 2 + 1] = bottom;
+                m_demand_count++;
+            }
+            
+            // Swing High (Supply)
+            bool is_swing_high = true;
+            double high_i = iHigh(m_symbol, Period(), i);
+            
+            for(int j = 1; j <= swing_len; j++) {
+                if(high_i <= iHigh(m_symbol, Period(), i - j) || high_i <= iHigh(m_symbol, Period(), i + j)) {
+                    is_swing_high = false; break;
+                }
+            }
+            
+            if(is_swing_high && m_supply_count < 50) {
+                // 添加 Supply Zone
+                double top = high_i;
+                double bottom = top - box_width;
+                m_supply_zones[m_supply_count * 2] = top;
+                m_supply_zones[m_supply_count * 2 + 1] = bottom;
+                m_supply_count++;
+            }
+        }
+    }
+    
+    bool IsInZone(double price, bool check_demand)
+    {
+        double tolerance = 50 * Point(); // Zone_Tolerance_Points
+        
+        if (check_demand) {
+            for(int i = 0; i < m_demand_count; i++) {
+                double top = m_demand_zones[i * 2];
+                double bottom = m_demand_zones[i * 2 + 1];
+                if (price >= (bottom - tolerance) && price <= (top + tolerance)) return true;
+            }
+        } else {
+            for(int i = 0; i < m_supply_count; i++) {
+                double top = m_supply_zones[i * 2];
+                double bottom = m_supply_zones[i * 2 + 1];
+                if (price >= (bottom - tolerance) && price <= (top + tolerance)) return true;
+            }
+        }
+        return false;
+    }
+};
+
+//+------------------------------------------------------------------+
+//| CRT 引擎类                                                       |
+//+------------------------------------------------------------------+
+class CCRTEngine
+{
+private:
+    string m_symbol;
+    ENUM_TIMEFRAMES m_range_tf;
+    ENUM_TIMEFRAMES m_confirm_tf;
+    
+    // CRT 状态变量
+    datetime m_prev_range_time;
+    double   m_range_high;
+    double   m_range_low;
+    bool     m_is_positive_direction; // true=多头(上一根收盘>开盘), false=空头
+    bool     m_range_broken;
+    double   m_breakout_point;
+    bool     m_signal_generated;
+    datetime m_breakout_time;
+    datetime m_last_confirm_time;
+    
+    // 图形对象名称前缀
+    string   m_obj_prefix;
+
+public:
+    CCRTEngine(string symbol, ENUM_TIMEFRAMES range_tf, ENUM_TIMEFRAMES confirm_tf) : 
+        m_symbol(symbol), m_range_tf(range_tf), m_confirm_tf(confirm_tf)
+    {
+        m_prev_range_time = 0;
+        m_range_high = 0.0;
+        m_range_low = 0.0;
+        m_is_positive_direction = false;
+        m_range_broken = false;
+        m_breakout_point = 0.0;
+        m_signal_generated = false;
+        m_breakout_time = 0;
+        m_last_confirm_time = 0;
+        m_obj_prefix = "CRT_";
+    }
+    
+    ~CCRTEngine()
+    {
+        // 清理图形对象
+        ObjectsDeleteAll(ChartID(), m_obj_prefix);
+    }
+    
+    // 主更新函数，返回信号
+    // signal: "BUY", "SELL", "NONE"
+    // strength: 0-100
+    // analysis: 分析描述
+    void Update(string &signal, int &strength, string &analysis)
+    {
+        signal = "none";
+        strength = 0;
+        analysis = "";
+        
+        datetime current_range_time = iTime(m_symbol, m_range_tf, 0);
+        double current_bid = SymbolInfoDouble(m_symbol, SYMBOL_BID);
+        
+        // 1. 检测新区间形成
+        if (current_range_time != m_prev_range_time) {
+            ProcessNewRange(current_range_time);
+        }
+        
+        // 如果区间未定义则返回
+        if (m_range_high == 0.0 || m_range_low == 0.0) return;
+        
+        // 2. 检测区间突破 (操纵阶段)
+        CheckBreakout(current_bid);
+        
+        // 3. 处理交易信号
+        if (m_range_broken && !m_signal_generated) {
+            if (CheckSignal(current_bid, signal, strength, analysis)) {
+                m_signal_generated = true; // 标记该区间已产生信号，避免重复
+                
+                // 绘制信号图形
+                DrawSignalGraphics(signal == "BUY");
+            }
+        }
+    }
+    
+private:
+    void ProcessNewRange(datetime new_range_time)
+    {
+        m_prev_range_time = new_range_time;
+        
+        // 获取前一区间蜡烛数据 (Range TF 的上一根K线)
+        double prev_high = iHigh(m_symbol, m_range_tf, 1);
+        double prev_low = iLow(m_symbol, m_range_tf, 1);
+        double prev_open = iOpen(m_symbol, m_range_tf, 1);
+        double prev_close = iClose(m_symbol, m_range_tf, 1);
+        
+        m_range_high = prev_high;
+        m_range_low = prev_low;
+        m_is_positive_direction = (prev_close > prev_open);
+        
+        // 重置状态
+        m_range_broken = false;
+        // 初始突破点：如果是多头方向，关注下方突破；如果是空头方向，关注上方突破
+        m_breakout_point = m_is_positive_direction ? m_range_low : m_range_high;
+        m_signal_generated = false;
+        m_breakout_time = 0;
+        m_last_confirm_time = 0;
+        
+        // 绘制区间
+        DrawRange();
+    }
+    
+    void CheckBreakout(double current_price)
+    {
+        // 优化：不仅检查当前价格，还检查最近K线的极值，以防漏掉快速插针（Wick）
+        // 这使得策略在 RunOnNewBarOnly=true 时也能正常工作
+        double low0 = iLow(m_symbol, m_confirm_tf, 0);
+        double high0 = iHigh(m_symbol, m_confirm_tf, 0);
+        double low1 = iLow(m_symbol, m_confirm_tf, 1);
+        double high1 = iHigh(m_symbol, m_confirm_tf, 1);
+        
+        if (low0 == 0 || high0 == 0 || low1 == 0 || high1 == 0) return;
+
+        // 获取检测范围内的极值
+        double check_low = MathMin(low0, low1);
+        double check_high = MathMax(high0, high1);
+        
+        // 使用更极端的低点/高点来判断是否突破
+        if (m_is_positive_direction && check_low <= m_range_low) {
+            // 多头区间，价格跌破最低价 -> 潜在操纵
+            if (!m_range_broken) {
+                m_range_broken = true;
+                m_breakout_time = TimeCurrent();
+            }
+            // 更新最低点 (最大操纵深度)
+            m_breakout_point = MathMin(m_breakout_point, check_low);
+            
+        } else if (!m_is_positive_direction && check_high >= m_range_high) {
+            // 空头区间，价格突破最高价 -> 潜在操纵
+            if (!m_range_broken) {
+                m_range_broken = true;
+                m_breakout_time = TimeCurrent();
+            }
+            // 更新最高点 (最大操纵深度)
+            m_breakout_point = MathMax(m_breakout_point, check_high);
+        }
+    }
+    
+    bool CheckSignal(double current_price, string &signal, int &strength, string &analysis)
+    {
+        // 1. 检查反转确认 (价格是否回到区间内)
+        if (!CheckReversalConfirmation()) return false;
+        
+        // 2. 检查操纵深度
+        if (!CheckManipulationDepth()) return false;
+        
+        // 3. 生成信号
+        if (m_is_positive_direction && current_price > m_range_low) {
+            // 多头区间 + 跌破后回升 -> 买入
+            signal = "BUY";
+            strength = 80; // CRT 信号通常较强
+            analysis = StringFormat("CRT: 多头区间操纵确认. 区间范围 [%.5f - %.5f], 操纵低点 %.5f", 
+                                  m_range_low, m_range_high, m_breakout_point);
+            return true;
+        } else if (!m_is_positive_direction && current_price < m_range_high) {
+            // 空头区间 + 突破后回落 -> 卖出
+            signal = "SELL";
+            strength = 80;
+            analysis = StringFormat("CRT: 空头区间操纵确认. 区间范围 [%.5f - %.5f], 操纵高点 %.5f", 
+                                  m_range_low, m_range_high, m_breakout_point);
+            return true;
+        }
+        
+        return false;
+    }
+    
+    bool CheckReversalConfirmation()
+    {
+        if (CRTConfirmBars == 0) return true;
+        
+        datetime current_confirm_time = iTime(m_symbol, m_confirm_tf, 0);
+        
+        // 只在确认K线收盘时检查(或者每根新确认K线检查一次)
+        // 这里逻辑简化：检查过去 N 根确认K线的收盘价
+        
+        // 我们需要确保至少有一根K线收盘在区间内
+        // 注意：原版逻辑是"等待N根K线收盘在区间内"。
+        
+        // 简单的实现：检查最近 CRTConfirmBars 根K线是否都满足条件
+        // 但原版是"累计计数"，这里我们简化为：只要最近一根K线收盘回到区间，且这是新的确认周期
+        
+        if (current_confirm_time == m_last_confirm_time) return false; // 当前K线已检查过
+        
+        // 检查最近 CRTConfirmBars 根已完成的K线 (从索引1开始)
+        int confirm_count = 0;
+        for (int i = 1; i <= CRTConfirmBars; i++) {
+            double close = iClose(m_symbol, m_confirm_tf, i);
+            if (m_is_positive_direction && close > m_range_low) {
+                confirm_count++;
+            } else if (!m_is_positive_direction && close < m_range_high) {
+                confirm_count++;
+            }
+        }
+        
+        if (confirm_count >= CRTConfirmBars) {
+            m_last_confirm_time = current_confirm_time;
+            return true;
+        }
+        
+        return false;
+    }
+    
+    bool CheckManipulationDepth()
+    {
+        if (!CRTUseManipulationFilter) return true;
+        
+        double range_size = m_range_high - m_range_low;
+        if (range_size == 0) return false;
+        
+        double manipulation_depth = m_is_positive_direction ? (m_range_low - m_breakout_point) : (m_breakout_point - m_range_high);
+        double manipulation_percent = (manipulation_depth / range_size) * 100.0;
+        
+        return (manipulation_percent >= CRTMinManipulationPercent);
+    }
+    
+    // --- 图形绘制辅助函数 ---
+    void DrawRange()
+    {
+        // 绘制区间矩形
+        string name = m_obj_prefix + "Range_" + TimeToString(m_prev_range_time);
+        datetime start_time = iTime(m_symbol, m_range_tf, 1);
+        datetime end_time = m_prev_range_time;
+        
+        color rect_color = m_is_positive_direction ? clrLightGreen : clrLightPink;
+        
+        if (ObjectFind(ChartID(), name) < 0) {
+            ObjectCreate(ChartID(), name, OBJ_RECTANGLE, 0, start_time, m_range_high, end_time, m_range_low);
+            ObjectSetInteger(ChartID(), name, OBJPROP_COLOR, rect_color);
+            ObjectSetInteger(ChartID(), name, OBJPROP_FILL, true);
+            ObjectSetInteger(ChartID(), name, OBJPROP_BACK, true);
+        }
+    }
+    
+    void DrawSignalGraphics(bool is_buy)
+    {
+        string suffix = TimeToString(TimeCurrent());
+        
+        // 绘制操纵矩形
+        string manip_name = m_obj_prefix + "Manip_" + suffix;
+        double range_edge = is_buy ? m_range_low : m_range_high;
+        
+        ObjectCreate(ChartID(), manip_name, OBJ_RECTANGLE, 0, m_prev_range_time, range_edge, TimeCurrent(), m_breakout_point);
+        ObjectSetInteger(ChartID(), manip_name, OBJPROP_COLOR, clrOrange);
+        ObjectSetInteger(ChartID(), manip_name, OBJPROP_STYLE, STYLE_DOT);
+        
+        // 绘制箭头
+        string arrow_name = m_obj_prefix + "Arrow_" + suffix;
+        ObjectCreate(ChartID(), arrow_name, OBJ_ARROW, 0, TimeCurrent(), m_breakout_point);
+        ObjectSetInteger(ChartID(), arrow_name, OBJPROP_ARROWCODE, is_buy ? 233 : 234);
+        ObjectSetInteger(ChartID(), arrow_name, OBJPROP_COLOR, is_buy ? clrBlue : clrRed);
+        ObjectSetInteger(ChartID(), arrow_name, OBJPROP_WIDTH, 2);
+    }
+};
+
+//+------------------------------------------------------------------+
 //| EA输入参数                                                       |
 //+------------------------------------------------------------------+
 input group "=== 基本设置 ==="
 input string InputSymbol = "";                    // 交易品种（空值使用当前图表）
 input ENUM_TIMEFRAMES InputTimeframe = PERIOD_CURRENT; // 交易周期
+input string ServerIP = "127.0.0.1";              // AI服务器IP地址
+input int ServerPort = 5002;                      // AI服务器端口
+
+input group "=== Telegram通知设置 ==="
+input bool    InpEnableTelegram    = true;                         // 启用Telegram通知
+input string  InpTelegramToken     = "8253887074:AAE_o7hfEb6iJCZ2MdVIezOC_E0OnTCvCzY"; // Telegram Bot Token
+input string  InpTelegramChatID    = "5254086791";                           // Telegram Chat ID
 
 input group "=== 资金管理 ==="
 input double RiskPerTrade = 10.0;                  // 每笔交易风险百分比 (0.1-5)
@@ -701,12 +1578,49 @@ input int TradingStartHour = 0;                   // 交易开始时间(小时)
 input int TradingEndHour = 23;                    // 交易结束时间(小时)
 input bool SkipWeekend = true;                    // 跳过周末
 
+input group "=== 性能优化 ==="
+input bool RunOnNewBarOnly = true;                // 仅在新K线开启时运行
+input bool EnableLocalFilter = false;             // 启用本地预过滤(减少API调用)
+input int LocalRSIThreshold = 30;                 // 本地过滤RSI阈值 (30表示 <30 或 >70 触发)
+
+input group "=== CRT 策略设置 ==="
+input bool            EnableCRT = true;                          // 启用CRT策略
+input ENUM_TIMEFRAMES CRTRangeTimeframe = PERIOD_H4;             // CRT区间时间框
+input bool            CRTUseManipulationFilter = true;           // 使用操纵深度过滤
+input double          CRTMinManipulationPercent = 5.0;           // 最小操纵百分比
+input int             CRTConfirmBars = 1;                        // 反转确认K线数
+input double          CRTDistributionProjection = 50.0;          // 分布投影百分比
+
+input group "=== MTF 策略设置 ==="
+input bool            EnableMTF = true;                          // 启用MTF策略
+input ENUM_TIMEFRAMES MTF_HTF1 = PERIOD_H1;                      // 高级时间框1
+input ENUM_TIMEFRAMES MTF_HTF2 = PERIOD_H4;                      // 高级时间框2
+input int             MTF_SwingLength = 20;                      // 供需区Swing长度
+
+input group "=== PEM 策略设置 ==="
+input bool            EnablePEM = true;                          // 启用PEM策略
+input int             PEM_MA_Fast = 108;                         // 快速均线周期
+input int             PEM_MA_Slow = 60;                          // 慢速均线周期
+input double          PEM_ADX_Threshold = 20.0;                  // ADX 阈值
+
+input group "=== SMC 策略设置 ==="
+input bool            EnableSMC = true;                          // 启用SMC策略
+input ENUM_TIMEFRAMES SMC_HTF = PERIOD_H4;                       // 情绪分析HTF
+input ENUM_TIMEFRAMES SMC_LTF1 = PERIOD_H1;                      // 情绪分析LTF1
+input ENUM_TIMEFRAMES SMC_LTF2 = PERIOD_M30;                     // 情绪分析LTF2
+input int             SMC_MA_Period = 200;                       // 情绪MA周期
+input bool            SMC_UseSentiment = true;                   // 使用情绪过滤
+input bool            SMC_AllowBOS = true;                       // 允许BOS策略
+input bool            SMC_AllowOB = true;                        // 允许OB策略
+input bool            SMC_AllowFVG = true;                       // 允许FVG策略
+
 //+------------------------------------------------------------------+
 //| 全局变量                                                         |
 //+------------------------------------------------------------------+
 string TradingSymbol;                             // 实际使用的交易品种
 ENUM_TIMEFRAMES TradingTimeframe;                 // 实际使用的交易周期
 bool EA_Running = false;                          // EA运行状态
+datetime LastBarTime = 0;                         // 上一次K线时间
 
 // 账户管理变量
 double AccountBalance = 0.0;                      // 账户余额
@@ -734,8 +1648,12 @@ datetime LastSignalTime = 0;                      // 上一次信号时间
 
 // 市场分析变量
 CMarketAnalyzer* MarketAnalyzer = NULL;           // 市场分析器
-CMyOrderTracker* OrderTracker = NULL;             // 订单跟踪器
-CTrade* Trade = NULL;                             // 交易对象
+CCRTEngine*      CRTEngine      = NULL;           // CRT引擎
+CMTFEngine*      MTFEngine      = NULL;           // MTF引擎
+CPEMEngine*      PEMEngine      = NULL;           // PEM引擎
+CSMCEngine*      SMCEngine      = NULL;           // SMC引擎
+CMyOrderTracker* OrderTracker   = NULL;           // 订单跟踪器
+CTrade*          Trade          = NULL;           // 交易对象
 
 //+------------------------------------------------------------------+
 //| 日志和工具函数                                                   |
@@ -818,7 +1736,47 @@ string GetErrorDescription(int error_code)
         case 4014:  return "无效的方法";
         case 4015:  return "拒绝访问";
         case 4016:  return "无效的来源";
+        case 4752:  return "EA交易被禁止 (请在工具栏开启'算法交易')";
+        case 4756:  return "交易请求发送失败";
         default:    return "未知错误 (" + IntegerToString(error_code) + ")";
+    }
+}
+
+//+------------------------------------------------------------------+
+//| 发送Telegram消息                                                  |
+//+------------------------------------------------------------------+
+void SendTelegramMessage(string message)
+{
+    if(!InpEnableTelegram)
+        return;
+        
+    string url = "https://api.telegram.org/bot" + InpTelegramToken + "/sendMessage";
+    
+    // 转义消息中的特殊字符
+    string escaped_message = message;
+    StringReplace(escaped_message, "\"", "\\\"");
+    StringReplace(escaped_message, "\n", "\\n");
+    StringReplace(escaped_message, "\t", "\\t");
+    
+    // 构建JSON payload
+    string payload = "{\"chat_id\": \"" + InpTelegramChatID + "\", \"text\": \"" + escaped_message + "\"}";
+    
+    char data[];
+    int len = StringToCharArray(payload, data);
+    if(len > 0)
+        ArrayResize(data, len - 1);
+        
+    string headers = "Content-Type: application/json\r\n";
+    char result[];
+    string result_headers;
+    
+    // 发送请求
+    int res = WebRequest("POST", url, headers, 3000, data, result, result_headers);
+    
+    if(res != 200)
+    {
+        // 避免无限递归日志
+        Print("Telegram发送失败, 错误码: ", res);
     }
 }
 
@@ -958,6 +1916,54 @@ void ProcessSignal(string signal, int strength, string analysis)
 //+------------------------------------------------------------------+
 void UseLocalAnalysis()
 {
+    string signal = "none";
+    int strength = 0;
+    string analysis = "";
+
+    // 1. 尝试使用 CRT 策略
+    if (EnableCRT && CRTEngine != NULL)
+    {
+        CRTEngine.Update(signal, strength, analysis);
+        if (signal != "none")
+        {
+            ProcessSignal(signal, strength, analysis);
+            return; // CRT 产生信号则直接返回
+        }
+    }
+
+    // 2. 尝试使用 MTF 策略
+    if (EnableMTF && MTFEngine != NULL)
+    {
+        MTFEngine.Update(signal, strength, analysis);
+        if (signal != "none")
+        {
+            ProcessSignal(signal, strength, analysis);
+            return; // MTF 产生信号则直接返回
+        }
+    }
+
+    // 3. 尝试使用 PEM 策略
+    if (EnablePEM && PEMEngine != NULL)
+    {
+        PEMEngine.Update(signal, strength, analysis);
+        if (signal != "none")
+        {
+            ProcessSignal(signal, strength, analysis);
+            return; // PEM 产生信号则直接返回
+        }
+    }
+
+    // 4. 尝试使用 SMC 策略
+    if (EnableSMC && SMCEngine != NULL)
+    {
+        SMCEngine.Update(signal, strength, analysis);
+        if (signal != "none")
+        {
+            ProcessSignal(signal, strength, analysis);
+            return; // SMC 产生信号则直接返回
+        }
+    }
+
     if(!EnableAdvancedAnalysis)
         return;
     
@@ -966,8 +1972,8 @@ void UseLocalAnalysis()
     double rsi = MarketAnalyzer.GetRSI();
     double atr = MarketAnalyzer.GetATR();
     
-    string signal = "none";
-    int strength = 50;
+    signal = "none";
+    strength = 50;
     
     // 简单的本地分析逻辑
     if(rsi > 70 && market_regime == "overbought")
@@ -1152,6 +2158,10 @@ int OnInit()
     TradingSymbol = (InputSymbol == "") ? _Symbol : InputSymbol;
     TradingTimeframe = (InputTimeframe == PERIOD_CURRENT) ? _Period : InputTimeframe;
     
+    // 更新服务器连接配置
+    WebRequestConn.host = ServerIP;
+    WebRequestConn.port = ServerPort;
+    
     // 初始化账户信息
     AccountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
     CurrentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
@@ -1165,6 +2175,34 @@ int OnInit()
     // 初始化市场分析器
     MarketAnalyzer = new CMarketAnalyzer(TradingSymbol, TradingTimeframe);
     
+    // 初始化CRT引擎
+    if (EnableCRT)
+    {
+        CRTEngine = new CCRTEngine(TradingSymbol, CRTRangeTimeframe, TradingTimeframe);
+        LogMessage("CRT引擎已初始化 - 区间: " + EnumToString(CRTRangeTimeframe) + ", 确认: " + EnumToString(TradingTimeframe));
+    }
+    
+    // 初始化MTF引擎
+    if (EnableMTF)
+    {
+        MTFEngine = new CMTFEngine(TradingSymbol, MTF_HTF1, MTF_HTF2, MTF_SwingLength);
+        LogMessage("MTF引擎已初始化 - HTF1: " + EnumToString(MTF_HTF1) + ", HTF2: " + EnumToString(MTF_HTF2));
+    }
+    
+    // 初始化PEM引擎
+    if (EnablePEM)
+    {
+        PEMEngine = new CPEMEngine(TradingSymbol, TradingTimeframe, PEM_MA_Fast, PEM_MA_Slow, PEM_ADX_Threshold);
+        LogMessage("PEM引擎已初始化 - FastMA: " + IntegerToString(PEM_MA_Fast) + ", SlowMA: " + IntegerToString(PEM_MA_Slow));
+    }
+    
+    // 初始化SMC引擎
+    if (EnableSMC)
+    {
+        SMCEngine = new CSMCEngine(TradingSymbol, TradingTimeframe, SMC_HTF, SMC_LTF1, SMC_LTF2, SMC_MA_Period, SMC_UseSentiment, SMC_AllowBOS, SMC_AllowOB, SMC_AllowFVG);
+        LogMessage("SMC引擎已初始化 - Sentiment: " + (SMC_UseSentiment ? "ON" : "OFF"));
+    }
+    
     // 初始化订单跟踪器
     OrderTracker = new CMyOrderTracker();
     
@@ -1175,6 +2213,8 @@ int OnInit()
     LogMessage("AI多时间框架SMC交易系统WebRequest版已启动");
     LogMessage("交易品种: " + TradingSymbol + ", 时间周期: " + EnumToString(TradingTimeframe));
     LogMessage("AI服务器地址: " + WebRequestConn.host + ":" + IntegerToString(WebRequestConn.port));
+    
+    SendTelegramMessage("🚀 EA Started\nSymbol: " + TradingSymbol + "\nTimeframe: " + EnumToString(TradingTimeframe) + "\nServer: " + WebRequestConn.host);
     
     return(INIT_SUCCEEDED);
 }
@@ -1193,6 +2233,30 @@ void OnDeinit(const int reason)
         MarketAnalyzer = NULL;
     }
     
+    if(CRTEngine != NULL)
+    {
+        delete CRTEngine;
+        CRTEngine = NULL;
+    }
+    
+    if(MTFEngine != NULL)
+    {
+        delete MTFEngine;
+        MTFEngine = NULL;
+    }
+    
+    if(PEMEngine != NULL)
+    {
+        delete PEMEngine;
+        PEMEngine = NULL;
+    }
+    
+    if(SMCEngine != NULL)
+    {
+        delete SMCEngine;
+        SMCEngine = NULL;
+    }
+    
     if(OrderTracker != NULL)
     {
         delete OrderTracker;
@@ -1206,6 +2270,56 @@ void OnDeinit(const int reason)
     }
     
     LogMessage("AI多时间框架SMC交易系统已停止");
+    SendTelegramMessage("🛑 EA Stopped\nSymbol: " + TradingSymbol);
+}
+
+//+------------------------------------------------------------------+
+//| 检查是否是新K线                                                  |
+//+------------------------------------------------------------------+
+bool IsNewBar()
+{
+    datetime current_time = iTime(_Symbol, _Period, 0);
+    if(LastBarTime != current_time)
+    {
+        LastBarTime = current_time;
+        return true;
+    }
+    return false;
+}
+
+//+------------------------------------------------------------------+
+//| 本地分析预过滤                                                   |
+//+------------------------------------------------------------------+
+bool IsLocalSetupValid()
+{
+    if(MarketAnalyzer == NULL) 
+        return true;
+    
+    // 如果已有持仓，则不需要频繁调用AI（除非需要AI来管理平仓，但目前逻辑是SL/TP管理）
+    // 如果您希望AI管理平仓，可以注释掉下面这段
+    if(OrderTracker.GetTotalPositions() >= MaxPositions)
+        return false;
+        
+    // 1. RSI 过滤
+    double rsi = MarketAnalyzer.GetRSI();
+    
+    // 检查RSI极端区域 (例如 <30 或 >70)
+    // 只有在市场处于极端状态时，才认为"值得"调用AI进行深入分析
+    if(rsi < LocalRSIThreshold || rsi > (100 - LocalRSIThreshold))
+    {
+        LogMessage("本地分析触发: RSI=" + DoubleToString(rsi, 2) + " (进入潜在反转区)");
+        return true;
+    }
+    
+    // 2. 波动率过滤 (可选)
+    double volatility = MarketAnalyzer.GetVolatility();
+    if(volatility > 0.5) // 只有当市场有一定波动时才交易
+    {
+        // 如果RSI没有触发，但波动率很高，也许值得一看？
+        // 这里我们保持保守，主要依赖RSI
+    }
+    
+    return false;
 }
 
 //+------------------------------------------------------------------+
@@ -1224,6 +2338,15 @@ void OnTick()
     
     // 检查交易条件
     if(!IsTradingTime() || !RiskManagementCheck())
+        return;
+        
+    // === 性能优化：新K线检查 ===
+    if(RunOnNewBarOnly && !IsNewBar())
+        return;
+        
+    // === 性能优化：本地预过滤 ===
+    // 在调用昂贵的API之前，先用本地指标判断是否"值得"分析
+    if(EnableLocalFilter && !IsLocalSetupValid())
         return;
     
     // 尝试获取AI信号
@@ -1247,32 +2370,45 @@ void OnTick()
 //+------------------------------------------------------------------+
 void ProcessAISignal(string signal, int strength, string analysis)
 {
+    // 转换为大写以统一处理
+    string upper_signal = signal;
+    StringToUpper(upper_signal);
+
     // 检查信号强度是否满足要求
     if(strength < MinSignalStrength)
     {
-        LogMessage("信号强度不足: " + signal + " (强度: " + IntegerToString(strength) + ")");
+        LogMessage("信号强度不足: " + upper_signal + " (强度: " + IntegerToString(strength) + ")");
         return;
     }
     
     // 更新信号缓存
-    SignalCache.signal = signal;
+    SignalCache.signal = upper_signal;
     SignalCache.strength = strength;
     SignalCache.analysis = analysis;
     SignalCache.timestamp = TimeCurrent();
     SignalCache.is_valid = true;
     
-    LogMessage("AI信号处理: " + signal + " (强度: " + IntegerToString(strength) + ")");
+    LogMessage("AI信号处理: " + upper_signal + " (强度: " + IntegerToString(strength) + ")");
+    
+    // 发送Telegram通知
+    string tg_msg = "🤖 AI Signal Update\n" +
+                    "Symbol: " + TradingSymbol + "\n" +
+                    "Timeframe: " + EnumToString(TradingTimeframe) + "\n" +
+                    "Direction: " + upper_signal + "\n" +
+                    "Strength: " + IntegerToString(strength) + "\n" +
+                    "Analysis: " + analysis;
+    SendTelegramMessage(tg_msg);
     
     // 根据信号执行交易逻辑
-    if(signal == "BUY")
+    if(upper_signal == "BUY")
     {
         ExecuteBuySignal(strength);
     }
-    else if(signal == "SELL")
+    else if(upper_signal == "SELL")
     {
         ExecuteSellSignal(strength);
     }
-    else if(signal == "HOLD")
+    else if(upper_signal == "HOLD")
     {
         LogMessage("AI建议持仓观望");
     }
@@ -1299,10 +2435,13 @@ void ExecuteBuySignal(int strength)
     if(Trade.Buy(volume, TradingSymbol, 0, sl, tp, "AI Buy Signal (Strength: " + IntegerToString(strength) + ")"))
     {
         LogMessage("执行买入信号，强度: " + IntegerToString(strength));
+        SendTelegramMessage("✅ Buy Order Executed\nSymbol: " + TradingSymbol + "\nVolume: " + DoubleToString(volume, 2) + "\nSignal Strength: " + IntegerToString(strength));
     }
     else
     {
-        LogMessage("买入执行失败: " + GetErrorDescription(GetLastError()));
+        string error_msg = GetErrorDescription(GetLastError());
+        LogMessage("买入执行失败: " + error_msg);
+        SendTelegramMessage("❌ Buy Failed\nSymbol: " + TradingSymbol + "\nReason: " + error_msg);
     }
 }
 
@@ -1327,10 +2466,13 @@ void ExecuteSellSignal(int strength)
     if(Trade.Sell(volume, TradingSymbol, 0, sl, tp, "AI Sell Signal (Strength: " + IntegerToString(strength) + ")"))
     {
         LogMessage("执行卖出信号，强度: " + IntegerToString(strength));
+        SendTelegramMessage("✅ Sell Order Executed\nSymbol: " + TradingSymbol + "\nVolume: " + DoubleToString(volume, 2) + "\nSignal Strength: " + IntegerToString(strength));
     }
     else
     {
-        LogMessage("卖出执行失败: " + GetErrorDescription(GetLastError()));
+        string error_msg = GetErrorDescription(GetLastError());
+        LogMessage("卖出执行失败: " + error_msg);
+        SendTelegramMessage("❌ Sell Failed\nSymbol: " + TradingSymbol + "\nReason: " + error_msg);
     }
 }
 

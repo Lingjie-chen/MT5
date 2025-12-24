@@ -1,0 +1,567 @@
+//+------------------------------------------------------------------+
+//|                                CRT蜡烛区间理论EA.mq5            |
+//|                           版权所有 2025, Allan Munene Mutiiria. |
+//|                                https://t.me/Forex_Algo_Trader   |
+//+------------------------------------------------------------------+
+
+#property copyright "版权所有 2025, Allan Munene Mutiiria."
+#property link      "https://t.me/Forex_Algo_Trader"
+#property version   "1.00"
+#property description "CRT蜡烛区间理论 - 识别市场吸筹、操纵和分布阶段"
+
+#include <Trade\Trade.mqh>
+
+//+------------------------------------------------------------------+
+//| 输入参数                                                         |
+//+------------------------------------------------------------------+
+input group "=== 区间设置 ==="
+input ENUM_TIMEFRAMES 区间时间框 = PERIOD_H4;                    // 区间定义时间框
+input bool            使用操纵过滤 = true;                       // 使用操纵深度过滤
+input double          最小操纵百分比 = 5.0;                      // 最小操纵深度占区间百分比
+
+input group "=== 交易设置 ==="
+input double          交易手数 = 0.01;                           // 交易手数大小
+input double          风险回报比 = 1.3;                          // 风险回报比率
+input bool            动态止损止盈 = true;                       // true=动态方法, false=静态方法
+input int             止损点数 = 100;                            // 止损点数(静态方法)
+input int             单方向最大持仓 = 1;                        // 单方向最大持仓数
+
+input group "=== 确认设置 ==="
+input ENUM_TIMEFRAMES 确认时间框 = PERIOD_CURRENT;               // 反转确认时间框
+input int             确认K线数 = 1;                            // 反转确认所需K线数(0=禁用)
+
+input group "=== 移动止损设置 ==="
+input bool            启用移动止损 = false;                      // 是否启用移动止损
+input double          移动止损点数 = 30.0;                       // 移动止损点数
+input double          启动移动止损盈利点数 = 50.0;               // 启动移动止损所需盈利点数
+
+input group "=== 图形设置 ==="
+input double          分布投影百分比 = 50.0;                     // 分布阶段投影时间百分比
+input color           多头颜色 = clrBlue;                        // 多头信号颜色
+input color           空头颜色 = clrRed;                         // 空头信号颜色
+input color           吸筹颜色 = clrLightGray;                   // 吸筹阶段颜色
+input color           操纵颜色 = clrDarkOrange;                  // 操纵阶段颜色
+
+input group "=== 其他设置 ==="
+input int             唯一标识 = 123456789;                      // 交易唯一标识
+
+//+------------------------------------------------------------------+
+//| 全局变量                                                         |
+//+------------------------------------------------------------------+
+CTrade   交易对象;
+datetime 前区间时间 = 0;
+double   区间最高 = 0.0;
+double   区间最低 = 0.0;
+bool     正向方向 = false;
+bool     区间突破 = false;
+double   突破点 = 0.0;
+bool     已交易信号 = false;
+datetime 突破时间 = 0;
+datetime 最后确认时间 = 0;
+
+// 图形对象名称
+string   最高线对象 = "区间最高线";
+string   最低线对象 = "区间最低线";
+string   最高文本对象 = "CRT_最高_文本";
+string   最低文本对象 = "CRT_最低_文本";
+
+//+------------------------------------------------------------------+
+//| 初始化函数                                                       |
+//+------------------------------------------------------------------+
+int OnInit() {
+  交易对象.SetExpertMagicNumber(唯一标识);
+  交易对象.SetDeviationInPoints(10);
+  交易对象.SetTypeFilling(ORDER_FILLING_FOK);
+  
+  Print("CRT蜡烛区间理论EA初始化成功 - 唯一标识: ", 唯一标识);
+  Print("区间时间框: ", EnumToString(区间时间框), " | 确认时间框: ", EnumToString(确认时间框));
+  Print("风险回报比: ", 风险回报比, " | 动态止损止盈: ", 动态止损止盈 ? "是" : "否");
+  
+  return(INIT_SUCCEEDED);
+}
+
+//+------------------------------------------------------------------+
+//| 反初始化函数                                                     |
+//+------------------------------------------------------------------+
+void OnDeinit(const int code) {
+  // 删除主要水平线和文本
+  删除图形对象(最高线对象);
+  删除图形对象(最低线对象);
+  删除图形对象(最高文本对象);
+  删除图形对象(最低文本对象);
+  
+  // 清理所有动态图形对象
+  ObjectsDeleteAll(ChartID(), "区间矩形_", OBJ_RECTANGLE);
+  ObjectsDeleteAll(ChartID(), "操纵矩形_", OBJ_RECTANGLE);
+  ObjectsDeleteAll(ChartID(), "分布矩形_", OBJ_RECTANGLE);
+  ObjectsDeleteAll(ChartID(), "吸筹文本_", OBJ_TEXT);
+  ObjectsDeleteAll(ChartID(), "操纵文本_", OBJ_TEXT);
+  ObjectsDeleteAll(ChartID(), "分布文本_", OBJ_TEXT);
+  ObjectsDeleteAll(ChartID(), "入场标记_", OBJ_ARROW);
+  
+  Print("CRT蜡烛区间理论EA已卸载 - 清理所有图形对象");
+}
+
+//+------------------------------------------------------------------+
+//| 主循环函数                                                       |
+//+------------------------------------------------------------------+
+void OnTick() {
+  double 当前买价 = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+  double 当前卖价 = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+  datetime 当前区间时间 = iTime(_Symbol, 区间时间框, 0);
+  
+  // 检测新区间形成
+  if (当前区间时间 != 前区间时间) {
+    处理新区间(当前区间时间);
+  }
+  
+  // 如果区间未定义则返回
+  if (区间最高 == 0.0 || 区间最低 == 0.0) return;
+  
+  // 检测区间突破
+  检测突破(当前买价);
+  
+  // 处理交易信号
+  if (区间突破 && !已交易信号) {
+    处理交易信号(当前买价, 当前卖价);
+  }
+  
+  // 移动止损处理
+  if (启用移动止损 && PositionsTotal() > 0) {
+    执行移动止损();
+  }
+}
+
+//+------------------------------------------------------------------+
+//| 处理新区间                                                       |
+//+------------------------------------------------------------------+
+void 处理新区间(datetime 新区间时间) {
+  前区间时间 = 新区间时间;
+  
+  // 获取前一区间蜡烛数据
+  double 前最高 = iHigh(_Symbol, 区间时间框, 1);
+  double 前最低 = iLow(_Symbol, 区间时间框, 1);
+  double 前开盘 = iOpen(_Symbol, 区间时间框, 1);
+  double 前收盘 = iClose(_Symbol, 区间时间框, 1);
+  
+  区间最高 = 前最高;
+  区间最低 = 前最低;
+  正向方向 = (前收盘 > 前开盘);
+  区间突破 = false;
+  突破点 = 正向方向 ? 区间最低 : 区间最高;
+  已交易信号 = false;
+  突破时间 = 0;
+  最后确认时间 = 0;
+  
+  Print("新区间形成 - 时间: ", TimeToString(新区间时间), 
+        " 最高: ", DoubleToString(区间最高, _Digits), 
+        " 最低: ", DoubleToString(区间最低, _Digits),
+        " 方向: ", 正向方向 ? "多头" : "空头");
+  
+  // 绘制区间图形
+  绘制区间水平线();
+  绘制区间矩形(新区间时间);
+}
+
+//+------------------------------------------------------------------+
+//| 检测突破                                                         |
+//+------------------------------------------------------------------+
+void 检测突破(double 当前价格) {
+  if (正向方向 && 当前价格 <= 区间最低) {
+    if (!区间突破) {
+      区间突破 = true;
+      突破时间 = TimeCurrent();
+      Print("区间向下突破检测 - 时间: ", TimeToString(突破时间), " 价格: ", DoubleToString(当前价格, _Digits));
+    }
+    突破点 = MathMin(突破点, 当前价格);
+  } else if (!正向方向 && 当前价格 >= 区间最高) {
+    if (!区间突破) {
+      区间突破 = true;
+      突破时间 = TimeCurrent();
+      Print("区间向上突破检测 - 时间: ", TimeToString(突破时间), " 价格: ", DoubleToString(当前价格, _Digits));
+    }
+    突破点 = MathMax(突破点, 当前价格);
+  }
+}
+
+//+------------------------------------------------------------------+
+//| 处理交易信号                                                     |
+//+------------------------------------------------------------------+
+void 处理交易信号(double 当前买价, double 当前卖价) {
+  // 确认反转信号
+  bool 反转确认 = 检查反转确认(当前买价);
+  
+  // 检查操纵深度
+  bool 操纵足够 = 检查操纵深度();
+  
+  if (反转确认 && 操纵足够) {
+    // 执行交易
+    if (正向方向 && 当前买价 > 区间最低) {
+      if (获取持仓数(POSITION_TYPE_BUY) < 单方向最大持仓) {
+        执行买入交易(当前卖价);
+      }
+    } else if (!正向方向 && 当前买价 < 区间最高) {
+      if (获取持仓数(POSITION_TYPE_SELL) < 单方向最大持仓) {
+        执行卖出交易(当前买价);
+      }
+    }
+  }
+}
+
+//+------------------------------------------------------------------+
+//| 检查反转确认                                                     |
+//+------------------------------------------------------------------+
+bool 检查反转确认(double 当前价格) {
+  if (确认K线数 == 0) {
+    return true; // 禁用确认，直接返回true
+  }
+  
+  datetime 当前确认时间 = iTime(_Symbol, 确认时间框, 0);
+  if (当前确认时间 != 最后确认时间) {
+    最后确认时间 = 当前确认时间;
+    
+    int 确认数量 = 0;
+    for (int i = 1; i <= 确认K线数; i++) {
+      double 收盘价 = iClose(_Symbol, 确认时间框, i);
+      if (正向方向 && 收盘价 > 区间最低) {
+        确认数量++;
+      } else if (!正向方向 && 收盘价 < 区间最高) {
+        确认数量++;
+      }
+    }
+    
+    if (确认数量 >= 确认K线数) {
+      Print("反转确认完成 - 确认K线数: ", 确认数量, "/", 确认K线数);
+      return true;
+    }
+  }
+  return false;
+}
+
+//+------------------------------------------------------------------+
+//| 检查操纵深度                                                     |
+//+------------------------------------------------------------------+
+bool 检查操纵深度() {
+  if (!使用操纵过滤) return true;
+  
+  double 区间大小 = 区间最高 - 区间最低;
+  double 操纵深度 = 正向方向 ? (区间最低 - 突破点) : (突破点 - 区间最高);
+  double 操纵百分比 = (操纵深度 / 区间大小) * 100.0;
+  
+  bool 足够 = (操纵百分比 >= 最小操纵百分比);
+  
+  
+  return 足够;
+}
+
+//+------------------------------------------------------------------+
+//| 执行买入交易                                                     |
+//+------------------------------------------------------------------+
+void 执行买入交易(double 入场价格) {
+  double 止损价格, 止盈价格;
+  
+  if (动态止损止盈) {
+    止损价格 = NormalizeDouble(突破点, _Digits);
+    double 风险距离 = 入场价格 - 突破点;
+    止盈价格 = NormalizeDouble(入场价格 + 风险距离 * 风险回报比, _Digits);
+  } else {
+    止损价格 = NormalizeDouble(入场价格 - 止损点数 * _Point, _Digits);
+    止盈价格 = NormalizeDouble(入场价格 + 止损点数 * 风险回报比 * _Point, _Digits);
+  }
+  
+  // 验证价格
+  if (止损价格 >= 入场价格) {
+    Print("错误: 止损价格无效 - 止损: ", DoubleToString(止损价格, _Digits), " 入场: ", DoubleToString(入场价格, _Digits));
+    return;
+  }
+  
+  if (交易对象.Buy(交易手数, _Symbol, 入场价格, 止损价格, 止盈价格, "CRT多头入场")) {
+    if (交易对象.ResultRetcode() == TRADE_RETCODE_DONE) {
+      记录交易信号("多头信号", 入场价格, 止损价格, 止盈价格);
+      绘制入场标记(入场价格, true);
+      已交易信号 = true;
+      绘制市场阶段图形(入场价格, 止盈价格, true);
+    } else {
+      Print("买入交易失败 - 错误代码: ", 交易对象.ResultRetcode(), " 描述: ", 交易对象.ResultRetcodeDescription());
+    }
+  }
+}
+
+//+------------------------------------------------------------------+
+//| 执行卖出交易                                                     |
+//+------------------------------------------------------------------+
+void 执行卖出交易(double 入场价格) {
+  double 止损价格, 止盈价格;
+  
+  if (动态止损止盈) {
+    止损价格 = NormalizeDouble(突破点, _Digits);
+    double 风险距离 = 突破点 - 入场价格;
+    止盈价格 = NormalizeDouble(入场价格 - 风险距离 * 风险回报比, _Digits);
+  } else {
+    止损价格 = NormalizeDouble(入场价格 + 止损点数 * _Point, _Digits);
+    止盈价格 = NormalizeDouble(入场价格 - 止损点数 * 风险回报比 * _Point, _Digits);
+  }
+  
+  // 验证价格
+  if (止损价格 <= 入场价格) {
+    Print("错误: 止损价格无效 - 止损: ", DoubleToString(止损价格, _Digits), " 入场: ", DoubleToString(入场价格, _Digits));
+    return;
+  }
+  
+  if (交易对象.Sell(交易手数, _Symbol, 入场价格, 止损价格, 止盈价格, "CRT空头入场")) {
+    if (交易对象.ResultRetcode() == TRADE_RETCODE_DONE) {
+      记录交易信号("空头信号", 入场价格, 止损价格, 止盈价格);
+      绘制入场标记(入场价格, false);
+      已交易信号 = true;
+      绘制市场阶段图形(入场价格, 止盈价格, false);
+    } else {
+      Print("卖出交易失败 - 错误代码: ", 交易对象.ResultRetcode(), " 描述: ", 交易对象.ResultRetcodeDescription());
+    }
+  }
+}
+
+//+------------------------------------------------------------------+
+//| 记录交易信号                                                     |
+//+------------------------------------------------------------------+
+void 记录交易信号(string 信号类型, double 入场价, double 止损价, double 止盈价) {
+  double 区间大小 = 区间最高 - 区间最低;
+  double 操纵深度 = 正向方向 ? (区间最低 - 突破点) : (突破点 - 区间最高);
+  double 操纵百分比 = (操纵深度 / 区间大小) * 100.0;
+  
+  Print("=== 交易信号执行 ===");
+  Print(信号类型, ": 区间被突破后反转回确认");
+  Print("入场价格: ", DoubleToString(入场价, _Digits));
+  Print("止损价格: ", DoubleToString(止损价, _Digits));
+  Print("止盈价格: ", DoubleToString(止盈价, _Digits));
+  Print("吸筹区间: ", DoubleToString(区间大小 / _Point, 0), " 点");
+  Print("操纵深度: ", DoubleToString(操纵深度 / _Point, 0), " 点 (", DoubleToString(操纵百分比, 2), "% 区间)");
+  Print("风险回报比: ", DoubleToString(MathAbs(止盈价 - 入场价) / MathAbs(入场价 - 止损价), 2));
+  Print("==================");
+}
+
+//+------------------------------------------------------------------+
+//| 图形绘制函数                                                     |
+//+------------------------------------------------------------------+
+void 绘制区间水平线() {
+  绘制水平线(最高线对象, 区间最高, 多头颜色, "区间最高");
+  绘制水平线(最低线对象, 区间最低, 空头颜色, "区间最低");
+  
+  datetime 标签时间 = 前区间时间;
+  绘制文本标签(最高文本对象, 标签时间, 区间最高, "CRT最高", 多头颜色, ANCHOR_RIGHT_LOWER);
+  绘制文本标签(最低文本对象, 标签时间, 区间最低, "CRT最低", 空头颜色, ANCHOR_RIGHT_UPPER);
+}
+
+void 绘制区间矩形(datetime 当前时间) {
+  string 矩形对象 = "区间矩形_" + IntegerToString(当前时间);
+  datetime 开始时间 = iTime(_Symbol, 区间时间框, 1);
+  datetime 结束时间 = 当前时间;
+  
+  ObjectCreate(ChartID(), 矩形对象, OBJ_RECTANGLE, 0, 开始时间, 区间最高, 结束时间, 区间最低);
+  color 矩形颜色 = 正向方向 ? clrLightGreen : clrLightPink;
+  ObjectSetInteger(ChartID(), 矩形对象, OBJPROP_COLOR, 矩形颜色);
+  ObjectSetInteger(ChartID(), 矩形对象, OBJPROP_FILL, true);
+  ObjectSetInteger(ChartID(), 矩形对象, OBJPROP_BACK, true);
+  ObjectSetInteger(ChartID(), 矩形对象, OBJPROP_STYLE, STYLE_SOLID);
+  ObjectSetInteger(ChartID(), 矩形对象, OBJPROP_WIDTH, 1);
+}
+
+void 绘制入场标记(double 价格, bool 是买入) {
+  string 标记名称 = "入场标记_" + IntegerToString(TimeCurrent());
+  ObjectCreate(ChartID(), 标记名称, OBJ_ARROW, 0, TimeCurrent(), 价格);
+  ObjectSetInteger(ChartID(), 标记名称, OBJPROP_ARROWCODE, 是买入 ? 233 : 234);
+  ObjectSetInteger(ChartID(), 标记名称, OBJPROP_COLOR, 是买入 ? 多头颜色 : 空头颜色);
+  ObjectSetInteger(ChartID(), 标记名称, OBJPROP_ANCHOR, 是买入 ? ANCHOR_BOTTOM : ANCHOR_TOP);
+  ObjectSetInteger(ChartID(), 标记名称, OBJPROP_WIDTH, 3);
+}
+
+//+------------------------------------------------------------------+
+//| 市场阶段图形绘制                                                 |
+//+------------------------------------------------------------------+
+void 绘制市场阶段图形(double 入场价格, double 目标价格, bool 是买入) {
+  string 后缀 = IntegerToString(前区间时间);
+  
+  // 吸筹阶段标签
+  string 吸筹文本 = "吸筹文本_" + 后缀;
+  double 吸筹价格 = (区间最高 + 区间最低) / 2;
+  绘制文本标签(吸筹文本, 前区间时间, 吸筹价格, "吸筹阶段", 吸筹颜色, ANCHOR_RIGHT);
+  
+  // 操纵阶段图形
+  绘制操纵阶段图形(后缀, 入场价格, 是买入);
+  
+  // 分布阶段图形
+  绘制分布阶段图形(后缀, 入场价格, 目标价格, 是买入);
+}
+
+void 绘制操纵阶段图形(string 后缀, double 入场价格, bool 是买入) {
+  // 计算操纵极值点
+  int 开始柱 = iBarShift(_Symbol, PERIOD_CURRENT, 前区间时间);
+  int 结束柱 = iBarShift(_Symbol, PERIOD_CURRENT, TimeCurrent());
+  if (开始柱 < 0 || 结束柱 < 0) return;
+  
+  if (开始柱 < 结束柱) {
+    int 临时 = 开始柱;
+    开始柱 = 结束柱;
+    结束柱 = 临时;
+  }
+  
+  int 柱数量 = 开始柱 - 结束柱 + 1;
+  double 操纵极值;
+  double 操纵起始价格 = 是买入 ? 区间最低 : 区间最高;
+  
+  if (是买入) {
+    int 最低柱 = iLowest(_Symbol, PERIOD_CURRENT, MODE_LOW, 柱数量, 结束柱);
+    操纵极值 = iLow(_Symbol, PERIOD_CURRENT, 最低柱);
+  } else {
+    int 最高柱 = iHighest(_Symbol, PERIOD_CURRENT, MODE_HIGH, 柱数量, 结束柱);
+    操纵极值 = iHigh(_Symbol, PERIOD_CURRENT, 最高柱);
+  }
+  
+  // 绘制操纵矩形
+  string 操纵矩形对象 = "操纵矩形_" + 后缀;
+  double 顶部价格 = MathMax(操纵起始价格, 操纵极值);
+  double 底部价格 = MathMin(操纵起始价格, 操纵极值);
+  
+  ObjectCreate(ChartID(), 操纵矩形对象, OBJ_RECTANGLE, 0, 前区间时间, 顶部价格, TimeCurrent(), 底部价格);
+  ObjectSetInteger(ChartID(), 操纵矩形对象, OBJPROP_COLOR, 操纵颜色);
+  ObjectSetInteger(ChartID(), 操纵矩形对象, OBJPROP_FILL, false);
+  ObjectSetInteger(ChartID(), 操纵矩形对象, OBJPROP_BACK, true);
+  ObjectSetInteger(ChartID(), 操纵矩形对象, OBJPROP_STYLE, STYLE_DOT);
+  ObjectSetInteger(ChartID(), 操纵矩形对象, OBJPROP_WIDTH, 2);
+  
+  // 操纵阶段文本
+  string 操纵文本 = "操纵文本_" + 后缀;
+  int 文本锚点 = 是买入 ? ANCHOR_RIGHT_UPPER : ANCHOR_RIGHT_LOWER;
+  绘制文本标签(操纵文本, 突破时间, 操纵极值, "操纵阶段", 操纵颜色, 文本锚点);
+}
+
+void 绘制分布阶段图形(string 后缀, double 入场价格, double 目标价格, bool 是买入) {
+  string 分布文本 = "分布文本_" + 后缀;
+  color 分布颜色 = 是买入 ? 多头颜色 : 空头颜色;
+  int 文本锚点 = 是买入 ? ANCHOR_LEFT_LOWER : ANCHOR_LEFT_UPPER;
+  绘制文本标签(分布文本, TimeCurrent(), 入场价格, "分布阶段", 分布颜色, 文本锚点);
+  
+  // 绘制分布矩形
+  string 分布矩形对象 = "分布矩形_" + 后缀;
+  datetime 区间开始时间 = iTime(_Symbol, 区间时间框, 1);
+  datetime 区间结束时间 = 前区间时间;
+  long 区间时长 = 区间结束时间 - 区间开始时间;
+  double 投影因子 = MathMax(分布投影百分比 / 100.0, 0.01);
+  datetime 投影结束时间 = TimeCurrent() + (datetime)(区间时长 * 投影因子);
+  
+  double 分布顶部价格 = MathMax(入场价格, 目标价格);
+  double 分布底部价格 = MathMin(入场价格, 目标价格);
+  
+  ObjectCreate(ChartID(), 分布矩形对象, OBJ_RECTANGLE, 0, TimeCurrent(), 分布顶部价格, 投影结束时间, 分布底部价格);
+  ObjectSetInteger(ChartID(), 分布矩形对象, OBJPROP_COLOR, 分布颜色);
+  ObjectSetInteger(ChartID(), 分布矩形对象, OBJPROP_FILL, false);
+  ObjectSetInteger(ChartID(), 分布矩形对象, OBJPROP_BACK, true);
+  ObjectSetInteger(ChartID(), 分布矩形对象, OBJPROP_STYLE, STYLE_SOLID);
+  ObjectSetInteger(ChartID(), 分布矩形对象, OBJPROP_WIDTH, 2);
+}
+
+//+------------------------------------------------------------------+
+//| 基础图形函数                                                     |
+//+------------------------------------------------------------------+
+void 绘制水平线(string 对象名, double 价格, color 颜色, string 描述) {
+  删除图形对象(对象名);
+  ObjectCreate(ChartID(), 对象名, OBJ_HLINE, 0, 0, 价格);
+  ObjectSetInteger(ChartID(), 对象名, OBJPROP_COLOR, 颜色);
+  ObjectSetInteger(ChartID(), 对象名, OBJPROP_STYLE, STYLE_DOT);
+  ObjectSetInteger(ChartID(), 对象名, OBJPROP_WIDTH, 2);
+  ObjectSetString(ChartID(), 对象名, OBJPROP_TOOLTIP, 描述);
+  ObjectSetInteger(ChartID(), 对象名, OBJPROP_BACK, true);
+}
+
+void 绘制文本标签(string 对象名, datetime 时间, double 价格, string 文本, color 颜色, int 锚点) {
+  删除图形对象(对象名);
+  ObjectCreate(ChartID(), 对象名, OBJ_TEXT, 0, 时间, 价格);
+  ObjectSetString(ChartID(), 对象名, OBJPROP_TEXT, 文本);
+  ObjectSetInteger(ChartID(), 对象名, OBJPROP_COLOR, 颜色);
+  ObjectSetInteger(ChartID(), 对象名, OBJPROP_ANCHOR, 锚点);
+  ObjectSetInteger(ChartID(), 对象名, OBJPROP_FONTSIZE, 10);
+  ObjectSetInteger(ChartID(), 对象名, OBJPROP_BACK, true);
+}
+
+void 删除图形对象(string 对象名) {
+  if (ObjectFind(ChartID(), 对象名) >= 0) {
+    ObjectDelete(ChartID(), 对象名);
+  }
+}
+
+//+------------------------------------------------------------------+
+//| 持仓管理函数                                                     |
+//+------------------------------------------------------------------+
+int 获取持仓数(ENUM_POSITION_TYPE 持仓类型) {
+  int 总数 = 0;
+  for (int i = PositionsTotal() - 1; i >= 0; i--) {
+    ulong 订单票号 = PositionGetTicket(i);
+    if (订单票号 > 0) {
+      if (PositionGetString(POSITION_SYMBOL) == _Symbol && 
+          PositionGetInteger(POSITION_MAGIC) == 唯一标识 && 
+          PositionGetInteger(POSITION_TYPE) == 持仓类型) {
+        总数++;
+      }
+    }
+  }
+  return 总数;
+}
+
+void 执行移动止损() {
+  double 点值 = _Point;
+  for (int i = PositionsTotal() - 1; i >= 0; i--) {
+    ulong 订单票号 = PositionGetTicket(i);
+    if (订单票号 > 0) {
+      if (PositionGetString(POSITION_SYMBOL) == _Symbol && 
+          PositionGetInteger(POSITION_MAGIC) == 唯一标识) {
+          
+        double 当前止损 = PositionGetDouble(POSITION_SL);
+        double 当前止盈 = PositionGetDouble(POSITION_TP);
+        double 开仓价格 = PositionGetDouble(POSITION_PRICE_OPEN);
+        ENUM_POSITION_TYPE 持仓类型 = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+        
+        if (持仓类型 == POSITION_TYPE_BUY) {
+          double 新止损 = NormalizeDouble(SymbolInfoDouble(_Symbol, SYMBOL_BID) - 移动止损点数 * 点值, _Digits);
+          double 当前盈利 = SymbolInfoDouble(_Symbol, SYMBOL_BID) - 开仓价格;
+          
+          if (新止损 > 当前止损 && 当前盈利 > 启动移动止损盈利点数 * 点值) {
+            if (交易对象.PositionModify(订单票号, 新止损, 当前止盈)) {
+              Print("移动止损更新 - 多头仓位 | 新止损: ", DoubleToString(新止损, _Digits));
+            }
+          }
+        } else if (持仓类型 == POSITION_TYPE_SELL) {
+          double 新止损 = NormalizeDouble(SymbolInfoDouble(_Symbol, SYMBOL_ASK) + 移动止损点数 * 点值, _Digits);
+          double 当前盈利 = 开仓价格 - SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+          
+          if (新止损 < 当前止损 && 当前盈利 > 启动移动止损盈利点数 * 点值) {
+            if (交易对象.PositionModify(订单票号, 新止损, 当前止盈)) {
+              Print("移动止损更新 - 空头仓位 | 新止损: ", DoubleToString(新止损, _Digits));
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+//+------------------------------------------------------------------+
+//| 工具函数                                                        |
+//+------------------------------------------------------------------+
+double 计算点数距离(double 价格1, double 价格2) {
+  return MathAbs(价格1 - 价格2) / _Point;
+}
+
+string 获取方向描述(bool 方向) {
+  return 方向 ? "多头" : "空头";
+}
+
+void 打印账户信息() {
+  double 余额 = AccountInfoDouble(ACCOUNT_BALANCE);
+  double 净值 = AccountInfoDouble(ACCOUNT_EQUITY);
+  double 利润率 = (净值 - 余额) / 余额 * 100;
+  
+  Print("账户信息 - 余额: ", DoubleToString(余额, 2), 
+        " | 净值: ", DoubleToString(净值, 2),
+        " | 利润率: ", DoubleToString(利润率, 2), "%");
+}
+
+//+------------------------------------------------------------------+

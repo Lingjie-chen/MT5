@@ -1,0 +1,1488 @@
+//+------------------------------------------------------------------+
+//|                                                     SMC_Sent.mq5 |
+//|                        GIT under Copyright 2025, MetaQuotes Ltd. |
+//|                     https://www.mql5.com/en/users/johnhlomohang/ |
+//+------------------------------------------------------------------+
+#property copyright "GIT under Copyright 2025, MetaQuotes Ltd."
+#property link      "https://www.mql5.com/en/users/johnhlomohang/"
+#property version   "2.00"
+#property description "Intelligent SMC EA with Market Sentiment-Based Strategy Switching"
+#property copyright "Based on MARKSENT and SMCALL"
+
+#include <Trade/Trade.mqh>
+#include <Trade/PositionInfo.mqh>
+#include <Arrays/ArrayObj.mqh>
+
+// Market Sentiment Component (from MARKSENT)
+input group "=== Market Sentiment Settings ==="
+input ENUM_TIMEFRAMES HigherTF = PERIOD_H4;
+input ENUM_TIMEFRAMES LowerTF1 = PERIOD_H1;
+input ENUM_TIMEFRAMES LowerTF2 = PERIOD_M30;
+input int MAPeriod = 200;
+input int SwingLookback = 5;
+input double ATRThreshold = 0.002;
+
+input group "=== Trading Settings ==="
+input double LotSize = 0.02;
+input double StopLoss = 500;
+input double TakeProfit = 1500;
+input long MagicNumber = 76543;
+input bool EnableTrading = true;
+input bool DrawAllObjects = true; // Draw all trading objects
+
+input group "=== Strategy Selection ==="
+input bool UseSentimentFilter = true; // Use sentiment to choose strategies
+input bool AllowBOS = true;           // Allow Break of Structure strategy
+input bool AllowOB = true;            // Allow Order Blocks strategy  
+input bool AllowFVG = true;           // Allow Fair Value Gaps strategy
+
+input group "=== Visual Settings ==="
+input int PanelCorner = 0;           // Top-left corner
+input int PanelX = 10;
+input int PanelY = 10;
+input string FontFace = "Arial";
+input int FontSize = 10;
+
+// Color scheme based on market sentiment
+input color BullishColor = clrLimeGreen;
+input color BearishColor = clrRed;
+input color RiskOnColor = clrDodgerBlue;
+input color RiskOffColor = clrOrangeRed;
+input color NeutralColor = clrGold;
+
+// Strategy drawing colors
+input color OB_BullColor = clrLime;
+input color OB_BearColor = clrRed;
+input color FVG_BullColor = clrPaleGreen;
+input color FVG_BearColor = clrMistyRose;
+input color BOS_BullColor = clrDodgerBlue;
+input color BOS_BearColor = clrTomato;
+
+// Cleanup settings
+input bool RemoveObjectsAfterTradeClose = true;
+input int RemoveObjectsAfterBars = 10; // Remove objects after X bars
+
+// Global variables
+CTrade trade;
+CPositionInfo poss;
+
+// Market Sentiment Handles
+int higherTFHandle, lowerTF1Handle, lowerTF2Handle;
+double higherTFMA[], lowerTF1MA[], lowerTF2MA[];
+datetime lastSentimentUpdate = 0;
+int currentSentiment = 0; // -2:RiskOff, -1:Bearish, 0:Neutral, 1:Bullish, 2:RiskOn
+string currentSentimentText = "Neutral";
+
+// SMC Trading Variables
+datetime lastBarTime = 0;
+double Bid, Ask;
+string currentStrategy = "ALL";
+
+// Order Blocks - Updated to track trade execution time
+class COrderBlock : public CObject
+{
+public:
+   int direction;
+   datetime time;
+   double high, low;
+   color drawColor;
+   datetime tradeTime; // When trade was executed (0 if not traded yet)
+   long tradeTicket;   // Associated trade ticket (-1 if no trade)
+   
+   string Key() const { return "OB_" + TimeToString(time, TIME_DATE|TIME_MINUTES); }
+   string TradeKey() const { return "OB_Trade_" + TimeToString(time, TIME_DATE|TIME_MINUTES); }
+   
+   void Draw(bool isTraded = false)
+   {
+      if(!DrawAllObjects) return;
+      
+      string name = Key();
+      datetime rightTime = (isTraded && tradeTime > 0) ? tradeTime : TimeCurrent();
+      
+      // Draw rectangle for OB zone (only up to trade time)
+      ObjectDelete(0, name);
+      ObjectCreate(0, name, OBJ_RECTANGLE, 0, time, low, rightTime, high);
+      ObjectSetInteger(0, name, OBJPROP_FILL, true);
+      ObjectSetInteger(0, name, OBJPROP_COLOR, drawColor);
+      ObjectSetInteger(0, name, OBJPROP_BACK, true);
+      ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_DOT);
+      
+      // Draw label
+      string labelName = name + "_Label";
+      ObjectDelete(0, labelName);
+      ObjectCreate(0, labelName, OBJ_TEXT, 0, time, high + 0.0001);
+      ObjectSetString(0, labelName, OBJPROP_TEXT, (direction > 0 ? "Bull OB" : "Bear OB") + (isTraded ? "✓" : ""));
+      ObjectSetInteger(0, labelName, OBJPROP_COLOR, isTraded ? clrYellow : drawColor);
+      ObjectSetInteger(0, labelName, OBJPROP_FONTSIZE, FontSize);
+      ObjectSetInteger(0, labelName, OBJPROP_ANCHOR, ANCHOR_LEFT_UPPER);
+      
+      // Draw trade execution marker if traded
+      if(isTraded && tradeTime > 0)
+      {
+         string tradeMarkerName = TradeKey() + "_Marker";
+         ObjectDelete(0, tradeMarkerName);
+         ObjectCreate(0, tradeMarkerName, OBJ_ARROW, 0, tradeTime, 
+                     (direction > 0) ? low + (high - low) * 0.5 : high - (high - low) * 0.5);
+         ObjectSetInteger(0, tradeMarkerName, OBJPROP_ARROWCODE, (direction > 0) ? 217 : 218);
+         ObjectSetInteger(0, tradeMarkerName, OBJPROP_COLOR, clrYellow);
+         ObjectSetInteger(0, tradeMarkerName, OBJPROP_WIDTH, 2);
+      }
+   }
+   
+   void Remove()
+   {
+      ObjectDelete(0, Key());
+      ObjectDelete(0, Key() + "_Label");
+      ObjectDelete(0, TradeKey() + "_Marker");
+   }
+};
+COrderBlock* currentOB = NULL;
+CArrayObj* tradedOBs = NULL; // Track traded OBs for cleanup
+
+// FVG Structure - Updated for trade-based drawing
+class CFVG : public CObject
+{
+public:
+   int dir;
+   datetime tLeft;
+   double top, bot;
+   color drawColor;
+   datetime tradeTime; // When trade was executed (0 if not traded yet)
+   long tradeTicket;   // Associated trade ticket (-1 if no trade)
+   bool shouldRemove;  // Flag to mark for removal
+   
+   string Name() const { return (dir>0 ? "FVG_B_" : "FVG_S_") + TimeToString(tLeft) + "_" + DoubleToString(top,5); }
+   string TradeKey() const { return "FVG_Trade_" + TimeToString(tLeft); }
+   
+   void Draw(bool isTraded = false)
+   {
+      if(!DrawAllObjects) return;
+      
+      string name = Name();
+      datetime rightTime = (isTraded && tradeTime > 0) ? tradeTime : TimeCurrent();
+      
+      // Draw rectangle for FVG zone (only up to trade time)
+      ObjectDelete(0, name);
+      ObjectCreate(0, name, OBJ_RECTANGLE, 0, tLeft, bot, rightTime, top);
+      ObjectSetInteger(0, name, OBJPROP_FILL, true);
+      ObjectSetInteger(0, name, OBJPROP_COLOR, isTraded ? clrYellow : drawColor);
+      ObjectSetInteger(0, name, OBJPROP_BACK, true);
+      ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
+      ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+      
+      // Draw 50% line (only if not traded yet)
+      if(!isTraded)
+      {
+         string eqName = name + "_EQ";
+         ObjectDelete(0, eqName);
+         ObjectCreate(0, eqName, OBJ_TREND, 0, tLeft, (top + bot) / 2, rightTime, (top + bot) / 2);
+         ObjectSetInteger(0, eqName, OBJPROP_COLOR, clrWhite);
+         ObjectSetInteger(0, eqName, OBJPROP_STYLE, STYLE_DASH);
+         ObjectSetInteger(0, eqName, OBJPROP_WIDTH, 1);
+      }
+      
+      // Draw label
+      string labelName = name + "_Label";
+      ObjectDelete(0, labelName);
+      ObjectCreate(0, labelName, OBJ_TEXT, 0, tLeft, top + 0.0001);
+      ObjectSetString(0, labelName, OBJPROP_TEXT, (dir > 0 ? "Bull FVG" : "Bear FVG") + (isTraded ? "✓" : ""));
+      ObjectSetInteger(0, labelName, OBJPROP_COLOR, isTraded ? clrYellow : drawColor);
+      ObjectSetInteger(0, labelName, OBJPROP_FONTSIZE, FontSize);
+      ObjectSetInteger(0, labelName, OBJPROP_ANCHOR, ANCHOR_LEFT_UPPER);
+      
+      // Draw trade execution marker if traded
+      if(isTraded && tradeTime > 0)
+      {
+         string tradeMarkerName = TradeKey() + "_Marker";
+         ObjectDelete(0, tradeMarkerName);
+         ObjectCreate(0, tradeMarkerName, OBJ_ARROW, 0, tradeTime, (top + bot) / 2);
+         ObjectSetInteger(0, tradeMarkerName, OBJPROP_ARROWCODE, (dir > 0) ? 217 : 218);
+         ObjectSetInteger(0, tradeMarkerName, OBJPROP_COLOR, clrYellow);
+         ObjectSetInteger(0, tradeMarkerName, OBJPROP_WIDTH, 2);
+      }
+   }
+   
+   void Remove()
+   {
+      ObjectDelete(0, Name());
+      ObjectDelete(0, Name() + "_Label");
+      ObjectDelete(0, Name() + "_EQ");
+      ObjectDelete(0, TradeKey() + "_Marker");
+   }
+};
+
+// BOS Zone - Updated for trade-based drawing
+class CBOSZone : public CObject
+{
+public:
+   int direction;
+   datetime time;
+   double price;
+   color drawColor;
+   datetime tradeTime; // When trade was executed (0 if not traded yet)
+   long tradeTicket;   // Associated trade ticket (-1 if no trade)
+   bool shouldRemove;  // Flag to mark for removal
+   datetime breakTime; // Time when break occurred
+   
+   string Name() const { return (direction>0 ? "BOS_B_" : "BOS_S_") + TimeToString(time); }
+   string TradeKey() const { return "BOS_Trade_" + TimeToString(time); }
+   string BreakLineKey() const { return Name() + "_BreakLine"; }
+   
+   void Draw(bool isTraded = false)
+   {
+      if(!DrawAllObjects) return;
+      
+      string name = Name();
+      string breakLineName = BreakLineKey();
+      
+      // Remove old objects first
+      ObjectDelete(0, name);
+      ObjectDelete(0, breakLineName);
+      
+      // Only draw the arrowed line when break occurs
+      if(isTraded && tradeTime > time)
+      {
+         // Draw arrowed line from swing point to break point
+         datetime startTime = time;
+         datetime endTime = tradeTime;
+         double startPrice = price;
+         double endPrice = price; // Horizontal line at same price level
+         
+         // For bullish breaks (buy), arrow goes up from swing low
+         if(direction > 0)
+         {
+            endPrice = price - (price * 0.0003); // Slightly below for visual clarity
+            ObjectCreate(0, breakLineName, OBJ_ARROWED_LINE, 0, startTime, startPrice, endTime, endPrice);
+         }
+         // For bearish breaks (sell), arrow goes down from swing high
+         else
+         {
+            endPrice = price + (price * 0.0003); // Slightly above for visual clarity
+            ObjectCreate(0, breakLineName, OBJ_ARROWED_LINE, 0, startTime, startPrice, endTime, endPrice);
+         }
+         
+         ObjectSetInteger(0, breakLineName, OBJPROP_COLOR, isTraded ? clrYellow : drawColor);
+         ObjectSetInteger(0, breakLineName, OBJPROP_WIDTH, 2);
+         ObjectSetInteger(0, breakLineName, OBJPROP_STYLE, STYLE_SOLID);
+         
+         // Add "Break" text label
+         string textLabelName = breakLineName + "_Label";
+         ObjectDelete(0, textLabelName);
+         ObjectCreate(0, textLabelName, OBJ_TEXT, 0, endTime, endPrice);
+         ObjectSetString(0, textLabelName, OBJPROP_TEXT, "Break");
+         ObjectSetInteger(0, textLabelName, OBJPROP_COLOR, isTraded ? clrYellow : drawColor);
+         ObjectSetInteger(0, textLabelName, OBJPROP_FONTSIZE, 10);
+         
+         // Position label based on direction
+         if(direction > 0) // Bullish break
+         {
+            ObjectSetInteger(0, textLabelName, OBJPROP_ANCHOR, ANCHOR_RIGHT_UPPER);
+         }
+         else // Bearish break
+         {
+            ObjectSetInteger(0, textLabelName, OBJPROP_ANCHOR, ANCHOR_RIGHT_LOWER);
+         }
+      }
+      
+      // Draw the original swing level as a thin horizontal line
+      ObjectCreate(0, name, OBJ_HLINE, 0, 0, price);
+      ObjectSetInteger(0, name, OBJPROP_COLOR, isTraded ? clrYellow : drawColor);
+      ObjectSetInteger(0, name, OBJPROP_STYLE, isTraded ? STYLE_SOLID : STYLE_DASHDOT);
+      ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+      
+      // Draw label for the swing level
+      string labelName = name + "_Label";
+      ObjectDelete(0, labelName);
+      ObjectCreate(0, labelName, OBJ_TEXT, 0, time, price + (direction > 0 ? -0.0002 : 0.0002));
+      ObjectSetString(0, labelName, OBJPROP_TEXT, (direction > 0 ? "BOS Buy" : "BOS Sell") + (isTraded ? " ✓" : ""));
+      ObjectSetInteger(0, labelName, OBJPROP_COLOR, isTraded ? clrYellow : drawColor);
+      ObjectSetInteger(0, labelName, OBJPROP_FONTSIZE, FontSize);
+      ObjectSetInteger(0, labelName, OBJPROP_ANCHOR, ANCHOR_LEFT_LOWER);
+      
+      // Draw trade execution marker if traded
+      if(isTraded && tradeTime > 0)
+      {
+         string tradeMarkerName = TradeKey() + "_Marker";
+         ObjectDelete(0, tradeMarkerName);
+         ObjectCreate(0, tradeMarkerName, OBJ_ARROW, 0, tradeTime, price);
+         ObjectSetInteger(0, tradeMarkerName, OBJPROP_ARROWCODE, (direction > 0) ? 217 : 218);
+         ObjectSetInteger(0, tradeMarkerName, OBJPROP_COLOR, clrYellow);
+         ObjectSetInteger(0, tradeMarkerName, OBJPROP_WIDTH, 2);
+      }
+      
+      ChartRedraw(0);
+   }
+   
+   // Alternative method using the exact function signature you provided
+   void DrawBreakLine(datetime breakTime, double breakPrice)
+   {
+      if(!DrawAllObjects) return;
+      
+      string breakLineName = Name() + "_BreakArrow";
+      string text = "Break";
+      string descr = breakLineName + text;
+      
+      // Draw arrowed line from swing point to break point
+      if(ObjectFind(0, breakLineName) < 0)
+      {
+         ObjectCreate(0, breakLineName, OBJ_ARROWED_LINE, 0, time, price, breakTime, breakPrice);
+         ObjectSetInteger(0, breakLineName, OBJPROP_TIME, 0, time);
+         ObjectSetDouble(0, breakLineName, OBJPROP_PRICE, 0, price);
+         ObjectSetInteger(0, breakLineName, OBJPROP_TIME, 1, breakTime);
+         ObjectSetDouble(0, breakLineName, OBJPROP_PRICE, 1, breakPrice);
+         ObjectSetInteger(0, breakLineName, OBJPROP_COLOR, drawColor);
+         ObjectSetInteger(0, breakLineName, OBJPROP_WIDTH, 2);
+         
+         // Add "Break" text
+         ObjectCreate(0, descr, OBJ_TEXT, 0, breakTime, breakPrice);
+         ObjectSetInteger(0, descr, OBJPROP_COLOR, drawColor);
+         ObjectSetInteger(0, descr, OBJPROP_FONTSIZE, 10);
+         ObjectSetString(0, descr, OBJPROP_TEXT, text + "  ");
+         
+         if(direction > 0) // Bullish break
+         {
+            ObjectSetInteger(0, descr, OBJPROP_ANCHOR, ANCHOR_RIGHT_UPPER);
+         }
+         if(direction < 0) // Bearish break
+         {
+            ObjectSetInteger(0, descr, OBJPROP_ANCHOR, ANCHOR_RIGHT_LOWER);
+         }
+      }
+      else
+      {
+         // Update existing line
+         ObjectSetInteger(0, breakLineName, OBJPROP_TIME, 1, breakTime);
+         ObjectSetDouble(0, breakLineName, OBJPROP_PRICE, 1, breakPrice);
+         ObjectSetInteger(0, descr, OBJPROP_TIME, 0, breakTime);
+         ObjectSetDouble(0, descr, OBJPROP_PRICE, 0, breakPrice);
+      }
+      
+      ChartRedraw(0);
+   }
+   
+   void Remove()
+   {
+      ObjectDelete(0, Name());
+      ObjectDelete(0, Name() + "_Label");
+      ObjectDelete(0, TradeKey() + "_Marker");
+      ObjectDelete(0, BreakLineKey());
+      ObjectDelete(0, BreakLineKey() + "_Label");
+      ObjectDelete(0, Name() + "_BreakArrow");
+      ObjectDelete(0, Name() + "_BreakArrowBreak");
+      ChartRedraw(0);
+   }
+};
+
+// Arrays for objects
+CArrayObj* detectedFVGs = NULL;
+CArrayObj* detectedBOSZones = NULL;
+CArrayObj* activeTrades = NULL; // Track active trades for cleanup
+
+double swingHigh = -1, swingLow = -1;
+datetime swingHighTime = 0, swingLowTime = 0;
+
+// Control Panel
+string indicatorName;
+
+// Trade information structure
+struct TradeInfo
+{
+   long ticket;
+   string symbol;
+   datetime openTime;
+   double openPrice;
+   ENUM_ORDER_TYPE type;
+   string strategy;
+   long magic;
+   
+   TradeInfo() : ticket(-1), symbol(""), openTime(0), openPrice(0), type(WRONG_VALUE), strategy(""), magic(0) {}
+};
+
+//+------------------------------------------------------------------+
+//| Expert initialization function                                   |
+//+------------------------------------------------------------------+
+int OnInit()
+{
+    trade.SetExpertMagicNumber(MagicNumber);
+    indicatorName = "IntelligentSMC_" + IntegerToString(ChartID());
+    
+    // Initialize market sentiment indicators
+    higherTFHandle = iMA(_Symbol, HigherTF, MAPeriod, 0, MODE_EMA, PRICE_CLOSE);
+    lowerTF1Handle = iMA(_Symbol, LowerTF1, MAPeriod, 0, MODE_EMA, PRICE_CLOSE);
+    lowerTF2Handle = iMA(_Symbol, LowerTF2, MAPeriod, 0, MODE_EMA, PRICE_CLOSE);
+    
+    ArraySetAsSeries(higherTFMA, true);
+    ArraySetAsSeries(lowerTF1MA, true);
+    ArraySetAsSeries(lowerTF2MA, true);
+    
+    // Initialize arrays
+    detectedFVGs = new CArrayObj();
+    detectedBOSZones = new CArrayObj();
+    tradedOBs = new CArrayObj();
+    activeTrades = new CArrayObj();
+    
+    CreateControlPanel();
+    
+    Print("Intelligent SMC EA Started - Strategy Switching & Clean Drawing Enabled");
+    return(INIT_SUCCEEDED);
+}
+
+//+------------------------------------------------------------------+
+//| Expert deinitialization function                                 |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+{
+    IndicatorRelease(higherTFHandle);
+    IndicatorRelease(lowerTF1Handle);
+    IndicatorRelease(lowerTF2Handle);
+    
+    // Clean up all objects
+    CleanupAllObjects();
+    
+    if(currentOB != NULL) 
+    {
+        delete currentOB;
+        currentOB = NULL;
+    }
+    
+    // Clean up FVGs
+    if(detectedFVGs != NULL)
+    {
+        for(int i = detectedFVGs.Total()-1; i >= 0; i--)
+        {
+            CFVG* fvg = (CFVG*)detectedFVGs.At(i);
+            if(fvg != NULL) delete fvg;
+        }
+        delete detectedFVGs;
+    }
+    
+    // Clean up BOS zones
+    if(detectedBOSZones != NULL)
+    {
+        for(int i = detectedBOSZones.Total()-1; i >= 0; i--)
+        {
+            CBOSZone* bos = (CBOSZone*)detectedBOSZones.At(i);
+            if(bos != NULL) delete bos;
+        }
+        delete detectedBOSZones;
+    }
+    
+    // Clean up traded OBs
+    if(tradedOBs != NULL)
+    {
+        for(int i = tradedOBs.Total()-1; i >= 0; i--)
+        {
+            COrderBlock* ob = (COrderBlock*)tradedOBs.At(i);
+            if(ob != NULL) delete ob;
+        }
+        delete tradedOBs;
+    }
+    
+    // Clean up active trades
+    if(activeTrades != NULL)
+    {
+        delete activeTrades;
+    }
+    
+    ObjectsDeleteAll(0, indicatorName);
+    Comment("");
+}
+
+//+------------------------------------------------------------------+
+//| Cleanup all graphical objects                                    |
+//+------------------------------------------------------------------+
+void CleanupAllObjects()
+{
+    // Clean up old objects
+    string prefix = "";
+    int total = ObjectsTotal(0);
+    
+    for(int i = total-1; i >= 0; i--)
+    {
+        string name = ObjectName(0, i);
+        if(StringFind(name, "OB_", 0) == 0 ||
+           StringFind(name, "FVG_", 0) == 0 ||
+           StringFind(name, "BOS_", 0) == 0 ||
+           StringFind(name, "Trade_", 0) == 0)
+        {
+            ObjectDelete(0, name);
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Cleanup expired objects                                          |
+//+------------------------------------------------------------------+
+void CleanupExpiredObjects()
+{
+    datetime currentBarTime = iTime(_Symbol, _Period, 0);
+    
+    // Clean up traded OBs
+    if(tradedOBs != NULL)
+    {
+        for(int i = tradedOBs.Total()-1; i >= 0; i--)
+        {
+            COrderBlock* ob = (COrderBlock*)tradedOBs.At(i);
+            if(ob != NULL)
+            {
+                // Remove if trade is closed
+                bool tradeExists = false;
+                if(ob.tradeTicket > 0)
+                {
+                    if(PositionSelectByTicket(ob.tradeTicket))
+                    {
+                        tradeExists = true;
+                    }
+                }
+                
+                if(!tradeExists || (RemoveObjectsAfterBars > 0 && iBarShift(_Symbol, _Period, ob.tradeTime) > RemoveObjectsAfterBars))
+                {
+                    ob.Remove();
+                    tradedOBs.Delete(i);
+                    delete ob;
+                }
+            }
+        }
+    }
+    
+    // Clean up FVGs
+    if(detectedFVGs != NULL)
+    {
+        for(int i = detectedFVGs.Total()-1; i >= 0; i--)
+        {
+            CFVG* fvg = (CFVG*)detectedFVGs.At(i);
+            if(fvg != NULL)
+            {
+                // Remove if trade is closed or expired
+                bool shouldRemove = false;
+                
+                if(fvg.tradeTicket > 0)
+                {
+                    if(!PositionSelectByTicket(fvg.tradeTicket))
+                    {
+                        shouldRemove = true;
+                    }
+                    else if(RemoveObjectsAfterBars > 0 && iBarShift(_Symbol, _Period, fvg.tradeTime) > RemoveObjectsAfterBars)
+                    {
+                        shouldRemove = true;
+                    }
+                }
+                else if(iBarShift(_Symbol, _Period, fvg.tLeft) > RemoveObjectsAfterBars * 2)
+                {
+                    // Remove untraded FVGs after longer period
+                    shouldRemove = true;
+                }
+                
+                if(shouldRemove)
+                {
+                    fvg.Remove();
+                    detectedFVGs.Delete(i);
+                    delete fvg;
+                }
+            }
+        }
+    }
+    
+    // Clean up BOS zones
+    if(detectedBOSZones != NULL)
+    {
+        for(int i = detectedBOSZones.Total()-1; i >= 0; i--)
+        {
+            CBOSZone* bos = (CBOSZone*)detectedBOSZones.At(i);
+            if(bos != NULL)
+            {
+                // Remove if trade is closed or expired
+                bool shouldRemove = false;
+                
+                if(bos.tradeTicket > 0)
+                {
+                    if(!PositionSelectByTicket(bos.tradeTicket))
+                    {
+                        shouldRemove = true;
+                    }
+                    else if(RemoveObjectsAfterBars > 0 && iBarShift(_Symbol, _Period, bos.tradeTime) > RemoveObjectsAfterBars)
+                    {
+                        shouldRemove = true;
+                    }
+                }
+                else if(iBarShift(_Symbol, _Period, bos.time) > RemoveObjectsAfterBars * 2)
+                {
+                    // Remove untraded BOS zones after longer period
+                    shouldRemove = true;
+                }
+                
+                if(shouldRemove)
+                {
+                    bos.Remove();
+                    detectedBOSZones.Delete(i);
+                    delete bos;
+                }
+            }
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Market Sentiment Calculation                                     |
+//+------------------------------------------------------------------+
+int CalculateMarketSentiment()
+{
+    if(TimeCurrent() - lastSentimentUpdate < 5) 
+        return currentSentiment;
+    
+    lastSentimentUpdate = TimeCurrent();
+    
+    // Get MA values
+    CopyBuffer(higherTFHandle, 0, 0, 3, higherTFMA);
+    CopyBuffer(lowerTF1Handle, 0, 0, 3, lowerTF1MA);
+    CopyBuffer(lowerTF2Handle, 0, 0, 3, lowerTF2MA);
+    
+    double higherTFPrice = iClose(_Symbol, HigherTF, 0);
+    double lowerTF1Price = iClose(_Symbol, LowerTF1, 0);
+    double lowerTF2Price = iClose(_Symbol, LowerTF2, 0);
+    
+    // Calculate biases
+    int higherTFBias = GetHigherTFBias(higherTFPrice, higherTFMA[0]);
+    bool lowerTF1Bullish = IsBullishStructure(LowerTF1, SwingLookback);
+    bool lowerTF1Bearish = IsBearishStructure(LowerTF1, SwingLookback);
+    bool lowerTF2Bullish = IsBullishStructure(LowerTF2, SwingLookback);
+    bool lowerTF2Bearish = IsBearishStructure(LowerTF2, SwingLookback);
+    bool lowerTF1Breakout = HasBreakout(LowerTF1, SwingLookback, higherTFBias);
+    bool lowerTF2Breakout = HasBreakout(LowerTF2, SwingLookback, higherTFBias);
+    
+    currentSentiment = DetermineSentiment(higherTFBias, 
+        lowerTF1Bullish, lowerTF1Bearish, lowerTF1Breakout,
+        lowerTF2Bullish, lowerTF2Bearish, lowerTF2Breakout);
+    
+    // Update sentiment text
+    switch(currentSentiment)
+    {
+        case 1: currentSentimentText = "Bullish"; break;
+        case -1: currentSentimentText = "Bearish"; break;
+        case 2: currentSentimentText = "Risk-On"; break;
+        case -2: currentSentimentText = "Risk-Off"; break;
+        default: currentSentimentText = "Neutral"; break;
+    }
+    
+    return currentSentiment;
+}
+
+//+------------------------------------------------------------------+
+//| Strategy Selection Logic                                         |
+//+------------------------------------------------------------------+
+string SelectTradingStrategy()
+{
+    if(!UseSentimentFilter) 
+    {
+        currentStrategy = "ALL";
+        return currentStrategy;
+    }
+    
+    int sentiment = CalculateMarketSentiment();
+    
+    switch(sentiment)
+    {
+        case 1:  // Strong Bullish
+        case -1: // Strong Bearish
+            currentStrategy = "BOS";
+            break;
+            
+        case 2:  // Risk-On (Bullish with breakout)
+        case -2: // Risk-Off (Bearish with breakout)  
+            currentStrategy = "FVG";
+            break;
+            
+        case 0:  // Neutral
+        default:
+            currentStrategy = "OB";
+            break;
+    }
+    
+    return currentStrategy;
+}
+
+//+------------------------------------------------------------------+
+//| Execute Trade with Sentiment Filter & Drawing                    |
+//+------------------------------------------------------------------+
+bool ExecuteTradeWithFilter(ENUM_ORDER_TYPE type, string strategy)
+{
+    if(!EnableTrading) return false;
+    
+    // Check if strategy is allowed
+    if((strategy == "BOS" && !AllowBOS) || 
+       (strategy == "OB" && !AllowOB) ||
+       (strategy == "FVG" && !AllowFVG))
+        return false;
+    
+    // Check sentiment alignment
+    int sentiment = CalculateMarketSentiment();
+    bool sentimentAligned = false;
+    
+    if((type == ORDER_TYPE_BUY && (sentiment == 1 || sentiment == 2)) ||
+       (type == ORDER_TYPE_SELL && (sentiment == -1 || sentiment == -2)))
+        sentimentAligned = true;
+    
+    // Allow neutral sentiment trades but with caution
+    if(sentiment == 0) sentimentAligned = true;
+    
+    if(!sentimentAligned)
+    {
+        Print("Trade rejected: Not aligned with market sentiment (", currentSentimentText, ")");
+        return false;
+    }
+    
+    double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+    double price = (type == ORDER_TYPE_BUY) ? Ask : Bid;
+    double sl = (type == ORDER_TYPE_BUY) ? price - StopLoss * point : price + StopLoss * point;
+    double tp = (type == ORDER_TYPE_BUY) ? price + TakeProfit * point : price - TakeProfit * point;
+    
+    sl = NormalizeDouble(sl, _Digits);
+    tp = NormalizeDouble(tp, _Digits);
+    
+    // Execute trade
+    trade.SetExpertMagicNumber(MagicNumber);
+    bool result = trade.PositionOpen(_Symbol, type, LotSize, price, sl, tp, 
+       "SMC_" + strategy + "_Sent:" + currentSentimentText);
+    
+    if(result)
+    {
+        long ticket = trade.ResultOrder();
+        
+        // Draw trade entry point
+        DrawTradeEntry(price, type, strategy, ticket);
+        
+        Print("Trade executed: ", EnumToString(type), 
+              " | Strategy: ", strategy, 
+              " | Sentiment: ", currentSentimentText,
+              " | Price: ", DoubleToString(price, _Digits),
+              " | Ticket: ", ticket);
+        
+        return true;
+    }
+    
+    return false;
+}
+
+//+------------------------------------------------------------------+
+//| Draw Trade Entry Point                                           |
+//+------------------------------------------------------------------+
+void DrawTradeEntry(double price, ENUM_ORDER_TYPE type, string strategy, long ticket)
+{
+    if(!DrawAllObjects) return;
+    
+    string name = "Trade_Entry_" + IntegerToString(ticket) + "_" + strategy;
+    
+    // Draw arrow
+    int arrowCode = (type == ORDER_TYPE_BUY) ? 217 : 218;
+    color arrowColor = (type == ORDER_TYPE_BUY) ? clrLime : clrRed;
+    
+    ObjectDelete(0, name);
+    ObjectCreate(0, name, OBJ_ARROW, 0, TimeCurrent(), price);
+    ObjectSetInteger(0, name, OBJPROP_ARROWCODE, arrowCode);
+    ObjectSetInteger(0, name, OBJPROP_COLOR, arrowColor);
+    ObjectSetInteger(0, name, OBJPROP_WIDTH, 2);
+    
+    // Draw label with strategy info
+    string labelName = name + "_Label";
+    ObjectDelete(0, labelName);
+    ObjectCreate(0, labelName, OBJ_TEXT, 0, TimeCurrent(), price + (type == ORDER_TYPE_BUY ? 0.0002 : -0.0002));
+    ObjectSetString(0, labelName, OBJPROP_TEXT, strategy + " " + (type == ORDER_TYPE_BUY ? "BUY" : "SELL"));
+    ObjectSetInteger(0, labelName, OBJPROP_COLOR, arrowColor);
+    ObjectSetInteger(0, labelName, OBJPROP_FONTSIZE, FontSize);
+}
+
+//+------------------------------------------------------------------+
+//| Order Blocks Detection, Trading & Drawing                        |
+//+------------------------------------------------------------------+
+void DetectAndTradeOrderBlocks()
+{
+    // Clean old OBs
+    if(currentOB != NULL && (TimeCurrent() - currentOB.time) > 86400) // 1 day old
+    {
+        delete currentOB;
+        currentOB = NULL;
+    }
+    
+    if(currentOB == NULL)
+    {
+        // Look for new Order Blocks
+        for(int i = 3; i < 30; i++)
+        {
+            // Bullish OB: Bear candle followed by strong bull candle
+            if(getOpen(i) > getClose(i) && 
+               getOpen(i-1) < getClose(i-1) &&
+               getClose(i-1) > getOpen(i) &&
+               MathAbs(getClose(i-1) - getOpen(i-1)) > MathAbs(getOpen(i) - getClose(i)) * 1.5)
+            {
+                currentOB = new COrderBlock();
+                currentOB.direction = 1;
+                currentOB.time = getTime(i-1);
+                currentOB.high = getHigh(i-1);
+                currentOB.low = getLow(i-1);
+                currentOB.drawColor = OB_BullColor;
+                currentOB.tradeTime = 0;
+                currentOB.tradeTicket = -1;
+                currentOB.Draw(false);
+                
+                Print("Bullish Order Block detected at: ", TimeToString(currentOB.time));
+                break;
+            }
+            
+            // Bearish OB: Bull candle followed by strong bear candle  
+            if(getOpen(i) < getClose(i) &&
+               getOpen(i-1) > getClose(i-1) &&
+               getClose(i-1) < getOpen(i) &&
+               MathAbs(getOpen(i-1) - getClose(i-1)) > MathAbs(getClose(i) - getOpen(i)) * 1.5)
+            {
+                currentOB = new COrderBlock();
+                currentOB.direction = -1;
+                currentOB.time = getTime(i-1);
+                currentOB.high = getHigh(i-1);
+                currentOB.low = getLow(i-1);
+                currentOB.drawColor = OB_BearColor;
+                currentOB.tradeTime = 0;
+                currentOB.tradeTicket = -1;
+                currentOB.Draw(false);
+                
+                Print("Bearish Order Block detected at: ", TimeToString(currentOB.time));
+                break;
+            }
+        }
+    }
+    
+    if(currentOB == NULL) return;
+    
+    // Draw OB if not already drawn
+    if(ObjectFind(0, currentOB.Key()) == -1)
+        currentOB.Draw(false);
+    
+    // Trade OB when price retraces to it
+    bool shouldTrade = false;
+    ENUM_ORDER_TYPE tradeType = WRONG_VALUE;
+    
+    if(currentOB.direction == 1 && Ask >= currentOB.low && Ask <= currentOB.high)
+    {
+        shouldTrade = true;
+        tradeType = ORDER_TYPE_BUY;
+    }
+    else if(currentOB.direction == -1 && Bid <= currentOB.high && Bid >= currentOB.low)
+    {
+        shouldTrade = true;
+        tradeType = ORDER_TYPE_SELL;
+    }
+    
+    if(shouldTrade)
+    {
+        if(ExecuteTradeWithFilter(tradeType, "OB"))
+        {
+            // Get the last trade ticket
+            if(trade.ResultOrder() > 0)
+            {
+                currentOB.tradeTime = TimeCurrent();
+                currentOB.tradeTicket = trade.ResultOrder();
+                
+                // Redraw OB with trade execution time
+                currentOB.Draw(true);
+                
+                // Move to traded OBs array
+                tradedOBs.Add(currentOB);
+                
+                Print("Order Block traded at: ", TimeToString(currentOB.tradeTime), 
+                      " | Ticket: ", currentOB.tradeTicket);
+            }
+            
+            currentOB = NULL;
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Fair Value Gaps Detection, Trading & Drawing                     |
+//+------------------------------------------------------------------+
+void DetectAndTradeFVGs()
+{
+    // Clean old FVGs
+    if(detectedFVGs != NULL)
+    {
+        for(int i = detectedFVGs.Total() - 1; i >= 0; i--)
+        {
+            CFVG* fvg = (CFVG*)detectedFVGs.At(i);
+            if(fvg != NULL && (TimeCurrent() - fvg.tLeft) > 86400) // 1 day old
+            {
+                detectedFVGs.Delete(i);
+                delete fvg;
+            }
+        }
+    }
+    
+    for(int i = 2; i < 30; i++)
+    {
+        double lowA = getLow(i+2);
+        double highA = getHigh(i+2);
+        double highC = getHigh(i);
+        double lowC = getLow(i);
+        
+        double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+        double minGap = 3.0 * point;
+        
+        // Bullish FVG
+        if(lowA > highC && (lowA - highC >= minGap))
+        {
+            // Check if FVG already exists
+            bool exists = false;
+            if(detectedFVGs != NULL)
+            {
+                for(int j = 0; j < detectedFVGs.Total(); j++)
+                {
+                    CFVG* existing = (CFVG*)detectedFVGs.At(j);
+                    if(existing != NULL && MathAbs(existing.tLeft - getTime(i+2)) < 60) // Same minute
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+            }
+            
+            if(!exists)
+            {
+                CFVG* newFVG = new CFVG();
+                newFVG.dir = 1;
+                newFVG.tLeft = getTime(i+2);
+                newFVG.top = lowA;
+                newFVG.bot = highC;
+                newFVG.drawColor = FVG_BullColor;
+                newFVG.tradeTime = 0;
+                newFVG.tradeTicket = -1;
+                newFVG.shouldRemove = false;
+                detectedFVGs.Add(newFVG);
+                newFVG.Draw(false);
+                
+                Print("Bullish FVG detected at: ", TimeToString(newFVG.tLeft));
+            }
+        }
+        
+        // Bearish FVG
+        if(highA < lowC && (lowC - highA >= minGap))
+        {
+            // Check if FVG already exists
+            bool exists = false;
+            if(detectedFVGs != NULL)
+            {
+                for(int j = 0; j < detectedFVGs.Total(); j++)
+                {
+                    CFVG* existing = (CFVG*)detectedFVGs.At(j);
+                    if(existing != NULL && MathAbs(existing.tLeft - getTime(i+2)) < 60) // Same minute
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+            }
+            
+            if(!exists)
+            {
+                CFVG* newFVG = new CFVG();
+                newFVG.dir = -1;
+                newFVG.tLeft = getTime(i+2);
+                newFVG.top = lowC;
+                newFVG.bot = highA;
+                newFVG.drawColor = FVG_BearColor;
+                newFVG.tradeTime = 0;
+                newFVG.tradeTicket = -1;
+                newFVG.shouldRemove = false;
+                detectedFVGs.Add(newFVG);
+                newFVG.Draw(false);
+                
+                Print("Bearish FVG detected at: ", TimeToString(newFVG.tLeft));
+            }
+        }
+    }
+    
+    // Check for trading opportunities
+    if(detectedFVGs != NULL)
+    {
+        for(int i = 0; i < detectedFVGs.Total(); i++)
+        {
+            CFVG* fvg = (CFVG*)detectedFVGs.At(i);
+            if(fvg == NULL || fvg.tradeTicket != -1) continue;
+            
+            double midPoint = (fvg.top + fvg.bot) / 2.0;
+            bool shouldTrade = false;
+            ENUM_ORDER_TYPE tradeType = WRONG_VALUE;
+            
+            if(fvg.dir == 1) // Bullish FVG
+            {
+                if(Ask <= fvg.top && Ask >= fvg.bot && Ask <= midPoint)
+                {
+                    shouldTrade = true;
+                    tradeType = ORDER_TYPE_BUY;
+                }
+            }
+            else // Bearish FVG
+            {
+                if(Bid >= fvg.bot && Bid <= fvg.top && Bid >= midPoint)
+                {
+                    shouldTrade = true;
+                    tradeType = ORDER_TYPE_SELL;
+                }
+            }
+            
+            if(shouldTrade)
+            {
+                if(ExecuteTradeWithFilter(tradeType, "FVG"))
+                {
+                    // Get the last trade ticket
+                    if(trade.ResultOrder() > 0)
+                    {
+                        fvg.tradeTime = TimeCurrent();
+                        fvg.tradeTicket = trade.ResultOrder();
+                        
+                        // Redraw FVG with trade execution time
+                        fvg.Draw(true);
+                        
+                        Print("FVG traded at: ", TimeToString(fvg.tradeTime), 
+                              " | Ticket: ", fvg.tradeTicket);
+                    }
+                }
+                break; // Only trade one FVG at a time
+            }
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Break of Structure Detection, Trading & Drawing                  |
+//+------------------------------------------------------------------+
+void DetectAndTradeBOS()
+{
+    // Clean old BOS zones
+    if(detectedBOSZones != NULL)
+    {
+        for(int i = detectedBOSZones.Total() - 1; i >= 0; i--)
+        {
+            CBOSZone* bos = (CBOSZone*)detectedBOSZones.At(i);
+            if(bos != NULL && (TimeCurrent() - bos.time) > 86400) // 1 day old
+            {
+                detectedBOSZones.Delete(i);
+                delete bos;
+            }
+        }
+    }
+    
+    // Simple swing point detection
+    for(int i = 5; i < 20; i++)
+    {
+        // Check for swing high (local maximum)
+        bool isSwingHigh = true;
+        for(int j = 1; j <= 3; j++)
+        {
+            if(i - j >= 0 && i + j < Bars(_Symbol, _Period))
+            {
+                if(getHigh(i) <= getHigh(i - j) || getHigh(i) <= getHigh(i + j))
+                {
+                    isSwingHigh = false;
+                    break;
+                }
+            }
+        }
+        
+        if(isSwingHigh && getHigh(i) > swingHigh)
+        {
+            swingHigh = getHigh(i);
+            swingHighTime = getTime(i);
+            
+            // Create BOS sell zone
+            CBOSZone* newBOS = new CBOSZone();
+            newBOS.direction = -1;
+            newBOS.time = swingHighTime;
+            newBOS.price = swingHigh;
+            newBOS.drawColor = BOS_BearColor;
+            newBOS.tradeTime = 0;
+            newBOS.tradeTicket = -1;
+            newBOS.shouldRemove = false;
+            detectedBOSZones.Add(newBOS);
+            newBOS.Draw(false);
+            
+            Print("BOS Sell level detected at: ", TimeToString(swingHighTime), " Price: ", swingHigh);
+        }
+        
+        // Check for swing low (local minimum)
+        bool isSwingLow = true;
+        for(int j = 1; j <= 3; j++)
+        {
+            if(i - j >= 0 && i + j < Bars(_Symbol, _Period))
+            {
+                if(getLow(i) >= getLow(i - j) || getLow(i) >= getLow(i + j))
+                {
+                    isSwingLow = false;
+                    break;
+                }
+            }
+        }
+        
+        if(isSwingLow && (swingLow == -1 || getLow(i) < swingLow))
+        {
+            swingLow = getLow(i);
+            swingLowTime = getTime(i);
+            
+            // Create BOS buy zone
+            CBOSZone* newBOS = new CBOSZone();
+            newBOS.direction = 1;
+            newBOS.time = swingLowTime;
+            newBOS.price = swingLow;
+            newBOS.drawColor = BOS_BullColor;
+            newBOS.tradeTime = 0;
+            newBOS.tradeTicket = -1;
+            newBOS.shouldRemove = false;
+            detectedBOSZones.Add(newBOS);
+            newBOS.Draw(false);
+            
+            Print("BOS Buy level detected at: ", TimeToString(swingLowTime), " Price: ", swingLow);
+        }
+    }
+    
+    // Check for trading opportunities
+    if(detectedBOSZones != NULL)
+    {
+        for(int i = 0; i < detectedBOSZones.Total(); i++)
+        {
+            CBOSZone* bos = (CBOSZone*)detectedBOSZones.At(i);
+            if(bos == NULL || bos.tradeTicket != -1) continue;
+            
+            bool shouldTrade = false;
+            ENUM_ORDER_TYPE tradeType = WRONG_VALUE;
+            datetime breakTime = 0;
+            double breakPrice = 0;
+            
+            if(bos.direction == 1) // BOS Buy (break below swing low)
+            {
+                if(Bid < bos.price)
+                {
+                    shouldTrade = true;
+                    tradeType = ORDER_TYPE_BUY;
+                    breakTime = TimeCurrent();
+                    breakPrice = Bid;
+                }
+            }
+            else // BOS Sell (break above swing high)
+            {
+                if(Ask > bos.price)
+                {
+                    shouldTrade = true;
+                    tradeType = ORDER_TYPE_SELL;
+                    breakTime = TimeCurrent();
+                    breakPrice = Ask;
+                }
+            }
+            
+            if(shouldTrade)
+            {
+                if(ExecuteTradeWithFilter(tradeType, "BOS"))
+                {
+                    // Get the last trade ticket
+                    if(trade.ResultOrder() > 0)
+                    {
+                        bos.tradeTime = breakTime;
+                        bos.tradeTicket = trade.ResultOrder();
+                        
+                        // Draw the break line using arrowed line
+                        bos.Draw(true);
+                        
+                        // Alternative: Use the DrawBreakLine method
+                        // bos.DrawBreakLine(breakTime, breakPrice);
+                        
+                        Print("BOS traded at: ", TimeToString(bos.tradeTime), 
+                              " | Ticket: ", bos.tradeTicket,
+                              " | Break Price: ", DoubleToString(breakPrice, _Digits));
+                    }
+                }
+                break; // Only trade one BOS at a time
+            }
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Main Tick Function                                               |
+//+------------------------------------------------------------------+
+void OnTick()
+{
+    Bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+    Ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+    
+    if(!IsNewBar()) return;
+    
+    // Clean up expired objects
+    CleanupExpiredObjects();
+    
+    // Calculate current market sentiment
+    CalculateMarketSentiment();
+    
+    // Select strategy based on sentiment
+    string selectedStrategy = SelectTradingStrategy();
+    
+    // Draw all detected patterns
+    if(DrawAllObjects)
+    {
+        // Redraw all objects on new bar
+        if(currentOB != NULL) currentOB.Draw(false);
+        
+        if(detectedFVGs != NULL)
+        {
+            for(int i = 0; i < detectedFVGs.Total(); i++)
+            {
+                CFVG* fvg = (CFVG*)detectedFVGs.At(i);
+                if(fvg != NULL) 
+                {
+                    bool isTraded = (fvg.tradeTicket != -1);
+                    fvg.Draw(isTraded);
+                }
+            }
+        }
+        
+        if(detectedBOSZones != NULL)
+        {
+            for(int i = 0; i < detectedBOSZones.Total(); i++)
+            {
+                CBOSZone* bos = (CBOSZone*)detectedBOSZones.At(i);
+                if(bos != NULL) 
+                {
+                    bool isTraded = (bos.tradeTicket != -1);
+                    bos.Draw(isTraded);
+                }
+            }
+        }
+        
+        // Draw traded OBs
+        if(tradedOBs != NULL)
+        {
+            for(int i = 0; i < tradedOBs.Total(); i++)
+            {
+                COrderBlock* ob = (COrderBlock*)tradedOBs.At(i);
+                if(ob != NULL) ob.Draw(true);
+            }
+        }
+    }
+    
+    // Execute selected strategies
+    if(selectedStrategy == "ALL" || selectedStrategy == "BOS")
+        DetectAndTradeBOS();
+        
+    if(selectedStrategy == "ALL" || selectedStrategy == "OB")
+        DetectAndTradeOrderBlocks();
+        
+    if(selectedStrategy == "ALL" || selectedStrategy == "FVG")
+        DetectAndTradeFVGs();
+    
+    // Update control panel
+    UpdateControlPanel();
+    
+    // Display current status
+    DisplayStatus();
+}
+
+//+------------------------------------------------------------------+
+//| Create Control Panel                                             |
+//+------------------------------------------------------------------+
+void CreateControlPanel()
+{
+    // Background
+    string bg = indicatorName + "_BG";
+    ObjectCreate(0, bg, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+    ObjectSetInteger(0, bg, OBJPROP_XDISTANCE, PanelX);
+    ObjectSetInteger(0, bg, OBJPROP_YDISTANCE, PanelY);
+    ObjectSetInteger(0, bg, OBJPROP_XSIZE, 220);
+    ObjectSetInteger(0, bg, OBJPROP_YSIZE, 200);
+    ObjectSetInteger(0, bg, OBJPROP_CORNER, PanelCorner);
+    ObjectSetInteger(0, bg, OBJPROP_BGCOLOR, clrBlack);
+    ObjectSetInteger(0, bg, OBJPROP_BORDER_COLOR, clrGray);
+    ObjectSetInteger(0, bg, OBJPROP_BACK, true);
+    ObjectSetInteger(0, bg, OBJPROP_SELECTABLE, false);
+    
+    // Title
+    string title = indicatorName + "_Title";
+    ObjectCreate(0, title, OBJ_LABEL, 0, 0, 0);
+    ObjectSetInteger(0, title, OBJPROP_XDISTANCE, PanelX + 10);
+    ObjectSetInteger(0, title, OBJPROP_YDISTANCE, PanelY + 10);
+    ObjectSetInteger(0, title, OBJPROP_CORNER, PanelCorner);
+    ObjectSetString(0, title, OBJPROP_TEXT, "Intelligent SMC EA");
+    ObjectSetInteger(0, title, OBJPROP_COLOR, clrWhite);
+    ObjectSetString(0, title, OBJPROP_FONT, FontFace);
+    ObjectSetInteger(0, title, OBJPROP_FONTSIZE, FontSize + 2);
+    
+    // Create labels
+    string labels[] = {"Sentiment:", "Strategy:", "Bid:", "Ask:", "Time:", "Status:", "Objects:"};
+    for(int i = 0; i < ArraySize(labels); i++)
+    {
+        string labelName = indicatorName + "_Label" + IntegerToString(i);
+        ObjectCreate(0, labelName, OBJ_LABEL, 0, 0, 0);
+        ObjectSetInteger(0, labelName, OBJPROP_XDISTANCE, PanelX + 10);
+        ObjectSetInteger(0, labelName, OBJPROP_YDISTANCE, PanelY + 40 + i * 20);
+        ObjectSetInteger(0, labelName, OBJPROP_CORNER, PanelCorner);
+        ObjectSetString(0, labelName, OBJPROP_TEXT, labels[i]);
+        ObjectSetInteger(0, labelName, OBJPROP_COLOR, clrLightGray);
+        ObjectSetString(0, labelName, OBJPROP_FONT, FontFace);
+        ObjectSetInteger(0, labelName, OBJPROP_FONTSIZE, FontSize);
+    }
+    
+    // Create value labels
+    for(int i = 0; i < 7; i++)
+    {
+        string valueName = indicatorName + "_Value" + IntegerToString(i);
+        ObjectCreate(0, valueName, OBJ_LABEL, 0, 0, 0);
+        ObjectSetInteger(0, valueName, OBJPROP_XDISTANCE, PanelX + 100);
+        ObjectSetInteger(0, valueName, OBJPROP_YDISTANCE, PanelY + 40 + i * 20);
+        ObjectSetInteger(0, valueName, OBJPROP_CORNER, PanelCorner);
+        ObjectSetString(0, valueName, OBJPROP_TEXT, "---");
+        ObjectSetInteger(0, valueName, OBJPROP_COLOR, NeutralColor);
+        ObjectSetString(0, valueName, OBJPROP_FONT, FontFace);
+        ObjectSetInteger(0, valueName, OBJPROP_FONTSIZE, FontSize);
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Update Control Panel                                             |
+//+------------------------------------------------------------------+
+void UpdateControlPanel()
+{
+    // Get color based on sentiment
+    color sentimentColor = NeutralColor;
+    switch(currentSentiment)
+    {
+        case 1: sentimentColor = BullishColor; break;
+        case -1: sentimentColor = BearishColor; break;
+        case 2: sentimentColor = RiskOnColor; break;
+        case -2: sentimentColor = RiskOffColor; break;
+    }
+    
+    // Calculate object counts
+    int fvgCount = (detectedFVGs != NULL) ? detectedFVGs.Total() : 0;
+    int bosCount = (detectedBOSZones != NULL) ? detectedBOSZones.Total() : 0;
+    int obCount = (tradedOBs != NULL) ? tradedOBs.Total() : 0;
+    if(currentOB != NULL) obCount++;
+    int totalObjects = fvgCount + bosCount + obCount;
+    
+    // Update values
+    ObjectSetString(0, indicatorName + "_Value0", OBJPROP_TEXT, currentSentimentText);
+    ObjectSetInteger(0, indicatorName + "_Value0", OBJPROP_COLOR, sentimentColor);
+    
+    ObjectSetString(0, indicatorName + "_Value1", OBJPROP_TEXT, currentStrategy);
+    ObjectSetInteger(0, indicatorName + "_Value1", OBJPROP_COLOR, clrWhite);
+    
+    ObjectSetString(0, indicatorName + "_Value2", OBJPROP_TEXT, DoubleToString(Bid, _Digits));
+    ObjectSetInteger(0, indicatorName + "_Value2", OBJPROP_COLOR, clrWhite);
+    
+    ObjectSetString(0, indicatorName + "_Value3", OBJPROP_TEXT, DoubleToString(Ask, _Digits));
+    ObjectSetInteger(0, indicatorName + "_Value3", OBJPROP_COLOR, clrWhite);
+    
+    ObjectSetString(0, indicatorName + "_Value4", OBJPROP_TEXT, TimeToString(TimeCurrent(), TIME_MINUTES));
+    ObjectSetInteger(0, indicatorName + "_Value4", OBJPROP_COLOR, clrWhite);
+    
+    string statusText = EnableTrading ? "TRADING" : "DISABLED";
+    color statusColor = EnableTrading ? clrLime : clrRed;
+    ObjectSetString(0, indicatorName + "_Value5", OBJPROP_TEXT, statusText);
+    ObjectSetInteger(0, indicatorName + "_Value5", OBJPROP_COLOR, statusColor);
+    
+    ObjectSetString(0, indicatorName + "_Value6", OBJPROP_TEXT, IntegerToString(totalObjects));
+    ObjectSetInteger(0, indicatorName + "_Value6", OBJPROP_COLOR, totalObjects > 10 ? clrYellow : clrWhite);
+}
+
+//+------------------------------------------------------------------+
+//| Display Status in Comment                                        |
+//+------------------------------------------------------------------+
+void DisplayStatus()
+{
+    int fvgCount = (detectedFVGs != NULL) ? detectedFVGs.Total() : 0;
+    int bosCount = (detectedBOSZones != NULL) ? detectedBOSZones.Total() : 0;
+    int obCount = (tradedOBs != NULL) ? tradedOBs.Total() : 0;
+    if(currentOB != NULL) obCount++;
+    
+    string status = "Intelligent SMC EA v2.20\n" +
+                   "════════════════════════════\n" +
+                   "Market Sentiment: " + currentSentimentText + "\n" +
+                   "Active Strategy: " + currentStrategy + "\n" +
+                   "════════════════════════════\n" +
+                   "Bid: " + DoubleToString(Bid, _Digits) + "\n" +
+                   "Ask: " + DoubleToString(Ask, _Digits) + "\n" +
+                   "Time: " + TimeToString(TimeCurrent(), TIME_SECONDS) + "\n" +
+                   "════════════════════════════\n" +
+                   "Objects: OB:" + IntegerToString(obCount) + 
+                   " FVG:" + IntegerToString(fvgCount) + 
+                   " BOS:" + IntegerToString(bosCount) + "\n" +
+                   "Cleanup: " + (RemoveObjectsAfterTradeClose ? "ON" : "OFF") + "\n" +
+                   "════════════════════════════\n" +
+                   "Trading: " + (EnableTrading ? "ENABLED" : "DISABLED");
+    
+    Comment(status);
+}
+
+//+------------------------------------------------------------------+
+//| Helper Functions                                                 |
+//+------------------------------------------------------------------+
+bool IsNewBar()
+{
+    datetime currentBarTime = iTime(_Symbol, _Period, 0);
+    if(lastBarTime != currentBarTime)
+    {
+        lastBarTime = currentBarTime;
+        return true;
+    }
+    return false;
+}
+
+double getHigh(int index) { return iHigh(_Symbol, _Period, index); }
+double getLow(int index) { return iLow(_Symbol, _Period, index); }
+double getOpen(int index) { return iOpen(_Symbol, _Period, index); }
+double getClose(int index) { return iClose(_Symbol, _Period, index); }
+datetime getTime(int index) { return iTime(_Symbol, _Period, index); }
+
+// Market Sentiment Functions (from MARKSENT)
+int GetHigherTFBias(double price, double maValue)
+{
+    double deviation = MathAbs(price - maValue) / maValue;
+    if(price > maValue && deviation > ATRThreshold) return 1;
+    else if(price < maValue && deviation > ATRThreshold) return -1;
+    else return 0;
+}
+
+bool IsBullishStructure(ENUM_TIMEFRAMES tf, int lookback)
+{
+    int swingHighIndex = iHighest(_Symbol, tf, MODE_HIGH, lookback*2, 1);
+    int swingLowIndex = iLowest(_Symbol, tf, MODE_LOW, lookback*2, 1);
+    if(swingHighIndex == -1 || swingLowIndex == -1) return false;
+    return (iHigh(_Symbol, tf, swingHighIndex) > iHigh(_Symbol, tf, swingHighIndex + lookback) &&
+            iLow(_Symbol, tf, swingLowIndex) > iLow(_Symbol, tf, swingLowIndex + lookback));
+}
+
+bool IsBearishStructure(ENUM_TIMEFRAMES tf, int lookback)
+{
+    int swingHighIndex = iHighest(_Symbol, tf, MODE_HIGH, lookback*2, 1);
+    int swingLowIndex = iLowest(_Symbol, tf, MODE_LOW, lookback*2, 1);
+    if(swingHighIndex == -1 || swingLowIndex == -1) return false;
+    return (iHigh(_Symbol, tf, swingHighIndex) < iHigh(_Symbol, tf, swingHighIndex + lookback) &&
+            iLow(_Symbol, tf, swingLowIndex) < iLow(_Symbol, tf, swingLowIndex + lookback));
+}
+
+bool HasBreakout(ENUM_TIMEFRAMES tf, int lookback, int higherTFBias)
+{
+    int swingHighIndex = iHighest(_Symbol, tf, MODE_HIGH, lookback, 1);
+    int swingLowIndex = iLowest(_Symbol, tf, MODE_LOW, lookback, 1);
+    if(swingHighIndex == -1 || swingLowIndex == -1) return false;
+    swingHigh = iHigh(_Symbol, tf, swingHighIndex);
+    swingLow = iLow(_Symbol, tf, swingLowIndex);
+    double price = iClose(_Symbol, tf, 0);
+    if(higherTFBias == 1) return (price > swingHigh);
+    if(higherTFBias == -1) return (price < swingLow);
+    return false;
+}
+
+int DetermineSentiment(int higherTFBias, 
+                      bool tf1Bullish, bool tf1Bearish, bool tf1Breakout,
+                      bool tf2Bullish, bool tf2Bearish, bool tf2Breakout)
+{
+    if(higherTFBias == 1 && tf1Bullish && tf2Bullish) return 1;
+    if(higherTFBias == -1 && tf1Bearish && tf2Bearish) return -1;
+    if(higherTFBias == 1 && (tf1Breakout || tf2Breakout)) return 2;
+    if(higherTFBias == -1 && (tf1Breakout || tf2Breakout)) return -2;
+    return 0;
+}

@@ -1,0 +1,1356 @@
+//+------------------------------------------------------------------+
+//| Price Equation Trading Robot with Advanced Hybrid Optimization  |
+//+------------------------------------------------------------------+
+#property copyright "Copyright 2023, MetaQuotes Ltd."
+#property link      "https://www.mql5.com"
+#property version   "3.10"
+#property description "PulseEquation EA with Complete Parameter Optimization"
+#property strict
+
+#include <Trade/Trade.mqh>
+#include <Math/Stat/Math.mqh>
+#include <Trade/DealInfo.mqh>
+#include <Trade\Trade.mqh>
+#include <Trade\PositionInfo.mqh>
+#include <Trade\DealInfo.mqh>
+
+// --- 函数原型声明（全局范围）---
+void ClosePosition(ulong ticket);
+void CloseAllPositions();
+void CloseBuyPositions();
+void CloseSellPositions();
+void HandleTrailingStop();
+void HandleIntelligentExits();
+void OpenPosition(bool buy_signal, double lot);
+void RunQuickOptimization();
+void GetParamsArray(double &params[]);
+void LogPerformanceMetrics();
+
+// Input parameters
+input double InitialLot = 0.03;        // Initial lot size
+input int    ATRPeriod  = 16;         // ATR period
+input int    Magic      = 9878;       // Magic number (not optimized)
+input double ProfitTarget = 15;      // Profit target in USD
+input double StopLossPercent = 1.5;   // Stop loss as percentage of ATR
+input double TakeProfitRatio = 2;   // Take profit ratio (Risk/Reward)
+input int    MaxPositions = 26;        // Maximum number of positions allowed
+// --- Trend Filter Parameters ---
+input int    MA_Fast_Period = 108;     // Fast MA period
+input int    MA_Slow_Period = 60;      // Slow MA period
+input double ADX_Threshold = 20;    // ADX threshold for trend strength
+// --- Trailing Stop Parameters ---
+input bool   UseTrailingStop = true;   // Enable trailing stop
+input double TrailStartPips = 100;    // Start trailing when profit reaches X pips
+input double TrailStepPips = 55;      // Move stop every X pips of profit
+// --- Dynamic TP Optimization Parameters ---
+input int MinTradesForOptimization = 20;  // Minimum trades needed before optimization
+input double MinWinRateForAggressive = 0.45;  // Win rate threshold to increase TP ratio
+input double MaxWinRateForConservative = 0.35;  // Win rate threshold to decrease TP ratio
+// --- Intelligent Exit Strategies Parameters ---
+input bool UseDynamicExits = true;    // Enable dynamic exits based on ATR
+input double ExitATRMultiplier = 1.5; // ATR multiplier for dynamic exits
+input bool ExitOnOppositeSignal = true; // Exit on opposite signal
+input bool UseTimeBasedExits = false; // Enable time-based exits
+input int MaxTradeHours = 72;          // Maximum hours to hold a position
+// --- Hybrid Auto-Optimization Parameters (NOT optimized) ---
+input bool EnableAutoOptimization = true;  // Enable auto optimization
+input bool RunInRealtime = true;         // Run optimization in realtime (not optimized)
+input int RandomSearchPasses = 200;       // Number of random search passes
+input int GAGenerations = 100;            // Number of genetic algorithm generations
+input int GAPopulationSize = 100;         // Population size for GA
+
+// Global variables
+double g_coeffs[7] = {0.2752466, 0.01058082, 0.55162082, 0.03687016, 0.27721318, 0.1483476, 0.0008025}; // Model coefficients
+static datetime last_time = 0;
+
+// --- Handles for indicators ---
+int handle_ma_fast = INVALID_HANDLE;
+int handle_ma_slow = INVALID_HANDLE;
+int handle_adx = INVALID_HANDLE;
+
+// Trade object
+CTrade trade;
+CPositionInfo position;
+CDealInfo deal;
+
+// Symbol parameters structure for optimization
+struct SymbolParams
+{
+    // Basic settings
+    double profit_target;
+    double initial_lot;
+    int max_positions;
+    // Risk Management
+    double stop_loss_atr_mult;
+    double take_profit_ratio;
+    int atr_period;
+    // Trend Filter
+    int ma_fast_period;
+    int ma_slow_period;
+    double adx_threshold;
+    bool use_trend_filter;
+    // Trailing Stop
+    bool use_trailing_stop;
+    double trail_start_pips;
+    double trail_step_pips;
+    // Dynamic TP Optimization
+    int min_trades_for_optimization;
+    double min_win_rate_for_aggressive;
+    double max_win_rate_for_conservative;
+    // Intelligent Exit Strategies
+    bool use_dynamic_exits;
+    double exit_atr_multiplier;
+    bool exit_on_opposite_signal;
+    bool use_time_based_exits;
+    int max_trade_hours;
+    // Statistics for optimization
+    double total_trades;
+    double sum_profit_in_atr;
+    double sum_loss_in_atr;
+    int winning_trades;
+    double sum_mfe_in_atr;  // Maximum Favorable Excursion
+};
+
+SymbolParams g_params;
+
+// Timeframe list for optimization
+ENUM_TIMEFRAMES g_tf_list[] = {PERIOD_M1, PERIOD_M6, PERIOD_M15, PERIOD_M30, PERIOD_H1, PERIOD_H4, PERIOD_D1};
+int g_tf_count = 7;
+
+// Optimization structures
+struct Individual
+{
+    double params[40];  // Increased to accommodate all parameters
+    double fitness;
+};
+
+Individual population[];
+
+// For real-time optimization
+datetime lastFullOptimizationTime = 0;
+datetime lastQuickOptimizationTime = 0;
+double lastOptimizedScore = -1e8;
+bool isOptimizing = false;
+bool g_enableAutoOptimization = true; // 可变版本的优化开关
+datetime lastOptimizationTime = 0;
+
+bool isFirstRun = true;
+bool optimizationCompleted = false;
+
+//+------------------------------------------------------------------+
+//| Calculate prediction using the equation                         |
+//+------------------------------------------------------------------+
+double GetPrediction(double price_t1, double price_t2)
+{
+   return g_coeffs[0] * price_t1 +                    // Linear t-1
+          g_coeffs[1] * MathPow(price_t1, 2) +       // Quadratic t-1
+          g_coeffs[2] * price_t2 +                    // Linear t-2
+          g_coeffs[3] * MathPow(price_t2, 2) +       // Quadratic t-2
+          g_coeffs[4] * (price_t1 - price_t2) +      // Price change
+          g_coeffs[5] * MathSin(price_t1) +          // Cyclic
+          g_coeffs[6];                               // Constant
+}
+
+//+------------------------------------------------------------------+
+//| Calculate ATR                                                    |
+//+------------------------------------------------------------------+
+double CalculateATR()
+{
+   int atr_handle = iATR(Symbol(), PERIOD_H1, g_params.atr_period);
+   if(atr_handle == INVALID_HANDLE) return 0.0;
+   double atr_buffer[];
+   ArraySetAsSeries(atr_buffer, true);
+   if(CopyBuffer(atr_handle, 0, 0, 1, atr_buffer) <= 0)
+   {
+      IndicatorRelease(atr_handle);
+      return 0.0;
+   }
+   double atr = atr_buffer[0];
+   IndicatorRelease(atr_handle);
+   return atr;
+}
+
+//+------------------------------------------------------------------+
+//| Initialize parameters for optimization                          |
+//+------------------------------------------------------------------+
+void InitParams()
+{
+    // Initialize with input parameters
+    g_params.profit_target = ProfitTarget;
+    g_params.initial_lot = InitialLot;
+    g_params.max_positions = MaxPositions;
+    // Risk Management
+    g_params.stop_loss_atr_mult = StopLossPercent;
+    g_params.take_profit_ratio = TakeProfitRatio;
+    g_params.atr_period = ATRPeriod;
+    // Trend Filter
+    g_params.ma_fast_period = MA_Fast_Period;
+    g_params.ma_slow_period = MA_Slow_Period;
+    g_params.adx_threshold = ADX_Threshold;
+    g_params.use_trend_filter = true;
+    // Trailing Stop
+    g_params.use_trailing_stop = UseTrailingStop;
+    g_params.trail_start_pips = TrailStartPips;
+    g_params.trail_step_pips = TrailStepPips;
+    // Dynamic TP Optimization
+    g_params.min_trades_for_optimization = MinTradesForOptimization;
+    g_params.min_win_rate_for_aggressive = MinWinRateForAggressive;
+    g_params.max_win_rate_for_conservative = MaxWinRateForConservative;
+    // Intelligent Exit Strategies
+    g_params.use_dynamic_exits = UseDynamicExits;
+    g_params.exit_atr_multiplier = ExitATRMultiplier;
+    g_params.exit_on_opposite_signal = ExitOnOppositeSignal;
+    g_params.use_time_based_exits = UseTimeBasedExits;
+    g_params.max_trade_hours = MaxTradeHours;
+    // Statistics
+    g_params.total_trades = 0;
+    g_params.sum_profit_in_atr = 0;
+    g_params.sum_loss_in_atr = 0;
+    g_params.winning_trades = 0;
+    g_params.sum_mfe_in_atr = 0;
+}
+
+//+------------------------------------------------------------------+
+//| Get optimal TP ratio based on historical performance            |
+//+------------------------------------------------------------------+
+double GetOptimalTPRatio(double atr)
+{
+    if(g_params.total_trades < g_params.min_trades_for_optimization || atr <= 0)
+        return g_params.take_profit_ratio;
+    double avg_win = (g_params.winning_trades > 0) ? g_params.sum_profit_in_atr / g_params.winning_trades : 0.0;
+    double avg_loss = (g_params.total_trades - g_params.winning_trades > 0) ? 
+                     g_params.sum_loss_in_atr / (g_params.total_trades - g_params.winning_trades) : 0.0;
+    if(avg_loss <= 0) return g_params.take_profit_ratio;
+    double win_rate = (double)g_params.winning_trades / g_params.total_trades;
+    double optimal = (win_rate * avg_win) / ((1 - win_rate) * avg_loss);
+    // Adjust based on performance thresholds
+    if(win_rate > g_params.min_win_rate_for_aggressive)
+        optimal *= 1.2;
+    else if(win_rate < g_params.max_win_rate_for_conservative)
+        optimal *= 0.8;
+    return MathMin(1.5, MathMax(1.0, 0.8 * optimal));
+}
+
+//+------------------------------------------------------------------+
+//| Update trade statistics for optimization                        |
+//+------------------------------------------------------------------+
+void UpdateTradeStats()
+{
+    static datetime last_check = 0;
+    if(TimeCurrent() - last_check < 60) return;
+    last_check = TimeCurrent();
+    if(!HistorySelect(0, TimeCurrent())) return;
+    double atr = CalculateATR();
+    if(atr <= 0) return;
+    int total = HistoryDealsTotal();
+    for(int i = 0; i < total; i++)
+    {
+        ulong ticket = HistoryDealGetTicket(i);
+        if(ticket == 0) continue;
+        long entry = HistoryDealGetInteger(ticket, DEAL_ENTRY);
+        if(entry != DEAL_ENTRY_OUT) continue;
+        long magic = HistoryDealGetInteger(ticket, DEAL_MAGIC);
+        if(magic != Magic) continue;
+        string sym = HistoryDealGetString(ticket, DEAL_SYMBOL);
+        if(sym != Symbol()) continue;
+        double profit = HistoryDealGetDouble(ticket, DEAL_PROFIT) +
+                       HistoryDealGetDouble(ticket, DEAL_COMMISSION) +
+                       HistoryDealGetDouble(ticket, DEAL_SWAP);
+        double vol = HistoryDealGetDouble(ticket, DEAL_VOLUME);
+        double open_price = HistoryDealGetDouble(ticket, DEAL_PRICE);
+        double close_price = HistoryDealGetDouble(ticket, DEAL_PRICE);
+        double mfe = MathAbs(profit); // Simplified MFE calculation
+        if(vol <= 0) continue;
+        g_params.total_trades++;
+        if(profit > 0)
+        {
+            g_params.winning_trades++;
+            g_params.sum_profit_in_atr += MathAbs(profit);
+        }
+        else
+        {
+            g_params.sum_loss_in_atr += MathAbs(profit);
+        }
+        g_params.sum_mfe_in_atr += mfe;
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Check if it's a new bar                                          |
+//+------------------------------------------------------------------+
+bool isNewBar() {
+   datetime lastbar_time = datetime(SeriesInfoInteger(Symbol(), PERIOD_H1, SERIES_LASTBAR_DATE));
+   if(last_time == 0) {
+      last_time = lastbar_time;
+      return(false);
+   }
+   if(last_time != lastbar_time) {
+      last_time = lastbar_time;
+      return(true);
+   }
+   return(false);
+}
+
+//+------------------------------------------------------------------+
+//| Handle intelligent exit strategies                              |
+//+------------------------------------------------------------------+
+void HandleIntelligentExits()
+{
+    double atr = CalculateATR();
+    for(int i = PositionsTotal() - 1; i >= 0; i--)
+    {
+        ulong ticket = PositionGetTicket(i);
+        if(!PositionSelectByTicket(ticket)) continue;
+        if(PositionGetString(POSITION_SYMBOL) != Symbol() || PositionGetInteger(POSITION_MAGIC) != Magic)
+            continue;
+        // Time-based exit
+        if(g_params.use_time_based_exits)
+        {
+            datetime open_time = (datetime)PositionGetInteger(POSITION_TIME);
+            if((TimeCurrent() - open_time) > (g_params.max_trade_hours * 3600))
+            {
+                ClosePosition(ticket);
+                continue;
+            }
+        }
+        // Dynamic exits based on ATR
+        if(g_params.use_dynamic_exits && atr > 0)
+        {
+            double current_price = SymbolInfoDouble(Symbol(), POSITION_TYPE_BUY ? SYMBOL_BID : SYMBOL_ASK);
+            double open_price = PositionGetDouble(POSITION_PRICE_OPEN);
+            double sl = PositionGetDouble(POSITION_SL);
+            double distance = MathAbs(current_price - open_price);
+            if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
+            {
+                // For buy positions, check if price has moved down significantly from high
+                if(distance > g_params.exit_atr_multiplier * atr && current_price < open_price)
+                {
+                    ClosePosition(ticket);
+                    continue;
+                }
+            }
+            else
+            {
+                // For sell positions, check if price has moved up significantly from low
+                if(distance > g_params.exit_atr_multiplier * atr && current_price > open_price)
+                {
+                    ClosePosition(ticket);
+                    continue;
+                }
+            }
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Hybrid Optimization Functions                                    |
+//+------------------------------------------------------------------+
+// Generate random individual for optimization
+void GenerateRandomIndividual(Individual &ind)
+{
+    // Basic Settings
+    ind.params[0] = MathRand()/32767.0 * 199.0 + 1.0;      // profit_target (1-200)
+    ind.params[1] = MathRand()/32767.0 * 0.49 + 0.01;      // initial_lot (0.01-0.5)
+    ind.params[2] = MathRand() % 46 + 5;                   // max_positions (5-50)
+    // Risk Management
+    ind.params[3] = MathRand()/32767.0 * 3.0 + 1.0;       // stop_loss_atr_mult (1-4)
+    ind.params[4] = MathRand()/32767.0 * 3.0 + 1.0;       // take_profit_ratio (1-4)
+    ind.params[5] = MathRand() % 31 + 5;                   // atr_period (5-35)
+    // Trend Filter
+    ind.params[6] = MathRand() % 141 + 10;                 // ma_fast_period (10-150)
+    ind.params[7] = MathRand() % 101 + 10;                 // ma_slow_period (10-110)
+    ind.params[8] = MathRand()/32767.0 * 30.0 + 10.0;      // adx_threshold (10-40)
+    ind.params[9] = (MathRand() % 2 == 0);                 // use_trend_filter (bool)
+    // Trailing Stop
+    ind.params[10] = (MathRand() % 2 == 0);                // use_trailing_stop (bool)
+    ind.params[11] = MathRand()/32767.0 * 190.0 + 10.0;    // trail_start_pips (10-200)
+    ind.params[12] = MathRand()/32767.0 * 90.0 + 5.0;      // trail_step_pips (5-95)
+    // Dynamic TP Optimization
+    ind.params[13] = MathRand() % 31 + 10;                 // min_trades_for_optimization (10-40)
+    ind.params[14] = MathRand()/32767.0 * 0.3 + 0.3;       // min_win_rate_for_aggressive (0.3-0.6)
+    ind.params[15] = MathRand()/32767.0 * 0.2 + 0.2;       // max_win_rate_for_conservative (0.2-0.4)
+    // Intelligent Exit Strategies
+    ind.params[16] = (MathRand() % 2 == 0);                // use_dynamic_exits (bool)
+    ind.params[17] = MathRand()/32767.0 * 2.0 + 0.5;       // exit_atr_multiplier (0.5-2.5)
+    ind.params[18] = (MathRand() % 2 == 0);                // exit_on_opposite_signal (bool)
+    ind.params[19] = (MathRand() % 2 == 0);                // use_time_based_exits (bool)
+    ind.params[20] = MathRand() % 121 + 24;                // max_trade_hours (24-144)
+    // Additional parameters (reserved for future expansion)
+    for(int i = 21; i < 40; i++)
+        ind.params[i] = MathRand()/32767.0;
+}
+
+// Crossover function for genetic algorithm
+Individual Crossover(Individual &p1, Individual &p2)
+{
+    Individual child;
+    child.fitness = 0.0;  // 明确初始化fitness值
+    for(int i = 0; i < 40; i++)
+    {
+        // 70% chance to inherit from parent1, 30% from parent2
+        if(MathRand()/32767.0 < 0.7)
+            child.params[i] = p1.params[i];
+        else
+            child.params[i] = p2.params[i];
+    }
+    return child;
+}
+
+// Mutation operation for genetic algorithm
+void Mutate(Individual &ind)
+{
+    for(int i = 0; i < 40; i++)
+    {
+        if(MathRand()/32767.0 < 0.15) // 15% mutation rate
+        {
+            if(i == 0) // profit_target
+                ind.params[i] = MathMax(1.0, MathMin(500.0, ind.params[i] + (MathRand()/32767.0 - 0.5) * 50.0));
+            else if(i == 1) // initial_lot
+                ind.params[i] = MathMax(0.01, MathMin(5.0, ind.params[i] + (MathRand()/32767.0 - 0.5) * 0.5));
+            else if(i == 2) // max_positions
+                ind.params[i] = MathMax(1, MathMin(100, (int)(ind.params[i] + (MathRand() % 11) - 5)));
+            else if(i == 3 || i == 4) // stop_loss_atr_mult, take_profit_ratio
+                ind.params[i] = MathMax(0.5, MathMin(50.0, ind.params[i] + (MathRand()/32767.0 - 0.5) * 5.0));
+            else if(i == 5 || i == 13 || i == 20) // atr_period, min_trades_for_optimization, max_trade_hours
+                ind.params[i] = MathMax(5, MathMin(200, (int)(ind.params[i] + (MathRand() % 21) - 10)));
+            else if(i == 6 || i == 7) // ma periods
+                ind.params[i] = MathMax(5, MathMin(250, (int)(ind.params[i] + (MathRand() % 51) - 25)));
+            else if(i == 8) // adx_threshold
+                ind.params[i] = MathMax(5.0, MathMin(50.0, ind.params[i] + (MathRand()/32767.0 - 0.5) * 10.0));
+            else if(i == 9 || i == 10 || i == 16 || i == 18 || i == 19) // boolean parameters
+                ind.params[i] = (MathRand() % 2 == 0);
+            else if(i == 11 || i == 12) // trail_start_pips, trail_step_pips
+                ind.params[i] = MathMax(5.0, MathMin(300.0, ind.params[i] + (MathRand()/32767.0 - 0.5) * 50.0));
+            else if(i == 14 || i == 15) // win rate thresholds
+                ind.params[i] = MathMax(0.1, MathMin(0.8, ind.params[i] + (MathRand()/32767.0 - 0.5) * 0.2));
+            else if(i == 17) // exit_atr_multiplier
+                ind.params[i] = MathMax(0.3, MathMin(5.0, ind.params[i] + (MathRand()/32767.0 - 0.5) * 1.0));
+        }
+    }
+}
+
+// Evaluate individual performance
+double EvaluateIndividual(Individual &ind)
+{
+    // Save current market data state
+    datetime saveTime = TimeCurrent();
+    
+    // Backup current parameters
+    SymbolParams backup = g_params;
+    
+    // Apply individual parameters
+    g_params.profit_target = ind.params[0];
+    g_params.initial_lot = ind.params[1];
+    g_params.max_positions = (int)ind.params[2];
+    g_params.stop_loss_atr_mult = ind.params[3];
+    g_params.take_profit_ratio = ind.params[4];
+    g_params.atr_period = (int)ind.params[5];
+    g_params.ma_fast_period = (int)ind.params[6];
+    g_params.ma_slow_period = (int)ind.params[7];
+    g_params.adx_threshold = ind.params[8];
+    g_params.use_trend_filter = (bool)ind.params[9];
+    g_params.use_trailing_stop = (bool)ind.params[10];
+    g_params.trail_start_pips = ind.params[11];
+    g_params.trail_step_pips = ind.params[12];
+    g_params.min_trades_for_optimization = (int)ind.params[13];
+    g_params.min_win_rate_for_aggressive = ind.params[14];
+    g_params.max_win_rate_for_conservative = ind.params[15];
+    g_params.use_dynamic_exits = (bool)ind.params[16];
+    g_params.exit_atr_multiplier = ind.params[17];
+    g_params.exit_on_opposite_signal = (bool)ind.params[18];
+    g_params.use_time_based_exits = (bool)ind.params[19];
+    g_params.max_trade_hours = (int)ind.params[20];
+    
+    // Save current position state
+    bool hasPositions = (PositionsTotal() > 0);
+    
+    // Temporarily disable trading during evaluation
+    bool prevEnableAutoOptimization = g_enableAutoOptimization;
+    g_enableAutoOptimization = false;
+    
+    // Get performance score
+    double score = OnTester();
+    
+    // Restore trading state
+    g_enableAutoOptimization = prevEnableAutoOptimization;
+    
+    // Restore backup parameters
+    g_params = backup;
+    
+    return score;
+}
+
+// Apply optimized parameters
+void ApplyIndividual(Individual &ind)
+{
+    // Apply best parameters
+    g_params.profit_target = ind.params[0];
+    g_params.initial_lot = ind.params[1];
+    g_params.max_positions = (int)ind.params[2];
+    g_params.stop_loss_atr_mult = ind.params[3];
+    g_params.take_profit_ratio = ind.params[4];
+    g_params.atr_period = (int)ind.params[5];
+    g_params.ma_fast_period = (int)ind.params[6];
+    g_params.ma_slow_period = (int)ind.params[7];
+    g_params.adx_threshold = ind.params[8];
+    g_params.use_trend_filter = (bool)ind.params[9];
+    g_params.use_trailing_stop = (bool)ind.params[10];
+    g_params.trail_start_pips = ind.params[11];
+    g_params.trail_step_pips = ind.params[12];
+    g_params.min_trades_for_optimization = (int)ind.params[13];
+    g_params.min_win_rate_for_aggressive = ind.params[14];
+    g_params.max_win_rate_for_conservative = ind.params[15];
+    g_params.use_dynamic_exits = (bool)ind.params[16];
+    g_params.exit_atr_multiplier = ind.params[17];
+    g_params.exit_on_opposite_signal = (bool)ind.params[18];
+    g_params.use_time_based_exits = (bool)ind.params[19];
+    g_params.max_trade_hours = (int)ind.params[20];
+    
+    Print("Optimized parameters applied:");
+    Print("Profit Target: ", DoubleToString(g_params.profit_target, 2));
+    Print("Initial Lot: ", DoubleToString(g_params.initial_lot, 2));
+    Print("Stop Loss ATR Mult: ", DoubleToString(g_params.stop_loss_atr_mult, 2));
+    Print("Take Profit Ratio: ", DoubleToString(g_params.take_profit_ratio, 2));
+    Print("ATR Period: ", IntegerToString(g_params.atr_period));
+    Print("MA Fast/Slow: ", IntegerToString(g_params.ma_fast_period), "/", IntegerToString(g_params.ma_slow_period));
+    Print("ADX Threshold: ", DoubleToString(g_params.adx_threshold, 2));
+}
+
+// Save optimized parameters
+void SaveOptimizedParams()
+{
+    string filename = "PulseEquation_Opt_" + Symbol() + "_" + IntegerToString(Period()) + ".bin";
+    int h = FileOpen(filename, FILE_WRITE|FILE_BIN);
+    if(h == INVALID_HANDLE) return;
+    FileWriteInteger(h, 40); // Number of parameters
+    for(int i = 0; i < 40; i++)
+        FileWriteDouble(h, population[0].params[i]);
+    FileClose(h);
+    Print("Optimized parameters saved to ", filename);
+}
+
+// Load optimized parameters
+bool LoadOptimizedParams()
+{
+    string filename = "PulseEquation_Opt_" + Symbol() + "_" + IntegerToString(Period()) + ".bin";
+    int h = FileOpen(filename, FILE_READ|FILE_BIN);
+    if(h == INVALID_HANDLE) 
+    {
+        Print("No optimized parameters file found for ", Symbol(), " ", Period());
+        return false;
+    }
+    int param_count = FileReadInteger(h);
+    if(param_count != 40)
+    {
+        Print("Parameter count mismatch in optimized file");
+        FileClose(h);
+        return false;
+    }
+    Individual best;
+    for(int i = 0; i < 40; i++)
+        best.params[i] = FileReadDouble(h);
+    FileClose(h);
+    // Apply the loaded parameters
+    ApplyIndividual(best);
+    Print("Optimized parameters loaded from ", filename);
+    return true;
+}
+
+// Tester function for optimization
+double OnTester()
+{
+    if(!HistorySelect(0, TimeCurrent())) return -1e8;
+    int total_deals = HistoryDealsTotal();
+    if(total_deals <= 0) return -1e8;
+    
+    double total_profit = 0;
+    int winning_trades = 0;
+    double max_drawdown = 0;
+    double peak_equity = 10000;
+    double current_equity = 10000;
+    double total_profit_pips = 0;
+    
+    for(int i = 0; i < total_deals; i++)
+    {
+        ulong ticket = HistoryDealGetTicket(i);
+        if(ticket == 0) continue;
+        long entry = HistoryDealGetInteger(ticket, DEAL_ENTRY);
+        if(entry != DEAL_ENTRY_OUT) continue;
+        long magic = HistoryDealGetInteger(ticket, DEAL_MAGIC);
+        if(magic != Magic) continue;
+        string sym = HistoryDealGetString(ticket, DEAL_SYMBOL);
+        if(sym != Symbol()) continue;
+        double profit = HistoryDealGetDouble(ticket, DEAL_PROFIT) +
+                       HistoryDealGetDouble(ticket, DEAL_COMMISSION) +
+                       HistoryDealGetDouble(ticket, DEAL_SWAP);
+        double vol = HistoryDealGetDouble(ticket, DEAL_VOLUME);
+        if(vol <= 0) continue;
+        
+        current_equity += profit;
+        total_profit += profit;
+        total_profit_pips += MathAbs(profit) / SymbolInfoDouble(Symbol(), SYMBOL_POINT);
+        if(profit > 0) winning_trades++;
+        
+        if(current_equity > peak_equity) peak_equity = current_equity;
+        double drawdown = (peak_equity - current_equity) / peak_equity;
+        if(drawdown > max_drawdown) max_drawdown = drawdown;
+    }
+    
+    if(total_deals < 10) return -1e8;
+    
+    double win_rate = (double)winning_trades / total_deals;
+    double avg_profit = total_profit_pips / total_deals;
+    double recovery_factor = total_profit / (max_drawdown + 0.01); // Avoid division by zero
+    
+    // Composite scoring system
+    double score = total_profit * win_rate * (1 - max_drawdown) * (recovery_factor / 10.0) * avg_profit;
+    return score;
+}
+
+// Run hybrid optimization (random search + genetic algorithm)
+void RunHybridOptimization()
+{
+    if(!MQLInfoInteger(MQL_TESTER) && !RunInRealtime)
+    {
+        Print("Auto-optimization is disabled in live trading unless RunInRealtime is enabled.");
+        return;
+    }
+    
+    isOptimizing = true;
+    MathSrand((uint)GetMicrosecondCount()); // Better random seed for optimization
+    
+    Print("Starting Hybrid Optimization for ", Symbol(), " on ", EnumToString(Period()), "...");
+    ArrayResize(population, RandomSearchPasses);
+    
+    // Random search phase
+    for(int i = 0; i < RandomSearchPasses; i++)
+    {
+        GenerateRandomIndividual(population[i]);
+        population[i].fitness = EvaluateIndividual(population[i]);
+        if((i+1) % 50 == 0)
+            Print("Random Search: ", i+1, "/", RandomSearchPasses, " | Best fitness: ", DoubleToString(population[0].fitness, 2));
+        // Keep the best individual at index 0
+        if(i > 0 && population[i].fitness > population[0].fitness)
+        {
+            Individual temp = population[0];
+            population[0] = population[i];
+            population[i] = temp;
+        }
+    }
+    
+    Print("Random Search completed. Best fitness: ", DoubleToString(population[0].fitness, 2));
+    
+    // Prepare for genetic algorithm
+    ArrayResize(population, GAPopulationSize);
+    
+    // Ensure the best individual from random search is in the GA population
+    for(int i = 1; i < GAPopulationSize; i++)
+    {
+        GenerateRandomIndividual(population[i]);
+        population[i].fitness = EvaluateIndividual(population[i]);
+        if(population[i].fitness > population[0].fitness)
+        {
+            Individual temp = population[0];
+            population[0] = population[i];
+            population[i] = temp;
+        }
+    }
+    
+    // Genetic algorithm phase
+    for(int gen = 0; gen < GAGenerations; gen++)
+    {
+        // Create new population
+        Individual newPop[];
+        ArrayResize(newPop, GAPopulationSize);
+        
+        // Elitism - keep the best individuals
+        int eliteCount = GAPopulationSize / 4;
+        for(int i = 0; i < eliteCount; i++)
+            newPop[i] = population[i];
+        
+        // Fill the rest with crossover and mutation
+        for(int i = eliteCount; i < GAPopulationSize; i++)
+        {
+            // Tournament selection
+            int p1 = MathRand() % eliteCount;
+            int p2 = MathRand() % eliteCount;
+            
+            // Crossover
+            Individual child = Crossover(population[p1], population[p2]);
+            
+            // Mutation
+            Mutate(child);
+            
+            // Evaluate fitness
+            child.fitness = EvaluateIndividual(child);
+            newPop[i] = child;
+            
+            // Keep track of the best individual
+            if(child.fitness > population[0].fitness)
+                population[0] = child;
+        }
+        
+        // Replace old population with new one
+        ArrayCopy(population, newPop);
+        
+        // Sort population by fitness (descending)
+        for(int i = 0; i < GAPopulationSize - 1; i++)
+        {
+            for(int j = i + 1; j < GAPopulationSize; j++)
+            {
+                if(population[i].fitness < population[j].fitness)
+                {
+                    Individual temp = population[i];
+                    population[i] = population[j];
+                    population[j] = temp;
+                }
+            }
+        }
+        
+        if((gen+1) % 10 == 0 || gen == GAGenerations-1)
+            Print("GA Generation ", gen+1, "/", GAGenerations, " | Best fitness: ", DoubleToString(population[0].fitness, 2));
+    }
+    
+    // Apply the best parameters
+    ApplyIndividual(population[0]);
+    SaveOptimizedParams();
+    optimizationCompleted = true;
+    lastOptimizedScore = population[0].fitness;
+    
+    Print("Optimization FINISHED for ", Symbol(), "! Best score: ", DoubleToString(population[0].fitness, 2));
+    
+    isOptimizing = false;
+}
+
+//+------------------------------------------------------------------+
+//| Quick optimization for parameter fine-tuning                    |
+//+------------------------------------------------------------------+
+void RunQuickOptimization()
+{
+    if(isOptimizing) return;
+    
+    isOptimizing = true;
+    
+    Print("Starting Quick Optimization for ", Symbol(), "...");
+    
+    // Create a focused population around current best parameters
+    ArrayResize(population, 50);
+    
+    // Get current best individual
+    Individual currentBest;
+    currentBest.fitness = 0.0; // 初始化fitness
+    double currentParams[40];
+    GetParamsArray(currentParams); // 使用我们创建的映射函数
+    
+    // 复制参数到currentBest
+    for(int i = 0; i < 40; i++)
+        currentBest.params[i] = currentParams[i];
+    
+    // Create population with slight variations around current best
+    for(int i = 0; i < 50; i++)
+    {
+        if(i == 0)
+            population[i] = currentBest; // Keep current best
+        else
+        {
+            // Create child with small mutations
+            population[i] = currentBest;
+            for(int j = 0; j < 40; j++)
+            {
+                if(MathRand()/32767.0 < 0.3) // 30% mutation rate
+                {
+                    // Small mutations only
+                    population[i].params[j] += (MathRand()/32767.0 - 0.5) * 0.1 * MathAbs(population[i].params[j]);
+                }
+            }
+        }
+        
+        // Evaluate fitness
+        population[i].fitness = EvaluateIndividual(population[i]);
+        
+        // Keep track of best
+        if(i == 0 || population[i].fitness > population[0].fitness)
+        {
+            Individual temp = population[0];
+            population[0] = population[i];
+            population[i] = temp;
+        }
+    }
+    
+    Print("Quick Optimization completed. Best fitness: ", DoubleToString(population[0].fitness, 2));
+    
+    // Apply best parameters if they're better than current
+    if(population[0].fitness > lastOptimizedScore * 1.05) // Only if 5% better
+    {
+        ApplyIndividual(population[0]);
+        lastOptimizedScore = population[0].fitness;
+        SaveOptimizedParams();
+        Print("Better parameters found and applied! Score improved by ", 
+              DoubleToString((population[0].fitness/lastOptimizedScore-1)*100, 2), "%");
+    }
+    else
+    {
+        Print("No significant improvement found in quick optimization.");
+    }
+    
+    isOptimizing = false;
+}
+
+//+------------------------------------------------------------------+
+//| Map g_params struct to parameter array for optimization          |
+//+------------------------------------------------------------------+
+void GetParamsArray(double &params[])
+{
+    ArrayResize(params, 40);
+    params[0] = g_params.profit_target;
+    params[1] = g_params.initial_lot;
+    params[2] = (double)g_params.max_positions;
+    params[3] = g_params.stop_loss_atr_mult;
+    params[4] = g_params.take_profit_ratio;
+    params[5] = (double)g_params.atr_period;
+    params[6] = (double)g_params.ma_fast_period;
+    params[7] = (double)g_params.ma_slow_period;
+    params[8] = g_params.adx_threshold;
+    params[9] = g_params.use_trend_filter ? 1.0 : 0.0;
+    params[10] = g_params.use_trailing_stop ? 1.0 : 0.0;
+    params[11] = g_params.trail_start_pips;
+    params[12] = g_params.trail_step_pips;
+    params[13] = (double)g_params.min_trades_for_optimization;
+    params[14] = g_params.min_win_rate_for_aggressive;
+    params[15] = g_params.max_win_rate_for_conservative;
+    params[16] = g_params.use_dynamic_exits ? 1.0 : 0.0;
+    params[17] = g_params.exit_atr_multiplier;
+    params[18] = g_params.exit_on_opposite_signal ? 1.0 : 0.0;
+    params[19] = g_params.use_time_based_exits ? 1.0 : 0.0;
+    params[20] = (double)g_params.max_trade_hours;
+    // Initialize remaining params
+    for(int i = 21; i < 40; i++)
+        params[i] = 0.0;
+}
+
+//+------------------------------------------------------------------+
+//| Log performance metrics periodically                             |
+//+------------------------------------------------------------------+
+void LogPerformanceMetrics()
+{
+    static datetime lastLogTime = 0;
+    if(TimeCurrent() - lastLogTime < 3600) // Log hourly
+        return;
+        
+    lastLogTime = TimeCurrent();
+    
+    double currentScore = OnTester();
+    double winRate = (g_params.total_trades > 0) ? 
+                    (double)g_params.winning_trades / g_params.total_trades : 0.0;
+    double avgProfit = (g_params.total_trades > 0) ? 
+                      (g_params.sum_profit_in_atr - g_params.sum_loss_in_atr) / g_params.total_trades : 0.0;
+    
+    Print("Performance Log - Symbol: ", Symbol(), " Timeframe: ", EnumToString(Period()));
+    Print("Current Score: ", DoubleToString(currentScore, 2), 
+          " | Last Optimized Score: ", DoubleToString(lastOptimizedScore, 2));
+    Print("Win Rate: ", DoubleToString(winRate*100, 2), "% | Avg Profit: ", DoubleToString(avgProfit, 2));
+    Print("Total Trades: ", IntegerToString(g_params.total_trades), 
+          " | Performance vs Optimized: ", DoubleToString(currentScore/lastOptimizedScore*100, 2), "%");
+    
+    // Trigger optimization if performance degraded significantly
+    if(currentScore < lastOptimizedScore * 0.7 && !isOptimizing) // 30% degradation
+    {
+        Print("Significant performance degradation detected. Triggering emergency optimization.");
+        RunQuickOptimization();
+        lastQuickOptimizationTime = TimeCurrent();
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Expert initialization function                                   |
+//+------------------------------------------------------------------+
+int OnInit()
+{
+    MathSrand(GetTickCount());
+    InitParams();
+    
+    trade.SetExpertMagicNumber(Magic);
+    trade.SetMarginMode();
+    trade.SetTypeFilling(ORDER_FILLING_FOK);
+    trade.SetDeviationInPoints(10);
+    
+    // --- Initialize indicator handles ---
+    handle_ma_fast = iMA(Symbol(), PERIOD_H1, g_params.ma_fast_period, 0, MODE_SMA, PRICE_CLOSE);
+    handle_ma_slow = iMA(Symbol(), PERIOD_H1, g_params.ma_slow_period, 0, MODE_SMA, PRICE_CLOSE);
+    handle_adx = iADX(Symbol(), PERIOD_H1, 14); // ADX period is fixed but threshold is optimized
+    
+    if(handle_ma_fast == INVALID_HANDLE || handle_ma_slow == INVALID_HANDLE || handle_adx == INVALID_HANDLE)
+    {
+        Print("Error: Failed to create indicator handles.");
+        return(INIT_FAILED);
+    }
+    
+    // Check if EA trading is allowed
+    if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED))
+    {
+        Print("Auto trading is disabled in terminal settings. Please enable it to use this EA.");
+        // Continue initialization but disable trading
+        g_enableAutoOptimization = false;
+    }
+    
+    // Check account trading permissions
+    if(!AccountInfoInteger(ACCOUNT_TRADE_ALLOWED))
+    {
+        Print("Trading is not allowed on this account.");
+        // Continue initialization but disable trading
+        g_enableAutoOptimization = false;
+    }
+    
+    // Initialize optimization switch
+    g_enableAutoOptimization = EnableAutoOptimization;
+    
+    // Try to load previously optimized parameters
+    if(g_enableAutoOptimization)
+    {
+        if(LoadOptimizedParams())
+        {
+            optimizationCompleted = true;
+            lastOptimizedScore = OnTester();
+        }
+    }
+    
+    // Setup timer for periodic optimization in real-time mode
+    if(RunInRealtime && !MQLInfoInteger(MQL_TESTER))
+    {
+        EventSetTimer(3600); // Run hourly checks
+    }
+    
+    // Initialize optimization tracking variables
+    isFirstRun = true;
+    optimizationCompleted = false;
+    lastOptimizationTime = 0;
+    lastFullOptimizationTime = 0;
+    lastQuickOptimizationTime = 0;
+    lastOptimizedScore = -1e8;
+    isOptimizing = false;
+    
+    return INIT_SUCCEEDED;
+}
+
+//+------------------------------------------------------------------+
+//| Timer function for periodic optimization                         |
+//+------------------------------------------------------------------+
+void OnTimer()
+{
+    if(!g_enableAutoOptimization || !RunInRealtime || isOptimizing)
+        return;
+        
+    // Quick performance check
+    double currentScore = OnTester();
+    
+    // Initialize lastOptimizedScore if it's the first run
+    if(lastOptimizedScore < -1e7) // Not initialized yet
+    {
+        lastOptimizedScore = currentScore;
+        Print("Initial performance score set to: ", DoubleToString(lastOptimizedScore, 2));
+        return;
+    }
+    
+    // If performance degraded by more than 20% or it's been 24 hours, run quick optimization
+    if((currentScore < lastOptimizedScore * 0.8) || 
+       (TimeCurrent() - lastQuickOptimizationTime > 86400))
+    {
+        Print("Performance degradation detected or 24h passed. Running quick optimization...");
+        RunQuickOptimization();
+        lastQuickOptimizationTime = TimeCurrent();
+        // Update the score after optimization
+        lastOptimizedScore = OnTester();
+    }
+    
+    // Full optimization every week
+    if(TimeCurrent() - lastFullOptimizationTime > 604800) // 7 days
+    {
+        Print("Weekly scheduled full optimization starting...");
+        RunHybridOptimization();
+        lastFullOptimizationTime = TimeCurrent();
+        lastOptimizedScore = OnTester(); // Update score after full optimization
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Expert deinitialization function                                 |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+{
+    // Release handles
+    if(handle_ma_fast != INVALID_HANDLE) IndicatorRelease(handle_ma_fast);
+    if(handle_ma_slow != INVALID_HANDLE) IndicatorRelease(handle_ma_slow);
+    if(handle_adx != INVALID_HANDLE) IndicatorRelease(handle_adx);
+    
+    // Save optimized parameters if completed
+    if(optimizationCompleted && g_enableAutoOptimization)
+    {
+        SaveOptimizedParams();
+    }
+    
+    // Release timer
+    EventKillTimer();
+}
+
+//+------------------------------------------------------------------+
+//| Dynamic Trailing Stop Function (using CTrade)                   |
+//+------------------------------------------------------------------+
+void HandleTrailingStop()
+{
+    double point = _Point;
+    double trail_start_price = g_params.trail_start_pips * point;
+    double trail_step_price = g_params.trail_step_pips * point;
+    
+    for(int i = PositionsTotal() - 1; i >= 0; i--)
+    {
+        ulong ticket = PositionGetTicket(i);
+        if(!position.SelectByTicket(ticket)) continue;
+        if(position.Symbol() != Symbol() || position.Magic() != Magic) continue;
+        
+        double open_price = position.PriceOpen();
+        double current_sl = position.StopLoss();
+        double current_tp = position.TakeProfit();
+        double current_bid = SymbolInfoDouble(Symbol(), SYMBOL_BID);
+        double current_ask = SymbolInfoDouble(Symbol(), SYMBOL_ASK);
+        ENUM_POSITION_TYPE pos_type = position.PositionType();
+        
+        double new_sl = current_sl;
+        bool needs_modify = false;
+        
+        if(pos_type == POSITION_TYPE_BUY)
+        {
+            double profit_pips = (current_bid - open_price) / point;
+            if(profit_pips >= g_params.trail_start_pips)
+            {
+                double potential_new_sl = current_bid - trail_start_price;
+                if(potential_new_sl > current_sl || current_sl == 0.0)
+                {
+                    new_sl = NormalizeDouble(potential_new_sl, _Digits);
+                    needs_modify = true;
+                }
+            }
+        }
+        else if(pos_type == POSITION_TYPE_SELL)
+        {
+            double profit_pips = (open_price - current_ask) / point;
+            if(profit_pips >= g_params.trail_start_pips)
+            {
+                double potential_new_sl = current_ask + trail_start_price;
+                if(potential_new_sl < current_sl || current_sl == 0.0)
+                {
+                    new_sl = NormalizeDouble(potential_new_sl, _Digits);
+                    needs_modify = true;
+                }
+            }
+        }
+        
+        // Perform the modification if needed
+        if(needs_modify && new_sl > 0)
+        {
+            trade.PositionModify(ticket, new_sl, current_tp);
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Expert tick function                                             |
+//+------------------------------------------------------------------+
+void OnTick()
+{
+    // Run initial optimization if needed
+    if(g_enableAutoOptimization && isFirstRun && !optimizationCompleted && (MQLInfoInteger(MQL_TESTER) || RunInRealtime))
+    {
+        if(GetTickCount() - lastOptimizationTime > 30000) // 每30秒尝试一次
+        {
+            lastOptimizationTime = GetTickCount();
+            RunHybridOptimization();
+            isFirstRun = false;
+            lastOptimizedScore = OnTester(); // Record initial score
+            lastFullOptimizationTime = TimeCurrent();
+            lastQuickOptimizationTime = TimeCurrent();
+        }
+    }
+    
+    if(!isNewBar())
+        return;
+        
+    // 声明仓位变量
+    bool has_buy_position = false;
+    bool has_sell_position = false;
+    
+    // 检查现有仓位
+    for(int i = PositionsTotal() - 1; i >= 0; i--)
+    {
+        ulong ticket = PositionGetTicket(i);
+        if(position.SelectByTicket(ticket))
+        {
+            if(position.Symbol() == Symbol() && position.Magic() == Magic)
+            {
+                if(position.PositionType() == POSITION_TYPE_BUY)
+                    has_buy_position = true;
+                else if(position.PositionType() == POSITION_TYPE_SELL)
+                    has_sell_position = true;
+            }
+        }
+    }
+
+    // Handle intelligent exits first
+    if(g_params.use_dynamic_exits || g_params.use_time_based_exits)
+        HandleIntelligentExits();
+
+    // Get last prices
+    double price_t1 = iClose(Symbol(), PERIOD_H1, 1);
+    double price_t2 = iClose(Symbol(), PERIOD_H1, 2);
+    
+    // Get prediction
+    double predicted_price = GetPrediction(price_t1, price_t2);
+    double current_price = SymbolInfoDouble(Symbol(), SYMBOL_ASK);
+    
+    // --- Trend Filter: ADX + MA ---
+    double ma_fast_buffer[], ma_slow_buffer[], adx_main_buffer[], adx_plus_buffer[], adx_minus_buffer[];
+    ArraySetAsSeries(ma_fast_buffer, true);
+    ArraySetAsSeries(ma_slow_buffer, true);
+    ArraySetAsSeries(adx_main_buffer, true);
+    ArraySetAsSeries(adx_plus_buffer, true);
+    ArraySetAsSeries(adx_minus_buffer, true);
+    
+    if(CopyBuffer(handle_ma_fast, 0, 0, 1, ma_fast_buffer) <= 0 ||
+       CopyBuffer(handle_ma_slow, 0, 0, 1, ma_slow_buffer) <= 0 ||
+       CopyBuffer(handle_adx, 0, 0, 1, adx_main_buffer) <= 0) // ADX main line
+    {
+        return;
+    }
+    
+    double ma_fast = ma_fast_buffer[0];
+    double ma_slow = ma_slow_buffer[0];
+    double adx_main = adx_main_buffer[0];
+    
+    bool isStrongTrend = adx_main >= g_params.adx_threshold;
+    bool isUptrend = ma_fast > ma_slow;
+    bool isDowntrend = ma_fast < ma_slow;
+    
+    // --- Original Signal ---
+    bool buy_signal = predicted_price > current_price;
+    bool sell_signal = predicted_price < current_price;
+    
+    // --- Apply Combined Trend Filter: ADX Strength AND MA Direction ---
+    bool final_buy_signal = (g_params.use_trend_filter) ? (isStrongTrend && isUptrend && buy_signal) : buy_signal;
+    bool final_sell_signal = (g_params.use_trend_filter) ? (isStrongTrend && isDowntrend && sell_signal) : sell_signal;
+
+    // Exit on opposite signal
+    if(g_params.exit_on_opposite_signal)
+    {
+        if(has_buy_position && final_sell_signal)
+        {
+            CloseBuyPositions();
+            has_buy_position = false;
+        }
+        else if(has_sell_position && final_buy_signal)
+        {
+            CloseSellPositions();
+            has_sell_position = false;
+        }
+    }
+    
+    // Check existing positions profit
+    double total_profit = 0.0;
+    int position_count = 0;
+    for(int i = PositionsTotal() - 1; i >= 0; i--)
+    {
+        ulong ticket = PositionGetTicket(i);
+        if(position.SelectByTicket(ticket))
+        {
+            if(position.Symbol() == Symbol() && position.Magic() == Magic)
+            {
+                total_profit += position.Profit();
+                position_count++;
+            }
+        }
+    }
+    
+    // Check if total profit reached the target
+    if(total_profit >= g_params.profit_target && position_count > 0)
+    {
+        CloseAllPositions();
+        return;
+    }
+    
+    // Count current positions for this strategy
+    int current_positions = 0;
+    for(int i = PositionsTotal() - 1; i >= 0; i--)
+    {
+        ulong ticket = PositionGetTicket(i);
+        if(position.SelectByTicket(ticket))
+        {
+            if(position.Symbol() == Symbol() && position.Magic() == Magic)
+            {
+                current_positions++;
+            }
+        }
+    }
+    
+    // If no position exists or same direction and under limit, open a new one (using final signals)
+    if(current_positions < g_params.max_positions)
+    {
+        // Normalize lot size
+        double min_lot = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MIN);
+        double max_lot = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MAX);
+        double lot_step = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_STEP);
+        double normalized_lot = MathRound(g_params.initial_lot / lot_step) * lot_step;
+        normalized_lot = MathMax(min_lot, MathMin(max_lot, normalized_lot));
+        
+        // Open position based on final signals
+        if(final_buy_signal && !has_sell_position && !has_buy_position)
+        {
+            OpenPosition(true, normalized_lot);
+        }
+        else if(final_sell_signal && !has_buy_position && !has_sell_position)
+        {
+            OpenPosition(false, normalized_lot);
+        }
+    }
+    
+    // --- Handle Trailing Stop ---
+    if(g_params.use_trailing_stop)
+    {
+        HandleTrailingStop();
+    }
+    
+    // Update trade statistics for optimization
+    UpdateTradeStats();
+    
+    // Log performance metrics
+    LogPerformanceMetrics();
+}
+
+//+------------------------------------------------------------------+
+//| Close a specific position (using CTrade)                         |
+//+------------------------------------------------------------------+
+void ClosePosition(ulong ticket)
+{
+   if(position.SelectByTicket(ticket))
+   {
+      if(position.Symbol() == Symbol() && position.Magic() == Magic)
+      {
+         if(!trade.PositionClose(ticket, 10))  // 10 points deviation
+         {
+            Print("Failed to close position ", ticket, ". Error: ", GetLastError());
+         }
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Close all positions (using CTrade)                               |
+//+------------------------------------------------------------------+
+void CloseAllPositions()
+{
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(position.SelectByTicket(ticket))
+      {
+         if(position.Symbol() == Symbol() && position.Magic() == Magic)
+         {
+            if(!trade.PositionClose(ticket, 10))  // 10 points deviation
+            {
+               Print("Failed to close position ", ticket, ". Error: ", GetLastError());
+            }
+         }
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Close all buy positions (using CTrade)                           |
+//+------------------------------------------------------------------+
+void CloseBuyPositions()
+{
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(position.SelectByTicket(ticket))
+      {
+         if(position.Symbol() == Symbol() && 
+            position.Magic() == Magic &&
+            position.PositionType() == POSITION_TYPE_BUY)
+         {
+            if(!trade.PositionClose(ticket, 10))  // 10 points deviation
+            {
+               Print("Failed to close buy position ", ticket, ". Error: ", GetLastError());
+            }
+         }
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Close all sell positions (using CTrade)                          |
+//+------------------------------------------------------------------+
+void CloseSellPositions()
+{
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(position.SelectByTicket(ticket))
+      {
+         if(position.Symbol() == Symbol() && 
+            position.Magic() == Magic &&
+            position.PositionType() == POSITION_TYPE_SELL)
+         {
+            if(!trade.PositionClose(ticket, 10))  // 10 points deviation
+            {
+               Print("Failed to close sell position ", ticket, ". Error: ", GetLastError());
+            }
+         }
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Open a new position (using CTrade)                               |
+//+------------------------------------------------------------------+
+void OpenPosition(bool buy_signal, double lot)
+{
+   double current_price = buy_signal ? SymbolInfoDouble(Symbol(), SYMBOL_ASK) : SymbolInfoDouble(Symbol(), SYMBOL_BID);
+   double sl = 0, tp = 0;
+   double atr = CalculateATR();
+   if(atr > 0)
+   {
+      if(buy_signal)
+      {
+         sl = current_price - atr * g_params.stop_loss_atr_mult;
+         double ratio = GetOptimalTPRatio(atr);
+         tp = current_price + atr * g_params.stop_loss_atr_mult * ratio;
+      }
+      else
+      {
+         sl = current_price + atr * g_params.stop_loss_atr_mult;
+         double ratio = GetOptimalTPRatio(atr);
+         tp = current_price - atr * g_params.stop_loss_atr_mult * ratio;
+      }
+   }
+   else
+   {
+       return;
+   }
+   // Normalize prices
+   sl = NormalizeDouble(sl, _Digits);
+   tp = NormalizeDouble(tp, _Digits);
+   
+   if(buy_signal)
+   {
+      if(!trade.Buy(lot, Symbol(), 0, sl, tp, "PEM_Open"))  // 0 means use market price
+      {
+         Print("Buy order failed. Error: ", GetLastError());
+      }
+   }
+   else
+   {
+      if(!trade.Sell(lot, Symbol(), 0, sl, tp, "PEM_Open"))  // 0 means use market price
+      {
+         Print("Sell order failed. Error: ", GetLastError());
+      }
+   }
+}
+//+------------------------------------------------------------------+

@@ -185,19 +185,19 @@ class AdvancedMarketAnalysis:
         for i in range(1, 4):
             level = current_price - (price_range * 0.1 * i)
             if level > recent_low:
-                support_levels.append(round(level, 4))
+                support_levels.append(float(round(level, 4)))
         
         # 阻力位（高于当前价格）
         for i in range(1, 4):
             level = current_price + (price_range * 0.1 * i)
             if level < recent_high:
-                resistance_levels.append(round(level, 4))
+                resistance_levels.append(float(round(level, 4)))
         
         # 确保至少有一个支撑阻力位
         if not support_levels:
-            support_levels = [round(recent_low, 4)]
+            support_levels = [float(round(recent_low, 4))]
         if not resistance_levels:
-            resistance_levels = [round(recent_high, 4)]
+            resistance_levels = [float(round(recent_high, 4))]
         
         return {
             "support_levels": sorted(support_levels),
