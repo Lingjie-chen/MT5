@@ -1179,8 +1179,10 @@ class AI_MT5_Bot:
         self.qwen_client = clients.get('qwen')
         
         # 初始化高级分析模块
-        self.crt_analyzer = CRTAnalyzer()
-        self.mtf_analyzer = MTFAnalyzer() # 新增 MTF 分析器
+        # 用户指定时间框架: M15 (交易) 和 H1 (趋势/结构)
+        self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_H1)
+        # MTF 分析调整为 M30 和 H1，以匹配用户的 H1 关注点
+        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_M30, htf2=mt5.TIMEFRAME_H1) 
         self.price_model = PriceEquationModel()
         self.tf_analyzer = TimeframeVisualAnalyzer()
         self.advanced_adapter = AdvancedAnalysisAdapter() # 初始化高级分析适配器

@@ -164,13 +164,13 @@ class QwenClient:
            - 如果平均 MFE 较高，可适当放宽 TP。
            - 如果平均 MAE 较低但频繁止损，可适当放宽 SL 或优化入场。
         
-        请提供以下优化结果，并确保分析全面、逻辑严密，不要使用省略号或简化描述：
+        请提供以下优化结果，并确保分析全面、逻辑严密，不要使用省略号或简化描述。**请务必使用中文进行输出（Strategy Logic Rationale 部分）**：
         1. 入场条件：基于情绪得分和技术指标的优化入场规则，详细说明触发条件
         2. 出场条件：止盈止损参数，给出具体的数值或计算逻辑
         3. 仓位大小：基于市场波动率的最优仓位
         4. 交易信号强度：0-100的得分，表示信号的可靠性
         5. 风险管理建议：针对当前市场状态的风险控制措施
-        6. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)
+        6. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须使用中文**
         
         请以JSON格式返回结果，包含以下字段：
         - entry_conditions: dict
@@ -178,14 +178,14 @@ class QwenClient:
         - position_size: float
         - signal_strength: int
         - risk_management: dict
-        - strategy_rationale: str
+        - strategy_rationale: str (中文)
         """
         
         # 构建payload，遵循ValueCell的实现
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "你是一位专业的量化交易策略优化专家，擅长基于市场分析结果调整交易参数。"},
+                {"role": "system", "content": "你是一位专业的量化交易策略优化专家，擅长基于市场分析结果调整交易参数。请始终使用中文回复分析内容。"},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.3,
