@@ -2307,6 +2307,14 @@ class AI_MT5_Bot:
                         qw_signal = qw_action if qw_action != 'hold' else 'neutral'
                         
                         # --- 3.5 混合优化决策 ---
+                        # 动态调整 DeepSeek 权重 (基于 Structure Score)
+                        if ds_signal != 'neutral':
+                            # Score 50 -> 1.0, Score 100 -> 2.0
+                            ds_weight = 1.0 + (ds_score - 50) / 50.0
+                            self.optimizer.weights['deepseek'] = ds_weight
+                        else:
+                            self.optimizer.weights['deepseek'] = 1.0
+                            
                         all_signals = {
                             "deepseek": ds_signal,
                             "qwen": qw_signal,
@@ -2360,7 +2368,7 @@ class AI_MT5_Bot:
                             f"• AdvTech: `{adv_signal}`\n"
                             f"• MatrixML: `{ml_result['signal']}`\n"
                             f"• TFVisual: `{tf_result['signal']}`\n"
-                            f"• DeepSeek: `{ds_signal}`\n"
+                            f"• DeepSeek: `{ds_signal}` (Conf: {ds_score})\n"
                             f"• Qwen: `{qw_signal}`\n\n"
                             f"🧠 *Hybrid Decision:*\n"
                             f"• Signal: *{final_signal.upper()}*\n"
@@ -2375,14 +2383,30 @@ class AI_MT5_Bot:
                         
                         # 4. 执行交易
                         if final_signal != 'hold':
+                            # 仅当 Qwen 的方向与最终决策一致 (或 Qwen 不反对) 时，才使用 Qwen 的参数
+                            # 否则使用默认的 Entry/Exit 逻辑 (传入 None)
+                            entry_params = strategy.get('entry_conditions')
+                            exit_params = strategy.get('exit_conditions')
+                            
+                            # 检查一致性
+                            use_qwen_params = False
+                            if qw_signal == final_signal:
+                                use_qwen_params = True
+                            elif qw_signal == 'neutral' or qw_signal == 'hold':
+                                # Qwen 中立，可以使用其参数(如果存在)
+                                use_qwen_params = True
+                            
+                            if not use_qwen_params:
+                                logger.warning(f"Qwen 信号 ({qw_signal}) 与最终决策 ({final_signal}) 不一致，回退到默认参数")
+                                entry_params = None
+                                exit_params = None # 将导致 execute_trade 使用 ATR 默认值
+                                
                             trade_res = self.execute_trade(
                                 final_signal, 
                                 strength, 
-                                strategy.get('exit_conditions'),
-                                strategy.get('entry_conditions')
+                                exit_params,
+                                entry_params
                             )
-                            # execute_trade 内部处理交易，我们可以在那里发送交易通知，或者让 execute_trade 返回结果
-                            pass
                             
                 time.sleep(1) # 避免 CPU 占用过高
                 
