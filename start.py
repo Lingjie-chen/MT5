@@ -663,16 +663,29 @@ class PriceEquationModel:
             price_t1 = df_history['close'].iloc[-2]
             price_t2 = df_history['close'].iloc[-3]
             current_price = df_history['close'].iloc[-1]
+            
+            # Normalize prices to avoid polynomial explosion
+            # We normalize relative to the older price (t2)
+            base_price = price_t2
+            if base_price == 0:
+                return {"signal": "neutral", "predicted_price": 0.0}
+                
+            norm_t1 = price_t1 / base_price
+            norm_t2 = price_t2 / base_price # Always 1.0
+            
+            # Calculate normalized prediction ratio
+            pred_ratio = (self.coeffs[0] * norm_t1 +
+                          self.coeffs[1] * (norm_t1**2) +
+                          self.coeffs[2] * norm_t2 +
+                          self.coeffs[3] * (norm_t2**2) +
+                          self.coeffs[4] * (norm_t1 - norm_t2) +
+                          self.coeffs[5] * np.sin(norm_t1) +
+                          self.coeffs[6])
+                          
+            predicted_price = pred_ratio * base_price
+            
         except IndexError:
             return {"signal": "neutral", "predicted_price": 0.0}
-            
-        predicted_price = (self.coeffs[0] * price_t1 +
-                           self.coeffs[1] * (price_t1**2) +
-                           self.coeffs[2] * price_t2 +
-                           self.coeffs[3] * (price_t2**2) +
-                           self.coeffs[4] * (price_t1 - price_t2) +
-                           self.coeffs[5] * np.sin(price_t1) +
-                           self.coeffs[6])
                            
         # 2. 计算趋势过滤指标 (MA + ADX)
         closes = df_history['close']
