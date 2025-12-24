@@ -1434,20 +1434,45 @@ class AI_MT5_Bot:
             limit_price = entry_params.get('limit_price', 0.0)
             if limit_price > 0:
                 # 简单的挂单逻辑
-                if signal == 'buy' and limit_price < tick.ask:
-                    action = mt5.TRADE_ACTION_PENDING
-                    type_order = mt5.ORDER_TYPE_BUY_LIMIT
-                    price = limit_price
-                    is_pending = True
-                    logger.info(f"使用限价买单: {limit_price}")
-                elif signal == 'sell' and limit_price > tick.bid:
-                    action = mt5.TRADE_ACTION_PENDING
-                    type_order = mt5.ORDER_TYPE_SELL_LIMIT
-                    price = limit_price
-                    is_pending = True
-                    logger.info(f"使用限价卖单: {limit_price}")
+                # 检查限价单的逻辑是否合理 (买单价格 < Ask, 卖单价格 > Bid)
+                # 如果不合理，我们不应该直接降级为市价单，而应该:
+                # 1. 调整价格 (例如设为当前价的微小偏移)
+                # 2. 或者直接降级为市价单 (如果差距过大)
+                
+                valid_limit = False
+                if signal == 'buy':
+                     if limit_price < tick.ask:
+                         valid_limit = True
+                     else:
+                         # 价格不合理，可能是 Qwen 没更新最新价格
+                         # 尝试修正: 如果 limit_price > ask，说明想以更高价买入? 那直接市价买更好
+                         # 或者这是突破单 (Stop Order)? 目前仅支持 Limit
+                         logger.warning(f"限价买单价格 {limit_price} >= Ask {tick.ask}，转为市价单")
+                         valid_limit = False
+                         
+                elif signal == 'sell':
+                     if limit_price > tick.bid:
+                         valid_limit = True
+                     else:
+                         logger.warning(f"限价卖单价格 {limit_price} <= Bid {tick.bid}，转为市价单")
+                         valid_limit = False
+                
+                if valid_limit:
+                    if signal == 'buy':
+                        action = mt5.TRADE_ACTION_PENDING
+                        type_order = mt5.ORDER_TYPE_BUY_LIMIT
+                        price = limit_price
+                        is_pending = True
+                        logger.info(f"使用限价买单: {limit_price}")
+                    elif signal == 'sell':
+                        action = mt5.TRADE_ACTION_PENDING
+                        type_order = mt5.ORDER_TYPE_SELL_LIMIT
+                        price = limit_price
+                        is_pending = True
+                        logger.info(f"使用限价卖单: {limit_price}")
                 else:
-                    logger.warning(f"限价单价格无效 (Buy: {limit_price} vs {tick.ask}, Sell: {limit_price} vs {tick.bid})，降级为市价单")
+                    # 价格无效，降级为市价单
+                    pass
         
         # --- 计算止损止盈 ---
         # 获取 ATR (需要从 data_processor 或 context 获取，不要简化)
