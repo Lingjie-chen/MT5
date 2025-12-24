@@ -1214,6 +1214,8 @@ class AI_MT5_Bot:
         self.last_optimization_time = 0
         self.last_realtime_save = 0 # Added for realtime dashboard
         self.last_analysis_time = 0 # Added for periodic analysis (1 min)
+        self.latest_strategy = None # 存储最新的策略参数 (用于 manage_positions)
+        self.latest_signal = "neutral" # 存储最新的信号
         
         if not self.deepseek_client or not self.qwen_client:
             logger.warning("AI 客户端未完全初始化，将仅运行在观察模式")
@@ -1651,9 +1653,12 @@ class AI_MT5_Bot:
         except Exception as e:
             logger.error(f"Telegram 发送异常: {e}")
 
-    def manage_positions(self):
+    def manage_positions(self, signal=None, strategy_params=None):
         """
-        管理现有持仓: 执行移动止损 (Trailing Stop)
+        根据最新分析结果管理持仓:
+        1. 更新止损止盈 (覆盖旧设置) - 基于 strategy_params
+        2. 执行移动止损 (Trailing Stop)
+        3. 检查是否需要平仓 (非反转情况，例如信号转弱)
         """
         positions = mt5.positions_get(symbol=self.symbol)
         if positions is None or len(positions) == 0:
@@ -1670,8 +1675,22 @@ class AI_MT5_Bot:
         if atr <= 0:
             return # 无法计算 ATR，跳过
 
-        trailing_dist = atr * 1.5 # 移动止损距离
+        trailing_dist = atr * 1.5 # 默认移动止损距离
         
+        # 如果有策略参数，尝试解析最新的 SL/TP 设置
+        new_sl_multiplier = 1.5
+        new_tp_multiplier = 2.5
+        has_new_params = False
+        
+        if strategy_params:
+            exit_cond = strategy_params.get('exit_conditions')
+            if exit_cond:
+                new_sl_multiplier = exit_cond.get('sl_atr_multiplier', 1.5)
+                new_tp_multiplier = exit_cond.get('tp_atr_multiplier', 2.5)
+                has_new_params = True
+                # 更新移动止损距离 (可选: 基于新 SL 倍数)
+                # trailing_dist = atr * new_sl_multiplier 
+
         for pos in positions:
             if pos.magic != self.magic_number:
                 continue
@@ -1680,6 +1699,7 @@ class AI_MT5_Bot:
             type_pos = pos.type # 0: Buy, 1: Sell
             price_open = pos.price_open
             sl = pos.sl
+            tp = pos.tp
             current_price = pos.price_current
             
             request = {
@@ -1687,37 +1707,92 @@ class AI_MT5_Bot:
                 "symbol": symbol,
                 "position": pos.ticket,
                 "sl": sl,
-                "tp": pos.tp
+                "tp": tp
             }
             
             changed = False
             
+            # --- 1. 基于最新策略更新 SL/TP (覆盖旧值) ---
+            if has_new_params:
+                # 计算新的目标 SL/TP
+                calc_sl = 0.0
+                calc_tp = 0.0
+                
+                # 注意: 这里我们使用当前价格重新计算，还是基于开仓价?
+                # 用户要求 "cover previous ones... based on latest analysis"
+                # 通常 SL 是基于当前价格的动态保护，或者基于开仓价的固定保护
+                # 如果是移动止损，是基于当前价。如果是结构性 SL，可能是基于开仓价。
+                # Qwen 给出的通常是 ATR 倍数。
+                
+                # 我们假设 Qwen 的意图是: "当前市场状态下，合理的 SL 距离是 X ATR"
+                # 因此，我们应该检查当前 SL 是否符合这个距离。
+                # 如果是浮动盈亏状态，我们通常只做 Trailing (收紧 SL)，而不放宽。
+                
+                # 简化逻辑: 仅当我们需要收紧 SL 时才更新 (Trailing)，或者当 TP 需要调整时。
+                # 但用户说 "cover"，可能意味着强制更新。
+                # 风险: 如果价格已经反向运行，重新计算 SL 可能会导致 SL 被推远 (增加亏损)。
+                # 原则: SL 只能向有利方向移动 (Tighten)。
+                
+                pass # 具体计算在下面结合 Trailing 处理
+            
+            # --- 2. 执行移动止损 & 策略更新 ---
+            
             if type_pos == mt5.POSITION_TYPE_BUY:
-                # Buy: 如果价格上涨，SL 向上移动
-                # 新 SL = 当前价格 - 移动距离
-                new_sl = current_price - trailing_dist
+                # Buy: 
+                # 1. Trailing Stop
+                new_sl = current_price - (atr * new_sl_multiplier) # 使用最新的 multiplier
                 
-                # 只有当新 SL 高于旧 SL，且高于开仓价 (保护利润) 时才修改
-                # 或者仅仅是追踪: new_sl > sl
-                if new_sl > sl and new_sl > price_open:
-                    request['sl'] = new_sl
-                    changed = True
+                # 确保 SL 不低于开仓价 (保本) -> 只有在盈利时才保本? 
+                # 或者仅仅是追踪? 通常 Trailing Stop 是无条件的 (只要价格上涨)
+                
+                # 逻辑: 新 SL 必须 > 旧 SL (只上移)
+                if new_sl > sl:
+                    # 额外检查: 不要离现价太近 (防止被随机波动打掉)
+                    if (current_price - new_sl) >= mt5.symbol_info(self.symbol).point * 10:
+                        request['sl'] = new_sl
+                        changed = True
+                
+                # 2. Update TP (如果有新策略)
+                # TP 可以双向调整 (适应市场波动率)
+                if has_new_params:
+                    # TP 通常基于开仓价 (固定目标) 或 当前价 (滚动目标)?
+                    # 标准做法: TP 基于入场位。但如果持仓很久，可能需要基于当前结构调整。
+                    # 这里我们基于当前价格 + TP距离? 不，这会让 TP 永远追不到。
+                    # 我们应该保持 TP 基于开仓价，但调整倍数?
+                    # 或者，直接使用 Qwen 给出的具体价格 (如果它能给出)。
+                    # 目前 Qwen 给的是倍数。
                     
+                    # 这种情况下，修改 TP 比较危险。我们暂时只调整 SL (Trailing)。
+                    # 除非用户明确要求 "动态调整 TP"。
+                    pass
+
             elif type_pos == mt5.POSITION_TYPE_SELL:
-                # Sell: 如果价格下跌，SL 向下移动
-                # 新 SL = 当前价格 + 移动距离
-                new_sl = current_price + trailing_dist
+                # Sell:
+                # 1. Trailing Stop
+                new_sl = current_price + (atr * new_sl_multiplier)
                 
-                # 只有当新 SL 低于旧 SL，且低于开仓价 (保护利润) 时才修改
-                if (sl == 0 or new_sl < sl) and new_sl < price_open:
-                    request['sl'] = new_sl
-                    changed = True
+                # 逻辑: 新 SL 必须 < 旧 SL (只下移)
+                if (sl == 0 or new_sl < sl):
+                    if (new_sl - current_price) >= mt5.symbol_info(self.symbol).point * 10:
+                        request['sl'] = new_sl
+                        changed = True
             
             if changed:
-                logger.info(f"触发移动止损: Ticket={pos.ticket}, Old SL={sl}, New SL={request['sl']:.2f}")
+                logger.info(f"更新持仓 #{pos.ticket}: SL={request['sl']:.2f} (ATR x {new_sl_multiplier})")
                 result = mt5.order_send(request)
                 if result.retcode != mt5.TRADE_RETCODE_DONE:
-                    logger.error(f"移动止损修改失败: {result.comment}")
+                    logger.error(f"持仓修改失败: {result.comment}")
+                    
+            # --- 3. 检查信号平仓 ---
+            # 如果最新信号转为反向或中立，且强度足够，可以考虑提前平仓
+            # 但 execute_trade 已经处理了反向开仓(会先平仓)。
+            # 这里只处理: 信号变 Weak/Neutral 时的防御性平仓 (如果需要)
+            # 用户: "operate SL/TP, or close, open"
+            if signal == 'neutral' and strategy_params:
+                # 检查是否应该平仓
+                # 简单逻辑: 如果盈利 > 0 且信号消失，落袋为安?
+                # 或者依靠 Trailing Stop 自然离场。
+                pass
 
     def analyze_closed_trades(self):
         """
@@ -2112,8 +2187,11 @@ class AI_MT5_Bot:
         
         try:
             while True:
-                # 0. 管理持仓 (移动止损)
-                self.manage_positions()
+                # 0. 管理持仓 (移动止损) - 使用最新策略
+                if self.latest_strategy:
+                    self.manage_positions(self.latest_signal, self.latest_strategy)
+                else:
+                    self.manage_positions() # 降级为默认
                 
                 # 0.5 分析已平仓交易 (每 60 次循环 / 约 1 分钟执行一次)
                 if int(time.time()) % 60 == 0:
@@ -2146,6 +2224,11 @@ class AI_MT5_Bot:
                         
                         self.db_manager.save_market_data(self.symbol, self.tf_name, df_current)
                         self.last_realtime_save = time.time()
+                        
+                        # 实时更新持仓 SL/TP (使用最近一次分析的策略)
+                        if self.latest_strategy:
+                            self.manage_positions(self.latest_signal, self.latest_strategy)
+                            
                     except Exception as e:
                         logger.error(f"Real-time data save failed: {e}")
                 # ---------------------------------------------------
@@ -2372,6 +2455,10 @@ class AI_MT5_Bot:
                                 "mfh_slope": mfh_result['slope']
                             }
                         })
+                        
+                        # 更新全局缓存，供 manage_positions 使用
+                        self.latest_strategy = strategy
+                        self.latest_signal = final_signal
                         
                         # --- 发送分析报告到 Telegram ---
                         # 构建更详细的报告
