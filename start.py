@@ -1311,7 +1311,7 @@ class AI_MT5_Bot:
             
         return sl, tp
 
-    def execute_trade(self, signal, strength, sl_tp_params):
+    def execute_trade(self, signal, strength, sl_tp_params, entry_params=None):
         """
         执行交易指令，参考 MQL5 Python 最佳实践
         https://www.mql5.com/en/book/advanced/python/python_ordercheck_ordersend
@@ -1428,6 +1428,27 @@ class AI_MT5_Bot:
             
         price = tick.ask if signal == 'buy' else tick.bid
         
+        # --- 检查是否使用挂单 (Limit Order) ---
+        is_pending = False
+        if entry_params and entry_params.get('trigger_type') == 'limit':
+            limit_price = entry_params.get('limit_price', 0.0)
+            if limit_price > 0:
+                # 简单的挂单逻辑
+                if signal == 'buy' and limit_price < tick.ask:
+                    action = mt5.TRADE_ACTION_PENDING
+                    type_order = mt5.ORDER_TYPE_BUY_LIMIT
+                    price = limit_price
+                    is_pending = True
+                    logger.info(f"使用限价买单: {limit_price}")
+                elif signal == 'sell' and limit_price > tick.bid:
+                    action = mt5.TRADE_ACTION_PENDING
+                    type_order = mt5.ORDER_TYPE_SELL_LIMIT
+                    price = limit_price
+                    is_pending = True
+                    logger.info(f"使用限价卖单: {limit_price}")
+                else:
+                    logger.warning(f"限价单价格无效 (Buy: {limit_price} vs {tick.ask}, Sell: {limit_price} vs {tick.bid})，降级为市价单")
+        
         # --- 计算止损止盈 ---
         # 获取 ATR (需要从 data_processor 或 context 获取，不要简化)
         # 我们这里重新请求完整数据来计算准确的 ATR，确保不使用过时或简化的数据
@@ -1509,7 +1530,11 @@ class AI_MT5_Bot:
             # 如果都不支持，通常设为 0 (ORDER_FILLING_RETURN)
             filling_mode = 0
             
-        request['type_filling'] = filling_mode
+        # 挂单通常不支持 FOK/IOC，需要设置为 ORDER_FILLING_RETURN (0) 或其他
+        if is_pending:
+             request['type_filling'] = mt5.ORDER_FILLING_RETURN
+        else:
+             request['type_filling'] = filling_mode
         
         # 7. 执行 OrderCheck (关键步骤)
         logger.info(f"正在检查订单: {signal.upper()} {volume} lots @ {price}")
@@ -2272,10 +2297,14 @@ class AI_MT5_Bot:
                         
                         strategy = self.qwen_client.optimize_strategy_logic(structure, market_snapshot, technical_signals=technical_signals)
                         
-                        # Qwen 信号转换 (假设 strategy 返回中有 action 建议，这里简化处理，通常 Qwen 会给出具体指令)
-                        # 如果没有明确 action 字段，我们假设它作为 DeepSeek 的确认层，这里为了演示混合优化，
-                        # 我们假设 Qwen 也有独立判断，这里暂时复用 DeepSeek 的判断作为示例，实际应解析 strategy['action']
-                        qw_signal = ds_signal # 暂时代替
+                        # Qwen 信号转换
+                        # 如果没有明确 action 字段，我们假设它作为 DeepSeek 的确认层
+                        # 现在我们优先使用 Qwen 返回的 action
+                        qw_action = strategy.get('action', 'neutral').lower()
+                        if qw_action not in ['buy', 'sell', 'neutral', 'hold']:
+                            qw_action = 'neutral'
+                        
+                        qw_signal = qw_action if qw_action != 'hold' else 'neutral'
                         
                         # --- 3.5 混合优化决策 ---
                         all_signals = {
@@ -2346,9 +2375,13 @@ class AI_MT5_Bot:
                         
                         # 4. 执行交易
                         if final_signal != 'hold':
-                            trade_res = self.execute_trade(final_signal, strength, strategy.get('exit_conditions'))
+                            trade_res = self.execute_trade(
+                                final_signal, 
+                                strength, 
+                                strategy.get('exit_conditions'),
+                                strategy.get('entry_conditions')
+                            )
                             # execute_trade 内部处理交易，我们可以在那里发送交易通知，或者让 execute_trade 返回结果
-                            # 这里修改 execute_trade 让其发送通知比较好，或者在这里构建消息
                             pass
                             
                 time.sleep(1) # 避免 CPU 占用过高

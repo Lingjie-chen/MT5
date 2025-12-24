@@ -173,8 +173,9 @@ class QwenClient:
         6. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须使用中文**
         
         请以JSON格式返回结果，包含以下字段：
-        - entry_conditions: dict
-        - exit_conditions: dict
+        - action: str ("buy", "sell", "hold") - 明确的交易行动建议
+        - entry_conditions: dict (包含 "trigger_type": "market"|"limit", "limit_price": float (optional), "confirmation": str)
+        - exit_conditions: dict (包含 "sl_atr_multiplier": float, "tp_atr_multiplier": float)
         - position_size: float
         - signal_strength: int
         - risk_management: dict
@@ -211,18 +212,22 @@ class QwenClient:
                 logger.error(f"原始响应: {response}")
                 # 返回默认策略参数
                 return {
-                    "entry_conditions": {"ema_crossover": 1, "rsi_threshold": 50},
-                    "exit_conditions": {"take_profit": 1.5, "stop_loss": 1.0},
+                    "action": "hold",
+                    "entry_conditions": {"trigger_type": "market"},
+                    "exit_conditions": {"sl_atr_multiplier": 1.5, "tp_atr_multiplier": 2.5},
                     "position_size": 0.01,
                     "signal_strength": 50,
-                    "risk_management": {"max_risk": 0.02}
+                    "risk_management": {"max_risk": 0.02},
+                    "strategy_rationale": "解析失败，使用默认参数"
                 }
         return {
-            "entry_conditions": {"ema_crossover": 1, "rsi_threshold": 50},
-            "exit_conditions": {"take_profit": 1.5, "stop_loss": 1.0},
+            "action": "hold",
+            "entry_conditions": {"trigger_type": "market"},
+            "exit_conditions": {"sl_atr_multiplier": 1.5, "tp_atr_multiplier": 2.5},
             "position_size": 0.01,
             "signal_strength": 50,
-            "risk_management": {"max_risk": 0.02}
+            "risk_management": {"max_risk": 0.02},
+            "strategy_rationale": "API调用失败，使用默认参数"
         }
     
     def generate_dynamic_stoploss_takeprofit(self, volatility: float, market_state: str, signal_strength: int) -> Dict[str, float]:
