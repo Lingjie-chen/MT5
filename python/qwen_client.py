@@ -206,6 +206,10 @@ class QwenClient:
                 logger.info(f"收到模型响应: {message_content}")
                 
                 optimized_strategy = json.loads(message_content)
+                
+                # 强制统一 position_size 为 0.01 (User Request)
+                optimized_strategy["position_size"] = 0.01
+                
                 return optimized_strategy
             except json.JSONDecodeError as e:
                 logger.error(f"解析Qwen响应失败: {e}")
