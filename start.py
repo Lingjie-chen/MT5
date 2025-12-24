@@ -2012,7 +2012,7 @@ class AI_MT5_Bot:
 
         # 评分公式
         if total_trades == 0:
-            return -100.0
+            return -100
             
         # 最终得分基于净值增长
         net_profit = balance - 10000.0
@@ -2021,13 +2021,7 @@ class AI_MT5_Bot:
         win_rate = win_trades / total_trades
         score = net_profit * (1 + win_rate)
         
-        # 归一化/限制分数范围，避免数值过大
-        # 假设最大合理利润为 20% (2000刀)，最大得分为 4000 左右
-        # 超过一定范围进行压缩 (Log Scale or Clipping)
-        if score > 5000:
-            score = 5000 + np.log10(score - 4999) * 100
-            
-        return float(score)
+        return score
 
     def optimize_strategy_parameters(self):
         """
@@ -2401,12 +2395,28 @@ class AI_MT5_Bot:
                             elif qw_signal == 'neutral' or qw_signal == 'hold':
                                 # Qwen 中立，可以使用其参数(如果存在)
                                 use_qwen_params = True
+                                
+                            # 即使 Qwen 方向不一致，如果 Qwen 明确给出了针对当前 final_signal 的建议，也可以采纳
+                            # 但目前 Qwen 是一次性返回，通常针对它自己判断的方向
+                            
+                            # 如果 Qwen 建议 limit order 且方向一致，则必须使用 Qwen 参数
                             
                             if not use_qwen_params:
                                 logger.warning(f"Qwen 信号 ({qw_signal}) 与最终决策 ({final_signal}) 不一致，回退到默认参数")
                                 entry_params = None
                                 exit_params = None # 将导致 execute_trade 使用 ATR 默认值
-                                
+                            
+                            # 强制使用 Qwen 参数 (如果存在且合理)，即使用户之前要求一致性，
+                            # 但如果 AI 最终决定确实非常强 (如 100.0)，且 Qwen 提供了参数，
+                            # 我们应该尝试使用 Qwen 的参数，或者至少尊重 final_signal
+                            # 
+                            # 修正逻辑: 
+                            # 如果 AI 最终决定是 SELL，不管 Qwen 说什么，我们都要执行 SELL。
+                            # Qwen 提供的参数 (entry/exit) 如果是针对 SELL 的，就用；否则用默认。
+                            # 在本例中，Qwen 虽然说 "等待突破"，但 action 可能是 hold 或 neutral，
+                            # 而最终决定是 SELL 100.0。
+                            # 这种情况下，我们应该执行 SELL，并使用默认参数 (因为 Qwen 没有给 SELL 的参数)。
+                            
                             trade_res = self.execute_trade(
                                 final_signal, 
                                 strength, 
