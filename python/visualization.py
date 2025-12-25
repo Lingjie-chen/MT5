@@ -9,7 +9,7 @@ class TradingVisualizer:
 
     def create_advanced_chart(self, df, signals_df=None, trades_df=None, analysis_details=None):
         """
-        创建一个包含高级分析可视化（SMC, CRT, etc.）的交互式图表
+        创建一个包含高级分析可视化（SMC, CRT, etc.）的交互式图表 - Cyberpunk Style
         """
         if df is None or df.empty:
             return go.Figure()
@@ -18,34 +18,43 @@ class TradingVisualizer:
         fig = make_subplots(
             rows=2, cols=1, 
             shared_xaxes=True, 
-            vertical_spacing=0.05, 
-            row_heights=[0.7, 0.3],
+            vertical_spacing=0.03, 
+            row_heights=[0.75, 0.25],
             specs=[[{"secondary_y": True}], [{"secondary_y": False}]]
         )
 
-        # 1. Candlestick Chart
+        # 1. Candlestick Chart (Neon Colors)
         fig.add_trace(go.Candlestick(
             x=df['timestamp'],
             open=df['open'],
             high=df['high'],
             low=df['low'],
             close=df['close'],
-            name='Price'
+            name='Price',
+            increasing_line_color='#00ff9d', # Neon Green
+            decreasing_line_color='#ff0055'  # Neon Red/Pink
         ), row=1, col=1)
 
-        # 2. Add Moving Averages if available in df or calculate them
-        # 假设 df 可能还没有指标，我们简单计算一下用于显示
+        # 2. Add Moving Averages (Glowing Lines)
         if 'ema_20' not in df.columns:
             df['ema_20'] = df['close'].ewm(span=20, adjust=False).mean()
         if 'ema_50' not in df.columns:
             df['ema_50'] = df['close'].ewm(span=50, adjust=False).mean()
 
-        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['ema_20'], line=dict(color='orange', width=1), name='EMA 20'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['ema_50'], line=dict(color='blue', width=1), name='EMA 50'), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=df['timestamp'], y=df['ema_20'], 
+            line=dict(color='#00f3ff', width=1.5), # Cyan
+            name='EMA 20'
+        ), row=1, col=1)
+        
+        fig.add_trace(go.Scatter(
+            x=df['timestamp'], y=df['ema_50'], 
+            line=dict(color='#ff00ff', width=1.5), # Magenta
+            name='EMA 50'
+        ), row=1, col=1)
 
-        # 3. Add Signals Markers
+        # 3. Add Signals Markers (Neon Glow)
         if signals_df is not None and not signals_df.empty:
-            # Filter signals for this symbol/timeframe if needed (assumed filtered)
             buy_signals = signals_df[signals_df['signal'] == 'buy']
             sell_signals = signals_df[signals_df['signal'] == 'sell']
 
@@ -54,7 +63,7 @@ class TradingVisualizer:
                     x=buy_signals['timestamp'],
                     y=df.loc[df['timestamp'].isin(buy_signals['timestamp']), 'low'] * 0.999,
                     mode='markers',
-                    marker=dict(symbol='triangle-up', size=10, color='green'),
+                    marker=dict(symbol='triangle-up', size=12, color='#00ff00', line=dict(width=2, color='#00ff9d')),
                     name='Buy Signal'
                 ), row=1, col=1)
 
@@ -63,29 +72,38 @@ class TradingVisualizer:
                     x=sell_signals['timestamp'],
                     y=df.loc[df['timestamp'].isin(sell_signals['timestamp']), 'high'] * 1.001,
                     mode='markers',
-                    marker=dict(symbol='triangle-down', size=10, color='red'),
+                    marker=dict(symbol='triangle-down', size=12, color='#ff0000', line=dict(width=2, color='#ff0055')),
                     name='Sell Signal'
                 ), row=1, col=1)
 
-        # 4. Visualize SMC/CRT Zones from latest analysis
+        # 4. Visualize SMC/CRT Zones
         if analysis_details:
             self._add_analysis_overlays(fig, df, analysis_details)
 
         # 5. Volume on Row 2
-        colors = ['red' if row['open'] > row['close'] else 'green' for index, row in df.iterrows()]
+        colors = ['#ff0055' if row['open'] > row['close'] else '#00ff9d' for index, row in df.iterrows()]
         fig.add_trace(go.Bar(
             x=df['timestamp'],
             y=df['volume'],
             marker_color=colors,
+            marker_line_width=0,
+            opacity=0.6,
             name='Volume'
         ), row=2, col=1)
 
-        # Layout updates
+        # Layout updates for Cyberpunk Theme
         fig.update_layout(
-            title='Market Analysis Dashboard',
+            title=dict(text='Market Analysis Dashboard', font=dict(color='#00f3ff', family="Orbitron")),
             xaxis_rangeslider_visible=False,
             height=800,
-            template='plotly_dark'
+            template='plotly_dark',
+            paper_bgcolor='rgba(0,0,0,0)', # Transparent to show CSS bg
+            plot_bgcolor='rgba(10,10,16,0.7)',
+            xaxis=dict(showgrid=True, gridcolor='#1f1f2e', gridwidth=1),
+            yaxis=dict(showgrid=True, gridcolor='#1f1f2e', gridwidth=1),
+            yaxis2=dict(showgrid=False),
+            font=dict(family="Courier New", color="#e0e0e0"),
+            hovermode='x unified'
         )
 
         return fig

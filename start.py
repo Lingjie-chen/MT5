@@ -873,13 +873,21 @@ class AdvancedAnalysisAdapter:
             # 6. 生成摘要
             summary = self.analyzer.generate_analysis_summary(df)
             
+            # 7. IFVG 分析
+            ifvg_result = self.analyzer.analyze_ifvg(df)
+            
+            # 8. RVGI+CCI 分析
+            rvgi_cci_result = self.analyzer.analyze_rvgi_cci_strategy(df)
+            
             return {
                 "indicators": indicators,
                 "regime": regime,
                 "levels": levels,
                 "risk": risk,
                 "signal_info": signal_info,
-                "summary": summary
+                "summary": summary,
+                "ifvg": ifvg_result,
+                "rvgi_cci": rvgi_cci_result
             }
         except Exception as e:
             logger.error(f"Advanced Analysis failed: {e}")
@@ -898,7 +906,10 @@ class HybridOptimizer:
             "advanced_tech": 0.85,
             "matrix_ml": 0.7,
             "smc": 1.0,
-            "mfh": 0.75 # 新增 MFH 权重
+            "mfh": 0.75,
+            "mtf": 0.9,
+            "ifvg": 1.2,
+            "rvgi_cci": 0.95 # 新增
         }
         self.history = []
         self.performance = {k: {"correct": 0, "total": 0} for k in self.weights.keys()}
@@ -1168,7 +1179,7 @@ class AI_MT5_Bot:
     def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M15):
         self.symbol = symbol
         self.timeframe = timeframe
-        self.magic_number = 20241223
+        self.magic_number = 20241122
         self.lot_size = 0.01
         self.last_bar_time = 0
         
@@ -1317,6 +1328,23 @@ class AI_MT5_Bot:
         """
         if signal not in ['buy', 'sell']:
             return
+
+        # --- 0. 优先清理旧挂单 (New Requirement) ---
+        # 只要有新的交易信号触发，先取消所有旧的挂单，确保只执行最新逻辑
+        try:
+            orders = mt5.orders_get(symbol=self.symbol)
+            if orders:
+                for order in orders:
+                    if order.magic == self.magic_number:
+                        logger.info(f"新信号触发，取消旧挂单 #{order.ticket} (Type: {order.type})")
+                        req_remove = {
+                            "action": mt5.TRADE_ACTION_REMOVE,
+                            "order": order.ticket,
+                            "magic": self.magic_number
+                        }
+                        mt5.order_send(req_remove)
+        except Exception as e:
+            logger.error(f"取消旧挂单时出错: {e}")
             
         # 1. 检查是否已有持仓
         positions = mt5.positions_get(symbol=self.symbol)
@@ -1359,9 +1387,13 @@ class AI_MT5_Bot:
                     # 动态检查 filling mode
                     symbol_info = mt5.symbol_info(self.symbol)
                     if symbol_info:
+                        # Define constants locally as they might be missing in mt5 module
+                        SYMBOL_FILLING_FOK = 1
+                        SYMBOL_FILLING_IOC = 2
+                        
                         filling_mode = mt5.ORDER_FILLING_FOK
-                        if (symbol_info.filling_mode & mt5.SYMBOL_FILLING_FOK) != 0: filling_mode = mt5.ORDER_FILLING_FOK
-                        elif (symbol_info.filling_mode & mt5.SYMBOL_FILLING_IOC) != 0: filling_mode = mt5.ORDER_FILLING_IOC
+                        if (symbol_info.filling_mode & SYMBOL_FILLING_FOK) != 0: filling_mode = mt5.ORDER_FILLING_FOK
+                        elif (symbol_info.filling_mode & SYMBOL_FILLING_IOC) != 0: filling_mode = mt5.ORDER_FILLING_IOC
                         else: filling_mode = 0
                         close_request['type_filling'] = filling_mode
 
@@ -1371,14 +1403,17 @@ class AI_MT5_Bot:
                         return # 平仓失败则不执行新开仓，防止对冲
                     else:
                         logger.info(f"平仓成功 #{pos.ticket}")
-                        self.send_telegram_message(f"🔄 *Position Closed (Reversal)*\nTicket: `{pos.ticket}`\nProfit: {result.profit}")
+                        # Check profit attribute existence safely
+                        profit = getattr(result, 'profit', 0.0)
+                        self.send_telegram_message(f"🔄 *Position Closed (Reversal)*\nTicket: `{pos.ticket}`\nProfit: {profit}")
                 
                 # 如果信号与持仓同向
                 elif (signal == 'buy' and is_buy_pos) or (signal == 'sell' and not is_buy_pos):
                     # 加仓逻辑: 检查是否有足够的保证金和风险敞口
                     # 简单规则: 如果总持仓量 < 账户余额/1000 * 0.1 (每1000刀最多0.1手)，且当前盈利 > ATR (金字塔加仓)
                     
-                    total_volume = sum([p.volume for p in positions if p.symbol == self.symbol])
+                    # 计算本策略 ID 的总持仓量
+                    total_volume = sum([p.volume for p in positions if p.symbol == self.symbol and p.magic == self.magic_number])
                     max_volume = (balance / 1000.0) * 0.1 # 风险控制
                     
                     if total_volume < max_volume:
@@ -1691,6 +1726,11 @@ class AI_MT5_Bot:
                 # 更新移动止损距离 (可选: 基于新 SL 倍数)
                 # trailing_dist = atr * new_sl_multiplier 
 
+        symbol_info = mt5.symbol_info(self.symbol)
+        if not symbol_info:
+            return
+        point = symbol_info.point
+
         for pos in positions:
             if pos.magic != self.magic_number:
                 continue
@@ -1735,50 +1775,55 @@ class AI_MT5_Bot:
                 
                 pass # 具体计算在下面结合 Trailing 处理
             
-            # --- 2. 执行移动止损 & 策略更新 ---
+            # --- 2. 执行移动止损 & 移动止盈 ---
             
             if type_pos == mt5.POSITION_TYPE_BUY:
-                # Buy: 
-                # 1. Trailing Stop
-                new_sl = current_price - (atr * new_sl_multiplier) # 使用最新的 multiplier
+                # Buy Position
                 
-                # 确保 SL 不低于开仓价 (保本) -> 只有在盈利时才保本? 
-                # 或者仅仅是追踪? 通常 Trailing Stop 是无条件的 (只要价格上涨)
+                # 1. 移动止损 (Trailing Stop)
+                target_sl = current_price - (atr * new_sl_multiplier)
                 
-                # 逻辑: 新 SL 必须 > 旧 SL (只上移)
-                if new_sl > sl:
-                    # 额外检查: 不要离现价太近 (防止被随机波动打掉)
-                    if (current_price - new_sl) >= mt5.symbol_info(self.symbol).point * 10:
-                        request['sl'] = new_sl
+                # 规则: SL 只能上移 (Tighten)
+                if target_sl > sl:
+                    if (current_price - target_sl) >= point * 10:
+                        request['sl'] = target_sl
                         changed = True
                 
-                # 2. Update TP (如果有新策略)
-                # TP 可以双向调整 (适应市场波动率)
-                if has_new_params:
-                    # TP 通常基于开仓价 (固定目标) 或 当前价 (滚动目标)?
-                    # 标准做法: TP 基于入场位。但如果持仓很久，可能需要基于当前结构调整。
-                    # 这里我们基于当前价格 + TP距离? 不，这会让 TP 永远追不到。
-                    # 我们应该保持 TP 基于开仓价，但调整倍数?
-                    # 或者，直接使用 Qwen 给出的具体价格 (如果它能给出)。
-                    # 目前 Qwen 给的是倍数。
-                    
-                    # 这种情况下，修改 TP 比较危险。我们暂时只调整 SL (Trailing)。
-                    # 除非用户明确要求 "动态调整 TP"。
-                    pass
+                # 2. 移动止盈 (Trailing Take Profit)
+                # 如果价格接近 TP (小于 0.5 ATR) 且信号依然看涨，则延伸 TP
+                dist_to_tp = tp - current_price
+                if dist_to_tp > 0 and dist_to_tp < (atr * 0.5):
+                    if signal == 'buy':
+                        new_tp = current_price + (atr * max(new_tp_multiplier, 1.0))
+                        if new_tp > tp:
+                            request['tp'] = new_tp
+                            changed = True
+                            logger.info(f"🚀 移动止盈触发 (Buy): TP 延伸至 {new_tp:.2f}")
 
             elif type_pos == mt5.POSITION_TYPE_SELL:
-                # Sell:
-                # 1. Trailing Stop
-                new_sl = current_price + (atr * new_sl_multiplier)
+                # Sell Position
                 
-                # 逻辑: 新 SL 必须 < 旧 SL (只下移)
-                if (sl == 0 or new_sl < sl):
-                    if (new_sl - current_price) >= mt5.symbol_info(self.symbol).point * 10:
-                        request['sl'] = new_sl
+                # 1. 移动止损 (Trailing Stop)
+                target_sl = current_price + (atr * new_sl_multiplier)
+                
+                # 规则: SL 只能下移 (Tighten)
+                if sl == 0 or target_sl < sl:
+                    if (target_sl - current_price) >= point * 10:
+                        request['sl'] = target_sl
                         changed = True
+                        
+                # 2. 移动止盈 (Trailing Take Profit)
+                dist_to_tp = current_price - tp
+                if dist_to_tp > 0 and dist_to_tp < (atr * 0.5):
+                    if signal == 'sell':
+                        new_tp = current_price - (atr * max(new_tp_multiplier, 1.0))
+                        if new_tp < tp:
+                            request['tp'] = new_tp
+                            changed = True
+                            logger.info(f"🚀 移动止盈触发 (Sell): TP 延伸至 {new_tp:.2f}")
             
             if changed:
-                logger.info(f"更新持仓 #{pos.ticket}: SL={request['sl']:.2f} (ATR x {new_sl_multiplier})")
+                logger.info(f"更新持仓 #{pos.ticket}: SL={request['sl']:.2f}, TP={request['tp']:.2f} (ATR x {new_sl_multiplier})")
                 result = mt5.order_send(request)
                 if result.retcode != mt5.TRADE_RETCODE_DONE:
                     logger.error(f"持仓修改失败: {result.comment}")
@@ -2159,23 +2204,31 @@ class AI_MT5_Bot:
             epochs=5 # 快速优化
         )
         
-        # 6. 应用最佳参数
-        new_ma = int(best_params[0])
-        new_atr = best_params[1]
-        
-        logger.info(f"优化完成! Best Score: {best_score:.4f}")
-        logger.info(f"更新参数: MA Period={new_ma}, ATR Threshold={new_atr:.4f}")
-        
-        self.smc_analyzer.ma_period = new_ma
-        self.smc_analyzer.atr_threshold = new_atr
-        
-        self.send_telegram_message(
-            f"🧬 *Auto-AO Optimization ({algo_name})*\n"
-            f"Best Score: {best_score:.2f}\n"
-            f"New Params:\n"
-            f"• MA Period: {new_ma}\n"
-            f"• ATR Thresh: {new_atr:.4f}"
-        )
+        # 6. 验证和应用最佳参数
+        # 如果得分是负数且非常低（如初始值-99999），说明优化未找到有效解，不应更新
+        if best_score > -1000:
+            new_ma = int(best_params[0])
+            new_atr = best_params[1]
+            
+            logger.info(f"优化完成! Best Score: {best_score:.4f}")
+            logger.info(f"更新参数: MA Period={new_ma}, ATR Threshold={new_atr:.4f}")
+            
+            self.smc_analyzer.ma_period = new_ma
+            self.smc_analyzer.atr_threshold = new_atr
+            
+            self.send_telegram_message(
+                f"🧬 *Auto-AO Optimization ({algo_name})*\n"
+                f"Best Score: {best_score:.2f}\n"
+                f"New Params:\n"
+                f"• MA Period: {new_ma}\n"
+                f"• ATR Thresh: {new_atr:.4f}"
+            )
+        else:
+            logger.warning(f"优化失败或未找到正收益参数 (Score: {best_score:.4f})，保持原有参数。")
+            self.send_telegram_message(
+                f"🧬 *Auto-AO Optimization ({algo_name})*\n"
+                f"Optimization Skipped (Low Score: {best_score:.2f})"
+            )
 
     def run(self):
         """主循环"""
@@ -2222,8 +2275,48 @@ class AI_MT5_Bot:
                         if 'tick_volume' in df_current.columns:
                             df_current.rename(columns={'tick_volume': 'volume'}, inplace=True)
                         
-                        self.db_manager.save_market_data(self.symbol, self.tf_name, df_current)
+                        self.db_manager.save_market_data(df_current.copy(), self.symbol, self.tf_name)
                         self.last_realtime_save = time.time()
+                        
+                        # --- 实时保存账户信息 (新增) ---
+                        try:
+                            account_info = mt5.account_info()
+                            if account_info:
+                                # 计算当前品种的浮动盈亏
+                                positions = mt5.positions_get(symbol=self.symbol)
+                                symbol_pnl = 0.0
+                                magic_positions_count = 0
+                                if positions:
+                                    for pos in positions:
+                                        # 仅统计和计算属于本策略ID的持仓
+                                        if pos.magic == self.magic_number:
+                                            magic_positions_count += 1
+                                            # Handle different position object structures safely
+                                            profit = getattr(pos, 'profit', 0.0)
+                                            swap = getattr(pos, 'swap', 0.0)
+                                            commission = getattr(pos, 'commission', 0.0) # Check attribute existence
+                                            symbol_pnl += profit + swap + commission
+                                
+                                # 显示当前 ID 的持仓状态
+                                # if magic_positions_count > 0:
+                                #     logger.info(f"ID {self.magic_number} 当前持仓: {magic_positions_count} 个")
+                                # else:
+                                #     pass
+                                
+                                metrics = {
+                                    "timestamp": datetime.now(),
+                                    "balance": account_info.balance,
+                                    "equity": account_info.equity,
+                                    "margin": account_info.margin,
+                                    "free_margin": account_info.margin_free,
+                                    "margin_level": account_info.margin_level,
+                                    "total_profit": account_info.profit,
+                                    "symbol_pnl": symbol_pnl
+                                }
+                                self.db_manager.save_account_metrics(metrics)
+                        except Exception as e:
+                            logger.error(f"Failed to save account metrics: {e}")
+                        # ------------------------------
                         
                         # 实时更新持仓 SL/TP (使用最近一次分析的策略)
                         if self.latest_strategy:
@@ -2355,6 +2448,26 @@ class AI_MT5_Bot:
                         mtf_result = self.mtf_analyzer.analyze(self.symbol, current_price, current_bar_time)
                         logger.info(f"MTF 分析: {mtf_result['signal']} ({mtf_result['reason']})")
                         
+                        # --- 3.2.7 IFVG 分析 (新增) ---
+                        # 在 AdvancedAnalysisAdapter 中已调用，但这里需要单独提取结果供后续使用
+                        # 我们之前在步骤 3.2.1 的 AdvancedAnalysisAdapter.analyze 中已经获取了 ifvg_result
+                        # 但由于 analyze 方法返回的是一个包含多个子结果的字典，我们需要确保 ifvg_result 变量被正确定义
+                        if adv_result and 'ifvg' in adv_result:
+                            ifvg_result = adv_result['ifvg']
+                        else:
+                            # Fallback if advanced analysis failed or ifvg key missing
+                            ifvg_result = {"signal": "hold", "strength": 0, "reasons": [], "active_zones": []}
+                        
+                        logger.info(f"IFVG 分析: {ifvg_result['signal']} (Strength: {ifvg_result['strength']})")
+
+                        # --- 3.2.8 RVGI+CCI 分析 (新增) ---
+                        if adv_result and 'rvgi_cci' in adv_result:
+                            rvgi_cci_result = adv_result['rvgi_cci']
+                        else:
+                            rvgi_cci_result = {"signal": "hold", "strength": 0, "reasons": []}
+                            
+                        logger.info(f"RVGI+CCI 分析: {rvgi_cci_result['signal']} (Strength: {rvgi_cci_result['strength']})")
+                        
                         # --- 3.3 DeepSeek 分析 ---
                         logger.info("正在调用 DeepSeek 分析市场结构...")
                         # 传入 CRT, PriceEq, TF 和 高级分析 的结果作为额外上下文
@@ -2366,7 +2479,9 @@ class AI_MT5_Bot:
                             "matrix_ml": ml_result,
                             "smc": smc_result,
                             "mfh": mfh_result,
-                            "mtf": mtf_result # 新增
+                            "mtf": mtf_result,
+                            "ifvg": ifvg_result,
+                            "rvgi_cci": rvgi_cci_result # 新增
                         }
                         structure = self.deepseek_client.analyze_market_structure(market_snapshot, extra_analysis=extra_analysis)
                         logger.info(f"DeepSeek 分析完成: {structure.get('market_state')}")
@@ -2452,7 +2567,8 @@ class AI_MT5_Bot:
                                 "matrix_ml_raw": ml_result['raw_output'],
                                 "smc_structure": smc_result['structure'],
                                 "smc_reason": smc_result['reason'],
-                                "mfh_slope": mfh_result['slope']
+                                "mfh_slope": mfh_result['slope'],
+                                "ifvg_reason": ", ".join(ifvg_result['reasons']) if ifvg_result['reasons'] else "N/A"
                             }
                         })
                         
@@ -2470,6 +2586,8 @@ class AI_MT5_Bot:
                             f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
                             f"📊 *Signals:*\n"
                             f"• SMC: `{smc_result['signal']}`\n"
+                            f"• IFVG: `{ifvg_result['signal']}` ({ifvg_result['strength']}%)\n"
+                            f"• RVGI+CCI: `{rvgi_cci_result['signal']}` ({rvgi_cci_result['strength']}%)\n"
                             f"• MFH: `{mfh_result['signal']}` (Slope: {mfh_result['slope']:.2f})\n"
                             f"• MTF: `{mtf_result['signal']}`\n"
                             f"• CRT: `{crt_result['signal']}`\n"

@@ -1,0 +1,603 @@
+//+------------------------------------------------------------------+
+//|                                        RVGI_CCI_SMA_Panel_EA.mq5 |
+//|                              Copyright 2025, Christian Benjamin. |
+//|                                             https://www.mql5.com   |
+//+------------------------------------------------------------------+
+#property copyright "Copyright 2025, MetaQuotes Ltd."
+#property link      "https://www.mql5.com  "
+#property version   "1.00"
+#property strict
+
+input int     InpSMA_Period        = 30;
+input int     InpCCI_Period        = 14;
+input int     InpRVI_Smooth        = 4;
+input int     InpATR_Period        = 14;
+input double  InpATR_Multiplier    = 1.5;
+input bool    InpUseATRStop        = true;
+input int     InpSL_SwingBars      = 10;
+input double  InpTarget1_ATR       = 1.0;
+input double  InpTarget2_ATR       = 2.0;
+input int     InpSignalLookback    = 1;
+input int     InpCheckIntervalMs   = 500;
+
+input bool    InpEnableAlerts      = true;
+input bool    InpEnablePush        = false;
+input bool    InpEnableEmail       = false;
+input bool    DebugMode            = true;
+
+// 新增：Telegram通知设置
+input bool    InpEnableTelegram    = true;                         // 启用Telegram通知
+input string  InpTelegramToken     = "8253887074:AAE_o7hfEb6iJCZ2MdVIezOC_E0OnTCvCzY"; // Telegram Bot Token
+input string  InpTelegramChatID    = "5254086791";                           // Telegram Chat ID（例如："-1001234567890"）
+
+input color   InpSL_Color          = clrBlack;
+input color   InpTP_Color          = clrBlue;
+input color   InpArrowUpColor      = clrLime;
+input color   InpArrowDownColor    = clrRed;
+input int     InpPanelFontSize     = 10;
+
+int hSMA = INVALID_HANDLE;
+int hATR = INVALID_HANDLE;
+
+int lastSignalledShift = -1;
+uint lastCheckMs = 0;
+string lastSignalText = "none";
+datetime lastSignalTime = 0;
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+string make_object_name(const string prefix, datetime t)
+  {
+   return(prefix + IntegerToString((int)t));
+  }
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+string pad_gap(int n)
+  {
+   if(n <= 0)
+      return("");
+   string s = "";
+   for(int i=0;i<n;i++)
+      s += " ";
+   return(s);
+  }
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+string format_time_dt(const datetime t)
+  {
+   return(TimeToString(t, TIME_DATE|TIME_SECONDS));
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+double EA_Close(int shift)  { return(iClose(_Symbol,_Period,shift)); }
+double EA_Open(int shift)  { return(iOpen(_Symbol,_Period,shift)); }
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+double EA_High(int shift)  { return(iHigh(_Symbol,_Period,shift)); }
+double EA_Low(int shift)  { return(iLow(_Symbol,_Period,shift)); }
+datetime EA_Time(int shift) { return((datetime)iTime(_Symbol,_Period,shift)); }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+double rvi_raw_at_shift(int shift)
+  {
+   if(iBars(_Symbol,_Period) <= shift + 3)
+      return(0.0);
+   double num0 = (EA_Close(shift) - EA_Open(shift));
+   double num1 = (EA_Close(shift+1) - EA_Open(shift+1));
+   double num2 = (EA_Close(shift+2) - EA_Open(shift+2));
+   double num3 = (EA_Close(shift+3) - EA_Open(shift+3));
+   double num = num0 + 2.0*num1 + 2.0*num2 + num3;
+
+   double den0 = (EA_High(shift) - EA_Low(shift));
+   double den1 = (EA_High(shift+1) - EA_Low(shift+1));
+   double den2 = (EA_High(shift+2) - EA_Low(shift+2));
+   double den3 = (EA_High(shift+3) - EA_Low(shift+3));
+   double den = den0 + 2.0*den1 + 2.0*den2 + den3;
+
+   if(MathAbs(den) < DBL_EPSILON)
+      return(0.0);
+   return num / den;
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+double rvi_main_at(int shift)
+  {
+   int n = MathMax(1, InpRVI_Smooth);
+   double sum = 0.0;
+   int cnt = 0;
+   for(int i=0;i<n;i++)
+     {
+      sum += rvi_raw_at_shift(shift + i);
+      cnt++;
+     }
+   return (cnt>0) ? (sum / cnt) : 0.0;
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+double rvi_signal_at(int shift)
+  {
+   int n = MathMax(1, InpRVI_Smooth);
+   double sum = 0.0;
+   int cnt = 0;
+   for(int i=0;i<n;i++)
+     {
+      sum += rvi_main_at(shift + i);
+      cnt++;
+     }
+   return (cnt>0) ? (sum / cnt) : 0.0;
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+double cci_at(int shift, int period)
+  {
+   int bars = iBars(_Symbol, _Period);
+   if(bars <= shift + period - 1)
+      return(0.0);
+   double sumTP = 0.0;
+   for(int k=0;k<period;k++)
+     {
+      int idx = shift + k;
+      double tp = (EA_High(idx) + EA_Low(idx) + EA_Close(idx)) / 3.0;
+      sumTP += tp;
+     }
+   double smaTP = sumTP / period;
+   double meanDev = 0.0;
+   for(int k=0;k<period;k++)
+     {
+      int idx = shift + k;
+      double tp = (EA_High(idx) + EA_Low(idx) + EA_Close(idx)) / 3.0;
+      meanDev += MathAbs(tp - smaTP);
+     }
+   meanDev = meanDev / period;
+   if(meanDev < DBL_EPSILON)
+      return(0.0);
+   double tp_current = (EA_High(shift) + EA_Low(shift) + EA_Close(shift)) / 3.0;
+   double cci = (tp_current - smaTP) / (0.015 * meanDev);
+   return(cci);
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+double get_atr_current()
+  {
+   if(hATR == INVALID_HANDLE)
+      return(0.0);
+   double tmp[];
+   if(CopyBuffer(hATR, 0, 0, 1, tmp) <= 0)
+      return(0.0);
+   return(tmp[0]);
+  }
+
+struct Levels { double entry; double stop; double tp1; double tp2; datetime time; bool isBuy; };
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+Levels build_levels(bool isBuy, int shift)
+  {
+   Levels L;
+   L.entry = EA_Close(shift);
+   L.time  = EA_Time(shift);
+   L.isBuy = isBuy;
+
+   double atr = get_atr_current();
+   if(atr <= 0.0)
+      atr = SymbolInfoDouble(_Symbol, SYMBOL_POINT) * 10.0;
+
+   if(InpUseATRStop)
+     {
+      L.stop = isBuy ? L.entry - atr * InpATR_Multiplier : L.entry + atr * InpATR_Multiplier;
+     }
+   else
+     {
+      if(isBuy)
+        {
+         double low = EMPTY_VALUE;
+         for(int i=1;i<=InpSL_SwingBars;i++)
+           {
+            double v = EA_Low(i);
+            if(v==WRONG_VALUE)
+               continue;
+            if(low==EMPTY_VALUE || v < low)
+               low = v;
+           }
+         L.stop = (low==EMPTY_VALUE) ? L.entry - atr * InpATR_Multiplier : low - SymbolInfoDouble(_Symbol, SYMBOL_POINT)*5.0;
+        }
+      else
+        {
+         double high = EMPTY_VALUE;
+         for(int i=1;i<=InpSL_SwingBars;i++)
+           {
+            double v = EA_High(i);
+            if(v==WRONG_VALUE)
+               continue;
+            if(high==EMPTY_VALUE || v > high)
+               high = v;
+           }
+         L.stop = (high==EMPTY_VALUE) ? L.entry + atr * InpATR_Multiplier : high + SymbolInfoDouble(_Symbol, SYMBOL_POINT)*5.0;
+        }
+     }
+
+   if(isBuy)
+     {
+      L.tp1 = L.entry + atr * InpTarget1_ATR;
+      L.tp2 = L.entry + atr * InpTarget2_ATR;
+     }
+   else
+     {
+      L.tp1 = L.entry - atr * InpTarget1_ATR;
+      L.tp2 = L.entry - atr * InpTarget2_ATR;
+     }
+
+   return(L);
+  }
+
+//+------------------------------------------------------------------+
+//| Telegram通知函数                                                |
+//+------------------------------------------------------------------+
+bool SendTelegramNotification(string message)
+{
+    if(!InpEnableTelegram || InpTelegramChatID == "") 
+    {
+        if(InpEnableTelegram && InpTelegramChatID == "")
+            Print("Telegram Chat ID is not set. Telegram notifications disabled.");
+        return false;
+    }
+    
+    // 构建请求URL和参数
+    string url = "https://api.telegram.org/bot" + InpTelegramToken + "/sendMessage";
+    string params = "chat_id=" + InpTelegramChatID + "&text=" + message + "&parse_mode=HTML";
+    char data[];
+    int result = StringToCharArray(params, data, 0, StringLen(params));
+    
+    // 发送 WebRequest
+    char response[];
+    string headers;
+    int res = WebRequest("POST", url, headers, 5000, data, response, headers);
+    
+    // 处理结果
+    if(res == -1) // 请求失败
+    {
+        Print("Telegram发送失败: 网络错误. 错误代码: ", GetLastError());
+        Print("请检查: 1) MT5终端 [工具] -> [选项] -> [智能交易系统] 中，");
+        Print("是否已允许URL 'https://api.telegram.org' 。");
+        return false;
+    }
+    else if(res == 200) // HTTP 200 OK 表示成功
+    {
+        Print("Telegram信号已发送: ", message);
+        return true;
+    }
+    else // 其他HTTP错误
+    {
+        Print("Telegram发送返回HTTP错误: ", res);
+        return false;
+    }
+}
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+void draw_signal_objects(const Levels &L)
+  {
+   string base = make_object_name("RVGI_SIG_", L.time);
+
+   string arr = base + (L.isBuy ? "_BUY_ARR" : "_SELL_ARR");
+   if(ObjectFind(0, arr) >= 0)
+      ObjectDelete(0, arr);
+   if(!ObjectCreate(0, arr, OBJ_ARROW, 0, L.time, L.entry))
+     {
+      if(DebugMode)
+         Print("Create arrow failed:", arr);
+     }
+   ObjectSetInteger(0, arr, OBJPROP_ARROWCODE, L.isBuy ? 233 : 234);
+   ObjectSetInteger(0, arr, OBJPROP_COLOR, L.isBuy ? InpArrowUpColor : InpArrowDownColor);
+   ObjectSetInteger(0, arr, OBJPROP_WIDTH, 2);
+   ObjectSetInteger(0, arr, OBJPROP_BACK, true);
+
+   string sln = base + "_SL";
+   if(ObjectFind(0, sln) >= 0)
+      ObjectDelete(0, sln);
+   if(!ObjectCreate(0, sln, OBJ_HLINE, 0, 0, L.stop))
+     {
+      if(DebugMode)
+         Print("Create SL failed:", sln);
+     }
+   ObjectSetDouble(0, sln, OBJPROP_PRICE, L.stop);
+   ObjectSetInteger(0, sln, OBJPROP_COLOR, InpSL_Color);
+   ObjectSetInteger(0, sln, OBJPROP_WIDTH, 2);
+   ObjectSetString(0, sln, OBJPROP_TEXT, StringFormat("SL: %.*f", _Digits, L.stop));
+
+   string tp1n = base + "_TP1";
+   if(ObjectFind(0, tp1n) >= 0)
+      ObjectDelete(0, tp1n);
+   if(!ObjectCreate(0, tp1n, OBJ_HLINE, 0, 0, L.tp1))
+     {
+      if(DebugMode)
+         Print("Create TP1 failed:", tp1n);
+     }
+   ObjectSetDouble(0, tp1n, OBJPROP_PRICE, L.tp1);
+   ObjectSetInteger(0, tp1n, OBJPROP_COLOR, InpTP_Color);
+   ObjectSetInteger(0, tp1n, OBJPROP_WIDTH, 1);
+   ObjectSetString(0, tp1n, OBJPROP_TEXT, StringFormat("TP1: %.*f", _Digits, L.tp1));
+
+   string tp2n = base + "_TP2";
+   if(ObjectFind(0, tp2n) >= 0)
+      ObjectDelete(0, tp2n);
+   if(!ObjectCreate(0, tp2n, OBJ_HLINE, 0, 0, L.tp2))
+     {
+      if(DebugMode)
+         Print("Create TP2 failed:", tp2n);
+     }
+   ObjectSetDouble(0, tp2n, OBJPROP_PRICE, L.tp2);
+   ObjectSetInteger(0, tp2n, OBJPROP_COLOR, InpTP_Color);
+   ObjectSetInteger(0, tp2n, OBJPROP_WIDTH, 1);
+   ObjectSetString(0, tp2n, OBJPROP_TEXT, StringFormat("TP2: %.*f", _Digits, L.tp2));
+
+   ChartRedraw();
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+void draw_panel()
+  {
+   string txt = "RVGI + CCI + SMA Panel\n";
+   double sma = 0.0;
+   if(hSMA != INVALID_HANDLE)
+     {
+      double tmp[];
+      if(CopyBuffer(hSMA, 0, 0, 1, tmp) > 0)
+         sma = tmp[0];
+     }
+   else
+     {
+      double sum=0;
+      int cnt=0;
+      for(int i=0;i<InpSMA_Period;i++)
+        {
+         if(iBars(_Symbol,_Period) <= i)
+            break;
+         sum += EA_Close(i);
+         cnt++;
+        }
+      if(cnt>0)
+         sma = sum / cnt;
+     }
+   txt += "SMA(" + IntegerToString(InpSMA_Period) + "): " + DoubleToString(sma, _Digits) + "\n";
+
+   double rviM = rvi_main_at(1), rviS = rvi_signal_at(1);
+   double cciV = cci_at(1, InpCCI_Period);
+   txt += "RVI: " + DoubleToString(rviM,5) + " sig: " + DoubleToString(rviS,5) + "\n";
+   txt += "CCI: " + DoubleToString(cciV,2) + "\n";
+
+   double atr = get_atr_current();
+   txt += "ATR: " + DoubleToString(atr, _Digits) + "\n";
+
+   txt += "Last signal: " + lastSignalText + (lastSignalTime==0 ? "" : (" " + TimeToString(lastSignalTime, TIME_DATE|TIME_SECONDS)));
+   
+   // 添加Telegram状态显示
+   txt += "\nTelegram: " + (InpEnableTelegram ? "ON" : "OFF");
+   if(InpEnableTelegram && InpTelegramChatID == "")
+      txt += " (Chat ID not set!)";
+   
+   Comment(txt);
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+void check_for_signals()
+  {
+   uint now = (uint)GetTickCount();
+   if(lastCheckMs != 0 && (now - lastCheckMs) < (uint)InpCheckIntervalMs)
+      return;
+   lastCheckMs = now;
+
+   int shift = InpSignalLookback;
+
+   if(iBars(_Symbol,_Period) <= shift + 6)
+     {
+      if(DebugMode)
+         Print("Not enough bars:", iBars(_Symbol,_Period));
+      return;
+     }
+
+   double smaVal = 0.0;
+   if(hSMA != INVALID_HANDLE)
+     {
+      double tmp[];
+      if(CopyBuffer(hSMA, 0, shift, 1, tmp) > 0)
+         smaVal = tmp[0];
+     }
+   else
+     {
+      double sum=0;
+      int cnt=0;
+      for(int i=shift; i< shift + InpSMA_Period; i++)
+        {
+         if(iBars(_Symbol,_Period) <= i)
+            break;
+         sum += EA_Close(i);
+         cnt++;
+        }
+      if(cnt>0)
+         smaVal = sum / cnt;
+      else
+        {
+         if(DebugMode)
+            Print("Manual SMA fallback failed");
+         return;
+        }
+     }
+
+   double rviMainNow = rvi_main_at(shift);
+   double rviMainPrev = rvi_main_at(shift + 1);
+   double rviSigNow = rvi_signal_at(shift);
+   double rviSigPrev = rvi_signal_at(shift + 1);
+
+   double cciNow = cci_at(shift, InpCCI_Period);
+   double cciPrev = cci_at(shift + 1, InpCCI_Period);
+
+   double price = EA_Close(shift);
+   bool priceAboveSMA = (price > smaVal);
+   bool priceBelowSMA = (price < smaVal);
+
+   bool rviCrossUp   = (rviMainPrev <= rviSigPrev) && (rviMainNow > rviSigNow);
+   bool rviCrossDown = (rviMainPrev >= rviSigPrev) && (rviMainNow < rviSigNow);
+
+   bool cciBuy  = (cciNow <= -100.0);
+   bool cciSell = (cciNow >= 100.0);
+
+   if(priceAboveSMA && cciSell && rviCrossDown)
+     {
+      if(shift != lastSignalledShift)
+        {
+         Levels L = build_levels(false, shift);
+         draw_signal_objects(L);
+         lastSignalledShift = shift;
+         lastSignalText = "SELL @ " + DoubleToString(price, _Digits);
+         lastSignalTime = EA_Time(shift);
+         
+         // 发送所有类型的通知
+         if(InpEnableAlerts)
+            Alert("SELL signal: " + Symbol() + " " + TimeToString(lastSignalTime, TIME_DATE|TIME_SECONDS));
+         if(InpEnablePush)
+            SendNotification("SELL " + Symbol() + " " + TimeToString(lastSignalTime, TIME_DATE|TIME_SECONDS));
+         if(InpEnableEmail)
+            SendMail("RVGI SELL", "SELL " + Symbol() + " " + TimeToString(lastSignalTime, TIME_DATE|TIME_SECONDS));
+         
+         // 新增：发送Telegram通知
+         if(InpEnableTelegram)
+         {
+            string tgMsg = StringFormat("🔔 <b>RVGI+CCI+SMA 卖出信号</b>\n" +
+                                       "⏰ 时间: %s\n" +
+                                       "📊 品种: %s\n" +
+                                       "📉 方向: SELL\n" +
+                                       "💰 价格: %.5f\n" +
+                                       "🛡️ 止损: %.5f\n" +
+                                       "🎯 TP1: %.5f\n" +
+                                       "🎯 TP2: %.5f\n" +
+                                       "📊 信号条件: 价格在SMA之上 + CCI超买 + RVI死叉",
+                                       TimeToString(lastSignalTime, TIME_DATE|TIME_SECONDS),
+                                       _Symbol,
+                                       L.entry,
+                                       L.stop,
+                                       L.tp1,
+                                       L.tp2);
+            SendTelegramNotification(tgMsg);
+         }
+         
+         draw_panel();
+        }
+      return;
+     }
+
+   if(priceBelowSMA && cciBuy && rviCrossUp)
+     {
+      if(shift != lastSignalledShift)
+        {
+         Levels L = build_levels(true, shift);
+         draw_signal_objects(L);
+         lastSignalledShift = shift;
+         lastSignalText = "BUY @ " + DoubleToString(price, _Digits);
+         lastSignalTime = EA_Time(shift);
+         
+         // 发送所有类型的通知
+         if(InpEnableAlerts)
+            Alert("BUY signal: " + Symbol() + " " + TimeToString(lastSignalTime, TIME_DATE|TIME_SECONDS));
+         if(InpEnablePush)
+            SendNotification("BUY " + Symbol() + " " + TimeToString(lastSignalTime, TIME_DATE|TIME_SECONDS));
+         if(InpEnableEmail)
+            SendMail("RVGI BUY", "BUY " + Symbol() + " " + TimeToString(lastSignalTime, TIME_DATE|TIME_SECONDS));
+         
+         // 新增：发送Telegram通知
+         if(InpEnableTelegram)
+         {
+            string tgMsg = StringFormat("🔔 <b>RVGI+CCI+SMA 买入信号</b>\n" +
+                                       "⏰ 时间: %s\n" +
+                                       "📊 品种: %s\n" +
+                                       "📈 方向: BUY\n" +
+                                       "💰 价格: %.5f\n" +
+                                       "🛡️ 止损: %.5f\n" +
+                                       "🎯 TP1: %.5f\n" +
+                                       "🎯 TP2: %.5f\n" +
+                                       "📊 信号条件: 价格在SMA之下 + CCI超卖 + RVI金叉",
+                                       TimeToString(lastSignalTime, TIME_DATE|TIME_SECONDS),
+                                       _Symbol,
+                                       L.entry,
+                                       L.stop,
+                                       L.tp1,
+                                       L.tp2);
+            SendTelegramNotification(tgMsg);
+         }
+         
+         draw_panel();
+        }
+      return;
+     }
+
+   draw_panel();
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+int OnInit()
+  {
+   hSMA = iMA(_Symbol, _Period, InpSMA_Period, 0, MODE_SMA, PRICE_CLOSE);
+   if(hSMA == INVALID_HANDLE)
+      Print("Warning: SMA handle not created - fallback will be used.");
+
+   hATR = iATR(_Symbol, _Period, InpATR_Period);
+   if(hATR == INVALID_HANDLE)
+      Print("Warning: ATR handle not created - ATR fallback will be used.");
+
+   lastSignalledShift = -1;
+   lastCheckMs = 0;
+   lastSignalText = "none";
+   lastSignalTime = 0;
+
+   draw_panel();
+   Print("RVGI_CCI_SMA_SingleFile_EA initialized.");
+   
+   // 检查Telegram配置
+   if(InpEnableTelegram && InpTelegramChatID == "")
+      Print("WARNING: Telegram is enabled but Chat ID is not set! Please set TelegramChatID in inputs.");
+   
+   return(INIT_SUCCEEDED);
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+  {
+   if(hSMA != INVALID_HANDLE)
+      IndicatorRelease(hSMA);
+   if(hATR != INVALID_HANDLE)
+      IndicatorRelease(hATR);
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+void OnTick()
+  {
+   check_for_signals();
+  }

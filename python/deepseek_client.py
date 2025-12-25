@@ -3,9 +3,27 @@ import json
 import logging
 import time
 from typing import Dict, Any, Optional, List
+import pandas as pd
+import numpy as np
+from datetime import datetime, date
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+class CustomJSONEncoder(json.JSONEncoder):
+    """自定义JSON编码器，处理Timestamp等非序列化类型"""
+    def default(self, o):
+        if isinstance(o, (datetime, date, pd.Timestamp)):
+            return o.isoformat()
+        if isinstance(o, (pd.Series, pd.DataFrame)):
+            return o.to_dict()
+        if isinstance(o, (np.integer, int)):
+            return int(o)
+        if isinstance(o, (np.floating, float)):
+            return float(o)
+        if isinstance(o, np.ndarray):
+            return o.tolist()
+        return super().default(o)
 
 class DeepSeekClient:
     """
@@ -123,13 +141,13 @@ class DeepSeekClient:
         """
         extra_context = ""
         if extra_analysis:
-            extra_context = f"\n额外技术分析参考:\n{json.dumps(extra_analysis, indent=2)}\n"
+            extra_context = f"\n额外技术分析参考:\n{json.dumps(extra_analysis, indent=2, cls=CustomJSONEncoder)}\n"
 
         prompt = f"""
         作为专业的量化交易分析师，你是混合交易系统的一部分。请分析以下市场数据，识别当前的市场结构。
         {extra_context}
         市场数据：
-        {json.dumps(market_data, indent=2)}
+        {json.dumps(market_data, indent=2, cls=CustomJSONEncoder)}
         
         请提供以下分析结果：
         1. 市场状态：趋势（上升/下降）、震荡、高波动

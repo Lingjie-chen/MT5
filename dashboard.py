@@ -20,6 +20,119 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Cyberpunk Styling
+def apply_cyberpunk_style():
+    st.markdown("""
+        <style>
+        /* Global App Background */
+        .stApp {
+            background-color: #050505;
+            background-image: 
+                radial-gradient(circle at 50% 50%, #111119 0%, #000000 100%);
+            color: #e0e0e0;
+            font-family: 'Courier New', monospace;
+        }
+        
+        /* Headers - Neon Glow */
+        h1, h2, h3 {
+            color: #00f3ff !important;
+            text-shadow: 0 0 8px rgba(0, 243, 255, 0.6), 0 0 16px rgba(0, 243, 255, 0.4);
+            font-family: 'Orbitron', 'Courier New', sans-serif;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+        
+        /* Metrics - Cyberpunk Style */
+        div[data-testid="stMetric"] {
+            background-color: rgba(10, 10, 15, 0.8);
+            border: 1px solid #333;
+            border-left: 3px solid #ff00ff;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(255, 0, 255, 0.1);
+        }
+        div[data-testid="stMetricLabel"] {
+            color: #888 !important;
+            font-size: 0.8rem;
+        }
+        div[data-testid="stMetricValue"] {
+            color: #ff00ff !important;
+            text-shadow: 0 0 5px rgba(255, 0, 255, 0.5);
+            font-family: 'Courier New', monospace;
+        }
+        div[data-testid="stMetricDelta"] {
+            color: #00ff9d !important;
+        }
+        
+        /* Dataframes/Tables - Dark & Techy */
+        .stDataFrame {
+            border: 1px solid #333;
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.1);
+        }
+        
+        /* Sidebar - Dark Panel */
+        section[data-testid="stSidebar"] {
+            background-color: #08080c;
+            border-right: 1px solid #1f1f2e;
+        }
+        section[data-testid="stSidebar"] h1 {
+            text-shadow: none;
+            color: #fff !important;
+        }
+        
+        /* Containers & Expanders */
+        .streamlit-expanderHeader {
+            background-color: #0f0f15 !important;
+            color: #00f3ff !important;
+            border: 1px solid #1f1f2e;
+            border-radius: 4px;
+        }
+        div[data-testid="stExpander"] {
+            border: 1px solid #1f1f2e;
+            background-color: rgba(10, 10, 16, 0.5);
+        }
+        
+        /* Buttons - Neon Outlines */
+        .stButton > button {
+            background-color: transparent;
+            color: #00f3ff;
+            border: 1px solid #00f3ff;
+            border-radius: 0;
+            box-shadow: 0 0 5px rgba(0, 243, 255, 0.2);
+            font-family: 'Courier New', monospace;
+            transition: all 0.3s ease;
+        }
+        .stButton > button:hover {
+            background-color: rgba(0, 243, 255, 0.1);
+            color: #fff;
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.5);
+            border-color: #fff;
+        }
+        
+        /* Alerts/Info Boxes */
+        div[data-testid="stAlert"] {
+            background-color: rgba(0, 20, 40, 0.6);
+            border: 1px solid #00f3ff;
+            color: #e0e0e0;
+        }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+            background: #050505;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 5px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #00f3ff;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+apply_cyberpunk_style()
+
 # Initialize Managers
 # Remove cache_resource to ensure latest class definition is loaded during dev
 @st.cache_resource 
@@ -60,7 +173,7 @@ with row1_col1:
     chart_placeholder = st.empty()
 
 with row1_col2:
-    st.subheader("Portfolio Status")
+    st.subheader("Signal & Portfolio Status")
     gauge_placeholder = st.empty()
     pie_placeholder = st.empty()
 
@@ -117,7 +230,7 @@ def update_dashboard():
             ai_decision_placeholder.info(f"{last_signal['signal'].upper()} (Strength: {last_signal['strength']:.1f}%)")
             
             # Update Gauge
-            fig_gauge = visualizer.create_gauge_chart(last_signal['strength'], title="AI Confidence")
+            fig_gauge = visualizer.create_gauge_chart(last_signal['strength'], title=f"Signal Strength: {last_signal['strength']:.1f}")
             gauge_placeholder.plotly_chart(fig_gauge, use_container_width=True)
 
             # Update AI Analysis Text

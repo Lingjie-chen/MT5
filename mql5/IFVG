@@ -1,0 +1,1304 @@
+//+------------------------------------------------------------------+
+//|                                                  FVG Inverse.mq5 |
+//|                           Copyright 2025, Allan Munene Mutiiria. |
+//|                                   https://t.me/Forex_Algo_Trader |
+//+------------------------------------------------------------------+
+#property copyright "Copyright 2025, Allan Munene Mutiiria."
+#property link      "https://t.me/Forex_Algo_Trader"
+#property version   "2.00"
+#property description "FVG Inverse EA with Hybrid Auto-Optimization"
+#property strict
+#include <Trade/Trade.mqh>
+#include <Math/Stat/Math.mqh>
+#include <Trade/PositionInfo.mqh>
+#include <Trade/DealInfo.mqh>
+//+------------------------------------------------------------------+
+//| Global Variables                                                 |
+//+------------------------------------------------------------------+
+CTrade obj_Trade;                                                 //--- Trade object
+CPositionInfo position;
+CDealInfo deal;
+#define FVG_Prefix "IFVG REC "                                    //--- FVG prefix
+// Normal FVGs
+#define CLR_UP clrGreen                                           // Green for normal up (Bullish FVG)
+#define CLR_DOWN clrRed                                           // Red for normal down (Bearish FVG)
+// Mitigated FVGs
+#define CLR_MIT_UP clrPurple                                      // Purple for mitigated up (Mitigated Bullish FVG)
+#define CLR_MIT_DOWN clrOrange                                    // Orange for mitigated down (Mitigated Bearish FVG)
+// Inverted FVGs
+#define CLR_INV_UP clrRed                                         // Red for inverted up (Bearish IFVG)
+#define CLR_INV_DOWN clrGreen                                     // Green for inverted down (Bullish IFVG)
+//+------------------------------------------------------------------+
+//| Enums                                                            |
+//+------------------------------------------------------------------+
+enum TradeMode {                                                  // Define trade mode enum
+   TradeOnce,                                                     // Trade Once
+   LimitedTrades,                                                 // Limited Trades
+   UnlimitedTrades                                                // Unlimited Trades
+};
+enum FVGState {                                                   // Define FVG state enum
+   Normal,                                                        // Normal
+   Mitigated,                                                     // Mitigated
+   Inverted                                                       // Inverted
+};
+enum TrailingTypeEnum {                                           // Define enum for trailing stop types
+   Trailing_None   = 0,                                           // None
+   Trailing_Points = 2                                            // By Points
+};
+//+------------------------------------------------------------------+
+//| Input Parameters                                                 |
+//+------------------------------------------------------------------+
+input group "EA GENERAL SETTINGS"
+input double inpLot             = 0.01;                           // Lotsize
+input int    sl_pts             = 300;                            // Stop Loss Points
+input int    tp_pts             = 300;                            // Take Profit Points
+input int    minPts             = 100;                            // Minimum Gap Size in Points
+input int    FVG_Rec_Ext_Bars   = 30;                             // FVG Extension Bars
+input bool   prt                = true;                           // Print Statements
+input long   magic_number       = 123456789;                      // Magic Number
+input bool   ignoreOverlaps     = true;                           // Ignore new FVGs that overlap existing ones
+input TradeMode tradeMode       = TradeOnce;                      // Mode for trading FVGs
+input int    maxTradesPerFVG    = 2;                              // Maximum trades per FVG for LimitedTrades
+input int    maxFVGs            = 50;                             // Maximum FVGs to track in array
+input TrailingTypeEnum TrailingType = Trailing_None;              // Trailing Stop Type
+input double Trailing_Stop_Pips = 30.0;                           // Trailing Stop in Pips (for Points type)
+input double Min_Profit_To_Trail_Pips = 50.0;                     // Min Profit to Start Trailing in Pips
+//+------------------------------------------------------------------+
+//| Auto-Optimization Parameters                                     |
+//+------------------------------------------------------------------+
+input group "AUTO OPTIMIZATION SETTINGS"
+input bool EnableAutoOptimization = true;                        // Enable auto optimization
+input bool RunInRealtime = true;                                  // Run optimization in realtime
+input int RandomSearchPasses = 100;                               // Number of random search passes
+input int GAGenerations = 50;                                     // Number of genetic algorithm generations
+input int GAPopulationSize = 50;                                  // Population size for GA
+//+------------------------------------------------------------------+
+//| Structure for FVG zone information                               |
+//+------------------------------------------------------------------+
+struct FVGZone {                                                  // Define FVG zone structure
+   string   name;                                                 //--- Zone name
+   datetime startTime;                                            //--- Start time
+   datetime origEndTime;                                          //--- Original end time
+   datetime mitTime;                                              //--- Mitigation time
+   bool     signal;                                               //--- Signal flag
+   bool     inverted;                                             //--- Inverted flag
+   bool     mit;                                                  //--- Mitigated flag
+   bool     ret;                                                  //--- Retraced flag
+   bool     origUp;                                               //--- Original up flag
+   int      tradeCount;                                           //--- Trade count
+   FVGState state;                                                //--- State
+   bool     newSignal;                                            //--- New signal flag
+};
+FVGZone fvgs[];                                                   //--- FVG zones array
+
+// Symbol parameters structure for optimization
+struct SymbolParams
+{
+    // Trading parameters
+    double lot_size;
+    int stop_loss_points;
+    int take_profit_points;
+    int min_gap_points;
+    int fvg_extension_bars;
+    bool ignore_overlaps;
+    TradeMode trade_mode;
+    int max_trades_per_fvg;
+    int max_fvgs;
+    
+    // Trailing stop parameters
+    TrailingTypeEnum trailing_type;
+    double trailing_stop_pips;
+    double min_profit_to_trail_pips;
+    
+    // Statistics for optimization
+    double total_trades;
+    double winning_trades;
+    double profit_factor;
+    double max_drawdown;
+    double sharpe_ratio;
+};
+
+SymbolParams g_params;
+
+// Optimization structures
+struct Individual
+{
+    double params[30];  // Parameters array
+    double fitness;
+};
+
+Individual population[];
+
+// For real-time optimization
+datetime lastFullOptimizationTime = 0;
+datetime lastQuickOptimizationTime = 0;
+double lastOptimizedScore = -1e8;
+bool isOptimizing = false;
+bool g_enableAutoOptimization = true; // 可变版本的优化开关
+datetime lastOptimizationTime = 0;
+bool isFirstRun = true;
+bool optimizationCompleted = false;
+
+//+------------------------------------------------------------------+
+//| Get color based on state and direction                           |
+//+------------------------------------------------------------------+
+color GetFVGColor(bool isUp, FVGState currentState) {
+   if (currentState == Normal) return isUp ? CLR_UP : CLR_DOWN;   //--- Return normal color
+   if (currentState == Mitigated) return isUp ? CLR_MIT_UP : CLR_MIT_DOWN; //--- Return mitigated color
+   if (currentState == Inverted) return isUp ? CLR_INV_UP : CLR_INV_DOWN; //--- Return inverted color
+   return clrNONE;                                                //--- Return none
+}
+//+------------------------------------------------------------------+
+//| Print FVGs for debugging                                         |
+//+------------------------------------------------------------------+
+void PrintFVGs() {
+   if (!prt) return;                                              //--- Return if no print
+   Print("Current FVGs count: ", ArraySize(fvgs));                //--- Print count
+   for (int i = 0; i < ArraySize(fvgs); i++) {                    //--- Iterate FVGs
+      Print("FVG ", i, ": ", fvgs[i].name, " state=", EnumToString(fvgs[i].state), " mit=", fvgs[i].mit, " ret=", fvgs[i].ret, " inverted=", fvgs[i].inverted, " tradeCount=", fvgs[i].tradeCount, " newSignal=", fvgs[i].newSignal, " endTime=", TimeToString(fvgs[i].origEndTime)); //--- Print details
+   }
+}
+//+------------------------------------------------------------------+
+//| Initialize parameters for optimization                          |
+//+------------------------------------------------------------------+
+void InitParams()
+{
+    // Initialize with input parameters
+    g_params.lot_size = NormalizeVolume(inpLot); // 规范化输入的交易量
+    g_params.stop_loss_points = sl_pts;
+    g_params.take_profit_points = tp_pts;
+    g_params.min_gap_points = minPts;
+    g_params.fvg_extension_bars = FVG_Rec_Ext_Bars;
+    g_params.ignore_overlaps = ignoreOverlaps;
+    g_params.trade_mode = tradeMode;
+    g_params.max_trades_per_fvg = maxTradesPerFVG;
+    g_params.max_fvgs = maxFVGs;
+    
+    // Trailing stop parameters
+    g_params.trailing_type = TrailingType;
+    g_params.trailing_stop_pips = Trailing_Stop_Pips;
+    g_params.min_profit_to_trail_pips = Min_Profit_To_Trail_Pips;
+    
+    // Statistics
+    g_params.total_trades = 0;
+    g_params.winning_trades = 0;
+    g_params.profit_factor = 0;
+    g_params.max_drawdown = 0;
+    g_params.sharpe_ratio = 0;
+}
+//+------------------------------------------------------------------+
+//| Generate random individual for optimization                     |
+//+------------------------------------------------------------------+
+void GenerateRandomIndividual(Individual &ind)
+{
+    // Trading parameters
+    // 对于黄金，交易量通常需要是0.01的倍数，所以限制在0.01-5.0之间
+    ind.params[0] = (MathRand()/32767.0 * 0.01 + 0.01); // lot_size (0.01-0.1)
+    // 确保是0.01的倍数
+    ind.params[0] = MathRound(ind.params[0] * 100) / 100.0;
+    
+    ind.params[1] = MathRand() % 401 + 100;                // stop_loss_points (100-500)
+    ind.params[2] = MathRand() % 401 + 100;                // take_profit_points (100-500)
+    ind.params[3] = MathRand() % 151 + 50;                 // min_gap_points (50-200)
+    ind.params[4] = MathRand() % 41 + 10;                  // fvg_extension_bars (10-50)
+    ind.params[5] = (MathRand() % 2 == 0);                 // ignore_overlaps (bool)
+    ind.params[6] = MathRand() % 3;                        // trade_mode (0-2)
+    ind.params[7] = MathRand() % 5 + 1;                    // max_trades_per_fvg (1-5)
+    ind.params[8] = MathRand() % 41 + 10;                  // max_fvgs (10-50)
+    
+    // Trailing stop parameters
+    ind.params[9] = MathRand() % 2;                        // trailing_type (0 or 2)
+    ind.params[10] = MathRand()/32767.0 * 70.0 + 10.0;     // trailing_stop_pips (10-80)
+    ind.params[11] = MathRand()/32767.0 * 90.0 + 10.0;     // min_profit_to_trail_pips (10-100)
+}
+//+------------------------------------------------------------------+
+//| Crossover function for genetic algorithm                        |
+//+------------------------------------------------------------------+
+Individual Crossover(Individual &p1, Individual &p2)
+{
+    Individual child;
+    child.fitness = 0.0;  // 明确初始化fitness值
+    for(int i = 0; i < 12; i++)
+    {
+        // 70% chance to inherit from parent1, 30% from parent2
+        if(MathRand()/32767.0 < 0.7)
+            child.params[i] = p1.params[i];
+        else
+            child.params[i] = p2.params[i];
+    }
+    return child;
+}
+//+------------------------------------------------------------------+
+//| Mutation operation for genetic algorithm                        |
+//+------------------------------------------------------------------+
+void Mutate(Individual &ind)
+{
+    for(int i = 0; i < 12; i++)
+    {
+        if(MathRand()/32767.0 < 0.15) // 15% mutation rate
+        {
+            if(i == 0) // lot_size
+            {
+                ind.params[i] = MathMax(0.01, MathMin(5.0, ind.params[i] + (MathRand()/32767.0 - 0.5) * 0.5));
+                // 确保是0.01的倍数
+                ind.params[i] = MathRound(ind.params[i] * 100) / 100.0;
+            }
+            else if(i == 1 || i == 2) // stop_loss_points, take_profit_points
+                ind.params[i] = MathMax(50, MathMin(1000, (int)(ind.params[i] + (MathRand() % 101) - 50)));
+            else if(i == 3) // min_gap_points
+                ind.params[i] = MathMax(30, MathMin(300, (int)(ind.params[i] + (MathRand() % 61) - 30)));
+            else if(i == 4 || i == 8) // fvg_extension_bars, max_fvgs
+                ind.params[i] = MathMax(5, MathMin(100, (int)(ind.params[i] + (MathRand() % 21) - 10)));
+            else if(i == 5) // ignore_overlaps (bool)
+                ind.params[i] = (MathRand() % 2 == 0);
+            else if(i == 6) // trade_mode (0-2)
+                ind.params[i] = MathRand() % 3;
+            else if(i == 7) // max_trades_per_fvg
+                ind.params[i] = MathMax(1, MathMin(10, (int)(ind.params[i] + (MathRand() % 5) - 2)));
+            else if(i == 9) // trailing_type (0 or 2)
+                ind.params[i] = (MathRand() % 2 == 0) ? 0 : 2;
+            else if(i == 10) // trailing_stop_pips
+                ind.params[i] = MathMax(5.0, MathMin(100.0, ind.params[i] + (MathRand()/32767.0 - 0.5) * 20.0));
+            else if(i == 11) // min_profit_to_trail_pips
+                ind.params[i] = MathMax(5.0, MathMin(200.0, ind.params[i] + (MathRand()/32767.0 - 0.5) * 30.0));
+        }
+    }
+}
+//+------------------------------------------------------------------+
+//| Evaluate individual performance                                  |
+//+------------------------------------------------------------------+
+double EvaluateIndividual(Individual &ind)
+{
+    // Save current market data state
+    datetime saveTime = TimeCurrent();
+    // Backup current parameters
+    SymbolParams backup = g_params;
+    
+    // Apply individual parameters
+    g_params.lot_size = ind.params[0];
+    g_params.stop_loss_points = (int)ind.params[1];
+    g_params.take_profit_points = (int)ind.params[2];
+    g_params.min_gap_points = (int)ind.params[3];
+    g_params.fvg_extension_bars = (int)ind.params[4];
+    g_params.ignore_overlaps = (bool)ind.params[5];
+    g_params.trade_mode = (TradeMode)(int)ind.params[6];
+    g_params.max_trades_per_fvg = (int)ind.params[7];
+    g_params.max_fvgs = (int)ind.params[8];
+    g_params.trailing_type = (TrailingTypeEnum)(int)ind.params[9];
+    g_params.trailing_stop_pips = ind.params[10];
+    g_params.min_profit_to_trail_pips = ind.params[11];
+    
+    // Temporarily disable trading during evaluation
+    bool prevEnableAutoOptimization = g_enableAutoOptimization;
+    g_enableAutoOptimization = false;
+    
+    // Get performance score
+    double score = OnTester();
+    
+    // Restore trading state
+    g_enableAutoOptimization = prevEnableAutoOptimization;
+    
+    // Restore backup parameters
+    g_params = backup;
+    return score;
+}
+//+------------------------------------------------------------------+
+//| Apply optimized parameters                                       |
+//+------------------------------------------------------------------+
+void ApplyIndividual(Individual &ind)
+{
+    // Apply best parameters to g_params structure
+    g_params.lot_size = NormalizeVolume(ind.params[0]); // 规范化交易量
+    g_params.stop_loss_points = (int)ind.params[1];
+    g_params.take_profit_points = (int)ind.params[2];
+    g_params.min_gap_points = (int)ind.params[3];
+    g_params.fvg_extension_bars = (int)ind.params[4];
+    g_params.ignore_overlaps = (bool)ind.params[5];
+    g_params.trade_mode = (TradeMode)(int)ind.params[6];
+    g_params.max_trades_per_fvg = (int)ind.params[7];
+    g_params.max_fvgs = (int)ind.params[8];
+    g_params.trailing_type = (TrailingTypeEnum)(int)ind.params[9];
+    g_params.trailing_stop_pips = ind.params[10];
+    g_params.min_profit_to_trail_pips = ind.params[11];
+    
+    Print("Optimized parameters applied:");
+    Print("Lot Size: ", DoubleToString(g_params.lot_size, 2));
+    Print("Stop Loss Points: ", IntegerToString(g_params.stop_loss_points));
+    Print("Take Profit Points: ", IntegerToString(g_params.take_profit_points));
+    Print("Min Gap Points: ", IntegerToString(g_params.min_gap_points));
+    Print("FVG Extension Bars: ", IntegerToString(g_params.fvg_extension_bars));
+    Print("Trailing Stop Pips: ", DoubleToString(g_params.trailing_stop_pips, 1));
+    Print("Min Profit To Trail Pips: ", DoubleToString(g_params.min_profit_to_trail_pips, 1));
+}
+//+------------------------------------------------------------------+
+//| Save optimized parameters                                        |
+//+------------------------------------------------------------------+
+void SaveOptimizedParams()
+{
+    string filename = "FVGInverse_Opt_" + Symbol() + "_" + IntegerToString(Period()) + ".bin";
+    int h = FileOpen(filename, FILE_WRITE|FILE_BIN);
+    if(h == INVALID_HANDLE) return;
+    
+    // 保存参数数量
+    FileWriteInteger(h, 12);
+    
+    // 保存参数值
+    FileWriteDouble(h, g_params.lot_size);
+    FileWriteInteger(h, g_params.stop_loss_points);
+    FileWriteInteger(h, g_params.take_profit_points);
+    FileWriteInteger(h, g_params.min_gap_points);
+    FileWriteInteger(h, g_params.fvg_extension_bars);
+    FileWriteInteger(h, (int)g_params.ignore_overlaps);
+    FileWriteInteger(h, (int)g_params.trade_mode);
+    FileWriteInteger(h, g_params.max_trades_per_fvg);
+    FileWriteInteger(h, g_params.max_fvgs);
+    FileWriteInteger(h, (int)g_params.trailing_type);
+    FileWriteDouble(h, g_params.trailing_stop_pips);
+    FileWriteDouble(h, g_params.min_profit_to_trail_pips);
+    
+    FileClose(h);
+    Print("Optimized parameters saved to ", filename);
+}
+//+------------------------------------------------------------------+
+//| Load optimized parameters                                        |
+//+------------------------------------------------------------------+
+bool LoadOptimizedParams()
+{
+    string filename = "FVGInverse_Opt_" + Symbol() + "_" + IntegerToString(Period()) + ".bin";
+    int h = FileOpen(filename, FILE_READ|FILE_BIN);
+    if(h == INVALID_HANDLE) 
+    {
+        Print("No optimized parameters file found for ", Symbol(), " ", Period());
+        return false;
+    }
+    
+    int param_count = FileReadInteger(h);
+    if(param_count != 12)
+    {
+        Print("Parameter count mismatch in optimized file");
+        FileClose(h);
+        return false;
+    }
+    
+    // 创建临时Individual来存储加载的参数
+    Individual best;
+    
+    // 加载参数值
+    best.params[0] = FileReadDouble(h);
+    best.params[1] = FileReadDouble(h);
+    best.params[2] = FileReadDouble(h);
+    best.params[3] = FileReadDouble(h);
+    best.params[4] = FileReadDouble(h);
+    best.params[5] = FileReadDouble(h);
+    best.params[6] = FileReadDouble(h);
+    best.params[7] = FileReadDouble(h);
+    best.params[8] = FileReadDouble(h);
+    best.params[9] = FileReadDouble(h);
+    best.params[10] = FileReadDouble(h);
+    best.params[11] = FileReadDouble(h);
+    
+    FileClose(h);
+    
+    // 应用加载的参数
+    ApplyIndividual(best);
+    Print("Optimized parameters loaded from ", filename);
+    return true;
+}
+//+------------------------------------------------------------------+
+//| Tester function for optimization                                 |
+//+------------------------------------------------------------------+
+double OnTester()
+{
+    if(!HistorySelect(0, TimeCurrent())) return -1e8;
+    int total_deals = HistoryDealsTotal();
+    if(total_deals <= 0) return -1e8;
+    
+    double total_profit = 0;
+    double total_loss = 0;
+    int winning_trades = 0;
+    double max_drawdown = 0;
+    double peak_equity = 10000;
+    double current_equity = 10000;
+    double total_profit_pips = 0;
+    double risk_free_rate = 0.02; // Annual risk-free rate
+    
+    for(int i = 0; i < total_deals; i++)
+    {
+        ulong ticket = HistoryDealGetTicket(i);
+        if(ticket == 0) continue;
+        long entry = HistoryDealGetInteger(ticket, DEAL_ENTRY);
+        if(entry != DEAL_ENTRY_OUT) continue;
+        long magic = HistoryDealGetInteger(ticket, DEAL_MAGIC);
+        if(magic != magic_number) continue;
+        string sym = HistoryDealGetString(ticket, DEAL_SYMBOL);
+        if(sym != Symbol()) continue;
+        
+        double profit = HistoryDealGetDouble(ticket, DEAL_PROFIT) +
+                       HistoryDealGetDouble(ticket, DEAL_COMMISSION) +
+                       HistoryDealGetDouble(ticket, DEAL_SWAP);
+        double vol = HistoryDealGetDouble(ticket, DEAL_VOLUME);
+        if(vol <= 0) continue;
+        
+        current_equity += profit;
+        total_profit_pips += MathAbs(profit) / SymbolInfoDouble(Symbol(), SYMBOL_POINT);
+        
+        if(profit > 0) 
+        {
+            winning_trades++;
+            total_profit += profit;
+        }
+        else
+        {
+            total_loss += MathAbs(profit);
+        }
+        
+        if(current_equity > peak_equity) peak_equity = current_equity;
+        double drawdown = (peak_equity - current_equity) / peak_equity;
+        if(drawdown > max_drawdown) max_drawdown = drawdown;
+    }
+    
+    if(total_deals < 10) return -1e8;
+    
+    double win_rate = (double)winning_trades / total_deals;
+    double avg_profit = total_profit_pips / total_deals;
+    double profit_factor = (total_loss > 0) ? total_profit / total_loss : 0;
+    double recovery_factor = (max_drawdown > 0) ? (current_equity - 10000) / max_drawdown : 0;
+    
+    // Sharpe ratio approximation (using total return and standard deviation)
+    double daily_returns[]; // This is simplified - proper implementation would use actual daily returns
+    double std_dev = 1.0; // Placeholder for standard deviation calculation
+    double sharpe_ratio = (recovery_factor - risk_free_rate) / std_dev;
+    
+    // Update global stats
+    g_params.total_trades = total_deals;
+    g_params.winning_trades = winning_trades;
+    g_params.profit_factor = profit_factor;
+    g_params.max_drawdown = max_drawdown;
+    g_params.sharpe_ratio = sharpe_ratio;
+    
+    // Composite scoring system
+    double score = total_profit * win_rate * (1 - max_drawdown) * (recovery_factor / 10.0) * profit_factor * (sharpe_ratio + 1);
+    return score;
+}
+//+------------------------------------------------------------------+
+//| Run hybrid optimization (random search + genetic algorithm)     |
+//+------------------------------------------------------------------+
+void RunHybridOptimization()
+{
+    if(!g_enableAutoOptimization) return;
+    
+    if(!MQLInfoInteger(MQL_TESTER) && !RunInRealtime)
+    {
+        Print("Auto-optimization is disabled in live trading unless RunInRealtime is enabled.");
+        return;
+    }
+    
+    if(isOptimizing) return;
+    isOptimizing = true;
+    
+    MathSrand((uint)GetMicrosecondCount()); // Better random seed for optimization
+    Print("Starting Hybrid Optimization for ", Symbol(), " on ", EnumToString(Period()), "...");
+    
+    ArrayResize(population, RandomSearchPasses);
+    
+    // Random search phase
+    for(int i = 0; i < RandomSearchPasses; i++)
+    {
+        GenerateRandomIndividual(population[i]);
+        population[i].fitness = EvaluateIndividual(population[i]);
+        if((i+1) % 20 == 0)
+            Print("Random Search: ", i+1, "/", RandomSearchPasses, " | Best fitness: ", DoubleToString(population[0].fitness, 2));
+        
+        // Keep the best individual at index 0
+        if(i > 0 && population[i].fitness > population[0].fitness)
+        {
+            Individual temp = population[0];
+            population[0] = population[i];
+            population[i] = temp;
+        }
+    }
+    
+    Print("Random Search completed. Best fitness: ", DoubleToString(population[0].fitness, 2));
+    
+    // Prepare for genetic algorithm
+    ArrayResize(population, GAPopulationSize);
+    
+    // Ensure the best individual from random search is in the GA population
+    for(int i = 1; i < GAPopulationSize; i++)
+    {
+        GenerateRandomIndividual(population[i]);
+        population[i].fitness = EvaluateIndividual(population[i]);
+        if(population[i].fitness > population[0].fitness)
+        {
+            Individual temp = population[0];
+            population[0] = population[i];
+            population[i] = temp;
+        }
+    }
+    
+    // Genetic algorithm phase
+    for(int gen = 0; gen < GAGenerations; gen++)
+    {
+        // Create new population
+        Individual newPop[];
+        ArrayResize(newPop, GAPopulationSize);
+        
+        // Elitism - keep the best individuals
+        int eliteCount = GAPopulationSize / 4;
+        for(int i = 0; i < eliteCount; i++)
+            newPop[i] = population[i];
+        
+        // Fill the rest with crossover and mutation
+        for(int i = eliteCount; i < GAPopulationSize; i++)
+        {
+            // Tournament selection
+            int p1 = MathRand() % eliteCount;
+            int p2 = MathRand() % eliteCount;
+            
+            // Crossover
+            Individual child = Crossover(population[p1], population[p2]);
+            
+            // Mutation
+            Mutate(child);
+            
+            // Evaluate fitness
+            child.fitness = EvaluateIndividual(child);
+            newPop[i] = child;
+            
+            // Keep track of the best individual
+            if(child.fitness > population[0].fitness)
+                population[0] = child;
+        }
+        
+        // Replace old population with new one
+        ArrayCopy(population, newPop);
+        
+        // Sort population by fitness (descending)
+        for(int i = 0; i < GAPopulationSize - 1; i++)
+        {
+            for(int j = i + 1; j < GAPopulationSize; j++)
+            {
+                if(population[i].fitness < population[j].fitness)
+                {
+                    Individual temp = population[i];
+                    population[i] = population[j];
+                    population[j] = temp;
+                }
+            }
+        }
+        
+        if((gen+1) % 10 == 0 || gen == GAGenerations-1)
+            Print("GA Generation ", gen+1, "/", GAGenerations, " | Best fitness: ", DoubleToString(population[0].fitness, 2));
+    }
+    
+    // Apply the best parameters
+    ApplyIndividual(population[0]);
+    SaveOptimizedParams();
+    optimizationCompleted = true;
+    lastOptimizedScore = population[0].fitness;
+    
+    Print("Optimization FINISHED for ", Symbol(), "! Best score: ", DoubleToString(population[0].fitness, 2));
+    isOptimizing = false;
+}
+//+------------------------------------------------------------------+
+//| Quick optimization for parameter fine-tuning                    |
+//+------------------------------------------------------------------+
+void RunQuickOptimization()
+{
+    if(!g_enableAutoOptimization || isOptimizing) return;
+    
+    isOptimizing = true;
+    Print("Starting Quick Optimization for ", Symbol(), "...");
+    
+    // Create a focused population around current best parameters
+    ArrayResize(population, 30);
+    
+    // Get current best individual from g_params
+    Individual currentBest;
+    currentBest.fitness = 0.0;
+    
+    // Convert current parameters to individual
+    currentBest.params[0] = g_params.lot_size;
+    currentBest.params[1] = g_params.stop_loss_points;
+    currentBest.params[2] = g_params.take_profit_points;
+    currentBest.params[3] = g_params.min_gap_points;
+    currentBest.params[4] = g_params.fvg_extension_bars;
+    currentBest.params[5] = g_params.ignore_overlaps ? 1.0 : 0.0;
+    currentBest.params[6] = (int)g_params.trade_mode;
+    currentBest.params[7] = g_params.max_trades_per_fvg;
+    currentBest.params[8] = g_params.max_fvgs;
+    currentBest.params[9] = (int)g_params.trailing_type;
+    currentBest.params[10] = g_params.trailing_stop_pips;
+    currentBest.params[11] = g_params.min_profit_to_trail_pips;
+    
+    // Create population with slight variations around current best
+    for(int i = 0; i < 30; i++)
+    {
+        if(i == 0)
+            population[i] = currentBest; // Keep current best
+        else
+        {
+            // Create child with small mutations
+            population[i] = currentBest;
+            for(int j = 0; j < 12; j++)
+            {
+                if(MathRand()/32767.0 < 0.3) // 30% mutation rate
+                {
+                    // Small mutations only
+                    if(j == 0) // lot_size
+                        population[i].params[j] += (MathRand()/32767.0 - 0.5) * 0.05;
+                    else if(j == 1 || j == 2 || j == 3 || j == 4 || j == 7 || j == 8) // integer parameters
+                        population[i].params[j] += (MathRand() % 11) - 5;
+                    else if(j == 5) // boolean
+                        population[i].params[j] = (MathRand() % 2 == 0) ? 1.0 : 0.0;
+                    else if(j == 6 || j == 9) // enum parameters
+                        population[i].params[j] = MathRand() % 3;
+                    else // floating point parameters
+                        population[i].params[j] += (MathRand()/32767.0 - 0.5) * 5.0;
+                }
+            }
+        }
+        // Evaluate fitness
+        population[i].fitness = EvaluateIndividual(population[i]);
+        
+        // Keep track of best
+        if(i == 0 || population[i].fitness > population[0].fitness)
+        {
+            Individual temp = population[0];
+            population[0] = population[i];
+            population[i] = temp;
+        }
+    }
+    
+    Print("Quick Optimization completed. Best fitness: ", DoubleToString(population[0].fitness, 2));
+    
+    // Apply best parameters if they're better than current
+    if(population[0].fitness > lastOptimizedScore * 1.05) // Only if 5% better
+    {
+        ApplyIndividual(population[0]);
+        lastOptimizedScore = population[0].fitness;
+        SaveOptimizedParams();
+        Print("Better parameters found and applied! Score improved by ", 
+              DoubleToString((population[0].fitness/lastOptimizedScore-1)*100, 2), "%");
+    }
+    else
+    {
+        Print("No significant improvement found in quick optimization.");
+    }
+    isOptimizing = false;
+}
+//+------------------------------------------------------------------+
+//| Expert initialization function                                   |
+//+------------------------------------------------------------------+
+int OnInit() {
+   obj_Trade.SetExpertMagicNumber(magic_number);                  //--- Set magic number
+   obj_Trade.SetMarginMode();
+   obj_Trade.SetTypeFilling(ORDER_FILLING_FOK);
+   obj_Trade.SetDeviationInPoints(10);
+   
+   ObjectsDeleteAll(0, FVG_Prefix);                               //--- Delete FVG objects
+   ArrayResize(fvgs, 0);                                          //--- Reset array
+   if (prt) Print("Initializing: Deleted all existing FVG objects and reset array."); //--- Log init
+   
+   // Initialize parameters for optimization
+   InitParams();
+   
+   // Initialize optimization switch
+   g_enableAutoOptimization = EnableAutoOptimization;
+   
+   // Try to load previously optimized parameters
+   if(g_enableAutoOptimization)
+   {
+       if(LoadOptimizedParams())
+       {
+           optimizationCompleted = true;
+           lastOptimizedScore = OnTester();
+       }
+   }
+   
+   int visibleBars = (int)ChartGetInteger(0, CHART_VISIBLE_BARS); //--- Get visible bars
+   if (prt) Print("Total Visible Bars On Chart = ", visibleBars); //--- Log visible bars
+   
+   // Detect historical FVGs from older to newer
+   for (int i = visibleBars - 3; i >= 0; i--) {                   //--- Iterate bars
+      double low0 = iLow(_Symbol, _Period, i);                    //--- Get low0
+      double high2 = iHigh(_Symbol, _Period, i + 2);              //--- Get high2
+      double gap_L0_H2 = NormalizeDouble((low0 - high2) / _Point, _Digits); //--- Calc gap L0 H2
+      double high0 = iHigh(_Symbol, _Period, i);                  //--- Get high0
+      double low2 = iLow(_Symbol, _Period, i + 2);                //--- Get low2
+      double gap_H0_L2 = NormalizeDouble((low2 - high0) / _Point, _Digits); //--- Calc gap H0 L2
+      // 修改：使用g_params.min_gap_points代替minPts
+      bool FVG_UP = low0 > high2 && gap_L0_H2 > g_params.min_gap_points;           //--- Check up FVG
+      bool FVG_DOWN = low2 > high0 && gap_H0_L2 > g_params.min_gap_points;         //--- Check down FVG
+      if (FVG_UP || FVG_DOWN) {                                   //--- Check FVG
+         datetime time1 = iTime(_Symbol, _Period, i + 1);         //--- Get time1
+         double price1 = FVG_UP ? high2 : high0;                  //--- Set price1
+         double price2 = FVG_UP ? low0 : low2;                    //--- Set price2
+         double newLow = MathMin(price1, price2);                 //--- Calc new low
+         double newHigh = MathMax(price1, price2);                //--- Calc new high
+         bool overlaps = false;                                   //--- Init overlaps
+         // 修改：使用g_params.ignore_overlaps代替ignoreOverlaps
+         if (g_params.ignore_overlaps) {                                    //--- Check ignore overlaps
+            for (int ex = 0; ex < ArraySize(fvgs); ex++) {        //--- Iterate existing
+               double exLow = ObjectGetDouble(0, fvgs[ex].name, OBJPROP_PRICE, 0); //--- Get ex low
+               double exHigh = ObjectGetDouble(0, fvgs[ex].name, OBJPROP_PRICE, 1); //--- Get ex high
+               exLow = MathMin(exLow, exHigh);                    //--- Min ex low
+               exHigh = MathMax(exLow, exHigh);                   //--- Max ex high
+               if (MathMax(newLow, exLow) < MathMin(newHigh, exHigh)) { //--- Check overlap
+                  overlaps = true;                                //--- Set overlaps
+                  if (prt) Print("Historical: Skipping overlapping FVG at ", TimeToString(time1)); //--- Log skip
+                  break;                                          //--- Break loop
+               }
+            }
+         }
+         if (overlaps) continue;                                  //--- Continue if overlaps
+         string fvgNAME = FVG_Prefix + "(" + TimeToString(time1) + ")"; //--- FVG name
+         color fvgClr = FVG_UP ? CLR_UP : CLR_DOWN;               //--- Set color
+         // 修改：使用g_params.fvg_extension_bars代替FVG_Rec_Ext_Bars
+         CreateRec(fvgNAME, time1, price1, time1 + PeriodSeconds(_Period) * g_params.fvg_extension_bars, price2, fvgClr); //--- Create rec
+         int size = ArraySize(fvgs);                              //--- Get size
+         // 修改：使用g_params.max_fvgs代替maxFVGs
+         if (size >= g_params.max_fvgs) {                                   //--- Check max
+            if (prt) Print("Historical: Max FVGs reached, removing oldest."); //--- Log max
+            ArrayRemove(fvgs, 0, 1);                              //--- Remove oldest
+            PrintFVGs();                                          //--- Print FVGs
+         }
+         ArrayResize(fvgs, size + 1);                             //--- Resize array
+         fvgs[size].name = fvgNAME;                               //--- Set name
+         fvgs[size].startTime = time1;                            //--- Set start time
+         fvgs[size].origEndTime = time1 + PeriodSeconds(_Period) * g_params.fvg_extension_bars; //--- Set end time
+         fvgs[size].mitTime = 0;                                  //--- Set mit time
+         fvgs[size].signal = false;                               //--- Set signal
+         fvgs[size].inverted = false;                             //--- Set inverted
+         fvgs[size].mit = false;                                  //--- Set mit
+         fvgs[size].ret = false;                                  //--- Set ret
+         fvgs[size].origUp = FVG_UP;                              //--- Set orig up
+         fvgs[size].tradeCount = 0;                               //--- Set trade count
+         fvgs[size].state = Normal;                               //--- Set state
+         fvgs[size].newSignal = false;                            //--- Set new signal
+         if (prt) Print("Historical FVG created: ", fvgNAME, " origUp=", FVG_UP, " endTime=", TimeToString(fvgs[size].origEndTime)); //--- Log created
+         PrintFVGs();                                             //--- Print FVGs
+      }
+   }
+   
+   // Process historical states
+   for (int j = 0; j < ArraySize(fvgs); j++) {                    //--- Iterate FVGs
+      ProcessHistoricalState(j);                                  //--- Process state
+   }
+   
+   PrintFVGs();                                                   //--- Print FVGs
+   
+   // Initialize optimization tracking variables
+   isFirstRun = true;
+   optimizationCompleted = false;
+   lastOptimizationTime = 0;
+   lastFullOptimizationTime = 0;
+   lastQuickOptimizationTime = 0;
+   lastOptimizedScore = -1e8;
+   isOptimizing = false;
+   
+   // Setup timer for periodic optimization in real-time mode
+   if(RunInRealtime && !MQLInfoInteger(MQL_TESTER))
+   {
+       EventSetTimer(3600); // Run hourly checks
+   }
+   
+   return(INIT_SUCCEEDED);                                        //--- Return success
+}
+//+------------------------------------------------------------------+
+//| Timer function for periodic optimization                         |
+//+------------------------------------------------------------------+
+void OnTimer()
+{
+    if(!g_enableAutoOptimization || !RunInRealtime || isOptimizing)
+        return;
+    
+    // Quick performance check
+    double currentScore = OnTester();
+    
+    // Initialize lastOptimizedScore if it's the first run
+    if(lastOptimizedScore < -1e7) // Not initialized yet
+    {
+        lastOptimizedScore = currentScore;
+        Print("Initial performance score set to: ", DoubleToString(lastOptimizedScore, 2));
+        return;
+    }
+    
+    // If performance degraded by more than 20% or it's been 24 hours, run quick optimization
+    if((currentScore < lastOptimizedScore * 0.8) || 
+       (TimeCurrent() - lastQuickOptimizationTime > 86400))
+    {
+        Print("Performance degradation detected or 24h passed. Running quick optimization...");
+        RunQuickOptimization();
+        lastQuickOptimizationTime = TimeCurrent();
+        // Update the score after optimization
+        lastOptimizedScore = OnTester();
+    }
+    
+    // Full optimization every week
+    if(TimeCurrent() - lastFullOptimizationTime > 604800) // 7 days
+    {
+        Print("Weekly scheduled full optimization starting...");
+        RunHybridOptimization();
+        lastFullOptimizationTime = TimeCurrent();
+        lastOptimizedScore = OnTester(); // Update score after full optimization
+    }
+}
+//+------------------------------------------------------------------+
+//| Expert deinitialization function                                 |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason) {
+   for (int i = 0; i < ArraySize(fvgs); i++) {                    //--- Iterate FVGs
+      ObjectDelete(0, fvgs[i].name);                              //--- Delete name
+      ObjectDelete(0, fvgs[i].name + "_Label");                   //--- Delete label
+      ObjectDelete(0, fvgs[i].name + "_MitIcon");                 //--- Delete mit icon
+   }
+   ArrayResize(fvgs, 0);                                          //--- Reset array
+   ChartRedraw(0);                                                //--- Redraw chart
+   
+   // Release timer
+   EventKillTimer();
+   
+   // Save optimized parameters if completed
+   if(optimizationCompleted && g_enableAutoOptimization)
+   {
+       SaveOptimizedParams();
+   }
+   
+   if (prt) Print("Deinit: Deleted all FVG objects and reset array."); //--- Log deinit
+}
+//+------------------------------------------------------------------+
+//| Process historical mitigation, retracement, signal for an FVG    |
+//+------------------------------------------------------------------+
+void ProcessHistoricalState(int idx) {
+   string fvgNAME = fvgs[idx].name;                               //--- Get name
+   datetime timeSTART = fvgs[idx].startTime;                      //--- Get start time
+   datetime endTime = fvgs[idx].origEndTime;                      //--- Get end time
+   double fvgLow = MathMin(ObjectGetDouble(0, fvgNAME, OBJPROP_PRICE, 0), ObjectGetDouble(0, fvgNAME, OBJPROP_PRICE, 1)); //--- Calc low
+   double fvgHigh = MathMax(ObjectGetDouble(0, fvgNAME, OBJPROP_PRICE, 0), ObjectGetDouble(0, fvgNAME, OBJPROP_PRICE, 1)); //--- Calc high
+   int fvgBar = iBarShift(_Symbol, _Period, timeSTART);          //--- Get bar
+   if (fvgBar < 0) return;                                        //--- Return invalid
+   bool isMit = false, isRet = false, isSig = false;              //--- Init flags
+   datetime mitTime = 0;                                          //--- Init mit time
+   int mitK = -1, sigK = -1;                                      //--- Init indices
+   for (int k = fvgBar - 1; k >= 0; k--) {                        //--- Iterate bars
+      double barLow = iLow(_Symbol, _Period, k);                  //--- Get bar low
+      double barHigh = iHigh(_Symbol, _Period, k);                //--- Get bar high
+      double barClose = iClose(_Symbol, _Period, k);              //--- Get bar close
+      if (!isMit) {                                               //--- Check not mit
+         bool breakFar = (fvgs[idx].origUp && barLow < fvgLow) || (!fvgs[idx].origUp && barHigh > fvgHigh); //--- Check break far
+         if (breakFar) {                                          //--- Break far
+            isMit = true;                                         //--- Set mit
+            mitK = k;                                             //--- Set mit k
+            mitTime = iTime(_Symbol, _Period, k);                 //--- Set mit time
+            if (prt) Print("Historical Mitigated: ", fvgNAME, " at bar ", k, " time=", TimeToString(mitTime)); //--- Log mitigated
+         }
+      }
+      if (isMit && !isRet) {                                      //--- Check mit and not ret
+         bool inside = (barHigh > fvgLow && barLow < fvgHigh);    //--- Check inside
+         if (inside) {                                            //--- Inside
+            isRet = true;                                         //--- Set ret
+            if (prt) Print("Historical Retraced: ", fvgNAME, " at bar ", k); //--- Log retraced
+         }
+      }
+      if (isMit && isRet && !isSig) {                             //--- Check mit ret not sig
+         bool signal = (fvgs[idx].origUp && barClose < fvgLow) || (!fvgs[idx].origUp && barClose > fvgHigh); //--- Check signal
+         if (signal) {                                            //--- Signal
+            if (k + 1 < iBars(_Symbol, _Period)) {                //--- Check prev bar
+               double prevClose = iClose(_Symbol, _Period, k + 1); //--- Get prev close
+               bool prevInside = (prevClose > fvgLow && prevClose < fvgHigh); //--- Check prev inside
+               if (prevInside) {                                  //--- Prev inside
+                  isSig = true;                                   //--- Set sig
+                  sigK = k;                                       //--- Set sig k
+                  if (prt) Print("Historical Signal/Inverted: ", fvgNAME, " at bar ", k, " time=", TimeToString(iTime(_Symbol, _Period, k))); //--- Log signal
+               }
+            }
+         }
+      }
+   }
+   fvgs[idx].mit = isMit;                                         //--- Set mit
+   fvgs[idx].ret = isRet;                                         //--- Set ret
+   fvgs[idx].inverted = isSig;                                    //--- Set inverted
+   fvgs[idx].signal = isSig;                                      //--- Set signal
+   fvgs[idx].mitTime = mitTime;                                   //--- Set mit time
+   fvgs[idx].state = isSig ? Inverted : (isMit ? Mitigated : Normal); //--- Set state
+   fvgs[idx].newSignal = false;                                   //--- Set no new signal
+   color currentClr = GetFVGColor(fvgs[idx].origUp, fvgs[idx].state); //--- Get color
+   UpdateRec(fvgs[idx].name, fvgs[idx].startTime, fvgLow, fvgs[idx].origEndTime, fvgHigh, currentClr); //--- Update rec
+   if (mitTime > 0) DrawMitIcon(fvgs[idx].name, mitTime, fvgHigh, fvgLow, fvgs[idx].origUp); //--- Draw mit icon
+}
+//+------------------------------------------------------------------+
+//| Apply Points Trailing Stop                                       |
+//+------------------------------------------------------------------+
+void ApplyPointsTrailing() {
+   double point = _Point;                                         //--- Get point value
+   for (int i = PositionsTotal() - 1; i >= 0; i--) {              //--- Iterate positions reverse
+      if (PositionGetTicket(i) > 0) {                             //--- Check valid ticket
+         if (PositionGetString(POSITION_SYMBOL) == _Symbol && PositionGetInteger(POSITION_MAGIC) == magic_number) { //--- Check symbol and magic
+            double sl = PositionGetDouble(POSITION_SL);              //--- Get SL
+            double tp = PositionGetDouble(POSITION_TP);              //--- Get TP
+            double openPrice = PositionGetDouble(POSITION_PRICE_OPEN); //--- Get open price
+            ulong ticket = PositionGetInteger(POSITION_TICKET);      //--- Get ticket
+            if (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) { //--- Check buy
+               // 修改：使用g_params.trailing_stop_pips代替Trailing_Stop_Pips
+               double newSL = NormalizeDouble(SymbolInfoDouble(_Symbol, SYMBOL_BID) - g_params.trailing_stop_pips * point, _Digits); //--- Calc new SL
+               // 修改：使用g_params.min_profit_to_trail_pips代替Min_Profit_To_Trail_Pips
+               if (newSL > sl && SymbolInfoDouble(_Symbol, SYMBOL_BID) - openPrice > g_params.min_profit_to_trail_pips * point) { //--- Check conditions
+                  obj_Trade.PositionModify(ticket, newSL, tp);       //--- Modify position
+               }
+            } else if (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL) { //--- Check sell
+               // 修改：使用g_params.trailing_stop_pips代替Trailing_Stop_Pips
+               double newSL = NormalizeDouble(SymbolInfoDouble(_Symbol, SYMBOL_ASK) + g_params.trailing_stop_pips * point, _Digits); //--- Calc new SL
+               // 修改：使用g_params.min_profit_to_trail_pips代替Min_Profit_To_Trail_Pips
+               if (newSL < sl && openPrice - SymbolInfoDouble(_Symbol, SYMBOL_ASK) > g_params.min_profit_to_trail_pips * point) { //--- Check conditions
+                  obj_Trade.PositionModify(ticket, newSL, tp);       //--- Modify position
+               }
+            }
+         }
+      }
+   }
+}
+//+------------------------------------------------------------------+
+//| Expert tick function                                             |
+//+------------------------------------------------------------------+
+void OnTick() {
+   // Run initial optimization if needed
+   if(g_enableAutoOptimization && isFirstRun && !optimizationCompleted && (MQLInfoInteger(MQL_TESTER) || RunInRealtime))
+   {
+       if(GetTickCount() - lastOptimizationTime > 30000) // 每30秒尝试一次
+       {
+           lastOptimizationTime = GetTickCount();
+           RunHybridOptimization();
+           isFirstRun = false;
+           lastOptimizedScore = OnTester(); // Record initial score
+           lastFullOptimizationTime = TimeCurrent();
+           lastQuickOptimizationTime = TimeCurrent();
+       }
+   }
+   
+   // 修改：使用g_params.trailing_type代替TrailingType
+   if (g_params.trailing_type == Trailing_Points && PositionsTotal() > 0) { //--- Check trailing
+      ApplyPointsTrailing();                                      //--- Apply trailing
+   }
+   
+   static datetime lastBarTime = 0;                               //--- Last bar time
+   datetime curBarTime = iTime(_Symbol, _Period, 0);              //--- Current bar time
+   bool newBar = (curBarTime != lastBarTime);                     //--- Check new bar
+   if (!newBar) return;                                           //--- Return if not new
+   lastBarTime = curBarTime;                                      //--- Update last time
+   
+   DetectFVGs();                                                  //--- Detect FVGs
+   UpdateFVGs();                                                  //--- Update FVGs
+   TradeOnFVGs();                                                 //--- Trade on FVGs
+   CleanupExpiredFVGs(curBarTime);                                //--- Cleanup expired
+}
+//+------------------------------------------------------------------+
+//| Detect new FVGs on recent bars                                   |
+//+------------------------------------------------------------------+
+void DetectFVGs() {
+   for (int i = 3; i >= 1; i--) {                                 //--- Iterate recent bars
+      double low0 = iLow(_Symbol, _Period, i);                    //--- Get low0
+      double high2 = iHigh(_Symbol, _Period, i + 2);              //--- Get high2
+      double gap_L0_H2 = NormalizeDouble((low0 - high2) / _Point, _Digits); //--- Calc gap L0 H2
+      double high0 = iHigh(_Symbol, _Period, i);                  //--- Get high0
+      double low2 = iLow(_Symbol, _Period, i + 2);                //--- Get low2
+      double gap_H0_L2 = NormalizeDouble((low2 - high0) / _Point, _Digits); //--- Calc gap H0 L2
+      // 修改：使用g_params.min_gap_points代替minPts
+      bool FVG_UP = low0 > high2 && gap_L0_H2 > g_params.min_gap_points;           //--- Check up FVG
+      bool FVG_DOWN = low2 > high0 && gap_H0_L2 > g_params.min_gap_points;         //--- Check down FVG
+      if (FVG_UP || FVG_DOWN) {                                   //--- Check FVG
+         datetime time1 = iTime(_Symbol, _Period, i + 1);         //--- Get time1
+         double price1 = FVG_UP ? high2 : high0;                  //--- Set price1
+         double price2 = FVG_UP ? low0 : low2;                    //--- Set price2
+         double newLow = MathMin(price1, price2);                 //--- Calc new low
+         double newHigh = MathMax(price1, price2);                //--- Calc new high
+         bool overlaps = false;                                   //--- Init overlaps
+         // 修改：使用g_params.ignore_overlaps代替ignoreOverlaps
+         if (g_params.ignore_overlaps) {                                    //--- Check ignore overlaps
+            for (int ex = 0; ex < ArraySize(fvgs); ex++) {        //--- Iterate existing
+               double exLow = MathMin(ObjectGetDouble(0, fvgs[ex].name, OBJPROP_PRICE, 0), ObjectGetDouble(0, fvgs[ex].name, OBJPROP_PRICE, 1)); //--- Calc ex low
+               double exHigh = MathMax(ObjectGetDouble(0, fvgs[ex].name, OBJPROP_PRICE, 0), ObjectGetDouble(0, fvgs[ex].name, OBJPROP_PRICE, 1)); //--- Calc ex high
+               if (MathMax(newLow, exLow) < MathMin(newHigh, exHigh)) { //--- Check overlap
+                  overlaps = true;                                //--- Set overlaps
+                  if (prt) Print("Detect: Skipping overlapping FVG at ", TimeToString(time1)); //--- Log skip
+                  break;                                          //--- Break loop
+               }
+            }
+         }
+         if (overlaps) continue;                                  //--- Continue if overlaps
+         string fvgNAME = FVG_Prefix + "(" + TimeToString(time1) + ")"; //--- FVG name
+         if (ObjectFind(0, fvgNAME) >= 0) continue;               //--- Skip duplicate
+         color fvgClr = FVG_UP ? CLR_UP : CLR_DOWN;               //--- Set color
+         // 修改：使用g_params.fvg_extension_bars代替FVG_Rec_Ext_Bars
+         datetime endTime = time1 + PeriodSeconds(_Period) * g_params.fvg_extension_bars; //--- Calc end time
+         CreateRec(fvgNAME, time1, price1, endTime, price2, fvgClr); //--- Create rec
+         int size = ArraySize(fvgs);                              //--- Get size
+         // 修改：使用g_params.max_fvgs代替maxFVGs
+         if (size >= g_params.max_fvgs) {                                   //--- Check max
+            if (prt) Print("Detect: Max FVGs reached, removing oldest."); //--- Log max
+            ArrayRemove(fvgs, 0, 1);                              //--- Remove oldest
+            PrintFVGs();                                          //--- Print FVGs
+         }
+         ArrayResize(fvgs, size + 1);                             //--- Resize array
+         fvgs[size].name = fvgNAME;                               //--- Set name
+         fvgs[size].startTime = time1;                            //--- Set start time
+         fvgs[size].origEndTime = endTime;                        //--- Set end time
+         fvgs[size].mitTime = 0;                                  //--- Set mit time
+         fvgs[size].signal = false;                               //--- Set signal
+         fvgs[size].inverted = false;                             //--- Set inverted
+         fvgs[size].mit = false;                                  //--- Set mit
+         fvgs[size].ret = false;                                  //--- Set ret
+         fvgs[size].origUp = FVG_UP;                              //--- Set orig up
+         fvgs[size].tradeCount = 0;                               //--- Set trade count
+         fvgs[size].state = Normal;                               //--- Set state
+         fvgs[size].newSignal = false;                            //--- Set new signal
+         if (prt) Print("New FVG added to storage: ", fvgNAME, " origUp=", FVG_UP, " endTime=", TimeToString(endTime)); //--- Log added
+         PrintFVGs();                                             //--- Print FVGs
+      }
+   }
+}
+//+------------------------------------------------------------------+
+//| Update states for all FVGs                                       |
+//+------------------------------------------------------------------+
+void UpdateFVGs() {
+   double prevClose = iClose(_Symbol, _Period, 1);                //--- Get prev close
+   double prevLow = iLow(_Symbol, _Period, 1);                    //--- Get prev low
+   double prevHigh = iHigh(_Symbol, _Period, 1);                  //--- Get prev high
+   double bar2Close = iClose(_Symbol, _Period, 2);                //--- Get bar2 close
+   datetime curBarTime = iTime(_Symbol, _Period, 1);              //--- Get prev bar time
+   bool removed = false;                                          //--- Init removed
+   for (int j = ArraySize(fvgs) - 1; j >= 0; j--) {               //--- Iterate reverse
+      if (ObjectFind(0, fvgs[j].name) < 0) {                      //--- Check no object
+         if (prt) Print("Update: Removed non-existent FVG from storage: ", fvgs[j].name); //--- Log removed
+         ArrayRemove(fvgs, j, 1);                                 //--- Remove from array
+         removed = true;                                          //--- Set removed
+         continue;                                                //--- Continue
+      }
+      double fvgLow = MathMin(ObjectGetDouble(0, fvgs[j].name, OBJPROP_PRICE, 0), ObjectGetDouble(0, fvgs[j].name, OBJPROP_PRICE, 1)); //--- Calc low
+      double fvgHigh = MathMax(ObjectGetDouble(0, fvgs[j].name, OBJPROP_PRICE, 0), ObjectGetDouble(0, fvgs[j].name, OBJPROP_PRICE, 1)); //--- Calc high
+      if (!fvgs[j].mit) {                                         //--- Check not mit
+         bool breakFar = (fvgs[j].origUp && prevLow < fvgLow) || (!fvgs[j].origUp && prevHigh > fvgHigh); //--- Check break far
+         if (breakFar) {                                          //--- Break far
+            fvgs[j].mit = true;                                   //--- Set mit
+            fvgs[j].mitTime = curBarTime;                         //--- Set mit time
+            fvgs[j].state = Mitigated;                            //--- Set state
+            if (prt) Print("Mitigated FVG: ", fvgs[j].name, " at time=", TimeToString(curBarTime)); //--- Log mitigated
+            color mitClr = GetFVGColor(fvgs[j].origUp, fvgs[j].state); //--- Get color
+            UpdateRec(fvgs[j].name, fvgs[j].startTime, fvgLow, fvgs[j].origEndTime, fvgHigh, mitClr); //--- Update rec
+            DrawMitIcon(fvgs[j].name, curBarTime, fvgHigh, fvgLow, fvgs[j].origUp); //--- Draw icon
+         }
+      }
+      if (fvgs[j].mit && !fvgs[j].ret) {                          //--- Check mit not ret
+         bool inside = (prevHigh > fvgLow && prevLow < fvgHigh);  //--- Check inside
+         if (inside) {                                            //--- Inside
+            fvgs[j].ret = true;                                   //--- Set ret
+            if (prt) Print("Retraced into FVG: ", fvgs[j].name);  //--- Log retraced
+         }
+      }
+      if (fvgs[j].mit && fvgs[j].ret) {                           //--- Check mit ret
+         bool signal = (fvgs[j].origUp && prevClose < fvgLow) || (!fvgs[j].origUp && prevClose > fvgHigh); //--- Check signal
+         bool prevInside = (bar2Close > fvgLow && bar2Close < fvgHigh); //--- Check prev inside
+         if (signal && curBarTime != fvgs[j].mitTime && prevInside) { //--- Check signal conditions
+            fvgs[j].newSignal = true;                             //--- Set new signal
+            if (!fvgs[j].inverted) {                              //--- Check not inverted
+               fvgs[j].inverted = true;                           //--- Set inverted
+               fvgs[j].state = Inverted;                          //--- Set state
+               if (prt) Print("Signal/Inverted FVG: ", fvgs[j].name, " at time=", TimeToString(curBarTime)); //--- Log signal
+               color sigClr = GetFVGColor(fvgs[j].origUp, fvgs[j].state); //--- Get color
+               UpdateRec(fvgs[j].name, fvgs[j].startTime, fvgLow, fvgs[j].origEndTime, fvgHigh, sigClr); //--- Update rec
+            }
+         }
+      }
+   }
+   if (removed) PrintFVGs();                                      //--- Print if removed
+}
+//+------------------------------------------------------------------+
+//| Trade on FVGs with signals                                       |
+//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+//| Trade on FVGs with signals                                       |
+//+------------------------------------------------------------------+
+void TradeOnFVGs() {
+   double Ask = NormalizeDouble(SymbolInfoDouble(_Symbol, SYMBOL_ASK), _Digits); //--- Get ask
+   double Bid = NormalizeDouble(SymbolInfoDouble(_Symbol, SYMBOL_BID), _Digits); //--- Get bid
+   for (int j = 0; j < ArraySize(fvgs); j++) {                    //--- Iterate FVGs
+      if (!fvgs[j].newSignal || fvgs[j].mitTime == 0) continue;   //--- Skip no signal or no mit
+      // 修改：使用g_params.trade_mode代替tradeMode
+      if (g_params.trade_mode == TradeOnce && fvgs[j].tradeCount >= 1) {    //--- Check once and traded
+         fvgs[j].newSignal = false;                               //--- Reset signal
+         continue;                                                //--- Continue
+      }
+      // 修改：使用g_params.max_trades_per_fvg代替maxTradesPerFVG
+      if (g_params.trade_mode == LimitedTrades && fvgs[j].tradeCount >= g_params.max_trades_per_fvg) { //--- Check limited and max
+         fvgs[j].newSignal = false;                               //--- Reset signal
+         continue;                                                //--- Continue
+      }
+      double fvgLow = MathMin(ObjectGetDouble(0, fvgs[j].name, OBJPROP_PRICE, 0), ObjectGetDouble(0, fvgs[j].name, OBJPROP_PRICE, 1)); //--- Calc low
+      double fvgHigh = MathMax(ObjectGetDouble(0, fvgs[j].name, OBJPROP_PRICE, 0), ObjectGetDouble(0, fvgs[j].name, OBJPROP_PRICE, 1)); //--- Calc high
+      
+      // 规范化交易量
+      double normalized_lot = NormalizeVolume(g_params.lot_size, _Symbol);
+      
+      if (!fvgs[j].origUp) {                                      //--- Check orig down: Bullish IFVG, Buy
+         if (prt) Print("BULLISH IFVG TRADE SIGNAL For ", fvgs[j].name, " at ", Bid); //--- Log buy signal
+         // 修改：使用g_params.stop_loss_points代替sl_pts
+         double SL_Buy = NormalizeDouble(fvgLow - g_params.stop_loss_points * _Point, _Digits); //--- Calc buy SL
+         // 修改：使用g_params.take_profit_points代替tp_pts
+         double TP_Buy = NormalizeDouble(Ask + g_params.take_profit_points * _Point, _Digits); //--- Calc buy TP
+         // 修改：使用g_params.lot_size代替inpLot
+         if (prt) Print("Buy order: Lot size=", normalized_lot, " (original=", g_params.lot_size, ")");
+         obj_Trade.Buy(normalized_lot, _Symbol, Ask, SL_Buy, TP_Buy, "IFVG Buy"); //--- Open buy
+      } else {                                                    //--- Orig up: Bearish IFVG, Sell
+         if (prt) Print("BEARISH IFVG TRADE SIGNAL For ", fvgs[j].name, " at ", Ask); //--- Log sell signal
+         // 修改：使用g_params.stop_loss_points代替sl_pts
+         double SL_Sell = NormalizeDouble(fvgHigh + g_params.stop_loss_points * _Point, _Digits); //--- Calc sell SL
+         // 修改：使用g_params.take_profit_points代替tp_pts
+         double TP_Sell = NormalizeDouble(Bid - g_params.take_profit_points * _Point, _Digits); //--- Calc sell TP
+         // 修改：使用g_params.lot_size代替inpLot
+         if (prt) Print("Sell order: Lot size=", normalized_lot, " (original=", g_params.lot_size, ")");
+         obj_Trade.Sell(normalized_lot, _Symbol, Bid, SL_Sell, TP_Sell, "IFVG Sell"); //--- Open sell
+      }
+      fvgs[j].tradeCount++;                                       //--- Increment count
+      fvgs[j].newSignal = false;                                  //--- Reset signal
+      fvgs[j].ret = false;                                        //--- Reset ret
+      if (prt) Print("Trade executed on ", fvgs[j].name, ", tradeCount now=", fvgs[j].tradeCount); //--- Log executed
+      double midPrice = (fvgLow + fvgHigh) / 2;                   //--- Calc mid price
+      datetime midTime = fvgs[j].startTime + (fvgs[j].origEndTime - fvgs[j].startTime) / 2; //--- Calc mid time
+      UpdateLabel(fvgs[j].name, midTime, midPrice);               //--- Update label
+   }
+}
+//+------------------------------------------------------------------+
+//| Cleanup expired FVGs from array (keep on chart)                  |
+//+------------------------------------------------------------------+
+void CleanupExpiredFVGs(datetime curBarTime) {
+   bool removed = false;                                          //--- Init removed
+   for (int j = ArraySize(fvgs) - 1; j >= 0; j--) {               //--- Iterate reverse
+      if (curBarTime > fvgs[j].origEndTime) {                     //--- Check expired
+         if (prt) Print("Expired FVG removed from storage (kept on chart): ", fvgs[j].name, " endTime=", TimeToString(fvgs[j].origEndTime)); //--- Log expired
+         ArrayRemove(fvgs, j, 1);                                 //--- Remove from array
+         removed = true;                                          //--- Set removed
+      }
+   }
+   if (removed) PrintFVGs();                                      //--- Print if removed
+}
+//+------------------------------------------------------------------+
+//| Create Rectangle                                                 |
+//+------------------------------------------------------------------+
+void CreateRec(string objName, datetime time1, double price1, datetime time2, double price2, color clr) {
+   ObjectCreate(0, objName, OBJ_RECTANGLE, 0, time1, price1, time2, price2); //--- Create rectangle
+   ObjectSetInteger(0, objName, OBJPROP_FILL, true);              //--- Set fill
+   ObjectSetInteger(0, objName, OBJPROP_COLOR, clr);              //--- Set color
+   ObjectSetInteger(0, objName, OBJPROP_BACK, false);             //--- Set foreground
+   datetime midTime = time1 + (time2 - time1) / 2;                //--- Calc mid time
+   double midPrice = (price1 + price2) / 2;                       //--- Calc mid price
+   CreateLabel(objName, midTime, midPrice);                       //--- Create label
+   ChartRedraw(0);                                                //--- Redraw chart
+}
+//+------------------------------------------------------------------+
+//| Update Rectangle                                                 |
+//+------------------------------------------------------------------+
+void UpdateRec(string objName, datetime time1, double price1, datetime time2, double price2, color clr) {
+   if (ObjectFind(0, objName) >= 0) {                             //--- Check exists
+      ObjectSetInteger(0, objName, OBJPROP_TIME, 0, time1);       //--- Set time1
+      ObjectSetDouble(0, objName, OBJPROP_PRICE, 0, price1);      //--- Set price1
+      ObjectSetInteger(0, objName, OBJPROP_TIME, 1, time2);       //--- Set time2
+      ObjectSetDouble(0, objName, OBJPROP_PRICE, 1, price2);      //--- Set price2
+      ObjectSetInteger(0, objName, OBJPROP_COLOR, clr);           //--- Set color
+      datetime midTime = time1 + (time2 - time1) / 2;             //--- Calc mid time
+      double midPrice = (price1 + price2) / 2;                    //--- Calc mid price
+      UpdateLabel(objName, midTime, midPrice);                    //--- Update label
+      ChartRedraw(0);                                             //--- Redraw chart
+   }
+}
+//+------------------------------------------------------------------+
+//| Create label                                                     |
+//+------------------------------------------------------------------+
+void CreateLabel(string zoneName, datetime time, double price) {
+   string lblName = zoneName + "_Label";                          //--- Label name
+   ObjectCreate(0, lblName, OBJ_TEXT, 0, time, price);            //--- Create text
+   ObjectSetInteger(0, lblName, OBJPROP_ANCHOR, ANCHOR_CENTER);   //--- Set anchor
+   ObjectSetInteger(0, lblName, OBJPROP_COLOR, clrBlack);         //--- Set color
+   UpdateLabelText(lblName, zoneName);                            //--- Update text
+}
+//+------------------------------------------------------------------+
+//| Update label position                                            |
+//+------------------------------------------------------------------+
+void UpdateLabel(string zoneName, datetime time, double price) {
+   string lblName = zoneName + "_Label";                          //--- Label name
+   if (ObjectFind(0, lblName) >= 0) {                             //--- Check exists
+      ObjectSetInteger(0, lblName, OBJPROP_TIME, 0, time);        //--- Set time
+      ObjectSetDouble(0, lblName, OBJPROP_PRICE, 0, price);       //--- Set price
+      UpdateLabelText(lblName, zoneName);                         //--- Update text
+   }
+}
+//+------------------------------------------------------------------+
+//| Update label text                                                |
+//+------------------------------------------------------------------+
+void UpdateLabelText(string lblName, string zoneName) {
+   string text = "";                                              //--- Init text
+   int tradeCnt = 0;                                              //--- Init count
+   FVGState state = Normal;                                       //--- Init state
+   bool origUp = false;                                           //--- Init orig up
+   for (int idx = 0; idx < ArraySize(fvgs); idx++) {              //--- Iterate FVGs
+      if (fvgs[idx].name == zoneName) {                           //--- Check match
+         tradeCnt = fvgs[idx].tradeCount;                         //--- Get count
+         state = fvgs[idx].state;                                 //--- Get state
+         origUp = fvgs[idx].origUp;                               //--- Get orig up
+         break;                                                   //--- Break loop
+      }
+   }
+   if (state == Normal) {                                         //--- Check normal
+      text = origUp ? "Bullish FVG" : "Bearish FVG";              //--- Set text
+   } else if (state == Mitigated) {                               //--- Check mitigated
+      text = origUp ? "Mitigated Bullish FVG" : "Mitigated Bearish FVG"; //--- Set text
+   } else if (state == Inverted) {                                //--- Check inverted
+      text = origUp ? "Bearish Inversed FVG" : "Bullish Inversed FVG"; //--- Set text
+   }
+   if (tradeCnt > 0) {                                            //--- Check traded
+      text += " (Traded " + IntegerToString(tradeCnt) + " times)"; //--- Add traded
+   }
+   ObjectSetString(0, lblName, OBJPROP_TEXT, text);               //--- Set text
+}
+//+------------------------------------------------------------------+
+//| Draw mitigation icon                                              |
+//+------------------------------------------------------------------+
+void DrawMitIcon(string fvgNAME, datetime mitTime, double fvgHigh, double fvgLow, bool isUp) {
+   string iconName = fvgNAME + "_MitIcon";                        //--- Icon name
+   double iconPrice = isUp ? fvgLow : fvgHigh;                    //--- Icon price
+   ObjectCreate(0, iconName, OBJ_ARROW, 0, mitTime, iconPrice);   //--- Create arrow
+   ObjectSetInteger(0, iconName, OBJPROP_ARROWCODE, 251);         //--- Set code
+   ObjectSetInteger(0, iconName, OBJPROP_COLOR, clrBlue);         //--- Set color
+   ObjectSetInteger(0, iconName, OBJPROP_ANCHOR, isUp ? ANCHOR_TOP : ANCHOR_BOTTOM); //--- Set anchor
+   ChartRedraw(0);                                                //--- Redraw chart
+}
+//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+//| Normalize volume to meet symbol requirements                     |
+//+------------------------------------------------------------------+
+double NormalizeVolume(double volume, string symbol = NULL)
+{
+   if(symbol == NULL) symbol = _Symbol;
+   
+   // Get symbol volume info
+   double min_volume = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+   double max_volume = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
+   double volume_step = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+   
+   // Normalize to step size
+   if(volume_step > 0)
+      volume = MathRound(volume/volume_step) * volume_step;
+   
+   // Ensure volume is within limits
+   volume = MathMax(volume, min_volume);
+   volume = MathMin(volume, max_volume);
+   
+   // For gold specifically, common step sizes are 0.01 or 0.1
+   // Force rounding to 2 decimal places for gold
+   if(StringFind(symbol, "GOLD") >= 0 || StringFind(symbol, "XAU") >= 0)
+   {
+      volume = MathRound(volume * 100) / 100.0; // Round to 2 decimal places
+      if(volume < 0.01) volume = 0.01; // Ensure minimum 0.01 for gold
+   }
+   
+   return volume;
+}

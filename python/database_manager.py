@@ -125,13 +125,109 @@ class DatabaseManager:
                 cursor.execute("ALTER TABLE trades ADD COLUMN mae REAL")
             except: pass
             
+            # Table for account metrics (Balance, Equity, etc.)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS account_metrics (
+                    timestamp DATETIME,
+                    balance REAL,
+                    equity REAL,
+                    margin REAL,
+                    free_margin REAL,
+                    margin_level REAL,
+                    total_profit REAL, -- Floating PnL
+                    symbol_pnl REAL, -- PnL for specific symbol (optional)
+                    PRIMARY KEY (timestamp)
+                )
+            ''')
+            
             conn.commit()
             # conn.close() # Persistent connection, do not close
         except Exception as e:
             logger.error(f"Database initialization failed: {e}")
 
-    def save_market_data(self, symbol, timeframe, df):
-        """Save OHLCV data to DB"""
+    def save_account_metrics(self, metrics):
+        """Save account metrics"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                INSERT INTO account_metrics (timestamp, balance, equity, margin, free_margin, margin_level, total_profit, symbol_pnl)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                metrics.get('timestamp', datetime.now()),
+                metrics.get('balance', 0),
+                metrics.get('equity', 0),
+                metrics.get('margin', 0),
+                metrics.get('free_margin', 0),
+                metrics.get('margin_level', 0),
+                metrics.get('total_profit', 0),
+                metrics.get('symbol_pnl', 0)
+            ))
+            
+            conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to save account metrics: {e}")
+
+    def get_latest_account_metrics(self):
+        """Get the most recent account metrics"""
+        try:
+            conn = self._get_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            cursor.execute('SELECT * FROM account_metrics ORDER BY timestamp DESC LIMIT 1')
+            row = cursor.fetchone()
+            
+            if row:
+                return dict(row)
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get account metrics: {e}")
+            return None
+
+    def get_historical_account_metrics(self, hours_ago=24):
+        """Get account metrics from N hours ago"""
+        try:
+            conn = self._get_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            # SQLite datetime modifier
+            cursor.execute(f"SELECT * FROM account_metrics WHERE timestamp <= datetime('now', '-{hours_ago} hours') ORDER BY timestamp DESC LIMIT 1")
+            row = cursor.fetchone()
+            
+            if row:
+                return dict(row)
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get historical metrics: {e}")
+            return None
+
+    def get_start_of_day_metrics(self):
+        """Get account metrics from the start of the current day"""
+        try:
+            conn = self._get_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT * FROM account_metrics WHERE date(timestamp) = date('now') ORDER BY timestamp ASC LIMIT 1")
+            row = cursor.fetchone()
+            
+            if row:
+                return dict(row)
+            # If no record today, try last record of yesterday
+            cursor.execute("SELECT * FROM account_metrics WHERE date(timestamp) < date('now') ORDER BY timestamp DESC LIMIT 1")
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+                
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get start of day metrics: {e}")
+            return None
+
+    def save_market_data(self, df, symbol, timeframe):
         try:
             conn = self._get_connection()
             # Add symbol and timeframe columns if they don't exist in df

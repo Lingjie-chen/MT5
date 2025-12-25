@@ -3,9 +3,27 @@ import json
 import logging
 import time
 from typing import Dict, Any, Optional, List
+import pandas as pd
+import numpy as np
+from datetime import datetime, date
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+class CustomJSONEncoder(json.JSONEncoder):
+    """自定义JSON编码器，处理Timestamp等非序列化类型"""
+    def default(self, o):
+        if isinstance(o, (datetime, date, pd.Timestamp)):
+            return o.isoformat()
+        if isinstance(o, (pd.Series, pd.DataFrame)):
+            return o.to_dict()
+        if isinstance(o, (np.integer, int)):
+            return int(o)
+        if isinstance(o, (np.floating, float)):
+            return float(o)
+        if isinstance(o, np.ndarray):
+            return o.tolist()
+        return super().default(o)
 
 class QwenClient:
     """
@@ -140,18 +158,18 @@ class QwenClient:
                 sigs_copy = technical_signals.copy()
                 if 'performance_stats' in sigs_copy:
                     del sigs_copy['performance_stats']
-                tech_context = f"\n其他技术模型信号 (CRT/PriceEq/Hybrid):\n{json.dumps(sigs_copy, indent=2)}\n"
+                tech_context = f"\n其他技术模型信号 (CRT/PriceEq/Hybrid):\n{json.dumps(sigs_copy, indent=2, cls=CustomJSONEncoder)}\n"
             else:
-                tech_context = f"\n其他技术模型信号 (CRT/PriceEq/Hybrid):\n{json.dumps(technical_signals, indent=2)}\n"
+                tech_context = f"\n其他技术模型信号 (CRT/PriceEq/Hybrid):\n{json.dumps(technical_signals, indent=2, cls=CustomJSONEncoder)}\n"
 
         prompt = f"""
         作为专业的量化交易策略优化专家，你是混合交易系统的核心决策层。请根据DeepSeek的市场分析结果、当前市场数据以及其他技术模型的信号，优化策略逻辑。
         
         DeepSeek市场分析结果：
-        {json.dumps(deepseek_analysis, indent=2)}
+        {json.dumps(deepseek_analysis, indent=2, cls=CustomJSONEncoder)}
         
         当前市场数据：
-        {json.dumps(current_market_data, indent=2)}
+        {json.dumps(current_market_data, indent=2, cls=CustomJSONEncoder)}
         {tech_context}
         {perf_context}
         

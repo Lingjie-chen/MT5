@@ -232,6 +232,360 @@ class AdvancedMarketAnalysis:
         
         return metrics
     
+    def analyze_crt_strategy(self, df: pd.DataFrame, range_period: int = 15, confirm_period: int = 1, min_manipulation_pct: float = 5.0) -> Dict[str, any]:
+        """
+        基于 CRT (Candle Range Theory) 的策略分析
+        逻辑来源: CRT蜡烛区间理论EA.mq5
+        
+        Args:
+            df: OHLCV DataFrame (通常是较高时间周期的，如 M15)
+            range_period: 定义区间的周期数
+            confirm_period: 确认突破的周期数
+            min_manipulation_pct: 最小操纵深度百分比
+            
+        Returns:
+            策略信号和区间信息
+        """
+        if len(df) < range_period + confirm_period + 5:
+            return {"signal": "hold", "strength": 0, "reasons": []}
+            
+        # 1. 识别区间 (Accumulation Phase)
+        # 假设当前时间点为 t，区间定义为 t-1 的 High/Low
+        # MQL5逻辑: Range High/Low based on PREVIOUS candle of Range Timeframe
+        
+        prev_candle = df.iloc[-2] # 前一根已完成 K 线
+        range_high = prev_candle['high']
+        range_low = prev_candle['low']
+        range_open = prev_candle['open']
+        range_close = prev_candle['close']
+        
+        # 判断区间方向 (Sentiment)
+        is_bullish_range = range_close > range_open
+        
+        # 2. 检测突破和操纵 (Manipulation Phase)
+        # 当前正在形成的 K 线 (或最近几根) 是否突破了区间
+        current_candle = df.iloc[-1]
+        current_high = current_candle['high']
+        current_low = current_candle['low']
+        current_close = current_candle['close']
+        
+        breakout = False
+        manipulation = False
+        manipulation_depth = 0.0
+        
+        range_size = range_high - range_low
+        if range_size == 0: range_size = 0.0001
+        
+        # 操纵逻辑: 
+        # 如果是看涨区间 (预期向上)，操纵通常是先向下假突破 (Run Stops below Low)
+        # 如果是看跌区间 (预期向下)，操纵通常是先向上假突破 (Run Stops above High)
+        
+        signal = "hold"
+        strength = 0
+        reasons = []
+        
+        if is_bullish_range:
+            # 预期向上，检查下方操纵
+            if current_low < range_low:
+                breakout = True
+                manipulation_depth = range_low - current_low
+                pct = (manipulation_depth / range_size) * 100
+                
+                # 检查是否收回 (Distribution Phase Start)
+                # 价格重新回到区间内或收盘价高于 range_low
+                if current_close > range_low:
+                    manipulation = True
+                    if pct >= min_manipulation_pct:
+                        signal = "buy"
+                        strength = 80
+                        reasons.append(f"CRT Bullish: Downward Manipulation ({pct:.1f}%) & Reclaim")
+                        
+        else: # Bearish Range
+            # 预期向下，检查上方操纵
+            if current_high > range_high:
+                breakout = True
+                manipulation_depth = current_high - range_high
+                pct = (manipulation_depth / range_size) * 100
+                
+                # 检查是否收回
+                if current_close < range_high:
+                    manipulation = True
+                    if pct >= min_manipulation_pct:
+                        signal = "sell"
+                        strength = 80
+                        reasons.append(f"CRT Bearish: Upward Manipulation ({pct:.1f}%) & Reclaim")
+        
+        return {
+            "signal": signal,
+            "strength": strength,
+            "reasons": reasons,
+            "range_info": {
+                "high": range_high,
+                "low": range_low,
+                "direction": "bullish" if is_bullish_range else "bearish",
+                "manipulation_pct": (manipulation_depth / range_size * 100) if breakout else 0
+            }
+        }
+    def analyze_rvgi_cci_strategy(self, df: pd.DataFrame, sma_period: int = 30, cci_period: int = 14, rvi_smooth: int = 4) -> Dict[str, any]:
+        """
+        基于 RVGI + CCI + SMA 的复合策略分析
+        逻辑来源: RVGI_CCI_SMA_Panel_EA.mq5
+        
+        Args:
+            df: OHLCV DataFrame
+            sma_period: SMA 周期
+            cci_period: CCI 周期
+            rvi_smooth: RVI 平滑周期
+            
+        Returns:
+            策略信号和指标值
+        """
+        if len(df) < max(sma_period, cci_period) + 5:
+            return {"signal": "hold", "strength": 0, "reasons": []}
+            
+        closes = df['close']
+        highs = df['high']
+        lows = df['low']
+        opens = df['open']
+        
+        # 1. 计算指标
+        
+        # SMA
+        sma = closes.rolling(window=sma_period).mean()
+        
+        # CCI (Commodity Channel Index)
+        tp = (highs + lows + closes) / 3
+        sma_tp = tp.rolling(window=cci_period).mean()
+        mad = tp.rolling(window=cci_period).apply(lambda x: np.mean(np.abs(x - np.mean(x))), raw=True)
+        # 避免除以零
+        mad = mad.replace(0, 0.000001)
+        cci = (tp - sma_tp) / (0.015 * mad)
+        
+        # RVI (Relative Vigor Index) - 完整版计算
+        # 逻辑来源: MQL5 RVI 计算公式
+        
+        # 1. 计算 Numerator (Value1) 和 Denominator (Value2) 的基础值
+        # Value1 = ((Close - Open) + 2*(Close[1]-Open[1]) + 2*(Close[2]-Open[2]) + (Close[3]-Open[3])) / 6
+        # Value2 = ((High - Low) + 2*(High[1]-Low[1]) + 2*(High[2]-Low[2]) + (High[3]-Low[3])) / 6
+        
+        co = closes - opens
+        hl = highs - lows
+        
+        # 使用 shift 获取前 N 根 K 线的数据
+        # 注意: rolling 的 window 包含当前行，shift(1) 是上一行
+        
+        # 计算 Numerator (Value1)
+        num_val = (co + 2 * co.shift(1) + 2 * co.shift(2) + co.shift(3)) / 6
+        
+        # 计算 Denominator (Value2)
+        den_val = (hl + 2 * hl.shift(1) + 2 * hl.shift(2) + hl.shift(3)) / 6
+        
+        # 2. 对 Num 和 Den 进行 SMA 平滑 (通常周期为 10)
+        # 注意: 这里使用传入的 rvi_smooth 还是固定周期? MQL5 标准 RVI 指标通常 Period=10
+        # 但这里的函数参数是 rvi_smooth，通常指 Signal 线的平滑?
+        # 让我们假设 rvi_smooth 用于 Signal 线，而 RVI 主线的 SMA 周期通常是 10
+        # 为了灵活，我们可以引入 rvi_period 参数，默认为 10
+        rvi_period = 10 
+        
+        rvi_num = num_val.rolling(window=rvi_period).mean()
+        rvi_den = den_val.rolling(window=rvi_period).mean()
+        
+        # 避免除以零
+        rvi_den = rvi_den.replace(0, 0.000001)
+        
+        rvi_main = rvi_num / rvi_den
+        
+        # 3. 计算 Signal Line
+        # Signal = (RVI + 2*RVI[1] + 2*RVI[2] + RVI[3]) / 6
+        rvi_signal = (rvi_main + 2 * rvi_main.shift(1) + 2 * rvi_main.shift(2) + rvi_main.shift(3)) / 6
+        
+        # 处理可能的 NaN (由于 shift 和 rolling 导致的前面数据缺失)
+        rvi_main = rvi_main.fillna(0)
+        rvi_signal = rvi_signal.fillna(0)
+        
+        # 2. 获取当前值 (最新的已完成 K 线，即 iloc[-2] 或 iloc[-1] 取决于是否包含当前 K)
+        # 假设 df 包含当前正在形成的 K 线，我们通常看上一根 K 线的收盘确认信号
+        curr = -1 
+        prev = -2
+        
+        price = closes.iloc[curr]
+        sma_val = sma.iloc[curr]
+        
+        cci_now = cci.iloc[curr]
+        
+        rvi_m_now = rvi_main.iloc[curr]
+        rvi_s_now = rvi_signal.iloc[curr]
+        rvi_m_prev = rvi_main.iloc[prev]
+        rvi_s_prev = rvi_signal.iloc[prev]
+        
+        # 3. 信号逻辑
+        
+        # 价格位置
+        price_above_sma = price > sma_val
+        price_below_sma = price < sma_val
+        
+        # RVI 交叉
+        # 金叉: Main 上穿 Signal
+        rvi_cross_up = (rvi_m_prev <= rvi_s_prev) and (rvi_m_now > rvi_s_now)
+        # 死叉: Main 下穿 Signal
+        rvi_cross_down = (rvi_m_prev >= rvi_s_prev) and (rvi_m_now < rvi_s_now)
+        
+        # CCI 状态
+        cci_buy = cci_now <= -100 # 超卖
+        cci_sell = cci_now >= 100 # 超买
+        
+        signal = "hold"
+        strength = 0
+        reasons = []
+        
+        # Sell Signal: Price > SMA + CCI >= 100 + RVI Cross Down
+        if price_above_sma and cci_sell and rvi_cross_down:
+            signal = "sell"
+            strength = 75
+            reasons.append("RVGI 死叉 + CCI 超买 + 价格在 SMA 之上")
+            
+        # Buy Signal: Price < SMA + CCI <= -100 + RVI Cross Up
+        elif price_below_sma and cci_buy and rvi_cross_up:
+            signal = "buy"
+            strength = 75
+            reasons.append("RVGI 金叉 + CCI 超卖 + 价格在 SMA 之下")
+            
+        return {
+            "signal": signal,
+            "strength": strength,
+            "reasons": reasons,
+            "indicators": {
+                "sma": sma_val,
+                "cci": cci_now,
+                "rvi_main": rvi_m_now,
+                "rvi_signal": rvi_s_now
+            }
+        }
+    def analyze_ifvg(self, df: pd.DataFrame, min_gap_points: int = 100) -> Dict[str, any]:
+        """
+        分析 IFVG (Inverse Fair Value Gap) - 基于 MQL5 策略逻辑移植
+        
+        Args:
+            df: OHLC DataFrame
+            min_gap_points: 最小跳空点数 (默认100点 = 1.0对于黄金)
+            
+        Returns:
+            包含信号和活跃区域的字典
+        """
+        if len(df) < 5:
+            return {"signal": "hold", "strength": 0, "reasons": [], "active_zones": []}
+
+        # 数据准备
+        opens = df['open'].values
+        highs = df['high'].values
+        lows = df['low'].values
+        closes = df['close'].values
+        times = df.index
+        
+        # 点值估算 (假设是黄金/外汇，0.01)
+        point = 0.01 
+        min_gap = min_gap_points * point
+
+        fvgs = [] 
+        # 结构: {'type': 'bullish'/'bearish', 'top': float, 'bottom': float, 'start_time': datetime, 
+        #       'mitigated': bool, 'inverted': bool, 'inverted_time': datetime}
+
+        # 遍历历史数据检测 FVG
+        # 从第3根K线开始 (索引2)
+        for i in range(2, len(df)):
+            # 1. 检测新 FVG
+            
+            # Bullish FVG (Gap Up): Low[i] > High[i-2]
+            if lows[i] > highs[i-2] and (lows[i] - highs[i-2]) > min_gap:
+                fvgs.append({
+                    'id': f"bull_{i}",
+                    'type': 'bullish', # 原始方向
+                    'top': lows[i],
+                    'bottom': highs[i-2],
+                    'start_time': times[i],
+                    'mitigated': False,
+                    'inverted': False,
+                    'inverted_time': None
+                })
+                
+            # Bearish FVG (Gap Down): Low[i-2] > High[i]
+            elif lows[i-2] > highs[i] and (lows[i-2] - highs[i]) > min_gap:
+                fvgs.append({
+                    'id': f"bear_{i}",
+                    'type': 'bearish', # 原始方向
+                    'top': lows[i-2],
+                    'bottom': highs[i],
+                    'start_time': times[i],
+                    'mitigated': False,
+                    'inverted': False,
+                    'inverted_time': None
+                })
+
+            # 2. 更新现有 FVG 状态 (基于当前 K 线 i)
+            current_low = lows[i]
+            current_high = highs[i]
+            current_close = closes[i]
+            
+            for fvg in fvgs:
+                # 如果已经反转，暂不需要进一步状态更新(除非失效，这里暂不处理失效)
+                if fvg['inverted']:
+                    continue
+
+                # 检查 Mitigation (缓解/触碰)
+                # MQL5逻辑: breakFar check
+                if not fvg['mitigated']:
+                    if fvg['type'] == 'bullish':
+                        if current_low < fvg['bottom']: # 价格跌破缺口下沿
+                            fvg['mitigated'] = True
+                    else: # bearish
+                        if current_high > fvg['top']: # 价格突破缺口上沿
+                            fvg['mitigated'] = True
+                
+                # 检查 Inversion (反转信号)
+                # 必须先被 Mitigated，然后收盘价完全突破
+                if fvg['mitigated']:
+                    if fvg['type'] == 'bullish':
+                        # 原本是看涨缺口，被跌破并收盘在下方 -> 变为看跌阻力 (Bearish Inverted FVG)
+                        if current_close < fvg['bottom']:
+                            fvg['inverted'] = True
+                            fvg['inverted_time'] = times[i]
+                    else: # bearish
+                        # 原本是看跌缺口，被突破并收盘在上方 -> 变为看涨支撑 (Bullish Inverted FVG)
+                        if current_close > fvg['top']:
+                            fvg['inverted'] = True
+                            fvg['inverted_time'] = times[i]
+                            
+        # 3. 生成最新信号
+        # 检查最后一根 K 线是否触发了新的反转
+        last_time = times[-1]
+        signal = "hold"
+        strength = 0
+        reasons = []
+        
+        latest_inversions = [f for f in fvgs if f['inverted'] and f['inverted_time'] == last_time]
+        
+        for inv in latest_inversions:
+            if inv['type'] == 'bearish': 
+                # Bearish FVG Inverted -> Bullish Signal (Buy)
+                signal = "buy"
+                strength = 80 # IFVG 是强信号
+                reasons.append(f"IFVG Bullish Inversion (原看跌缺口被突破)")
+            elif inv['type'] == 'bullish':
+                # Bullish FVG Inverted -> Bearish Signal (Sell)
+                signal = "sell"
+                strength = 80
+                reasons.append(f"IFVG Bearish Inversion (原看涨缺口被跌破)")
+        
+        # 过滤出最近的活跃区域用于可视化
+        active_zones = [f for f in fvgs if f['start_time'] > times[-50]] # 仅保留最近50根K线的
+        
+        return {
+            "signal": signal,
+            "strength": strength,
+            "reasons": reasons,
+            "active_zones": active_zones
+        }
+
     def _calculate_max_drawdown(self, prices: pd.Series) -> float:
         """计算最大回撤"""
         cumulative_returns = (1 + prices.pct_change()).cumprod()
