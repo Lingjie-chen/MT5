@@ -2557,15 +2557,47 @@ class AI_MT5_Bot:
                         
                         qw_signal = qw_action if qw_action != 'hold' else 'neutral'
                         
-                        # --- 3.5 混合优化决策 ---
-                        # 动态调整 DeepSeek 权重 (基于 Structure Score)
-                        if ds_signal != 'neutral':
-                            # Score 50 -> 1.0, Score 100 -> 2.0
-                            ds_weight = 1.0 + (ds_score - 50) / 50.0
-                            self.optimizer.weights['deepseek'] = ds_weight
+                        # --- 3.5 最终决策 (LLM Centric) ---
+                        # 依据用户指令：完全基于大模型的最终决策 (以 Qwen 的 Action 为主)
+                        
+                        final_signal = qw_signal
+                        reason = strategy.get('reason', 'LLM Decision')
+                        
+                        # 计算置信度/强度 (Strength)
+                        # 我们使用技术指标的一致性作为置信度评分
+                        tech_consensus_score = 0
+                        matching_count = 0
+                        valid_tech_count = 0
+                        
+                        tech_signals_list = [
+                            crt_result['signal'], price_eq_result['signal'], tf_result['signal'],
+                            adv_signal, ml_result['signal'], smc_result['signal'],
+                            mfh_result['signal'], mtf_result['signal'], ifvg_result['signal'],
+                            rvgi_cci_result['signal']
+                        ]
+                        
+                        for sig in tech_signals_list:
+                            if sig != 'neutral':
+                                valid_tech_count += 1
+                                if sig == final_signal:
+                                    matching_count += 1
+                        
+                        if final_signal in ['buy', 'sell']:
+                            # 基础分 60 (既然 LLM 敢喊单)
+                            base_strength = 60
+                            # 技术面加成
+                            if valid_tech_count > 0:
+                                tech_boost = (matching_count / valid_tech_count) * 40 # 最高 +40
+                                strength = base_strength + tech_boost
+                            else:
+                                strength = base_strength
+                                
+                            # DeepSeek 加成
+                            if ds_signal == final_signal:
+                                strength = min(100, strength + 10)
                         else:
-                            self.optimizer.weights['deepseek'] = 1.0
-                            
+                            strength = 0
+
                         all_signals = {
                             "deepseek": ds_signal,
                             "qwen": qw_signal,
@@ -2576,18 +2608,24 @@ class AI_MT5_Bot:
                             "matrix_ml": ml_result['signal'],
                             "smc": smc_result['signal'],
                             "mfh": mfh_result['signal'],
-                            "mtf": mtf_result['signal'] # 新增
+                            "mtf": mtf_result['signal'],
+                            "ifvg": ifvg_result['signal'],
+                            "rvgi_cci": rvgi_cci_result['signal']
                         }
                         
-                        final_signal, strength, weights = self.optimizer.combine_signals(all_signals)
-                        logger.info(f"各策略权重: {weights}")
-                        logger.info(f"AI 最终决定: {final_signal.upper()} (强度: {strength:.1f})")
+                        # 仅保留 weights 用于记录，不再用于计算信号
+                        _, _, weights = self.optimizer.combine_signals(all_signals)
+
+                        logger.info(f"AI 最终决定 (LLM-Driven): {final_signal.upper()} (强度: {strength:.1f})")
+                        logger.info(f"LLM Reason: {reason}")
+                        logger.info(f"技术面支持: {matching_count}/{valid_tech_count}")
                         
                         # 保存分析结果到DB
                         self.db_manager.save_signal(self.symbol, self.tf_name, {
                             "final_signal": final_signal,
                             "strength": strength,
                             "details": {
+                                "source": "LLM_Centric",
                                 "weights": weights,
                                 "signals": all_signals,
                                 "market_state": structure.get('market_state'),
