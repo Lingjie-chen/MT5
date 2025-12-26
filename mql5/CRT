@@ -15,7 +15,7 @@
 //| 输入参数                                                         |
 //+------------------------------------------------------------------+
 input group "=== 区间设置 ==="
-input ENUM_TIMEFRAMES 区间时间框 = PERIOD_H4;                    // 区间定义时间框
+input ENUM_TIMEFRAMES 区间时间框 = PERIOD_M15;                    // 区间定义时间框
 input bool            使用操纵过滤 = true;                       // 使用操纵深度过滤
 input double          最小操纵百分比 = 5.0;                      // 最小操纵深度占区间百分比
 
