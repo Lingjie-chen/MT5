@@ -1,0 +1,24 @@
+name: Deploy to Aliyun Windows Server
+
+on:
+  push:
+    branches:
+      - master  # 当推送到 master 分支时触发
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy to Windows Server via SCP
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.ALIYUN_HOST }}
+          username: ${{ secrets.ALIYUN_USERNAME }}
+          password: ${{ secrets.ALIYUN_PASSWORD }}
+          port: 22
+          source: "."
+          target: "C:/QuantProject" # 目标路径，您可以修改为您服务器上的实际路径
+          strip_components: 0
