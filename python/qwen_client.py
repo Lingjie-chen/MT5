@@ -163,7 +163,10 @@ class QwenClient:
                 tech_context = f"\n其他技术模型信号 (CRT/PriceEq/Hybrid):\n{json.dumps(technical_signals, indent=2, cls=CustomJSONEncoder)}\n"
 
         prompt = f"""
-        作为专业的量化交易策略优化专家，你是混合交易系统的核心决策层。请根据DeepSeek的市场分析结果、当前市场数据以及其他技术模型的信号，优化策略逻辑。
+        作为专业的量化交易策略优化专家，你是混合交易系统的核心决策层。请根据DeepSeek的市场分析结果、当前市场数据以及其他技术模型的信号，优化策略逻辑并做出最终执行决定。
+        
+        你现在拥有全套高级算法的信号支持 (SMC, IFVG, CRT, RVGI+CCI, MFH, MTF)。
+        请仔细评估各策略的一致性。如果出现冲突，请依据 DeepSeek 的市场结构分析和 MTF (多周期) 趋势来裁决。
         
         DeepSeek市场分析结果：
         {json.dumps(deepseek_analysis, indent=2, cls=CustomJSONEncoder)}
@@ -173,7 +176,7 @@ class QwenClient:
         {tech_context}
         {perf_context}
         
-        请综合考虑所有信号：
+        请综合考虑所有信号，并输出最终的交易决策 (Action):
         1. DeepSeek 提供宏观结构和趋势判断。
         2. CRT (Candle Range Theory) 提供流动性猎取和反转信号。
         3. Price Equation 提供纯数学的动量预测。

@@ -445,7 +445,7 @@ class BBO(Optimizer):
             for i in range(self.pop_size):
                 k = i # rank, 0 is best
                 ratio = k / self.pop_size
-                lambda_vec[i] = self.immigration_max * ratio # High rank (low i) -> Low Immigration?
+                # lambda_vec[i] = self.immigration_max * ratio # High rank (low i) -> Low Immigration?
                 # Wait, MQL5: immigration = I * (1 - k/N).
                 # If i=0 (Best), Im = I * (1 - 0) = I (High Immigration?)
                 # Actually, usually Best habitats have High Emigration, Low Immigration.
@@ -584,4 +584,126 @@ class DE(Optimizer):
             if epoch % 10 == 0:
                 logger.info(f"DE Epoch {epoch}: Best Score = {self.best_score:.4f}")
                 
+        return self.best_solution, self.best_score
+
+class TETA(Optimizer):
+    """
+    Time Evolution Travel Algorithm (TETA)
+    Based on MQL5 implementation: AO_TETA_TimeEvolutionTravelAlgorithm.mqh
+    """
+    def __init__(self, pop_size: int = 50):
+        super().__init__("TETA")
+        self.pop_size = pop_size
+
+    def optimize(self, objective_function: Callable, bounds: List[Tuple[float, float]], steps: List[float] = None, epochs: int = 100):
+        dim = len(bounds)
+        if steps is None:
+            steps = [0.0] * dim
+
+        # Initialize Population
+        # a.c (current coordinates)
+        population = np.zeros((self.pop_size, dim))
+        # a.f (current fitness)
+        fitness = np.full(self.pop_size, -float('inf'))
+        
+        # a.cB (local best coordinates)
+        local_best_pos = np.zeros((self.pop_size, dim))
+        # a.fB (local best fitness)
+        local_best_fit = np.full(self.pop_size, -float('inf'))
+
+        # Global Best
+        self.best_solution = np.zeros(dim)
+        self.best_score = -float('inf')
+
+        # Initialization
+        for i in range(self.pop_size):
+            for j in range(dim):
+                population[i, j] = random.uniform(bounds[j][0], bounds[j][1])
+                if steps[j] > 0: population[i, j] = round(population[i, j] / steps[j]) * steps[j]
+            
+            # Initial Evaluation
+            fitness[i] = objective_function(population[i])
+            
+            # Update Local Best
+            local_best_pos[i] = population[i].copy()
+            local_best_fit[i] = fitness[i]
+            
+            # Update Global Best
+            if fitness[i] > self.best_score:
+                self.best_score = fitness[i]
+                self.best_solution = population[i].copy()
+
+        # Sort population by local best fitness (fB) initially
+        sort_idx = np.argsort(local_best_fit)[::-1]
+        population = population[sort_idx]
+        fitness = fitness[sort_idx]
+        local_best_pos = local_best_pos[sort_idx]
+        local_best_fit = local_best_fit[sort_idx]
+
+        for epoch in range(epochs):
+            # Moving
+            # Update current coordinates 'population'
+            # Since we sorted, index 0 is best, index N-1 is worst.
+            
+            for i in range(self.pop_size):
+                for j in range(dim):
+                    rnd = random.random()
+                    rnd *= rnd
+                    
+                    # Select pair: Scale rnd (0..1) to (0..pop_size-1)
+                    pair = int(rnd * (self.pop_size - 1))
+                    pair = max(0, min(self.pop_size - 1, pair))
+                    
+                    val = 0.0
+                    
+                    if i != pair:
+                        if i < pair:
+                            # Current universe 'i' is better than 'pair' (since sorted descending)
+                            # val = c + rnd * (cB_pair - cB_i)
+                            val = population[i, j] + rnd * (local_best_pos[pair, j] - local_best_pos[i, j])
+                        else:
+                            # Current 'i' is worse than 'pair'
+                            if random.random() > rnd:
+                                # val = cB_i + (1-rnd) * (cB_pair - cB_i)
+                                val = local_best_pos[i, j] + (1.0 - rnd) * (local_best_pos[pair, j] - local_best_pos[i, j])
+                            else:
+                                val = local_best_pos[pair, j]
+                    else:
+                        # i == pair
+                        # Gaussian around Global Best
+                        sigma = (bounds[j][1] - bounds[j][0]) / 6.0
+                        val = random.gauss(self.best_solution[j], sigma)
+                    
+                    # Boundary and Step
+                    val = max(bounds[j][0], min(bounds[j][1], val))
+                    if steps[j] > 0: val = round(val / steps[j]) * steps[j]
+                    
+                    population[i, j] = val
+
+            # Revision
+            for i in range(self.pop_size):
+                fitness[i] = objective_function(population[i])
+                
+                # Update Global Best
+                if fitness[i] > self.best_score:
+                    self.best_score = fitness[i]
+                    self.best_solution = population[i].copy()
+                
+                # Update Local Best
+                if fitness[i] > local_best_fit[i]:
+                    local_best_fit[i] = fitness[i]
+                    local_best_pos[i] = population[i].copy()
+            
+            # Sort universes by Local Best Fitness (fB) for next iteration
+            sort_idx = np.argsort(local_best_fit)[::-1]
+            population = population[sort_idx]
+            fitness = fitness[sort_idx]
+            local_best_pos = local_best_pos[sort_idx]
+            local_best_fit = local_best_fit[sort_idx]
+            
+            self.history.append(self.best_score)
+            
+            if epoch % 10 == 0:
+                logger.info(f"TETA Epoch {epoch}: Best Score = {self.best_score:.4f}")
+
         return self.best_solution, self.best_score

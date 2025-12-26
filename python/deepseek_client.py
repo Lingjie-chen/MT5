@@ -143,8 +143,34 @@ class DeepSeekClient:
         if extra_analysis:
             extra_context = f"\n额外技术分析参考:\n{json.dumps(extra_analysis, indent=2, cls=CustomJSONEncoder)}\n"
 
+        opt_algo = "Auto-AO"
+        opt_info_str = ""
+        if extra_analysis and 'optimization_status' in extra_analysis:
+            status = extra_analysis['optimization_status']
+            opt_algo = status.get('active_optimizer', 'Auto-AO')
+            if 'optimizer_details' in status:
+                details = status['optimizer_details']
+                opt_info_str = f"""
+        [可用优化器池信息]
+        当前激活: {opt_algo} (得分: {details.get('last_optimization_score', 'N/A')})
+        可用算法: {', '.join(details.get('available_optimizers', []))}
+        算法说明:
+        {json.dumps(details.get('descriptions', {}), indent=2, ensure_ascii=False)}
+        """
+
         prompt = f"""
         作为专业的量化交易分析师，你是混合交易系统的一部分。请分析以下市场数据，识别当前的市场结构。
+        
+        你现在拥有来自多个高级算法策略的信号输入，请仔细综合这些信息：
+        1. SMC (Smart Money Concepts): 关注订单块(OB)和流动性缺口(FVG)。
+        2. IFVG (Inverse FVG): 关注反向价值缺口。
+        3. CRT (Candle Range Theory): 关注K线区间操纵行为。
+        4. RVGI+CCI: 复合动量策略。
+        5. MFH (Multiple Forecast Horizons): 多周期预测。
+        6. MTF (Multi-Timeframe): 多时间周期一致性。
+        7. 优化器状态: 当前策略参数已由 {opt_algo} 算法优化。
+        {opt_info_str}
+
         {extra_context}
         市场数据：
         {json.dumps(market_data, indent=2, cls=CustomJSONEncoder)}

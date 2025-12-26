@@ -976,7 +976,7 @@ try:
         from python.ai_client_factory import AIClientFactory
         from python.data_processor import MT5DataProcessor
         from python.database_manager import DatabaseManager
-        from python.optimization import GWO, WOAm, DE, COAm, BBO
+        from python.optimization import GWO, WOAm, DE, COAm, BBO, TETA
     except ImportError:
         # Fallback: Try importing directly if 'python' dir is in path but not treated as package
         import ai_client_factory as ai_mod
@@ -992,6 +992,7 @@ try:
         DE = opt_mod.DE
         COAm = opt_mod.COAm
         BBO = opt_mod.BBO
+        TETA = opt_mod.TETA
 
 except ImportError as e:
     # Final Fallback: Manual loading via importlib
@@ -1219,9 +1220,10 @@ class AI_MT5_Bot:
             "WOAm": WOAm(pop_size=10, ref_prob=0.1),
             "DE": DE(pop_size=10, F=0.5, CR=0.7),
             "COAm": COAm(pop_size=10, nests_number=10, koef_pa=0.6),
-            "BBO": BBO(pop_size=10, immigration_max=1.0, emigration_max=1.0)
+            "BBO": BBO(pop_size=10, immigration_max=1.0, emigration_max=1.0),
+            "TETA": TETA(pop_size=10) # 新增 TETA
         }
-        self.active_optimizer_name = "GWO" # 默认
+        self.active_optimizer_name = "TETA" # 默认使用 TETA (作为最新引入的强力算法)
         self.last_optimization_time = 0
         self.last_realtime_save = 0 # Added for realtime dashboard
         self.last_analysis_time = 0 # Added for periodic analysis (1 min)
@@ -2468,8 +2470,36 @@ class AI_MT5_Bot:
                             
                         logger.info(f"RVGI+CCI 分析: {rvgi_cci_result['signal']} (Strength: {rvgi_cci_result['strength']})")
                         
+                        # 准备优化器池信息供 AI 参考
+                        optimizer_info = {
+                            "available_optimizers": list(self.optimizers.keys()),
+                            "active_optimizer": self.active_optimizer_name,
+                            "last_optimization_score": self.optimizers[self.active_optimizer_name].best_score if self.optimizers[self.active_optimizer_name].best_score > -90000 else None,
+                            "descriptions": {
+                                "GWO": "Grey Wolf Optimizer - 模拟灰狼捕猎行为",
+                                "WOAm": "Whale Optimization Algorithm (Modified) - 模拟座头鲸气泡网捕猎",
+                                "DE": "Differential Evolution - 差分进化算法",
+                                "COAm": "Cuckoo Optimization Algorithm (Modified) - 模拟布谷鸟寄生繁殖",
+                                "BBO": "Biogeography-Based Optimization - 生物地理学优化",
+                                "TETA": "Time Evolution Travel Algorithm - 时间演化旅行算法 (无参)"
+                            }
+                        }
+
                         # --- 3.3 DeepSeek 分析 ---
                         logger.info("正在调用 DeepSeek 分析市场结构...")
+                        # 准备当前优化状态上下文
+                        optimization_status = {
+                            "active_optimizer": self.active_optimizer_name,
+                            "optimizer_details": optimizer_info, # 注入详细优化器信息
+                            "smc_params": {
+                                "ma_period": self.smc_analyzer.ma_period,
+                                "atr_threshold": self.smc_analyzer.atr_threshold
+                            },
+                            "mfh_params": {
+                                "learning_rate": self.mfh_analyzer.learning_rate
+                            }
+                        }
+
                         # 传入 CRT, PriceEq, TF 和 高级分析 的结果作为额外上下文
                         extra_analysis = {
                             "crt": crt_result,
@@ -2481,7 +2511,8 @@ class AI_MT5_Bot:
                             "mfh": mfh_result,
                             "mtf": mtf_result,
                             "ifvg": ifvg_result,
-                            "rvgi_cci": rvgi_cci_result # 新增
+                            "rvgi_cci": rvgi_cci_result,
+                            "optimization_status": optimization_status # 新增: 当前参数状态
                         }
                         structure = self.deepseek_client.analyze_market_structure(market_snapshot, extra_analysis=extra_analysis)
                         logger.info(f"DeepSeek 分析完成: {structure.get('market_state')}")
