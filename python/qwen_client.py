@@ -208,17 +208,16 @@ class QwenClient:
            - 如果无持仓且信号明确，请**开仓 (Open Position)**。
         
         请提供以下优化结果，并确保分析全面、逻辑严密，不要使用省略号或简化描述。**请务必使用中文进行输出（Strategy Logic Rationale 部分）**：
-        1. 核心决策：买入/卖出/持有/平仓/加仓
-        2. 入场/加仓条件：基于情绪得分和技术指标的优化规则
-        3. 出场/减仓条件：**基于 MFE/MAE 分析的动态 SL/TP**，给出具体的 ATR 倍数或价格
-        4. 仓位管理：针对当前持仓的具体操作建议
-        5. 风险管理建议：针对当前市场状态的风险控制措施
-        6. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 MFE/MAE 数据的具体分析**
-        
+        1. 核心决策：买入/卖出/持有/平仓/加仓/挂单(Limit)
+        2. 入场/加仓条件：基于情绪得分和技术指标的优化规则。如果是挂单，请明确价格。
+        3. 出场/减仓条件：**基于 MFE/MAE 分析的合理优化止盈止损点**。请直接给出具体价格（sl_price, tp_price）或 ATR 倍数。不要使用简单的动态追踪，而是根据市场结构和 MFE/MAE 给出固定的最佳离场点。
+        4. 仓位管理：针对当前持仓的具体操作建议（如加仓、减仓、反手）。
+        5. 风险管理建议：针对当前市场状态的风险控制措施。
+        6. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 MFE/MAE 数据的具体分析以及为何选择该 SL/TP 点位**。
         请以JSON格式返回结果，包含以下字段：
-        - action: str ("buy", "sell", "hold", "close_buy", "close_sell", "add_buy", "add_sell") - 明确的交易行动建议
-        - entry_conditions: dict (包含 "trigger_type": "market"|"limit", "limit_price": float (optional), "confirmation": str)
-        - exit_conditions: dict (包含 "sl_atr_multiplier": float, "tp_atr_multiplier": float, "close_rationale": str (optional))
+        - action: str ("buy", "sell", "hold", "close_buy", "close_sell", "add_buy", "add_sell", "buy_limit", "sell_limit") - 明确的交易行动建议
+        - entry_conditions: dict (包含 "trigger_type": "market"|"limit", "limit_price": float (optional, required for limit orders), "confirmation": str)
+        - exit_conditions: dict (包含 "sl_price": float (optional, preferred), "tp_price": float (optional, preferred), "sl_atr_multiplier": float, "tp_atr_multiplier": float, "close_rationale": str (optional))
         - position_management: dict (包含 "action": "open"|"add"|"reduce"|"close"|"hold", "volume_percent": float (加仓/减仓比例, 0.0-1.0), "reason": str)
         - position_size: float
         - signal_strength: int

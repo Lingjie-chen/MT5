@@ -1417,332 +1417,235 @@ class AI_MT5_Bot:
 
     def execute_trade(self, signal, strength, sl_tp_params, entry_params=None):
         """
-        执行交易指令，参考 MQL5 Python 最佳实践
+        执行交易指令，完全由大模型驱动
         """
-        # 允许 'close' 信号进入处理流程
-        if signal not in ['buy', 'sell', 'close']:
+        # 允许所有相关指令进入
+        valid_actions = ['buy', 'sell', 'limit_buy', 'limit_sell', 'close', 'add_buy', 'add_sell', 'hold']
+        # 注意: signal 参数这里传入的是 final_signal，已经被归一化为 buy/sell/close/hold
+        # 但我们更关心 entry_params 中的具体 action
+        
+        # --- 1. 获取市场状态 ---
+        positions = mt5.positions_get(symbol=self.symbol)
+        tick = mt5.symbol_info_tick(self.symbol)
+        if not tick:
+            logger.error("无法获取 Tick 数据")
             return
 
-        # --- 1. 持仓管理 (LLM-Driven Position Management) ---
-        positions = mt5.positions_get(symbol=self.symbol)
+        # 解析 LLM 指令
+        # 这里的 entry_params 是从 strategy 字典中提取的 'entry_conditions'
+        # 但 strategy 字典本身也有 'action'
+        # 为了更准确，我们应该直接使用 self.latest_strategy (在 run 循环中更新)
         
-        # 提取 LLM 的持仓管理指令
-        pos_mgmt = {}
-        if entry_params and 'position_management' in entry_params:
-            pos_mgmt = entry_params['position_management']
-        
-        pm_action = pos_mgmt.get('action', 'hold') # open, add, reduce, close, hold
-        llm_action = entry_params.get('action', '') if entry_params else ''
+        # 兼容性处理
+        llm_action = "hold"
+        if self.latest_strategy:
+             llm_action = self.latest_strategy.get('action', 'hold').lower()
+        elif entry_params and 'action' in entry_params:
+             llm_action = entry_params.get('action', 'hold').lower()
+        else:
+             llm_action = signal if signal in valid_actions else 'hold'
 
+        # 显式 MFE/MAE 止损止盈
+        # LLM 应该返回具体的 sl_price 和 tp_price，或者 MFE/MAE 的百分比建议
+        # 如果 LLM 提供了具体的 SL/TP 价格，优先使用
+        explicit_sl = None
+        explicit_tp = None
+        
+        if self.latest_strategy:
+            explicit_sl = self.latest_strategy.get('sl')
+            explicit_tp = self.latest_strategy.get('tp')
+        
+        # 如果没有具体价格，回退到 sl_tp_params (通常也是 LLM 生成的)
+        if explicit_sl is None and sl_tp_params:
+             explicit_sl = sl_tp_params.get('sl_price')
+        if explicit_tp is None and sl_tp_params:
+             explicit_tp = sl_tp_params.get('tp_price')
+
+        logger.info(f"执行逻辑: Action={llm_action}, Signal={signal}, Explicit SL={explicit_sl}, TP={explicit_tp}")
+
+        # --- 2. 持仓管理 (已开仓状态) ---
         if positions and len(positions) > 0:
             for pos in positions:
                 pos_type = pos.type # 0: Buy, 1: Sell
                 is_buy_pos = (pos_type == mt5.POSITION_TYPE_BUY)
                 
-                # --- A. 平仓/减仓逻辑 ---
+                # A. 平仓/减仓逻辑 (Close)
                 should_close = False
                 close_reason = ""
                 
-                # 情况1: LLM 明确指令平仓
-                if pm_action == 'close':
-                    should_close = True
-                    close_reason = f"LLM Instruction ({pos_mgmt.get('reason', 'Close')})"
-                elif is_buy_pos and llm_action == 'close_buy':
-                    should_close = True
-                    close_reason = "LLM Close Buy"
-                elif not is_buy_pos and llm_action == 'close_sell':
-                    should_close = True
-                    close_reason = "LLM Close Sell"
+                if llm_action in ['close', 'close_buy', 'close_sell']:
+                    # 检查方向匹配
+                    if llm_action == 'close': should_close = True
+                    elif llm_action == 'close_buy' and is_buy_pos: should_close = True
+                    elif llm_action == 'close_sell' and not is_buy_pos: should_close = True
+                    
+                    if should_close: close_reason = "LLM Close Instruction"
                 
-                # 情况2: 信号反转 (Reversal) - 仅在 LLM 建议反向开仓时触发
-                elif (signal == 'sell' and is_buy_pos) or (signal == 'buy' and not is_buy_pos):
-                    # 如果 LLM 明确说要开反向仓位，则先平掉旧仓位
-                    if pm_action == 'open' or pm_action == 'add': 
-                        should_close = True
-                        close_reason = f"Reversal for {signal.upper()}"
-                
+                # 反向信号平仓 (Reversal)
+                elif (llm_action in ['buy', 'add_buy'] and not is_buy_pos):
+                     should_close = True
+                     close_reason = "Reversal (Sell -> Buy)"
+                elif (llm_action in ['sell', 'add_sell'] and is_buy_pos):
+                     should_close = True
+                     close_reason = "Reversal (Buy -> Sell)"
+
                 if should_close:
                     logger.info(f"执行平仓 #{pos.ticket}: {close_reason}")
-                    self.close_position(pos, comment=f"AI-Bot: {close_reason}")
-                    continue # 平仓后跳过该持仓的后续处理
-                
-                # --- B. 加仓逻辑 ---
-                # 仅当 LLM 明确建议 'add' 或者信号极强且同向时考虑
+                    self.close_position(pos, comment=f"AI: {close_reason}")
+                    continue 
+
+                # B. 加仓逻辑 (Add Position)
                 should_add = False
+                if llm_action == 'add_buy' and is_buy_pos: should_add = True
+                elif llm_action == 'add_sell' and not is_buy_pos: should_add = True
                 
-                if pm_action == 'add':
-                    should_add = True
-                elif (signal == 'buy' and is_buy_pos) or (signal == 'sell' and not is_buy_pos):
-                    if llm_action in ['add_buy', 'add_sell']:
-                         should_add = True
+                # 如果是单纯的 buy/sell 信号，且已有同向仓位，通常视为 hold，除非明确 add
+                # 但如果用户希望 "完全交给大模型"，那么如果大模型在有仓位时发出了 buy，可能意味着加仓
+                # 为了安全，我们严格限制只有 'add_xxx' 才加仓，或者 signal 极强
                 
                 if should_add:
-                    # 检查风险敞口 (Double Check)
-                    account_info = mt5.account_info()
-                    balance = account_info.balance if account_info else 10000.0
-                    total_volume = sum([p.volume for p in positions if p.symbol == self.symbol and p.magic == self.magic_number])
-                    max_volume = (balance / 1000.0) * 0.15 # 略微放宽到 0.15
+                    logger.info(f"执行加仓 #{pos.ticket} 方向")
+                    # 加仓逻辑复用开仓逻辑，但可能调整手数
+                    self._send_order(
+                        "buy" if is_buy_pos else "sell", 
+                        tick.ask if is_buy_pos else tick.bid,
+                        explicit_sl,
+                        explicit_tp,
+                        comment="AI: Add Position"
+                    )
                     
-                    if total_volume < max_volume:
-                         logger.info(f"LLM 建议加仓 (Current Vol: {total_volume:.2f})")
-                         # 继续向下执行开仓逻辑 (Action Deal)
-                    else:
-                         logger.warning(f"LLM 建议加仓但风险敞口已满 ({total_volume} >= {max_volume})，跳过")
-                         return
+                # C. 持仓 (Hold) - 默认行为
+                # 更新 SL/TP (如果 LLM 给出了新的优化值)
+                # 只有当新给出的 SL/TP 与当前差别较大时才修改
+                if explicit_sl is not None and explicit_tp is not None:
+                    # 简单的阈值检查，避免频繁修改
+                    point = mt5.symbol_info(self.symbol).point
+                    if abs(pos.sl - explicit_sl) > 10 * point or abs(pos.tp - explicit_tp) > 10 * point:
+                        logger.info(f"更新持仓 SL/TP #{pos.ticket}: SL {pos.sl}->{explicit_sl}, TP {pos.tp}->{explicit_tp}")
+                        request = {
+                            "action": mt5.TRADE_ACTION_SLTP,
+                            "position": pos.ticket,
+                            "sl": explicit_sl,
+                            "tp": explicit_tp
+                        }
+                        mt5.order_send(request)
 
-                # --- C. 保持现状 (Hold) ---
-                # 如果没有平仓也没有加仓，则 return，不执行下面的开仓逻辑
-                if not should_add:
-                    return
-
-        # 2. 获取最新的品种信息
-        symbol_info = mt5.symbol_info(self.symbol)
-        if symbol_info is None:
-            logger.error(f"找不到品种 {self.symbol}")
+        # --- 3. 开仓/挂单逻辑 (未开仓 或 加仓) ---
+        # 注意: 上面的循环处理了已有仓位的 Close 和 Add。
+        # 如果当前没有仓位，或者上面的逻辑没有触发 Close (即是 Hold)，
+        # 或者是 Reversal (Close 之后)，我们需要看是否需要开新仓。
+        
+        # 重新检查持仓数 (因为刚才可能平仓了)
+        positions = mt5.positions_get(symbol=self.symbol)
+        has_position = len(positions) > 0 if positions else False
+        
+        # 如果有持仓且不是加仓指令，则不再开新仓
+        if has_position and 'add' not in llm_action:
             return
-            
-        if not symbol_info.visible:
-            logger.info(f"品种 {self.symbol} 不可见，尝试选中")
-            if not mt5.symbol_select(self.symbol, True):
-                logger.error(f"无法选中品种 {self.symbol}")
-                return
 
-        # 3. 准备交易参数
-        action = mt5.TRADE_ACTION_DEAL
-        type_order = mt5.ORDER_TYPE_BUY if signal == 'buy' else mt5.ORDER_TYPE_SELL
+        # 执行开仓/挂单
+        trade_type = None
+        price = 0.0
         
-        # 获取最新报价
-        tick = mt5.symbol_info_tick(self.symbol)
-        if tick is None:
-            logger.error(f"无法获取 {self.symbol} 的最新报价")
-            return
-            
-        price = tick.ask if signal == 'buy' else tick.bid
-        
-        # --- 检查是否使用挂单 (Limit Order) ---
-        is_pending = False
-        
-        # 允许并行挂单: 移除清理旧挂单的逻辑，或者仅清理方向相反的挂单
-        # 用户需求: "如果大模型前期给出的是一个挂单操作，后续又更新了一个挂单的建议...则执行多个挂单操作"
-        
-        # 因此，我们需要:
-        # 1. 检查是否存在同方向的挂单
-        # 2. 如果 LLM 明确要求 "add" (加仓) 或者这是一个新的挂单建议 (价格不同)，则允许挂单
-        # 3. 只有当方向完全反转时，才取消旧挂单
-        
-        try:
-            existing_orders = mt5.orders_get(symbol=self.symbol)
-            if existing_orders:
-                for order in existing_orders:
-                    if order.magic == self.magic_number:
-                        # 检查方向
-                        order_type = order.type
-                        is_buy_order = (order_type == mt5.ORDER_TYPE_BUY_LIMIT or order_type == mt5.ORDER_TYPE_BUY_STOP)
-                        
-                        # 如果信号反转 (例如当前是 Sell，但有 Buy Limit)，则取消
-                        if (signal == 'sell' and is_buy_order) or (signal == 'buy' and not is_buy_order):
-                            logger.info(f"信号反转，取消反向挂单 #{order.ticket}")
-                            req_remove = {
-                                "action": mt5.TRADE_ACTION_REMOVE,
-                                "order": order.ticket,
-                                "magic": self.magic_number
-                            }
-                            mt5.order_send(req_remove)
-                        else:
-                            # 同向挂单，保留 (支持多单)
-                            pass
-        except Exception as e:
-            logger.error(f"检查挂单时出错: {e}")
+        if llm_action == 'buy':
+            trade_type = "buy"
+            price = tick.ask
+        elif llm_action == 'sell':
+            trade_type = "sell"
+            price = tick.bid
+        elif llm_action == 'limit_buy':
+            trade_type = "limit_buy"
+            price = entry_params.get('entry_price') if entry_params else 0.0
+        elif llm_action == 'limit_sell':
+            trade_type = "limit_sell"
+            price = entry_params.get('entry_price') if entry_params else 0.0
 
-        if entry_params and entry_params.get('trigger_type') == 'limit':
-            limit_price = entry_params.get('limit_price', 0.0)
-            if limit_price > 0:
-                # 简单的挂单逻辑
-                # 检查限价单的逻辑是否合理 (买单价格 < Ask, 卖单价格 > Bid)
-                # 如果不合理，我们不应该直接降级为市价单，而应该:
-                # 1. 调整价格 (例如设为当前价的微小偏移)
-                # 2. 或者直接降级为市价单 (如果差距过大)
+        if trade_type and price > 0:
+            # 再次确认 SL/TP 是否存在
+            if explicit_sl is None or explicit_tp is None:
+                # 如果 LLM 没给具体价格，尝试计算 (作为最后的兜底，虽然用户要求不要动态)
+                # 但为了订单能发出去，我们需要非零的 SL/TP
+                # 这里假设 LLM 总是会给出
+                # 兜底：如果 LLM 没有给出具体价格，但给出了 Atr Multiplier (旧逻辑兼容)
+                atr = 0
+                rates = mt5.copy_rates_from(self.symbol, self.timeframe, datetime.now(), 20)
+                if rates is not None and len(rates) > 0:
+                     df = pd.DataFrame(rates)
+                     df['tr'] = np.maximum(df['high'] - df['low'], 
+                                   np.maximum(abs(df['high'] - df['close'].shift(1)), 
+                                              abs(df['low'] - df['close'].shift(1))))
+                     atr = df['tr'].mean()
                 
-                valid_limit = False
-                if signal == 'buy':
-                     if limit_price < tick.ask:
-                         valid_limit = True
+                if atr > 0:
+                     sl_mult = sl_tp_params.get('sl_atr_multiplier', 1.5) if sl_tp_params else 1.5
+                     tp_mult = sl_tp_params.get('tp_atr_multiplier', 2.5) if sl_tp_params else 2.5
+                     if 'buy' in trade_type:
+                          explicit_sl = price - (atr * sl_mult)
+                          explicit_tp = price + (atr * tp_mult)
                      else:
-                         # 价格不合理，可能是 Qwen 没更新最新价格
-                         # 尝试修正: 如果 limit_price > ask，说明想以更高价买入? 那直接市价买更好
-                         # 或者这是突破单 (Stop Order)? 目前仅支持 Limit
-                         logger.warning(f"限价买单价格 {limit_price} >= Ask {tick.ask}，转为市价单")
-                         valid_limit = False
-                         
-                elif signal == 'sell':
-                     if limit_price > tick.bid:
-                         valid_limit = True
-                     else:
-                         logger.warning(f"限价卖单价格 {limit_price} <= Bid {tick.bid}，转为市价单")
-                         valid_limit = False
-                
-                if valid_limit:
-                    if signal == 'buy':
-                        action = mt5.TRADE_ACTION_PENDING
-                        type_order = mt5.ORDER_TYPE_BUY_LIMIT
-                        price = limit_price
-                        is_pending = True
-                        logger.info(f"使用限价买单: {limit_price}")
-                    elif signal == 'sell':
-                        action = mt5.TRADE_ACTION_PENDING
-                        type_order = mt5.ORDER_TYPE_SELL_LIMIT
-                        price = limit_price
-                        is_pending = True
-                        logger.info(f"使用限价卖单: {limit_price}")
+                          explicit_sl = price + (atr * sl_mult)
+                          explicit_tp = price - (atr * tp_mult)
                 else:
-                    # 价格无效，降级为市价单
-                    pass
-        
-        # --- 计算止损止盈 ---
-        # 获取 ATR (需要从 data_processor 或 context 获取，不要简化)
-        # 我们这里重新请求完整数据来计算准确的 ATR，确保不使用过时或简化的数据
-        
-        # 获取足够的历史数据来计算 ATR(14)
-        rates_full = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 100)
-        atr = 0.0
-        if rates_full is not None and len(rates_full) > 20:
-            df_full = pd.DataFrame(rates_full)
-            
-            # 完整的 TR 计算
-            high = df_full['high']
-            low = df_full['low']
-            close = df_full['close']
-            
-            tr1 = high - low
-            tr2 = abs(high - close.shift(1))
-            tr3 = abs(low - close.shift(1))
-            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            
-            # ATR SMA 14
-            atr = tr.rolling(window=14).mean().iloc[-1]
-        
-        if atr <= 0:
-            logger.warning("ATR 计算失败，使用默认值")
-            atr = price * 0.005 # Fallback
-            
-        sl, tp = self.calculate_sl_tp(signal, price, atr, sl_tp_params)
-        logger.info(f"计算止损止盈 (ATR={atr:.4f}): SL={sl:.2f}, TP={tp:.2f}")
+                     logger.error("无法计算兜底 SL/TP，放弃交易")
+                     return 
 
-        # 4. 规范化交易量
-        # 确保交易量在 min/max 之间，并且是 step 的倍数
-        volume = self.lot_size
-        if volume < symbol_info.volume_min:
-            volume = symbol_info.volume_min
-            logger.warning(f"交易量调整为最小允许值: {volume}")
-        elif volume > symbol_info.volume_max:
-            volume = symbol_info.volume_max
-            logger.warning(f"交易量调整为最大允许值: {volume}")
+            comment = f"AI: {llm_action.upper()}"
+            self._send_order(trade_type, price, explicit_sl, explicit_tp, comment=comment)
+
+    def _send_order(self, type_str, price, sl, tp, comment=""):
+        """底层下单函数"""
+        order_type = mt5.ORDER_TYPE_BUY
+        action = mt5.TRADE_ACTION_DEAL
+        
+        if type_str == "buy":
+            order_type = mt5.ORDER_TYPE_BUY
+            action = mt5.TRADE_ACTION_DEAL
+        elif type_str == "sell":
+            order_type = mt5.ORDER_TYPE_SELL
+            action = mt5.TRADE_ACTION_DEAL
+        elif type_str == "limit_buy":
+            order_type = mt5.ORDER_TYPE_BUY_LIMIT
+            action = mt5.TRADE_ACTION_PENDING
+        elif type_str == "limit_sell":
+            order_type = mt5.ORDER_TYPE_SELL_LIMIT
+            action = mt5.TRADE_ACTION_PENDING
             
-        # 简单的步长调整 (保留合适的小数位)
-        # 假设 volume_step 是 0.01，则保留 2 位小数
-        import math
-        step_decimals = 0
-        if symbol_info.volume_step > 0:
-            step_decimals = int(round(-math.log(symbol_info.volume_step, 10), 0))
-            volume = round(volume, step_decimals)
-            
-        # 5. 构建请求结构
         request = {
             "action": action,
             "symbol": self.symbol,
-            "volume": volume,
-            "type": type_order,
+            "volume": self.lot_size,
+            "type": order_type,
             "price": price,
             "sl": sl,
             "tp": tp,
             "deviation": 20,
             "magic": self.magic_number,
-            "comment": f"AI-Bot: {strength:.1f}%",
+            "comment": comment,
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_FOK, 
+            "type_filling": mt5.ORDER_FILLING_FOK,
         }
         
-        # 6. 动态选择填充模式 (Filling Mode)
-        filling_mode = mt5.ORDER_FILLING_FOK
+        # 挂单需要不同的 filling type? 通常 Pending 订单不用 FOK，用 RETURN 或默认
+        if "limit" in type_str:
+             if 'type_filling' in request:
+                 del request['type_filling']
         
-        # 定义填充模式常量 (如果 mt5 模块中缺少)
-        SYMBOL_FILLING_FOK = 1
-        SYMBOL_FILLING_IOC = 2
-
-        # 检查是否支持 FOK
-        if (symbol_info.filling_mode & SYMBOL_FILLING_FOK) != 0:
-            filling_mode = mt5.ORDER_FILLING_FOK
-        # 检查是否支持 IOC
-        elif (symbol_info.filling_mode & SYMBOL_FILLING_IOC) != 0:
-            filling_mode = mt5.ORDER_FILLING_IOC
-        else:
-            # 如果都不支持，通常设为 0 (ORDER_FILLING_RETURN)
-            filling_mode = 0
-            
-        # 挂单通常不支持 FOK/IOC，需要设置为 ORDER_FILLING_RETURN (0) 或其他
-        if is_pending:
-             request['type_filling'] = mt5.ORDER_FILLING_RETURN
-        else:
-             request['type_filling'] = filling_mode
-        
-        # 7. 执行 OrderCheck (关键步骤)
-        logger.info(f"正在检查订单: {signal.upper()} {volume} lots @ {price}")
-        check_result = mt5.order_check(request)
-        
-        if check_result is None:
-            logger.error("order_check() 返回 None, API 可能未连接")
-            return
-            
-        # order_check 返回 0 也表示成功 (Done)
-        if check_result.retcode != mt5.TRADE_RETCODE_DONE and check_result.retcode != 0:
-            logger.error(f"❌ 订单检查失败: {check_result.comment}")
-            logger.error(f"   Retcode: {check_result.retcode}")
-            logger.error(f"   Balance: {check_result.balance}, Equity: {check_result.equity}")
-            logger.error(f"   Margin: {check_result.margin}, Free Margin: {check_result.margin_free}")
-            logger.error(f"   Margin Level: {check_result.margin_level}")
-            
-            # 发送警告到 Telegram
-            self.send_telegram_message(f"⚠️ *Order Check Failed*\nReason: {check_result.comment}\nCode: {check_result.retcode}")
-            return
-            
-        logger.info("✅ 订单检查通过，准备发送交易...")
-        
-        # 8. 发送订单
         result = mt5.order_send(request)
-        
         if result is None:
-            logger.error("order_send() 返回 None")
-            return
-            
-        # 记录交易结果
-        trade_data = {
-            "ticket": result.order if result.retcode == mt5.TRADE_RETCODE_DONE else 0,
-            "symbol": self.symbol,
-            "action": signal.upper(),
-            "volume": volume,
-            "price": price,
-            "result": "OPEN" if result.retcode == mt5.TRADE_RETCODE_DONE else f"ERROR: {result.comment}"
-        }
-        self.db_manager.save_trade(trade_data)
-        
-        # 9. 处理返回结果
+             logger.error("order_send 返回 None")
+             return
+
         if result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(f"❌ 订单发送失败: {result.comment}, 错误码: {result.retcode}")
-            # 可以在这里添加重试逻辑，如果错误码是临时的 (如连接超时)
-            self.send_telegram_message(f"❌ *Trade Failed*\nSymbol: {self.symbol}\nError: {result.comment}")
+            logger.error(f"下单失败 ({type_str}): {result.comment}, retcode={result.retcode}")
         else:
-            logger.info(f"🚀 订单执行成功! 票号: {result.order}")
-            logger.info(f"   成交价: {result.price}, 交易量: {result.volume}")
-            
-            trade_msg = (
-                f"🚀 *Trade Executed*\n"
-                f"Symbol: {self.symbol}\n"
-                f"Action: {signal.upper()}\n"
-                f"Volume: {volume}\n"
-                f"Price: {price}\n"
-                f"Ticket: `{result.order}`"
-            )
-            self.send_telegram_message(trade_msg)
+            logger.info(f"下单成功 ({type_str}) #{result.order}")
+            self.send_telegram_message(f"✅ *Order Executed*\nType: `{type_str.upper()}`\nPrice: `{price}`\nSL: `{sl}`\nTP: `{tp}`")
+
+
+
+                
+
+
 
     def send_telegram_message(self, message):
         """发送消息到 Telegram"""
