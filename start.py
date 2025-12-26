@@ -1743,62 +1743,76 @@ class AI_MT5_Bot:
             
             changed = False
             
-            # --- 1. 基于最新策略更新 SL/TP (覆盖旧值) ---
+            # --- 1. 基于最新策略更新 SL/TP (全量覆盖更新) ---
             if has_new_params:
-                # 计算新的目标 SL/TP
-                calc_sl = 0.0
-                calc_tp = 0.0
+                # 重新计算目标 SL/TP (基于当前价格)
+                # 逻辑: 只要大模型给出了新的 ATR 倍数，我们就根据当前价格重新划定安全区域
+                # 但要遵循基本原则: 
+                # 1. 止损只能向有利方向移动 (Trailing) -> 防止亏损扩大
+                # 2. 止盈可以随时更新 (Adaptation) -> 适应市场波动
                 
-                # 注意: 这里我们使用当前价格重新计算，还是基于开仓价?
-                # 用户要求 "cover previous ones... based on latest analysis"
-                # 通常 SL 是基于当前价格的动态保护，或者基于开仓价的固定保护
-                # 如果是移动止损，是基于当前价。如果是结构性 SL，可能是基于开仓价。
-                # Qwen 给出的通常是 ATR 倍数。
+                current_sl_dist = atr * new_sl_multiplier
+                current_tp_dist = atr * new_tp_multiplier
                 
-                # 我们假设 Qwen 的意图是: "当前市场状态下，合理的 SL 距离是 X ATR"
-                # 因此，我们应该检查当前 SL 是否符合这个距离。
-                # 如果是浮动盈亏状态，我们通常只做 Trailing (收紧 SL)，而不放宽。
+                # 计算建议的 SL/TP 价格
+                suggested_sl = 0.0
+                suggested_tp = 0.0
                 
-                # 简化逻辑: 仅当我们需要收紧 SL 时才更新 (Trailing)，或者当 TP 需要调整时。
-                # 但用户说 "cover"，可能意味着强制更新。
-                # 风险: 如果价格已经反向运行，重新计算 SL 可能会导致 SL 被推远 (增加亏损)。
-                # 原则: SL 只能向有利方向移动 (Tighten)。
-                
-                pass # 具体计算在下面结合 Trailing 处理
+                if type_pos == mt5.POSITION_TYPE_BUY:
+                    suggested_sl = current_price - current_sl_dist
+                    suggested_tp = current_price + current_tp_dist
+                    
+                    # 更新 SL: 仅当建议的 SL 高于当前 SL (收紧) 时才更新
+                    if suggested_sl > sl:
+                        request['sl'] = suggested_sl
+                        changed = True
+                    
+                    # 更新 TP: 总是更新为最新的目标 (适应市场预期变化)
+                    # 如果建议 TP 低于当前价格 (逻辑矛盾)，则忽略 TP 更新或设为微利
+                    if suggested_tp > current_price:
+                        # 检查差异是否足够大 (避免频繁微调)
+                        if abs(suggested_tp - tp) > point * 10:
+                            request['tp'] = suggested_tp
+                            changed = True
+
+                elif type_pos == mt5.POSITION_TYPE_SELL:
+                    suggested_sl = current_price + current_sl_dist
+                    suggested_tp = current_price - current_tp_dist
+                    
+                    # 更新 SL: 仅当建议的 SL 低于当前 SL (收紧) 时才更新 (注意 Sell 的 SL 是上方，收紧意味着向下移)
+                    # 初始 SL 可能为 0
+                    if sl == 0 or suggested_sl < sl:
+                        request['sl'] = suggested_sl
+                        changed = True
+                        
+                    # 更新 TP
+                    if suggested_tp < current_price:
+                        if abs(suggested_tp - tp) > point * 10:
+                            request['tp'] = suggested_tp
+                            changed = True
             
-            # --- 2. 执行移动止损 & 移动止盈 ---
+            # --- 2. 兜底移动止损 (Trailing Stop) ---
+            # 如果上面已经更新了 SL，这里作为双重保险；如果上面没更新，这里负责常规 Trailing
+            # 使用最新的 new_sl_multiplier
             
             if type_pos == mt5.POSITION_TYPE_BUY:
-                # Buy Position
-                
-                # 1. 移动止损 (Trailing Stop)
                 target_sl = current_price - (atr * new_sl_multiplier)
-                
                 # 规则: SL 只能上移 (Tighten)
-                if target_sl > sl:
-                    if (current_price - target_sl) >= point * 10:
+                # 只有当新计算的 Trailing SL 比 request['sl'] (可能刚被上面更新过) 还要高时，才再次更新
+                current_req_sl = request['sl'] if request['sl'] > 0 else sl
+                
+                if target_sl > current_req_sl:
+                     if (current_price - target_sl) >= point * 10:
                         request['sl'] = target_sl
                         changed = True
-                
-                # 2. 移动止盈 (Trailing Take Profit)
-                # 如果价格接近 TP (小于 0.5 ATR) 且信号依然看涨，则延伸 TP
-                dist_to_tp = tp - current_price
-                if dist_to_tp > 0 and dist_to_tp < (atr * 0.5):
-                    if signal == 'buy':
-                        new_tp = current_price + (atr * max(new_tp_multiplier, 1.0))
-                        if new_tp > tp:
-                            request['tp'] = new_tp
-                            changed = True
-                            logger.info(f"🚀 移动止盈触发 (Buy): TP 延伸至 {new_tp:.2f}")
 
             elif type_pos == mt5.POSITION_TYPE_SELL:
-                # Sell Position
-                
-                # 1. 移动止损 (Trailing Stop)
                 target_sl = current_price + (atr * new_sl_multiplier)
-                
                 # 规则: SL 只能下移 (Tighten)
-                if sl == 0 or target_sl < sl:
+                current_req_sl = request['sl']
+                
+                # 如果当前没有 SL (0)，或者新的 Target SL 小于当前的 SL
+                if current_req_sl == 0 or target_sl < current_req_sl:
                     if (target_sl - current_price) >= point * 10:
                         request['sl'] = target_sl
                         changed = True
