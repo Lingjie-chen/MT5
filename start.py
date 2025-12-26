@@ -1299,6 +1299,9 @@ class AI_MT5_Bot:
         """
         计算止损和止盈价格
         默认使用 ATR 动态止损: SL = 1.5 * ATR, TP = 2.5 * ATR
+        
+        优化更新 (MFE/MAE Based):
+        如果 LLM 提供了基于 MFE/MAE 优化后的倍数，则直接使用。
         """
         sl_multiplier = 1.5
         tp_multiplier = 2.5
@@ -1306,6 +1309,10 @@ class AI_MT5_Bot:
         if sl_tp_params:
             sl_multiplier = sl_tp_params.get('sl_atr_multiplier', 1.5)
             tp_multiplier = sl_tp_params.get('tp_atr_multiplier', 2.5)
+            
+            # 记录日志，确认是否使用了优化参数
+            if sl_multiplier != 1.5 or tp_multiplier != 2.5:
+                logger.info(f"应用 MFE/MAE 优化参数: SL x{sl_multiplier}, TP x{tp_multiplier}")
             
         sl = 0.0
         tp = 0.0
