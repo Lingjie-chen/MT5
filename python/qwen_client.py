@@ -127,7 +127,7 @@ class QwenClient:
                 logger.error(f"API调用失败，已达到最大重试次数 {max_retries}")
                 return None
     
-    def optimize_strategy_logic(self, deepseek_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def optimize_strategy_logic(self, deepseek_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         优化策略逻辑，基于DeepSeek的情绪得分调整入场条件
         基于ValueCell的实现，支持JSON模式输出
@@ -136,13 +136,20 @@ class QwenClient:
             deepseek_analysis (Dict[str, Any]): DeepSeek的市场分析结果
             current_market_data (Dict[str, Any]): 当前市场数据
             technical_signals (Optional[Dict[str, Any]]): 其他技术模型的信号（CRT, Price Equation等）
+            current_positions (Optional[List[Dict[str, Any]]]): 当前持仓信息 (用于决定加仓或平仓)
         
         Returns:
             Dict[str, Any]: 优化后的策略参数
         """
         tech_context = ""
         perf_context = ""
+        pos_context = ""
         
+        if current_positions:
+            pos_context = f"\n当前持仓状态 (用于决定加仓/平仓/反手):\n{json.dumps(current_positions, indent=2, cls=CustomJSONEncoder)}\n"
+        else:
+            pos_context = "\n当前无持仓。\n"
+
         if technical_signals:
             # 提取性能统计 (如果存在) 并单独处理，避免被 json.dumps 混淆
             perf_stats = technical_signals.get('performance_stats')
@@ -163,7 +170,7 @@ class QwenClient:
                 tech_context = f"\n其他技术模型信号 (CRT/PriceEq/Hybrid):\n{json.dumps(technical_signals, indent=2, cls=CustomJSONEncoder)}\n"
 
         prompt = f"""
-        作为专业的量化交易策略优化专家，你是混合交易系统的核心决策层。请根据DeepSeek的市场分析结果、当前市场数据以及其他技术模型的信号，优化策略逻辑并做出最终执行决定。
+        作为专业的量化交易策略优化专家，你是混合交易系统的核心决策层。请根据DeepSeek的市场分析结果、当前市场数据、当前持仓状态以及其他技术模型的信号，优化策略逻辑并做出最终执行决定。
         
         你现在拥有全套高级算法的信号支持 (SMC, IFVG, CRT, RVGI+CCI, MFH, MTF)。
         请仔细评估各策略的一致性。如果出现冲突，请依据 DeepSeek 的市场结构分析和 MTF (多周期) 趋势来裁决。
@@ -173,6 +180,7 @@ class QwenClient:
         
         当前市场数据：
         {json.dumps(current_market_data, indent=2, cls=CustomJSONEncoder)}
+        {pos_context}
         {tech_context}
         {perf_context}
         
@@ -182,21 +190,24 @@ class QwenClient:
         3. Price Equation 提供纯数学的动量预测。
         4. Hybrid Optimizer 提供加权共识。
         5. MFE/MAE 历史数据 (如有) 提供止盈止损优化的参考依据。
-           - 如果平均 MFE 较高，可适当放宽 TP。
-           - 如果平均 MAE 较低但频繁止损，可适当放宽 SL 或优化入场。
+        6. **持仓管理**: 
+           - 如果有持仓且趋势延续，请考虑**加仓 (Add Position)**。
+           - 如果有持仓但趋势反转或动能减弱，请考虑**平仓 (Close Position)** 或 **减仓 (Reduce Position)**。
+           - 如果无持仓且信号明确，请**开仓 (Open Position)**。
         
         请提供以下优化结果，并确保分析全面、逻辑严密，不要使用省略号或简化描述。**请务必使用中文进行输出（Strategy Logic Rationale 部分）**：
-        1. 入场条件：基于情绪得分和技术指标的优化入场规则，详细说明触发条件
-        2. 出场条件：止盈止损参数，给出具体的数值或计算逻辑
-        3. 仓位大小：基于市场波动率的最优仓位
-        4. 交易信号强度：0-100的得分，表示信号的可靠性
+        1. 核心决策：买入/卖出/持有/平仓/加仓
+        2. 入场/加仓条件：基于情绪得分和技术指标的优化规则
+        3. 出场/减仓条件：止盈止损参数，给出具体的数值或计算逻辑
+        4. 仓位管理：针对当前持仓的具体操作建议
         5. 风险管理建议：针对当前市场状态的风险控制措施
         6. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须使用中文**
         
         请以JSON格式返回结果，包含以下字段：
-        - action: str ("buy", "sell", "hold") - 明确的交易行动建议
+        - action: str ("buy", "sell", "hold", "close_buy", "close_sell", "add_buy", "add_sell") - 明确的交易行动建议
         - entry_conditions: dict (包含 "trigger_type": "market"|"limit", "limit_price": float (optional), "confirmation": str)
-        - exit_conditions: dict (包含 "sl_atr_multiplier": float, "tp_atr_multiplier": float)
+        - exit_conditions: dict (包含 "sl_atr_multiplier": float, "tp_atr_multiplier": float, "close_rationale": str (optional))
+        - position_management: dict (包含 "action": "open"|"add"|"reduce"|"close"|"hold", "volume_percent": float (加仓/减仓比例, 0.0-1.0), "reason": str)
         - position_size: float
         - signal_strength: int
         - risk_management: dict
