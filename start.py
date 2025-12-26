@@ -2355,7 +2355,7 @@ class AI_MT5_Bot:
                     
                     if df is not None:
                         # 保存市场数据到DB
-                        self.db_manager.save_market_data(self.symbol, self.tf_name, df)
+                        self.db_manager.save_market_data(df, self.symbol, self.tf_name)
                         
                         # 使用 data_processor 计算指标
                         processor = MT5DataProcessor()
