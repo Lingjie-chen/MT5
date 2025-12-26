@@ -154,12 +154,19 @@ class QwenClient:
             # 提取性能统计 (如果存在) 并单独处理，避免被 json.dumps 混淆
             perf_stats = technical_signals.get('performance_stats')
             if perf_stats:
+                # 构建 MFE/MAE 象限分析数据
+                recent_trades = perf_stats.get('recent_trades', [])
+                trades_summary = ""
+                if recent_trades:
+                    trades_summary = json.dumps(recent_trades[:10], indent=2, cls=CustomJSONEncoder) # 仅取最近10笔避免Prompt过长
+
                 perf_context = (
-                    f"\n历史交易绩效参考 (用于优化 SL/TP):\n"
-                    f"- 平均 MFE (最大有利波动): {perf_stats.get('avg_mfe', 0):.2f}%\n"
-                    f"- 平均 MAE (最大不利波动): {perf_stats.get('avg_mae', 0):.2f}%\n"
+                    f"\n历史交易绩效参考 (用于 MFE/MAE 象限分析与 SL/TP 优化):\n"
+                    f"- 平均 MFE: {perf_stats.get('avg_mfe', 0):.2f}%\n"
+                    f"- 平均 MAE: {perf_stats.get('avg_mae', 0):.2f}%\n"
                     f"- 平均利润: {perf_stats.get('avg_profit', 0):.2f}\n"
                     f"- 样本交易数: {perf_stats.get('trade_count', 0)}\n"
+                    f"- 最近交易详情 (用于分析体质): \n{trades_summary}\n"
                 )
                 # 从 technical_signals 中移除 stats 以免重复 (浅拷贝处理)
                 sigs_copy = technical_signals.copy()
@@ -189,7 +196,12 @@ class QwenClient:
         2. CRT (Candle Range Theory) 提供流动性猎取和反转信号。
         3. Price Equation 提供纯数学的动量预测。
         4. Hybrid Optimizer 提供加权共识。
-        5. MFE/MAE 历史数据 (如有) 提供止盈止损优化的参考依据。
+        5. **MFE/MAE 象限分析与 SL/TP 优化**:
+           - **数据**: 请参考提供的历史交易详情 (MFE, MAE, Profit)。
+           - **分析**: 
+             - 观察高盈利交易的 MFE 分布，将 TP 设定在能捕获大部分 MFE 的位置 (如 80% 分位)。
+             - 观察亏损交易的 MAE 分布，将 SL 设定在能过滤掉"第一象限 (低MFE 高MAE)"交易的位置。
+             - **动态调整**: 如果近期 MAE 普遍变大且盈利困难，说明市场波动剧烈或策略失效，请收紧 SL 或暂停交易。
         6. **持仓管理**: 
            - 如果有持仓且趋势延续，请考虑**加仓 (Add Position)**。
            - 如果有持仓但趋势反转或动能减弱，请考虑**平仓 (Close Position)** 或 **减仓 (Reduce Position)**。
@@ -198,10 +210,10 @@ class QwenClient:
         请提供以下优化结果，并确保分析全面、逻辑严密，不要使用省略号或简化描述。**请务必使用中文进行输出（Strategy Logic Rationale 部分）**：
         1. 核心决策：买入/卖出/持有/平仓/加仓
         2. 入场/加仓条件：基于情绪得分和技术指标的优化规则
-        3. 出场/减仓条件：止盈止损参数，给出具体的数值或计算逻辑
+        3. 出场/减仓条件：**基于 MFE/MAE 分析的动态 SL/TP**，给出具体的 ATR 倍数或价格
         4. 仓位管理：针对当前持仓的具体操作建议
         5. 风险管理建议：针对当前市场状态的风险控制措施
-        6. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须使用中文**
+        6. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 MFE/MAE 数据的具体分析**
         
         请以JSON格式返回结果，包含以下字段：
         - action: str ("buy", "sell", "hold", "close_buy", "close_sell", "add_buy", "add_sell") - 明确的交易行动建议

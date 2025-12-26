@@ -340,16 +340,41 @@ class DatabaseManager:
             ''', (limit,))
             
             row = cursor.fetchone()
-            # conn.close()
             
+            stats = None
             if row and row['count'] > 0:
-                return {
+                stats = {
                     "avg_mfe": row['avg_mfe'],
                     "avg_mae": row['avg_mae'],
                     "avg_profit": row['avg_profit'],
                     "trade_count": row['count']
                 }
-            return None
+            
+            # 获取最近的 MFE/MAE 数据列表用于分布分析
+            cursor.execute('''
+                SELECT ticket, mfe, mae, profit, action 
+                FROM trades 
+                WHERE result = 'CLOSED' AND mfe IS NOT NULL 
+                ORDER BY close_time DESC 
+                LIMIT ?
+            ''', (limit,))
+            
+            rows = cursor.fetchall()
+            details = []
+            for r in rows:
+                details.append({
+                    "ticket": r['ticket'],
+                    "mfe": r['mfe'],
+                    "mae": r['mae'],
+                    "profit": r['profit'],
+                    "action": r['action']
+                })
+            
+            if stats:
+                stats["recent_trades"] = details
+                
+            return stats
+            
         except Exception as e:
             logger.error(f"Failed to get trade stats: {e}")
             return None
