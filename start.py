@@ -1295,6 +1295,65 @@ class AI_MT5_Bot:
         
         return df
 
+    def get_position_stats(self, pos):
+        """
+        计算持仓的 MFE (最大潜在收益) 和 MAE (最大潜在亏损)
+        """
+        try:
+            # 获取持仓期间的 M1 数据
+            now = datetime.now()
+            # pos.time 是时间戳，转换为 datetime
+            open_time = datetime.fromtimestamp(pos.time)
+            
+            # 获取数据
+            rates = mt5.copy_rates_range(self.symbol, mt5.TIMEFRAME_M1, open_time, now)
+            
+            if rates is None or len(rates) == 0:
+                # 如果获取不到数据，尝试只用当前价格估算
+                # 这种情况可能发生在刚刚开仓的一瞬间
+                current_price = pos.price_current
+                if pos.type == mt5.POSITION_TYPE_BUY:
+                    mfe_price = max(0, current_price - pos.price_open)
+                    mae_price = max(0, pos.price_open - current_price)
+                else:
+                    mfe_price = max(0, pos.price_open - current_price)
+                    mae_price = max(0, current_price - pos.price_open)
+                
+                if pos.price_open > 0:
+                    return (mfe_price / pos.price_open) * 100, (mae_price / pos.price_open) * 100
+                return 0.0, 0.0
+                
+            df = pd.DataFrame(rates)
+            
+            # 计算期间最高价和最低价
+            # 注意: 还需要考虑当前价格，因为 M1 数据可能还没包含当前的 tick
+            period_high = max(df['high'].max(), pos.price_current)
+            period_low = min(df['low'].min(), pos.price_current)
+            
+            mfe = 0.0
+            mae = 0.0
+            
+            if pos.type == mt5.POSITION_TYPE_BUY:
+                # 买入: MFE = High - Open, MAE = Open - Low
+                mfe_price = max(0, period_high - pos.price_open)
+                mae_price = max(0, pos.price_open - period_low)
+            else:
+                # 卖出: MFE = Open - Low, MAE = High - Open
+                mfe_price = max(0, pos.price_open - period_low)
+                mae_price = max(0, period_high - pos.price_open)
+                
+            # 转换为百分比
+            if pos.price_open > 0:
+                mfe = (mfe_price / pos.price_open) * 100
+                mae = (mae_price / pos.price_open) * 100
+                
+            return mfe, mae
+            
+        except Exception as e:
+            logger.error(f"计算持仓统计时出错: {e}")
+            return 0.0, 0.0
+
+
     def calculate_sl_tp(self, signal, price, atr, sl_tp_params=None):
         """
         计算止损和止盈价格
