@@ -146,7 +146,7 @@ class QwenClient:
         pos_context = ""
         
         if current_positions:
-            pos_context = f"\n当前持仓状态 (用于决定加仓/平仓/反手):\n{json.dumps(current_positions, indent=2, cls=CustomJSONEncoder)}\n"
+            pos_context = f"\n当前持仓状态 (包含实时 MFE/MAE):\n{json.dumps(current_positions, indent=2, cls=CustomJSONEncoder)}\n"
         else:
             pos_context = "\n当前无持仓。\n"
 

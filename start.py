@@ -2572,6 +2572,7 @@ class AI_MT5_Bot:
                         current_positions_list = []
                         if positions:
                             for pos in positions:
+                                cur_mfe, cur_mae = self.get_position_stats(pos)
                                 current_positions_list.append({
                                     "ticket": pos.ticket,
                                     "type": "buy" if pos.type == mt5.POSITION_TYPE_BUY else "sell",
@@ -2580,7 +2581,9 @@ class AI_MT5_Bot:
                                     "current_price": pos.price_current,
                                     "profit": pos.profit,
                                     "sl": pos.sl,
-                                    "tp": pos.tp
+                                    "tp": pos.tp,
+                                    "mfe_pct": cur_mfe,
+                                    "mae_pct": cur_mae
                                 })
                         
                         # 准备混合信号供 Qwen 参考
