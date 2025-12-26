@@ -1462,6 +1462,39 @@ class AI_MT5_Bot:
         
         # --- 检查是否使用挂单 (Limit Order) ---
         is_pending = False
+        
+        # 允许并行挂单: 移除清理旧挂单的逻辑，或者仅清理方向相反的挂单
+        # 用户需求: "如果大模型前期给出的是一个挂单操作，后续又更新了一个挂单的建议...则执行多个挂单操作"
+        
+        # 因此，我们需要:
+        # 1. 检查是否存在同方向的挂单
+        # 2. 如果 LLM 明确要求 "add" (加仓) 或者这是一个新的挂单建议 (价格不同)，则允许挂单
+        # 3. 只有当方向完全反转时，才取消旧挂单
+        
+        try:
+            existing_orders = mt5.orders_get(symbol=self.symbol)
+            if existing_orders:
+                for order in existing_orders:
+                    if order.magic == self.magic_number:
+                        # 检查方向
+                        order_type = order.type
+                        is_buy_order = (order_type == mt5.ORDER_TYPE_BUY_LIMIT or order_type == mt5.ORDER_TYPE_BUY_STOP)
+                        
+                        # 如果信号反转 (例如当前是 Sell，但有 Buy Limit)，则取消
+                        if (signal == 'sell' and is_buy_order) or (signal == 'buy' and not is_buy_order):
+                            logger.info(f"信号反转，取消反向挂单 #{order.ticket}")
+                            req_remove = {
+                                "action": mt5.TRADE_ACTION_REMOVE,
+                                "order": order.ticket,
+                                "magic": self.magic_number
+                            }
+                            mt5.order_send(req_remove)
+                        else:
+                            # 同向挂单，保留 (支持多单)
+                            pass
+        except Exception as e:
+            logger.error(f"检查挂单时出错: {e}")
+
         if entry_params and entry_params.get('trigger_type') == 'limit':
             limit_price = entry_params.get('limit_price', 0.0)
             if limit_price > 0:
@@ -1721,14 +1754,13 @@ class AI_MT5_Bot:
                 new_sl_multiplier = exit_cond.get('sl_atr_multiplier', 1.5)
                 new_tp_multiplier = exit_cond.get('tp_atr_multiplier', 2.5)
                 has_new_params = True
-                # 更新移动止损距离 (可选: 基于新 SL 倍数)
-                # trailing_dist = atr * new_sl_multiplier 
 
         symbol_info = mt5.symbol_info(self.symbol)
         if not symbol_info:
             return
         point = symbol_info.point
 
+        # 遍历所有持仓，独立管理
         for pos in positions:
             if pos.magic != self.magic_number:
                 continue
@@ -1739,6 +1771,9 @@ class AI_MT5_Bot:
             sl = pos.sl
             tp = pos.tp
             current_price = pos.price_current
+            
+            # 针对每个订单独立计算最优 SL/TP
+            # 如果是挂单成交后的新持仓，或者老持仓，都统一处理
             
             request = {
                 "action": mt5.TRADE_ACTION_SLTP,
