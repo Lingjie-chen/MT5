@@ -618,13 +618,15 @@ class MatrixMLAnalyzer:
         prediction = self.tanh(linear_output)
         self.last_prediction = prediction
         
-        # 转换信号
+        # 转换信号 (Comprehensive Logic)
+        # 只要预测有方向，就给出信号，不轻易 Neutral
         signal = "neutral"
         strength = abs(prediction) * 100
         
-        if prediction > 0.3:
+        # 降低阈值，捕获微弱信号
+        if prediction > 0.1: # 原来是 0.3
             signal = "buy"
-        elif prediction < -0.3:
+        elif prediction < -0.1:
             signal = "sell"
             
         return {
@@ -660,7 +662,7 @@ class MatrixMLAnalyzer:
 
 # --- 新增模块: CRT (Candle Range Theory) 分析器 ---
 class CRTAnalyzer:
-    def __init__(self, timeframe_htf=mt5.TIMEFRAME_H4, min_manipulation_percent=5.0):
+    def __init__(self, timeframe_htf=mt5.TIMEFRAME_H1, min_manipulation_percent=5.0):
         self.timeframe_htf = timeframe_htf
         self.min_manipulation_percent = min_manipulation_percent # 最小操纵深度百分比
         self.last_range_time = 0
@@ -716,7 +718,7 @@ class CRTAnalyzer:
         curr_high = current_price['high']
         curr_low = current_price['low']
         
-        signal = "neutral"
+        signal = ""
         reason = ""
         strength = 0
         
@@ -758,6 +760,32 @@ class CRTAnalyzer:
                     reason = f"Bearish CRT: Manipulation {manipulation_pct:.1f}% & Reclaim"
                 else:
                     reason = f"Bearish CRT: Manipulation too shallow ({manipulation_pct:.1f}%)"
+        
+        # Comprehensive Logic: 如果没有检测到操纵信号，分析当前价格在 Range 中的位置 (Bias)
+        if signal == "":
+            range_mid = (self.range_high + self.range_low) / 2
+            if self.is_bullish_range:
+                if curr_close > range_mid:
+                    # Bullish Range + Premium Price -> Wait for Pullback (Weak Bullish Bias)
+                    signal = "buy" # Weak
+                    strength = 40
+                    reason = "Bullish Range (Price in Premium)"
+                else:
+                    # Bullish Range + Discount Price -> Good to Buy (Weak Bullish Bias)
+                    signal = "buy" # Weak
+                    strength = 45
+                    reason = "Bullish Range (Price in Discount)"
+            else:
+                if curr_close < range_mid:
+                    # Bearish Range + Discount Price -> Wait for Pullback (Weak Bearish Bias)
+                    signal = "sell" # Weak
+                    strength = 40
+                    reason = "Bearish Range (Price in Discount)"
+                else:
+                    # Bearish Range + Premium Price -> Good to Sell (Weak Bearish Bias)
+                    signal = "sell" # Weak
+                    strength = 45
+                    reason = "Bearish Range (Price in Premium)"
             
         return {
             "signal": signal,
@@ -776,8 +804,8 @@ class PriceEquationModel:
         self.coeffs = [0.2752466, 0.01058082, 0.55162082, 0.03687016, 0.27721318, 0.1483476, 0.0008025]
         
         # Trend Filter Parameters
-        self.ma_fast_period = 108
-        self.ma_slow_period = 60
+        self.ma_fast_period = 25
+        self.ma_slow_period = 200
         self.adx_threshold = 20.0
         
         self.price_history = []
@@ -841,13 +869,34 @@ class PriceEquationModel:
         is_uptrend = ma_fast > ma_slow
         is_downtrend = ma_fast < ma_slow
         
-        # 3. 生成信号
+        # 3. 生成信号 (Comprehensive Logic)
+        # 不要直接返回 neutral，根据趋势强度和方向给出分级信号
         if predicted_price > current_price:
-            if is_strong_trend and is_uptrend:
-                signal = "buy"
+            if is_uptrend:
+                if is_strong_trend:
+                    signal = "buy" # 强趋势且方向一致
+                else:
+                    signal = "buy" # 弱趋势但方向一致 (Weak Buy)
+            else:
+                # 预测价格上涨但目前处于下跌趋势 -> 可能的反转或反弹
+                # 检查距离: 如果预测涨幅很大，可能是反转
+                if (predicted_price - current_price) / current_price > 0.005:
+                    signal = "buy" # 潜在反转
+                else:
+                    signal = "neutral" # 冲突，保持观望
+                    
         elif predicted_price < current_price:
-            if is_strong_trend and is_downtrend:
-                signal = "sell"
+            if is_downtrend:
+                if is_strong_trend:
+                    signal = "sell"
+                else:
+                    signal = "sell" # Weak Sell
+            else:
+                # 预测下跌但目前处于上涨趋势
+                if (current_price - predicted_price) / current_price > 0.005:
+                    signal = "sell" # 潜在反转
+                else:
+                    signal = "neutral"
                 
         return {
             "signal": signal,
@@ -932,16 +981,24 @@ class TimeframeVisualAnalyzer:
             else:
                 trends[tf_name] = "neutral"
                 
-        # 综合信号
+        # 综合信号 (Comprehensive Logic)
         signal = "neutral"
         reason = f"Trends: {trends}"
         
-        if alignment_score >= 2: # 至少 2 个周期看涨
+        # 不要直接 neutral，只要有 Bias 就给出信号
+        if alignment_score >= 2: # 强一致性 (2/3 或 3/3)
             signal = "buy"
-            reason = "Multi-Timeframe Bullish Alignment"
-        elif alignment_score <= -2: # 至少 2 个周期看跌
+            reason = f"Strong Bullish Alignment ({alignment_score}/3)"
+        elif alignment_score == 1: # 弱一致性
+            signal = "buy" 
+            reason = "Weak Bullish Bias"
+            
+        elif alignment_score <= -2:
             signal = "sell"
-            reason = "Multi-Timeframe Bearish Alignment"
+            reason = f"Strong Bearish Alignment ({alignment_score}/3)"
+        elif alignment_score == -1:
+            signal = "sell"
+            reason = "Weak Bearish Bias"
             
         return {
             "signal": signal,
