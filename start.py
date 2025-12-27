@@ -2994,13 +2994,16 @@ class AI_MT5_Bot:
                         logger.info(f"DeepSeek 分析完成: {structure.get('market_state')}")
                         
                         # DeepSeek 信号转换
-                        ds_signal = "neutral"
+                        ds_signal = structure.get('preliminary_signal', 'neutral')
                         ds_pred = structure.get('short_term_prediction', 'neutral')
                         ds_score = structure.get('structure_score', 50)
-                        if ds_pred == 'bullish' and ds_score > 60:
-                            ds_signal = "buy"
-                        elif ds_pred == 'bearish' and ds_score > 60:
-                            ds_signal = "sell"
+                        
+                        # 如果 DeepSeek 没有返回 preliminary_signal (旧版本兼容)，使用简单的规则
+                        if ds_signal == 'neutral':
+                             if ds_pred == 'bullish' and ds_score > 60:
+                                 ds_signal = "buy"
+                             elif ds_pred == 'bearish' and ds_score > 60:
+                                 ds_signal = "sell"
                         
                         # --- 3.4 Qwen 策略 ---
                         logger.info("正在调用 Qwen 生成策略...")
@@ -3036,8 +3039,14 @@ class AI_MT5_Bot:
                             "matrix_ml": ml_result['signal'],
                             "smc": smc_result['signal'],
                             "mfh": mfh_result['signal'],
-                            "mtf": mtf_result['signal'], # 新增
-                            "deepseek_preliminary": ds_signal,
+                            "mtf": mtf_result['signal'], 
+                            "deepseek_analysis": { # 传入完整的 DeepSeek 分析结果
+                                "market_state": structure.get('market_state'),
+                                "preliminary_signal": ds_signal,
+                                "confidence": structure.get('signal_confidence'),
+                                "consistency": structure.get('consistency_analysis'),
+                                "prediction": ds_pred
+                            },
                             "performance_stats": trade_stats # 传入历史绩效
                         }
                         
