@@ -1,6 +1,5 @@
 # Python虚拟环境
 venv/
-.env
 *.pyc
 __pycache__/
 .pytest_cache/
