@@ -19,6 +19,11 @@ class OKXDataProcessor:
         self.api_secret = api_secret or os.getenv("OKX_API_SECRET")
         self.passphrase = passphrase or os.getenv("OKX_API_PASSPHRASE")
         
+        if not all([self.api_key, self.api_secret, self.passphrase]):
+            logger.error("Missing OKX API credentials. Please set OKX_API_KEY, OKX_API_SECRET, and OKX_API_PASSPHRASE in .env file.")
+            # We can still initialize for public data if needed, but private endpoints will fail
+            # For now, let's allow it but log a warning, as ccxt might support public endpoints without keys
+            
         exchange_config = {
             'apiKey': self.api_key,
             'secret': self.api_secret,
