@@ -2,14 +2,15 @@
 
 # 切换到脚本所在目录
 cd "$(dirname "$0")"
+# 切换到上级目录(项目根目录)，以便作为模块运行
+cd ..
 
 while true; do
     echo "[$(date)] Starting Crypto Trading Bot..."
     echo "---------------------------------------------------"
     
-    # 运行 Python 交易机器人脚本
-    # 确保在 crypto 目录中执行，以便正确解析相对导入
-    python trading_bot.py "$@"
+    # 以模块方式运行，确保包导入正确
+    python -m crypto.trading_bot "$@"
     
     echo "---------------------------------------------------"
     echo "[$(date)] Bot crashed or stopped. Restarting in 5 seconds..."

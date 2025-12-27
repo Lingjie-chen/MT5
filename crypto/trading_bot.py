@@ -5,9 +5,9 @@ import json
 from datetime import datetime
 from dotenv import load_dotenv
 
-from okx_data_processor import OKXDataProcessor
-from ai_client_factory import AIClientFactory
-from database_manager import DatabaseManager
+from .okx_data_processor import OKXDataProcessor
+from .ai_client_factory import AIClientFactory
+from .database_manager import DatabaseManager
 
 # Load environment variables
 load_dotenv()
