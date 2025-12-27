@@ -213,16 +213,21 @@ class QwenClient:
         3. 出场/减仓条件：**基于 MFE/MAE 分析的合理优化止盈止损点**。请直接给出具体价格（sl_price, tp_price）或 ATR 倍数。不要使用简单的动态追踪，而是根据市场结构和 MFE/MAE 给出固定的最佳离场点。
         4. 仓位管理：针对当前持仓的具体操作建议（如加仓、减仓、反手）。
         5. 风险管理建议：针对当前市场状态的风险控制措施。
-        6. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 MFE/MAE 数据的具体分析以及为何选择该 SL/TP 点位**。
+        6. **参数自适应优化建议 (Parameter Optimization)**: 
+           - 请分析当前市场状态 (波动率、趋势强度)，并评估现有算法参数的适用性。
+           - 给出针对 SMC, MFH, MatrixML 或 Optimization Algorithm (GWO/WOAm/etc) 的具体参数调整建议。
+           - 例如: "SMC ATR 阈值过低，建议提高到 0.003 以过滤噪音" 或 "建议切换到 DE 优化器以增加探索能力"。
+        7. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 MFE/MAE 数据的具体分析以及为何选择该 SL/TP 点位**。
         
         请以JSON格式返回结果，包含以下字段：
-        - action: str ("buy", "sell", "hold", "close_buy", "close_sell", "add_buy", "add_sell", "buy_limit", "sell_limit") - 明确的交易行动建议
-        - entry_conditions: dict (包含 "trigger_type": "market"|"limit", "limit_price": float (optional, required for limit orders), "confirmation": str)
-        - exit_conditions: dict (包含 "sl_price": float (optional, preferred), "tp_price": float (optional, preferred), "sl_atr_multiplier": float, "tp_atr_multiplier": float, "close_rationale": str (optional))
-        - position_management: dict (包含 "action": "open"|"add"|"reduce"|"close"|"hold", "volume_percent": float (加仓/减仓比例, 0.0-1.0), "reason": str)
+        - action: str ("buy", "sell", "hold", "close_buy", "close_sell", "add_buy", "add_sell", "buy_limit", "sell_limit")
+        - entry_conditions: dict (包含 "trigger_type", "limit_price", "confirmation")
+        - exit_conditions: dict (包含 "sl_price", "tp_price", "sl_atr_multiplier", "tp_atr_multiplier", "close_rationale")
+        - position_management: dict (包含 "action", "volume_percent", "reason")
         - position_size: float
         - signal_strength: int
         - risk_management: dict
+        - parameter_updates: dict (包含 "smc_atr_threshold": float, "mfh_learning_rate": float, "active_optimizer": str (GWO/WOAm/DE/COAm/BBO/TETA), "reason": str)
         - strategy_rationale: str (中文)
         """
         
