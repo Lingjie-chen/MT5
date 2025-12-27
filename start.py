@@ -187,17 +187,69 @@ class SMCAnalyzer:
         elif current_price < ema_long and deviation > self.atr_threshold:
             higher_tf_bias = -1
             
-        # 2. Local Structure (Bullish/Bearish)
-        # Check if we are making Higher Highs (Bullish) or Lower Lows (Bearish)
-        # 简单判定: 比较最近两个 Swing Points
-        # 这里简化处理: 比较最近20根K线的趋势
-        recent_high = highs.iloc[-20:].max()
-        prev_recent_high = highs.iloc[-40:-20].max()
-        recent_low = lows.iloc[-20:].min()
-        prev_recent_low = lows.iloc[-40:-20].min()
+        # 2. Local Structure (Bullish/Bearish) - Comprehensive Analysis
+        # 完整处理: 使用分形算法识别 Swing Points，精确判定 HH/HL 或 LH/LL 结构
         
-        is_bullish_structure = recent_high > prev_recent_high and recent_low > prev_recent_low
-        is_bearish_structure = recent_high < prev_recent_high and recent_low < prev_recent_low
+        swing_highs = []
+        swing_lows = []
+        
+        # 转换为 numpy 数组加速处理
+        vals_high = highs.values
+        vals_low = lows.values
+        n_candles = len(df)
+        
+        # 从后往前遍历寻找最近的 Swing Points (至少找2个)
+        # 使用 5-bar Fractal 定义: High[i] 必须高于左右各2根K线
+        
+        for i in range(n_candles - 3, 2, -1): # 从倒数第3根开始 (确保有 i+2)
+            # Swing High Detection
+            if len(swing_highs) < 2:
+                if (vals_high[i] > vals_high[i-1] and 
+                    vals_high[i] > vals_high[i-2] and 
+                    vals_high[i] > vals_high[i+1] and 
+                    vals_high[i] > vals_high[i+2]):
+                    swing_highs.append(vals_high[i])
+            
+            # Swing Low Detection
+            if len(swing_lows) < 2:
+                if (vals_low[i] < vals_low[i-1] and 
+                    vals_low[i] < vals_low[i-2] and 
+                    vals_low[i] < vals_low[i+1] and 
+                    vals_low[i] < vals_low[i+2]):
+                    swing_lows.append(vals_low[i])
+            
+            if len(swing_highs) >= 2 and len(swing_lows) >= 2:
+                break
+        
+        is_bullish_structure = False
+        is_bearish_structure = False
+        
+        # 只有当找到足够的 Swing Points 时才判定结构
+        if len(swing_highs) >= 2 and len(swing_lows) >= 2:
+            # swing_highs[0] 是最近的高点 (Most Recent Swing High)
+            # swing_highs[1] 是前一个高点 (Previous Swing High)
+            
+            hh = swing_highs[0] > swing_highs[1] # Higher High
+            hl = swing_lows[0] > swing_lows[1]   # Higher Low
+            
+            lh = swing_highs[0] < swing_highs[1] # Lower High
+            ll = swing_lows[0] < swing_lows[1]   # Lower Low
+            
+            if hh and hl:
+                is_bullish_structure = True
+            elif lh and ll:
+                is_bearish_structure = True
+            # else: Transition or Consolidation
+        else:
+            # 如果找不到明显分形，可能是极强单边趋势 (无回调)
+            # 此时比较端点
+            if len(swing_highs) == 0 or len(swing_lows) == 0:
+                 # 极端情况，降级为比较最近和较远的价格分布
+                 pass
+        
+        # 更新 recent_high/low 供 Breakout 使用
+        recent_high = swing_highs[0] if len(swing_highs) > 0 else vals_high[-20:].max()
+        recent_low = swing_lows[0] if len(swing_lows) > 0 else vals_low[-20:].min()
         
         # 3. Breakout Detection (Risk-On/Off)
         # Price breaking local swings in direction of bias
