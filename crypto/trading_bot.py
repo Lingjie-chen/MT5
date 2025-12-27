@@ -54,8 +54,8 @@ class CryptoTradingBot:
         self.qwen_client = self.ai_factory.get_client('qwen')
         
         # Telegram Configuration
-        self.telegram_token = "8554447693:AAFDzHx1U7lOajDy7n5bUMwKJFAFyn0cLxg"
-        self.telegram_chat_id = "8554447693"
+        self.telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        self.telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID")
         
         if not self.deepseek_client or not self.qwen_client:
             logger.warning("AI Clients not fully initialized. Trading functionality may be limited.")
