@@ -8,7 +8,10 @@ from datetime import datetime
 FILES_TO_SYNC = [
     "trading_data.db",
     "trading_data.db-shm",
-    "trading_data.db-wal"
+    "trading_data.db-wal",
+    "crypto/crypto_trading.db",
+    "crypto/crypto_trading.db-shm",
+    "crypto/crypto_trading.db-wal"
 ]
 # 同步间隔（秒）。建议不要太频繁，以免给 GitHub 服务器造成压力或触发限制。
 # 300秒 = 5分钟

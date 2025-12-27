@@ -42,7 +42,10 @@ class CryptoTradingBot:
 
         # Initialize Database Manager
         # Using a dedicated database file for Crypto strategy to keep it separate from Gold strategy
-        self.db_manager = DatabaseManager(db_name='crypto_trading.db')
+        # Ensure db is stored in the same directory as this script
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        db_path = os.path.join(current_dir, 'crypto_trading.db')
+        self.db_manager = DatabaseManager(db_name=db_path)
         
         # Initialize AI Clients
         self.ai_factory = AIClientFactory()
