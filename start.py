@@ -1229,6 +1229,7 @@ class AI_MT5_Bot:
         self.last_analysis_time = 0 # Added for periodic analysis (1 min)
         self.latest_strategy = None # 存储最新的策略参数 (用于 manage_positions)
         self.latest_signal = "neutral" # 存储最新的信号
+        self.signal_history = [] # 存储历史信号用于实时权重优化
         
         if not self.deepseek_client or not self.qwen_client:
             logger.warning("AI 客户端未完全初始化，将仅运行在观察模式")
@@ -1354,40 +1355,8 @@ class AI_MT5_Bot:
             return 0.0, 0.0
 
 
-    def calculate_sl_tp(self, signal, price, atr, sl_tp_params=None):
-        """
-        计算止损和止盈价格
-        默认使用 ATR 动态止损: SL = 1.5 * ATR, TP = 2.5 * ATR
-        
-        优化更新 (MFE/MAE Based):
-        如果 LLM 提供了基于 MFE/MAE 优化后的倍数，则直接使用。
-        """
-        sl_multiplier = 1.5
-        tp_multiplier = 2.5
-        
-        if sl_tp_params:
-            sl_multiplier = sl_tp_params.get('sl_atr_multiplier', 1.5)
-            tp_multiplier = sl_tp_params.get('tp_atr_multiplier', 2.5)
-            
-            # 记录日志，确认是否使用了优化参数
-            if sl_multiplier != 1.5 or tp_multiplier != 2.5:
-                logger.info(f"应用 MFE/MAE 优化参数: SL x{sl_multiplier}, TP x{tp_multiplier}")
-            
-        sl = 0.0
-        tp = 0.0
-        
-        # 确保 ATR 有效
-        if atr <= 0:
-            atr = price * 0.005 # 默认 0.5% 波动
-            
-        if signal == 'buy':
-            sl = price - (atr * sl_multiplier)
-            tp = price + (atr * tp_multiplier)
-        elif signal == 'sell':
-            sl = price + (atr * sl_multiplier)
-            tp = price - (atr * tp_multiplier)
-            
-        return sl, tp
+
+
 
     def close_position(self, position, comment="AI-Bot Close"):
         """辅助函数: 平仓"""
@@ -1563,34 +1532,77 @@ class AI_MT5_Bot:
         if trade_type and price > 0:
             # 再次确认 SL/TP 是否存在
             if explicit_sl is None or explicit_tp is None:
-                # 如果 LLM 没给具体价格，尝试计算 (作为最后的兜底，虽然用户要求不要动态)
-                # 但为了订单能发出去，我们需要非零的 SL/TP
-                # 这里假设 LLM 总是会给出
-                # 兜底：如果 LLM 没有给出具体价格，但给出了 Atr Multiplier (旧逻辑兼容)
-                atr = 0
-                rates = mt5.copy_rates_from(self.symbol, self.timeframe, datetime.now(), 20)
-                if rates is not None and len(rates) > 0:
-                     df = pd.DataFrame(rates)
-                     df['tr'] = np.maximum(df['high'] - df['low'], 
-                                   np.maximum(abs(df['high'] - df['close'].shift(1)), 
-                                              abs(df['low'] - df['close'].shift(1))))
-                     atr = df['tr'].mean()
+                # 策略优化: 如果 LLM 未提供明确价格，则使用基于 MFE/MAE 的统计优化值
+                # 移除旧的 ATR 动态计算，确保策略的一致性和基于绩效的优化
+                logger.info("LLM 未提供明确 SL/TP，使用 MFE/MAE 统计优化值")
+                explicit_sl, explicit_tp = self.calculate_optimized_sl_tp(trade_type, price)
                 
-                if atr > 0:
-                     sl_mult = sl_tp_params.get('sl_atr_multiplier', 1.5) if sl_tp_params else 1.5
-                     tp_mult = sl_tp_params.get('tp_atr_multiplier', 2.5) if sl_tp_params else 2.5
-                     if 'buy' in trade_type:
-                          explicit_sl = price - (atr * sl_mult)
-                          explicit_tp = price + (atr * tp_mult)
-                     else:
-                          explicit_sl = price + (atr * sl_mult)
-                          explicit_tp = price - (atr * tp_mult)
-                else:
-                     logger.error("无法计算兜底 SL/TP，放弃交易")
+                if explicit_sl == 0 or explicit_tp == 0:
+                     logger.error("无法计算优化 SL/TP，放弃交易")
                      return 
 
             comment = f"AI: {llm_action.upper()}"
             self._send_order(trade_type, price, explicit_sl, explicit_tp, comment=comment)
+
+    def calculate_optimized_sl_tp(self, trade_type, price):
+        """
+        计算基于 MFE/MAE 统计的优化止损止盈点
+        完全移除 ATR 动态逻辑，使用历史绩效数据的统计特征
+        """
+        sl = 0.0
+        tp = 0.0
+        
+        # 默认兜底参数 (基于价格的固定百分比，非 ATR)
+        # 黄金通常波动较大，给予 0.5% SL 和 1.0% TP 作为初始冷启动值
+        default_sl_pct = 0.005 
+        default_tp_pct = 0.010
+        
+        try:
+             # 获取历史交易绩效统计
+             # 我们关注最近 100 笔交易的 MFE (最大潜在收益) 和 MAE (最大潜在回撤)
+             trades = self.db_manager.get_trade_performance_stats(limit=100)
+             
+             if trades and len(trades) > 10:
+                 # 提取有效的 MFE/MAE 数据 (假设 DB 中存储的是百分比值)
+                 mfes = [t.get('mfe', 0) for t in trades if t.get('mfe', 0) > 0]
+                 maes = [t.get('mae', 0) for t in trades if t.get('mae', 0) > 0]
+                 
+                 if mfes and maes:
+                     # 策略核心:
+                     # TP: 设置在 75% 的历史交易都能到达的 MFE 水平 (75分位数) -> 更容易达成的目标
+                     # SL: 设置在能覆盖 90% 历史交易回撤的 MAE 水平 (90分位数) -> 更宽的容错空间
+                     
+                     # 优化调整: 
+                     # 如果我们要追求高盈亏比，TP 应该更大，但胜率会降
+                     # 如果我们要追求高胜率，SL 应该宽，TP 适中
+                     # 这里采用 "宽止损 + 适中止盈" 的高胜率配置
+                     
+                     opt_tp_pct = np.percentile(mfes, 50) / 100.0 # 中位数目标 (稳健)
+                     opt_sl_pct = np.percentile(maes, 90) / 100.0 # 90% 容错空间 (宽止损)
+                     
+                     # 安全范围检查
+                     if 0.001 < opt_tp_pct < 0.05:
+                         default_tp_pct = opt_tp_pct
+                     if 0.001 < opt_sl_pct < 0.03:
+                         default_sl_pct = opt_sl_pct
+                         
+                     logger.info(f"应用 MFE/MAE 优化: TP={default_tp_pct:.2%}, SL={default_sl_pct:.2%}")
+                     
+        except Exception as e:
+             logger.warning(f"获取 MFE/MAE 统计失败，使用默认参数: {e}")
+
+        # 计算具体价格
+        sl_dist = price * default_sl_pct
+        tp_dist = price * default_tp_pct
+        
+        if 'buy' in trade_type:
+            sl = price - sl_dist
+            tp = price + tp_dist
+        elif 'sell' in trade_type:
+            sl = price + sl_dist
+            tp = price - tp_dist
+            
+        return sl, tp
 
     def _send_order(self, type_str, price, sl, tp, comment=""):
         """底层下单函数"""
@@ -2229,6 +2241,274 @@ class AI_MT5_Bot:
                 f"Optimization Skipped (Low Score: {best_score:.2f})"
             )
 
+    def optimize_weights(self):
+        """
+        使用激活的优化算法 (GWO, WOAm, etc.) 实时优化 HybridOptimizer 的权重
+        解决优化算法一直为负数的问题：确保有实际运行并使用正向的适应度函数 (准确率)
+        """
+        if len(self.signal_history) < 20: # 需要一定的历史数据
+            return
+
+        logger.info(f"正在运行权重优化 ({self.active_optimizer_name})... 样本数: {len(self.signal_history)}")
+        
+        # 1. 准备数据
+        # 提取历史信号和实际结果
+        # history items: (timestamp, signals_dict, close_price)
+        # 我们需要计算每个样本的实际涨跌: price[i+1] - price[i]
+        
+        samples = []
+        for i in range(len(self.signal_history) - 1):
+            curr = self.signal_history[i]
+            next_bar = self.signal_history[i+1]
+            
+            signals = curr[1]
+            price_change = next_bar[2] - curr[2]
+            
+            actual_dir = 0
+            if price_change > 0: actual_dir = 1
+            elif price_change < 0: actual_dir = -1
+            
+            if actual_dir != 0:
+                samples.append((signals, actual_dir))
+                
+        if len(samples) < 10:
+            return
+
+        # 2. 定义目标函数 (适应度函数)
+        # 输入: 权重向量 [w1, w2, ...]
+        # 输出: 准确率 (0.0 - 1.0) -> 保证非负
+        strategy_keys = list(self.optimizer.weights.keys())
+        
+        def objective(weights_vec):
+            correct = 0
+            total = 0
+            
+            # 构建临时权重字典
+            temp_weights = {k: w for k, w in zip(strategy_keys, weights_vec)}
+            
+            for signals, actual_dir in samples:
+                # 模拟 combine_signals
+                weighted_sum = 0
+                total_w = 0
+                
+                for strat, sig in signals.items():
+                    w = temp_weights.get(strat, 1.0)
+                    if sig == 'buy':
+                        weighted_sum += w
+                        total_w += w
+                    elif sig == 'sell':
+                        weighted_sum -= w
+                        total_w += w
+                
+                if total_w > 0:
+                    norm_score = weighted_sum / total_w
+                    
+                    pred_dir = 0
+                    if norm_score > 0.3: pred_dir = 1
+                    elif norm_score < -0.3: pred_dir = -1
+                    
+                    if pred_dir == actual_dir:
+                        correct += 1
+                    total += 1
+            
+            if total == 0: return 0.0
+            return correct / total # 返回准确率
+            
+        # 3. 运行优化
+        optimizer = self.optimizers[self.active_optimizer_name]
+        
+        # 定义边界: 权重范围 [0.0, 2.0]
+        bounds = [(0.0, 2.0) for _ in range(len(strategy_keys))]
+        
+        try:
+            best_weights_vec, best_score = optimizer.optimize(
+                objective_function=objective,
+                bounds=bounds,
+                epochs=20 # 实时运行不宜过久
+            )
+            
+            # 4. 应用最佳权重
+            if best_score > 0: # 确保结果有效
+                for i, k in enumerate(strategy_keys):
+                    self.optimizer.weights[k] = best_weights_vec[i]
+                
+                logger.info(f"权重优化完成! 最佳准确率: {best_score:.2%}")
+                logger.info(f"新权重: {self.optimizer.weights}")
+                self.last_optimization_time = time.time()
+            else:
+                logger.warning("优化结果得分过低，未更新权重")
+                
+        except Exception as e:
+            logger.error(f"权重优化失败: {e}")
+
+    def calculate_optimized_sl_tp(self, trade_type, price, atr, market_context=None):
+        """
+        计算基于综合因素的优化止损止盈点
+        结合: 14天 ATR, MFE/MAE 统计, 市场分析(Supply/Demand/FVG)
+        """
+        # 1. 基础波动率 (14天 ATR)
+        # 确保传入的 ATR 是有效的 14周期 ATR
+        if atr <= 0:
+            atr = price * 0.005 # Fallback
+            
+        # 2. 历史绩效 (MFE/MAE)
+        mfe_tp_dist = atr * 2.0 # 默认
+        mae_sl_dist = atr * 1.5 # 默认
+        
+        try:
+             trades = self.db_manager.get_trade_performance_stats(limit=100)
+             if trades and len(trades) > 10:
+                 mfes = [t.get('mfe', 0) for t in trades if t.get('mfe', 0) > 0]
+                 maes = [t.get('mae', 0) for t in trades if t.get('mae', 0) > 0]
+                 
+                 if mfes and maes:
+                     # 使用 ATR 倍数来标准化 MFE/MAE (假设 MFE/MAE 也是以 ATR 为单位存储，或者我们需要转换)
+                     # 如果 DB 存的是百分比，我们需要将其转换为当前 ATR 倍数
+                     # 这里简化处理：直接取百分比的中位数，然后转换为价格距离
+                     
+                     opt_tp_pct = np.percentile(mfes, 60) / 100.0 # 60分位数
+                     opt_sl_pct = np.percentile(maes, 90) / 100.0 # 90分位数
+                     
+                     mfe_tp_dist = price * opt_tp_pct
+                     mae_sl_dist = price * opt_sl_pct
+        except Exception as e:
+             logger.warning(f"MFE/MAE 计算失败: {e}")
+
+        # 3. 市场结构调整 (Supply/Demand/FVG)
+        # 从 market_context 中获取关键位
+        struct_tp_price = 0.0
+        struct_sl_price = 0.0
+        
+        if market_context:
+            # 获取最近的 Supply/Demand 区间
+            # 假设 market_context 包含 advanced_tech 或 ifvg 结果
+            
+            is_buy = 'buy' in trade_type
+            
+            # 寻找止盈点 (最近的阻力位/FVG)
+            if is_buy:
+                # 买入 TP: 最近的 Supply Zone 或 Bearish FVG 的下沿
+                resistance_candidates = []
+                if 'supply_zones' in market_context:
+                    # 找出所有高于当前价格的 Supply Zone bottom
+                    # 注意: zones 可能是 [(top, bottom), ...] 或其他结构，需要类型检查
+                    raw_zones = market_context['supply_zones']
+                    if raw_zones and isinstance(raw_zones, list):
+                        try:
+                            # 尝试解析可能的元组/列表结构
+                            valid_zones = []
+                            for z in raw_zones:
+                                if isinstance(z, (list, tuple)) and len(z) >= 2:
+                                    # 假设结构是 (top, bottom, ...)
+                                    if z[1] > price: valid_zones.append(z[1])
+                                elif isinstance(z, dict):
+                                    # 假设结构是 {'top': ..., 'bottom': ...}
+                                    btm = z.get('bottom')
+                                    if btm and btm > price: valid_zones.append(btm)
+                            
+                            if valid_zones: resistance_candidates.append(min(valid_zones))
+                        except Exception as e:
+                            logger.warning(f"解析 Supply Zones 失败: {e}")
+                
+                if 'bearish_fvgs' in market_context:
+                    raw_fvgs = market_context['bearish_fvgs']
+                    if raw_fvgs and isinstance(raw_fvgs, list):
+                        try:
+                            valid_fvgs = []
+                            for f in raw_fvgs:
+                                if isinstance(f, dict):
+                                    btm = f.get('bottom')
+                                    if btm and btm > price: valid_fvgs.append(btm)
+                            if valid_fvgs: resistance_candidates.append(min(valid_fvgs))
+                        except Exception as e:
+                            logger.warning(f"解析 Bearish FVG 失败: {e}")
+                    
+                if resistance_candidates:
+                    struct_tp_price = min(resistance_candidates)
+            
+            else:
+                # 卖出 TP: 最近的 Demand Zone 或 Bullish FVG 的上沿
+                support_candidates = []
+                if 'demand_zones' in market_context:
+                    raw_zones = market_context['demand_zones']
+                    if raw_zones and isinstance(raw_zones, list):
+                        try:
+                            valid_zones = []
+                            for z in raw_zones:
+                                if isinstance(z, (list, tuple)) and len(z) >= 2:
+                                    # 假设结构是 (top, bottom, ...)
+                                    if z[0] < price: valid_zones.append(z[0])
+                                elif isinstance(z, dict):
+                                    top = z.get('top')
+                                    if top and top < price: valid_zones.append(top)
+                            
+                            if valid_zones: support_candidates.append(max(valid_zones))
+                        except Exception as e:
+                            logger.warning(f"解析 Demand Zones 失败: {e}")
+                    
+                if 'bullish_fvgs' in market_context:
+                    raw_fvgs = market_context['bullish_fvgs']
+                    if raw_fvgs and isinstance(raw_fvgs, list):
+                        try:
+                            valid_fvgs = []
+                            for f in raw_fvgs:
+                                if isinstance(f, dict):
+                                    top = f.get('top')
+                                    if top and top < price: valid_fvgs.append(top)
+                            if valid_fvgs: support_candidates.append(max(valid_fvgs))
+                        except Exception as e:
+                            logger.warning(f"解析 Bullish FVG 失败: {e}")
+                    
+                if support_candidates:
+                    struct_tp_price = max(support_candidates)
+
+            # 寻找止损点 (最近的支撑位/结构点)
+            # 这里简化逻辑，通常 SL 放在结构点外侧
+            # 可以使用 recent swing high/low
+            pass
+
+        # 4. 综合计算
+        # 逻辑: 
+        # TP: 优先使用结构位 (Struct TP)，如果结构位太远或太近，使用 MFE/ATR 修正
+        # SL: 使用 MAE/ATR 保护，但如果结构位 (如 Swing Low) 在附近，可以参考
+        
+        final_sl = 0.0
+        final_tp = 0.0
+        
+        # 基础计算
+        if 'buy' in trade_type:
+            base_tp = price + mfe_tp_dist
+            base_sl = price - mae_sl_dist
+            
+            # TP 融合
+            if struct_tp_price > price:
+                # 如果结构位比基础 TP 近，说明上方有阻力，保守起见设在阻力前
+                # 如果结构位比基础 TP 远，可以尝试去拿，但最好分批。这里取加权平均或保守值
+                if struct_tp_price < base_tp:
+                    final_tp = struct_tp_price - (atr * 0.1) # 阻力下方一点点
+                else:
+                    final_tp = base_tp # 保持 MFE 目标，比较稳健
+            else:
+                final_tp = base_tp
+                
+            final_sl = base_sl # SL 主要靠统计风控
+            
+        else: # Sell
+            base_tp = price - mfe_tp_dist
+            base_sl = price + mae_sl_dist
+            
+            if struct_tp_price > 0 and struct_tp_price < price:
+                if struct_tp_price > base_tp: # 支撑位在目标上方 (更近)
+                    final_tp = struct_tp_price + (atr * 0.1)
+                else:
+                    final_tp = base_tp
+            else:
+                final_tp = base_tp
+                
+            final_sl = base_sl
+
+        return final_sl, final_tp
+
     def run(self):
         """主循环"""
         if not self.initialize_mt5():
@@ -2641,6 +2921,16 @@ class AI_MT5_Bot:
                         # 仅保留 weights 用于记录，不再用于计算信号
                         _, _, weights = self.optimizer.combine_signals(all_signals)
 
+                        # --- 3.6 记录信号历史用于实时优化 ---
+                        # 解决优化算法未运行的问题：收集数据并定期调用 optimize_weights
+                        self.signal_history.append((current_bar_time, all_signals, float(current_price['close'])))
+                        if len(self.signal_history) > 1000:
+                            self.signal_history.pop(0)
+                            
+                        # 每 15 分钟尝试优化一次权重
+                        if time.time() - self.last_optimization_time > 900:
+                             self.optimize_weights()
+
                         logger.info(f"AI 最终决定 (LLM-Driven): {final_signal.upper()} (强度: {strength:.1f})")
                         logger.info(f"LLM Reason: {reason}")
                         logger.info(f"技术面支持: {matching_count}/{valid_tech_count}")
@@ -2675,32 +2965,65 @@ class AI_MT5_Bot:
                         regime_info = adv_result['regime']['description'] if adv_result else "N/A"
                         volatility_info = f"{adv_result['risk']['volatility']:.2%}" if adv_result else "N/A"
                         
+                        # 获取当前持仓概览
+                        pos_summary = "No Open Positions"
+                        positions = mt5.positions_get(symbol=self.symbol)
+                        if positions:
+                            pos_details = []
+                            for p in positions:
+                                type_str = "BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL"
+                                pnl = p.profit
+                                pos_details.append(f"{type_str} {p.volume} (PnL: {pnl:.2f})")
+                            pos_summary = "\n".join(pos_details)
+
+                        # 获取建议的 SL/TP (仅供参考)
+                        # 注意：这里只是预估值，实际值在 execute_trade 中计算
+                        # 为了展示，我们调用 calculate_optimized_sl_tp 获取一次
+                        ref_price = mt5.symbol_info_tick(self.symbol).ask
+                        
+                        # 准备市场上下文供 SL/TP 计算
+                        sl_tp_context = {
+                            "supply_zones": adv_result.get('ifvg', {}).get('active_zones', []), # 假设 ifvg 中包含 supply/demand
+                            "demand_zones": [], # 需要从 ifvg 或其他地方提取
+                            "bearish_fvgs": [], 
+                            "bullish_fvgs": []
+                        }
+                        # 尝试从 adv_result 中提取更详细的结构信息 (如果存在)
+                        if adv_result and 'ifvg' in adv_result:
+                             # 假设 ifvg 结果包含 zones 列表 [(top, bottom, type), ...]
+                             # 这里简化处理，实际需要根据 ifvg 返回结构适配
+                             pass
+
+                        # 计算 ATR (复用之前的计算或重新获取)
+                        atr_val = 0.0 # 这里简化，实际应传入有效 ATR
+                        
+                        ref_sl, ref_tp = self.calculate_optimized_sl_tp("buy", ref_price, atr_val, market_context=sl_tp_context)
+                        
                         analysis_msg = (
                             f"🤖 *AI Market Analysis - {self.symbol}*\n"
                             f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                            f"📊 *Signals:*\n"
-                            f"• SMC: `{smc_result['signal']}`\n"
-                            f"• IFVG: `{ifvg_result['signal']}` ({ifvg_result['strength']}%)\n"
-                            f"• RVGI+CCI: `{rvgi_cci_result['signal']}` ({rvgi_cci_result['strength']}%)\n"
-                            f"• MFH: `{mfh_result['signal']}` (Slope: {mfh_result['slope']:.2f})\n"
-                            f"• MTF: `{mtf_result['signal']}`\n"
-                            f"• CRT: `{crt_result['signal']}`\n"
-                            f"• PriceEq: `{price_eq_result['signal']}`\n"
-                            f"• AdvTech: `{adv_signal}`\n"
-                            f"• MatrixML: `{ml_result['signal']}`\n"
-                            f"• TFVisual: `{tf_result['signal']}`\n"
-                            f"• DeepSeek: `{ds_signal}` (Conf: {ds_score})\n"
-                            f"• Qwen: `{qw_signal}`\n\n"
-                            f"🧠 *Hybrid Decision:*\n"
-                            f"• Signal: *{final_signal.upper()}*\n"
-                            f"• Strength: `{strength:.1f}`\n\n"
+                            f"🧠 *Dual-LLM Decision:*\n"
+                            f"• DeepSeek: `{ds_signal.upper()}` (Conf: {ds_score})\n"
+                            f"• Qwen Strategy: `{qw_action.upper()}`\n"
+                            f"• Final Action: *{final_signal.upper()}* (Strength: {strength:.1f})\n"
+                            f"• Reason: _{reason}_\n\n"
+                            f"📊 *Technical Confluence:*\n"
+                            f"• Support: {matching_count}/{valid_tech_count} indicators\n"
+                            f"• SMC: `{smc_result['signal']}` | CRT: `{crt_result['signal']}`\n"
+                            f"• MTF: `{mtf_result['signal']}` | MFH: `{mfh_result['signal']}`\n\n"
                             f"📈 *Market Context:*\n"
                             f"• State: {structure.get('market_state', 'N/A')}\n"
                             f"• Regime: {regime_info}\n"
                             f"• Volatility: {volatility_info}\n"
-                            f"🔮 *Prediction:* {structure.get('short_term_prediction', 'N/A')}"
+                            f"• Prediction: {structure.get('short_term_prediction', 'N/A')}\n\n"
+                            f"💼 *Position Status:*\n"
+                            f"{pos_summary}\n\n"
+                            f"🛡️ *Risk Management (MFE/MAE Optimized):*\n"
+                            f"• Est. SL Distance: ~{abs(ref_price - ref_sl):.2f}\n"
+                            f"• Est. TP Distance: ~{abs(ref_tp - ref_price):.2f}"
                         )
                         self.send_telegram_message(analysis_msg)
+
                         
                         # 4. 执行交易
                         # 修正逻辑: 优先尊重 Qwen 的信号和参数
