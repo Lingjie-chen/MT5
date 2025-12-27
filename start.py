@@ -1524,10 +1524,11 @@ class AI_MT5_Bot:
             price = tick.bid
         elif llm_action == 'limit_buy':
             trade_type = "limit_buy"
-            price = entry_params.get('entry_price') if entry_params else 0.0
+            # 优先使用 limit_price (与 prompt 一致)，回退使用 entry_price
+            price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
         elif llm_action == 'limit_sell':
             trade_type = "limit_sell"
-            price = entry_params.get('entry_price') if entry_params else 0.0
+            price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
 
         if trade_type and price > 0:
             # 再次确认 SL/TP 是否存在
@@ -2849,12 +2850,16 @@ class AI_MT5_Bot:
                         # 现在我们优先使用 Qwen 返回的 action
                         qw_action = strategy.get('action', 'neutral').lower()
                         
-                        # 扩展 Action 解析，支持加仓/减仓/平仓指令
+                        # 扩展 Action 解析，支持加仓/减仓/平仓/挂单指令
                         final_signal = "neutral"
                         if qw_action in ['buy', 'add_buy']:
                             final_signal = "buy"
                         elif qw_action in ['sell', 'add_sell']:
                             final_signal = "sell"
+                        elif qw_action in ['buy_limit', 'limit_buy']:
+                            final_signal = "limit_buy"
+                        elif qw_action in ['sell_limit', 'limit_sell']:
+                            final_signal = "limit_sell"
                         elif qw_action in ['close_buy', 'close_sell', 'close']:
                             final_signal = "close" # 特殊信号: 平仓
                         elif qw_action == 'hold':
