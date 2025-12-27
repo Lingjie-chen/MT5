@@ -3043,6 +3043,40 @@ class AI_MT5_Bot:
                         
                         strategy = self.qwen_client.optimize_strategy_logic(structure, market_snapshot, technical_signals=technical_signals, current_positions=current_positions_list)
                         
+                        # --- 参数自适应优化 (Feedback Loop) ---
+                        # 将大模型的参数优化建议应用到当前运行的算法中
+                        param_updates = strategy.get('parameter_updates', {})
+                        if param_updates:
+                            try:
+                                update_reason = param_updates.get('reason', 'AI Optimized')
+                                logger.info(f"应用参数优化 ({update_reason}): {param_updates}")
+                                
+                                # 1. SMC 参数
+                                if 'smc_atr_threshold' in param_updates:
+                                    new_val = float(param_updates['smc_atr_threshold'])
+                                    self.smc_analyzer.atr_threshold = new_val
+                                    logger.info(f"Updated SMC ATR Threshold -> {new_val}")
+                                    
+                                # 2. MFH 参数
+                                if 'mfh_learning_rate' in param_updates:
+                                    new_val = float(param_updates['mfh_learning_rate'])
+                                    self.mfh_analyzer.learning_rate = new_val
+                                    logger.info(f"Updated MFH Learning Rate -> {new_val}")
+                                    
+                                # 3. 切换优化器
+                                if 'active_optimizer' in param_updates:
+                                    new_opt = str(param_updates['active_optimizer'])
+                                    if new_opt in self.optimizers and new_opt != self.active_optimizer_name:
+                                        self.active_optimizer_name = new_opt
+                                        logger.info(f"Switched Optimizer -> {new_opt}")
+                                        
+                                # 4. Matrix ML 参数 (如需)
+                                if 'matrix_ml_learning_rate' in param_updates:
+                                     self.matrix_ml.learning_rate = float(param_updates['matrix_ml_learning_rate'])
+                                     
+                            except Exception as e:
+                                logger.error(f"参数动态更新失败: {e}")
+                        
                         # Qwen 信号转换
                         # 如果没有明确 action 字段，我们假设它作为 DeepSeek 的确认层
                         # 现在我们优先使用 Qwen 返回的 action
