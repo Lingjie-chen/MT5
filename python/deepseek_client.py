@@ -181,6 +181,8 @@ class DeepSeekClient:
         3. 市场结构评分（0-100）：高分表示趋势明确，低分表示震荡
         4. 短期预测（1-3天）：请提供完整、详细的预测逻辑和目标位描述，不要使用"..."或省略号
         5. 关键指标解读
+        6. **综合交易建议 (Preliminary Trade Idea)**: 基于你的结构分析和所有输入的高级算法信号，给出一个初步的交易建议 (Buy/Sell/Wait)，供 Qwen 大模型参考。
+        7. **策略一致性评估**: 评估各个高级算法信号之间的一致性 (例如: SMC 和 CRT 是否都看多?)。
 
         如果提供了额外技术分析（如CRT或价格方程），请将其纳入考虑，验证你的结构分析。
         
@@ -191,6 +193,9 @@ class DeepSeekClient:
         - structure_score: int
         - short_term_prediction: str
         - indicator_analysis: str
+        - preliminary_signal: str ("buy", "sell", "neutral")
+        - signal_confidence: int (0-100)
+        - consistency_analysis: str
         """
         
         # 构建payload，遵循ValueCell的实现
