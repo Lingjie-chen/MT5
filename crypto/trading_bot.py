@@ -259,15 +259,20 @@ class CryptoTradingBot:
         amount_eth = target_position_value / current_price
         
         # Convert to contracts
-        # OKX ETH/USDT Swap: 1 contract = 0.1 ETH
-        contract_size = 0.1
+        # Get contract size dynamically
+        contract_size = self.data_processor.get_contract_size(self.symbol)
+        if not contract_size:
+            contract_size = 0.1 # Fallback
+            
         num_contracts = int(amount_eth / contract_size)
         
-        logger.info(f"Volume Calculation: Available USDT={available_usdt}, Percent={volume_percent:.2%}, Margin={target_margin:.2f}, Leverage={leverage}x, Position Value={target_position_value:.2f}, Price={current_price}, Amount (ETH)={amount_eth:.6f}, Contracts={num_contracts}")
+        logger.info(f"Volume Calculation: Available USDT={available_usdt}, Percent={volume_percent:.2%}, Margin={target_margin:.2f}, Leverage={leverage}x, Position Value={target_position_value:.2f}, Price={current_price}, Contract Size={contract_size}, Contracts={num_contracts}")
         
         # Minimum position value check (at least 1 contract)
         if num_contracts < 1:
-            logger.warning(f"Calculated contracts ({num_contracts}) is less than 1, skipping")
+            min_required_value = current_price * contract_size
+            min_required_margin = min_required_value / leverage
+            logger.warning(f"Calculated contracts ({num_contracts}) is less than 1. Minimum position value required: {min_required_value:.2f} USDT. At {leverage}x leverage, you need {min_required_margin:.2f} USDT margin.")
             return
 
         # Prepare SL/TP params for OKX

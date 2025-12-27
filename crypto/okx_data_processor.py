@@ -313,6 +313,25 @@ class OKXDataProcessor:
         except Exception as e:
             logger.error(f"Error placing SL/TP: {e}")
 
+    def get_contract_size(self, symbol):
+        """Get contract size for a symbol"""
+        try:
+            market = self.exchange.market(symbol)
+            return market['contractSize']
+        except Exception as e:
+            # Fallback or log error
+            # If market info not loaded, try fetching markets first
+            try:
+                self.exchange.load_markets()
+                market = self.exchange.market(symbol)
+                return market['contractSize']
+            except:
+                logger.error(f"Error getting contract size for {symbol}: {e}")
+                # Default fallback for ETH/USDT swap if fetch fails
+                if 'ETH' in symbol: return 0.1
+                if 'BTC' in symbol: return 0.01
+                return 1.0 # Safe fallback? Maybe risky.
+
     def create_order(self, symbol, side, amount, type='market', price=None, params={}):
         """Create a trade order
         
