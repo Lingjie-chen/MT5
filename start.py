@@ -40,6 +40,11 @@ class MFHAnalyzer:
         self.last_features = None
         self.last_prediction = 0.0
         
+        # Online Normalization Stats (Welford's Algorithm)
+        self.count = 0
+        self.mean = np.zeros(input_size)
+        self.m2 = np.zeros(input_size) # Sum of squares of differences
+        
     def calculate_features(self, df):
         """
         根据 MFH_1.4.mq5 逻辑计算 16 个特征
@@ -89,14 +94,33 @@ class MFHAnalyzer:
         features[14] = ma_high[curr] - ma_high[prev_h]
         features[15] = ma_low[curr] - ma_low[prev_h]
         
-        # 归一化特征 (非常重要，因为价格绝对值很大)
-        # 简单使用 Z-Score 归一化 (基于特征向量本身是不够的，应该基于历史，但这里简化处理)
-        # 或者除以当前价格进行比例化
-        base_price = closes[curr]
-        if base_price > 0:
-            features = features / base_price
+        # 归一化特征 (StandardScaler Logic)
+        # 使用在线 Welford 算法更新均值和方差，确保归一化基于历史分布
+        
+        # 1. 更新统计量 (Welford's Algorithm)
+        if self.count == 0:
+            self.mean = features.copy()
+            self.m2 = np.zeros_like(features)
+        else:
+            delta = features - self.mean
+            self.mean += delta / (self.count + 1)
+            delta2 = features - self.mean
+            self.m2 += delta * delta2
             
-        return features
+        self.count += 1
+        
+        # 2. 计算标准差
+        if self.count < 2:
+            std = np.ones_like(features) # 避免除零
+        else:
+            variance = self.m2 / (self.count - 1)
+            std = np.sqrt(variance)
+            std[std == 0] = 1.0 # 避免除零
+            
+        # 3. Z-Score 归一化
+        normalized_features = (features - self.mean) / std
+        
+        return normalized_features
 
     def predict(self, df):
         """
