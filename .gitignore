@@ -50,3 +50,6 @@ Thumbs.db
 *.pth
 *.hdf5
 models/
+
+# Database files
+*.db
