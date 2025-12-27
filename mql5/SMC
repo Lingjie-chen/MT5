@@ -15,9 +15,9 @@
 
 // Market Sentiment Component (from MARKSENT)
 input group "=== Market Sentiment Settings ==="
-input ENUM_TIMEFRAMES HigherTF = PERIOD_H4;
+input ENUM_TIMEFRAMES HigherTF = PERIOD_M15;
 input ENUM_TIMEFRAMES LowerTF1 = PERIOD_H1;
-input ENUM_TIMEFRAMES LowerTF2 = PERIOD_M30;
+input ENUM_TIMEFRAMES LowerTF2 = PERIOD_M5;
 input int MAPeriod = 200;
 input int SwingLookback = 5;
 input double ATRThreshold = 0.002;
