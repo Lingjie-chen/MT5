@@ -2,6 +2,7 @@ import time
 import logging
 import os
 import json
+import requests
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -52,8 +53,27 @@ class CryptoTradingBot:
         self.deepseek_client = self.ai_factory.get_client('deepseek')
         self.qwen_client = self.ai_factory.get_client('qwen')
         
+        # Telegram Configuration
+        self.telegram_token = "8554447693:AAFDzHx1U7lOajDy7n5bUMwKJFAFyn0cLxg"
+        self.telegram_chat_id = "8554447693"
+        
         if not self.deepseek_client or not self.qwen_client:
             logger.warning("AI Clients not fully initialized. Trading functionality may be limited.")
+
+    def send_telegram_message(self, message):
+        """Send message to Telegram"""
+        try:
+            url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
+            payload = {
+                "chat_id": self.telegram_chat_id,
+                "text": message,
+                "parse_mode": "Markdown"
+            }
+            response = requests.post(url, json=payload, timeout=10)
+            if response.status_code != 200:
+                logger.error(f"Failed to send Telegram message: {response.text}")
+        except Exception as e:
+            logger.error(f"Error sending Telegram message: {e}")
             
     def analyze_market(self):
         """Analyze market using DeepSeek"""
@@ -186,6 +206,31 @@ class CryptoTradingBot:
             market_data,
             current_positions=current_positions
         )
+        
+        # Send Analysis to Telegram
+        try:
+            exit_cond = decision.get('exit_conditions', {})
+            sl_price = exit_cond.get('sl_price', 'N/A')
+            tp_price = exit_cond.get('tp_price', 'N/A')
+            
+            msg = (
+                f"🤖 *AI Crypto Strategy Analysis*\n"
+                f"Symbol: `{self.symbol}`\n"
+                f"Timeframe: `{self.timeframe}`\n\n"
+                f"📊 *Market Structure*: {structure_analysis.get('market_state')} (Score: {structure_analysis.get('structure_score')})\n"
+                f"💡 *Action*: `{decision.get('action')}`\n"
+                f"💪 *Signal Strength*: {decision.get('signal_strength')}\n\n"
+                f"📝 *Rationale*:\n{decision.get('strategy_rationale')}\n\n"
+                f"🎯 *Targets*:\n"
+                f"• SL: `{sl_price}`\n"
+                f"• TP: `{tp_price}`\n\n"
+                f"💰 *Positioning*:\n"
+                f"• Leverage: {decision.get('leverage')}x\n"
+                f"• Size: {float(decision.get('position_size', 0))*100:.1f}%"
+            )
+            self.send_telegram_message(msg)
+        except Exception as e:
+            logger.error(f"Failed to construct telegram message: {e}")
         
         return decision
 
@@ -375,6 +420,21 @@ class CryptoTradingBot:
                     'strategy_rationale': rationale
                 }
                 self.db_manager.log_trade(trade_record)
+                
+                # Send Execution Notification to Telegram
+                try:
+                    exec_msg = (
+                        f"✅ *Trade Executed*\n"
+                        f"Action: `{action.upper()}`\n"
+                        f"Symbol: `{self.symbol}`\n"
+                        f"Contracts: `{num_contracts}`\n"
+                        f"Price: `{trade_record['price']}`\n"
+                        f"Leverage: `{leverage}x`\n"
+                        f"Order ID: `{order.get('id')}`"
+                    )
+                    self.send_telegram_message(exec_msg)
+                except Exception as e:
+                    logger.error(f"Failed to send execution telegram: {e}")
                 
         except Exception as e:
             logger.error(f"Failed to execute trade: {e}")
