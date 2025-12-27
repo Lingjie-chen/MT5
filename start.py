@@ -2708,6 +2708,21 @@ class AI_MT5_Bot:
 
         return final_sl, final_tp
 
+    def initialize_mt5(self):
+        """初始化 MT5 连接"""
+        if not mt5.initialize():
+            logger.error("MT5 初始化失败")
+            mt5.shutdown()
+            return False
+        
+        # 确保数据库路径设置正确 (在 __init__ 中已经设置了绝对路径)
+        # 再次确认一下，如果是相对路径，则转换为绝对路径
+        if not os.path.isabs(self.db_manager.db_path):
+             current_dir = os.path.dirname(os.path.abspath(__file__))
+             self.db_manager.db_path = os.path.join(current_dir, 'trading_data.db')
+             
+        return True
+
     def run(self):
         """主循环"""
         if not self.initialize_mt5():
