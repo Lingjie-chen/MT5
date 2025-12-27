@@ -24,8 +24,6 @@ figures/
 charts/
 reports/
 
-# 回测报告
-backtest_reports/
 
 # MT5相关文件
 *.ex5
@@ -44,12 +42,6 @@ Thumbs.db
 # 临时文件
 *.tmp
 *.temp
-
-# 机器学习模型文件
-*.joblib
-*.pth
-*.hdf5
-models/
 
 # Database files
 *.db
