@@ -142,6 +142,25 @@ class CryptoTradingBot:
         except Exception as e:
             logger.error(f"Error fetching positions: {e}")
             current_positions = [] 
+
+        # Fetch open orders to provide context about pending limits or SL/TPs
+        try:
+            open_orders_raw = self.data_processor.get_open_orders(self.symbol)
+            open_orders = []
+            for order in open_orders_raw:
+                open_orders.append({
+                    "id": order['id'],
+                    "type": order['type'],
+                    "side": order['side'],
+                    "price": order['price'],
+                    "amount": order['amount'],
+                    "status": order['status'],
+                    "reduce_only": order['info'].get('reduceOnly', False)
+                })
+            logger.info(f"Open Orders: {len(open_orders)}")
+        except Exception as e:
+            logger.error(f"Error fetching open orders: {e}")
+            open_orders = []
         
         market_data = {
             "symbol": self.symbol,
@@ -154,7 +173,8 @@ class CryptoTradingBot:
             "account_info": {
                 "available_usdt": available_usdt,
                 "total_equity": total_equity
-            }
+            },
+            "open_orders": open_orders
         }
         
         logger.info("Requesting Qwen strategy optimization...")
@@ -282,8 +302,11 @@ class CryptoTradingBot:
         
         order_params = {}
         if sl_price or tp_price:
+            # Prepare attached algo order for SL/TP
+            # We don't provide attachAlgoClOrdId to let system generate one, avoiding format errors
             algo_order = {
-                'attachAlgoClOrdId': f"algo_{int(time.time())}"
+                'tpTriggerPxType': 'last',
+                'slTriggerPxType': 'last'
             }
             if tp_price:
                 algo_order['tpTriggerPx'] = str(tp_price)

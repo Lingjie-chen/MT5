@@ -275,6 +275,14 @@ class OKXDataProcessor:
             logger.error(f"Error setting leverage: {e}")
             return False
 
+    def get_open_orders(self, symbol=None):
+        """Get open orders"""
+        try:
+            return self.exchange.fetch_open_orders(symbol)
+        except Exception as e:
+            logger.error(f"Error getting open orders: {e}")
+            return []
+
     def cancel_all_orders(self, symbol):
         """Cancel all open orders for a symbol"""
         try:

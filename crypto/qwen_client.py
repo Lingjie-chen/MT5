@@ -157,6 +157,14 @@ class QwenClient:
         else:
             pos_context = "\n当前无持仓。\n"
 
+        # 处理当前挂单信息
+        open_orders = current_market_data.get('open_orders', [])
+        orders_context = ""
+        if open_orders:
+             orders_context = f"\n当前挂单状态 (Limit/SL/TP):\n{json.dumps(open_orders, indent=2, cls=CustomJSONEncoder)}\n"
+        else:
+             orders_context = "\n当前无挂单。\n"
+
         if technical_signals:
             # 提取性能统计 (如果存在) 并单独处理，避免被 json.dumps 混淆
             perf_stats = technical_signals.get('performance_stats')
@@ -195,6 +203,7 @@ class QwenClient:
         当前市场数据：
         {json.dumps(current_market_data, indent=2, cls=CustomJSONEncoder)}
         {pos_context}
+        {orders_context}
         {tech_context}
         {perf_context}
         
