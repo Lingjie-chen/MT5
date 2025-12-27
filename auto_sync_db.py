@@ -71,14 +71,23 @@ def sync_files():
     if commit_result is None:
         return
 
-    # 4. Push
+    # 4. Push to GitHub
     logging.info("Pushing to remote (origin master)...")
-    push_result = run_git_command(["push", "origin", "master"])
+    push_result_origin = run_git_command(["push", "origin", "master"])
     
-    if push_result is not None:
+    if push_result_origin is not None:
         logging.info("✅ Successfully pushed to GitHub.")
     else:
-        logging.warning("⚠️ Push failed. Will retry next time.")
+        logging.warning("⚠️ GitHub Push failed.")
+
+    # 5. Push to MQL5
+    logging.info("Pushing to remote (mql5 master)...")
+    push_result_mql5 = run_git_command(["push", "mql5", "master"])
+    
+    if push_result_mql5 is not None:
+        logging.info("✅ Successfully pushed to MQL5.")
+    else:
+        logging.warning("⚠️ MQL5 Push failed.")
 
 def main():
     logging.info("="*50)
