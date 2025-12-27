@@ -214,6 +214,7 @@ class QwenClient:
         4. 仓位管理：针对当前持仓的具体操作建议（如加仓、减仓、反手）。
         5. 风险管理建议：针对当前市场状态的风险控制措施。
         6. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 MFE/MAE 数据的具体分析以及为何选择该 SL/TP 点位**。
+        
         请以JSON格式返回结果，包含以下字段：
         - action: str ("buy", "sell", "hold", "close_buy", "close_sell", "add_buy", "add_sell", "buy_limit", "sell_limit") - 明确的交易行动建议
         - entry_conditions: dict (包含 "trigger_type": "market"|"limit", "limit_price": float (optional, required for limit orders), "confirmation": str)
