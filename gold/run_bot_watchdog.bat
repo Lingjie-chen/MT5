@@ -2,7 +2,7 @@
 title AI Trading Bot Watchdog
 color 0a
 
-cd /d "%~dp0"
+cd /d "%~dp0\.."
 
 :loop
 echo [%DATE% %TIME%] Starting Trading Bot...
