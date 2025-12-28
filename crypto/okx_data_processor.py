@@ -370,16 +370,31 @@ class OKXDataProcessor:
                             'ordType': 'conditional',
                             'slTriggerPx': str(sl_price),
                             'slOrdPx': '-1', # -1 for Market
-                            'slTriggerPxType': 'last'
+                            'slTriggerPxType': 'last',
+                            # OKX sometimes requires tag/clOrdId or reducesOnly not to be present for algos
+                            # reduceOnly is implied for SL attached to position usually, but for separate algo order:
+                            'reduceOnly': True 
                         }
                         # When using 'conditional', we might need to use a specific method or pass params to create_order
                         # Note: ccxt create_order usually handles 'conditional' type if supported, 
                         # otherwise we fall back to raw API if needed.
                         # For OKX, creating a 'conditional' order:
-                        self.exchange.create_order(symbol, 'market', side, amount, params=algo_params)
+                        # IMPORTANT: OKX V5 uses 'algo-order' endpoint for this. CCXT 'create_order' might map to 'order' endpoint
+                        # We might need to use specific params to force algo endpoint or use implicit mapping.
+                        # If standard create_order fails, we try specific 'stop' order type if CCXT maps it.
+                        
+                        # Trying 'stop' type which CCXT often maps to algo order
+                        self.exchange.create_order(symbol, 'stop', side, amount, params=algo_params)
                         logger.info(f"Placed algo SL order: {side} {amount} @ {sl_price}")
                     except Exception as algo_e:
                          logger.error(f"Algo SL placement also failed: {algo_e}")
+                         # Last resort: Try without reduceOnly if that's the blocker for algo too
+                         try:
+                             algo_params.pop('reduceOnly', None)
+                             self.exchange.create_order(symbol, 'stop', side, amount, params=algo_params)
+                             logger.info(f"Placed algo SL order (no reduceOnly): {side} {amount} @ {sl_price}")
+                         except Exception as final_e:
+                             logger.error(f"Final SL attempt failed: {final_e}")
 
             if tp_price:
                 # Take Profit (Limit Order)
