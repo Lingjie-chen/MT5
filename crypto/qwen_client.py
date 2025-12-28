@@ -157,7 +157,7 @@ class QwenClient:
         else:
             pos_context = "\n当前无持仓。\n"
 
-        # 处理当前挂单信息
+r        # 处理当前挂单信息
         open_orders = current_market_data.get('open_orders', [])
         orders_context = ""
         if open_orders:
@@ -194,8 +194,12 @@ class QwenClient:
         prompt = f"""
         作为专业的量化交易策略优化专家，你是混合交易系统的核心决策层。请根据DeepSeek的市场分析结果、当前市场数据、当前持仓状态以及其他技术模型的信号，优化策略逻辑并做出最终执行决定。
         
-        你现在拥有全套高级算法的信号支持 (SMC, IFVG, CRT, RVGI+CCI, MFH, MTF)。
-        请仔细评估各策略的一致性。如果出现冲突，请依据 DeepSeek 的市场结构分析和 MTF (多周期) 趋势来裁决。
+        你现在拥有全套高级算法的信号支持，请特别关注SMC策略与其他信号的共振：
+        1. **SMC (Smart Money Concepts) - 核心信号**:
+           - 确认DeepSeek分析中识别的OB (订单块) 和 FVG (流动性缺口) 是否与当前价格位置匹配。
+           - 寻找流动性扫荡后的反转确认 (例如: 扫荡低点后出现MSB)。
+           - 在溢价区(Premium)寻找卖出机会，在折价区(Discount)寻找买入机会。
+        2. **多模型共识**: 结合 IFVG, CRT, RVGI+CCI, MFH, MTF 的信号。如果SMC信号与其他模型冲突，请依据 DeepSeek 的市场结构分析和 MTF (多周期) 趋势来裁决。
         
         DeepSeek市场分析结果：
         {json.dumps(deepseek_analysis, indent=2, cls=CustomJSONEncoder)}
@@ -239,7 +243,7 @@ class QwenClient:
            - 请分析当前市场状态 (波动率、趋势强度)，并评估现有算法参数的适用性。
            - 给出针对 SMC, MFH, MatrixML 或 Optimization Algorithm (GWO/WOAm/etc) 的具体参数调整建议。
            - 例如: "SMC ATR 阈值过低，建议提高到 0.003 以过滤噪音" 或 "建议切换到 DE 优化器以增加探索能力"。
-        7. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 MFE/MAE 数据的具体分析以及为何选择该 SL/TP 点位**。
+        7. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 SMC 信号的解读、MFE/MAE 数据的分析以及为何选择该 SL/TP 点位**。
         
         请以JSON格式返回结果，包含以下字段：
         - action: str ("buy", "sell", "hold", "close_buy", "close_sell", "add_buy", "add_sell", "buy_limit", "sell_limit")
