@@ -41,6 +41,16 @@ class OKXDataProcessor:
         self.initialized = True
         logger.info("OKX Exchange initialized")
 
+    def _normalize_timeframe(self, tf):
+        """Normalize timeframe to CCXT format"""
+        mapping = {
+            'M1': '1m', 'M5': '5m', 'M15': '15m', 'M30': '30m',
+            'H1': '1h', 'H2': '2h', 'H4': '4h',
+            'D1': '1d', 'W1': '1w', 'MN': '1M',
+            '1H': '1h', '4H': '4h', '1D': '1d' 
+        }
+        return mapping.get(tf.upper(), tf)
+
     def get_historical_data(self, symbol, timeframe, limit=100, since=None):
         """Get historical data from OKX
         
@@ -53,6 +63,9 @@ class OKXDataProcessor:
         Returns:
             pd.DataFrame: DataFrame with OHLCV data
         """
+        # Normalize timeframe
+        timeframe = self._normalize_timeframe(timeframe)
+        
         try:
             # Fetch OHLCV data
             ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=limit)
