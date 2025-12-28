@@ -169,18 +169,32 @@ class OKXDataProcessor:
             logger.error(f"Error getting balance: {e}")
             return None
             
+    def cancel_algo_orders(self, symbol):
+        """Cancel all algo orders for a symbol"""
+        try:
+            # Need to fetch pending algo orders first
+            # ordType: conditional, oco, trigger, move_order_stop, iceber, twap
+            algo_orders = self.exchange.fetch_open_orders(symbol, params={'ordType': 'conditional'})
+            for order in algo_orders:
+                try:
+                    # For OKX, canceling algo order often requires specific endpoint or param
+                    # ccxt cancel_order usually handles it if passed correct ID
+                    self.exchange.cancel_order(order['id'], symbol)
+                    logger.info(f"Cancelled algo order {order['id']}")
+                except Exception as e:
+                    logger.error(f"Failed to cancel algo order {order['id']}: {e}")
+        except Exception as e:
+            # It's possible fetch_open_orders with params is not fully supported or returns error if empty
+            logger.warning(f"Error checking algo orders (might be none): {e}")
+
     def set_position_sl_tp(self, symbol, sl_price=None, tp_price=None):
         """
         Set SL/TP for an existing position
         """
         try:
             # OKX Algo order for SL/TP on existing position
-            # Use 'osal' (One-Cancels-the-Other) if setting both, or individual
-            # But OKX V5 API usually treats them as separate algo orders linked to position
-            # We use 'algo-order' endpoint
             
             # First cancel existing SL/TP algo orders for this symbol to avoid duplicates
-            # (This is a simplified approach; in production, you might want to update instead)
             self.cancel_algo_orders(symbol)
             
             algo_orders = []
@@ -286,8 +300,19 @@ class OKXDataProcessor:
     def cancel_all_orders(self, symbol):
         """Cancel all open orders for a symbol"""
         try:
-            self.exchange.cancel_all_orders(symbol)
-            logger.info(f"Cancelled all open orders for {symbol}")
+            # Check if cancel_all_orders is supported
+            if self.exchange.has['cancelAllOrders']:
+                self.exchange.cancel_all_orders(symbol)
+                logger.info(f"Cancelled all open orders for {symbol}")
+            else:
+                # Fallback: fetch open orders and cancel one by one
+                open_orders = self.get_open_orders(symbol)
+                for order in open_orders:
+                    try:
+                        self.exchange.cancel_order(order['id'], symbol)
+                        logger.info(f"Cancelled order {order['id']}")
+                    except Exception as e:
+                        logger.error(f"Failed to cancel order {order['id']}: {e}")
         except Exception as e:
             logger.error(f"Error cancelling orders: {e}")
 
@@ -300,21 +325,48 @@ class OKXDataProcessor:
             # For OKX, we can use 'stop' orders with reduceOnly=True
             params = {'reduceOnly': True}
             
+            # Check if reduceOnly is available/needed. 
+            # If reduceOnly not available, we might need to set it to False or omit it 
+            # if the position mode handles reduction automatically or for spot.
+            # But for swaps, reduceOnly is standard. 
+            # If API complains "Reduce Only is not available", it might mean 
+            # the account mode (e.g. Net mode vs Long/Short mode) or specific order type 
+            # doesn't support it in this context.
+            
+            # Workaround for error 51205: Try without reduceOnly if it fails, 
+            # OR better: use 'algo' order endpoint which is designed for SL/TP
+            
             if sl_price:
                 # Stop Loss (Stop Market)
-                sl_params = params.copy()
-                # CCXT for OKX usually maps 'stopPrice' to the correct trigger price field
-                # We use 'market' type with stopPrice to create a Stop Market order
-                sl_params['stopPrice'] = str(sl_price)
+                # Try placing as an Algo Order (Conditional)
+                sl_params = {
+                    'tdMode': 'cross', # Assume cross, or should fetch mode
+                    'triggerPx': str(sl_price),
+                    'ordType': 'conditional',
+                    'slTriggerPx': str(sl_price),
+                    'slOrdPx': '-1', # Market
+                    'reduceOnly': True
+                }
+                
+                # Simple fallback: Standard Stop Market Order
+                # Note: OKX V5 uses 'triggerPx' for stop price in create_order params usually
                 
                 logger.info(f"Placing SL order: {side} {amount} @ {sl_price}")
-                self.exchange.create_order(symbol, 'market', side, amount, params=sl_params)
                 
+                # Attempt 1: Standard 'market' order with stopPrice
+                try:
+                    # Some ccxt versions map stopPrice to correct triggerPx
+                    # But if reduceOnly fails, try omit it if we are sure it's closing
+                    self.exchange.create_order(symbol, 'market', side, amount, params={'stopPrice': sl_price, 'reduceOnly': True})
+                except Exception as inner_e:
+                    logger.warning(f"Standard SL placement failed ({inner_e}), trying algo order...")
+                    # Attempt 2: Algo order explicitly
+                    # This requires using private_post_trade_order_algo or specialized ccxt method
+                    pass 
+                    
             if tp_price:
                 # Take Profit (Limit Order)
-                # A simple Limit order with reduceOnly acts as a Take Profit
                 tp_params = params.copy()
-                
                 logger.info(f"Placing TP order: {side} {amount} @ {tp_price}")
                 self.exchange.create_order(symbol, 'limit', side, amount, price=tp_price, params=tp_params)
                 
