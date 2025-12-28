@@ -106,8 +106,23 @@ class CryptoTradingBot:
             "recent_candles": recent_candles
         }
         
+        # Fetch current positions for context
+        current_positions = []
+        try:
+            positions = self.data_processor.exchange.fetch_positions([self.symbol])
+            current_positions = [p for p in positions if float(p['contracts']) > 0]
+        except Exception:
+            pass
+
+        technical_signals = market_data.get('indicators', {})
+
+        # 1. DeepSeek Market Structure Analysis
         logger.info("Requesting DeepSeek market structure analysis...")
-        structure_analysis = self.deepseek_client.analyze_market_structure(market_data)
+        structure_analysis = self.deepseek_client.analyze_market_structure(
+            market_data, 
+            current_positions=current_positions,
+            extra_analysis=technical_signals
+        )
         logger.info(f"Market Structure Analysis: {structure_analysis.get('market_state')}")
         
         # Log analysis to database

@@ -134,13 +134,14 @@ class DeepSeekClient:
                 logger.error(f"API调用失败，已达到最大重试次数 {max_retries}")
                 return None
     
-    def analyze_market_structure(self, market_data: Dict[str, Any], extra_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def analyze_market_structure(self, market_data: Dict[str, Any], current_positions: Optional[List[Dict[str, Any]]] = None, extra_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         分析市场结构，识别趋势与震荡行情
         基于ValueCell的实现，支持JSON模式输出
         
         Args:
             market_data (Dict[str, Any]): 市场数据，包含价格、成交量、指标等
+            current_positions (Optional[List[Dict[str, Any]]]): 当前实时持仓数据
             extra_analysis (Optional[Dict[str, Any]]): 额外的技术分析数据（如CRT、价格方程等）
         
         Returns:
@@ -149,6 +150,13 @@ class DeepSeekClient:
         extra_context = ""
         if extra_analysis:
             extra_context = f"\n额外技术分析参考:\n{json.dumps(extra_analysis, indent=2, cls=CustomJSONEncoder)}\n"
+
+        # 添加持仓信息到分析上下文中，使DeepSeek能感知当前风险敞口
+        pos_context = ""
+        if current_positions:
+             pos_context = f"\n当前实时持仓:\n{json.dumps(current_positions, indent=2, cls=CustomJSONEncoder)}\n"
+        elif market_data.get('current_positions'):
+             pos_context = f"\n当前实时持仓:\n{json.dumps(market_data.get('current_positions'), indent=2, cls=CustomJSONEncoder)}\n"
 
         opt_algo = "Auto-AO"
         opt_info_str = ""
@@ -178,6 +186,7 @@ class DeepSeekClient:
         7. 优化器状态: 当前策略参数已由 {opt_algo} 算法优化。
         {opt_info_str}
 
+        {pos_context}
         {extra_context}
         市场数据：
         {json.dumps(market_data, indent=2, cls=CustomJSONEncoder)}
