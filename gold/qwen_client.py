@@ -127,7 +127,7 @@ class QwenClient:
                 logger.error(f"API调用失败，已达到最大重试次数 {max_retries}")
                 return None
     
-    def optimize_strategy_logic(self, deepseek_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    def optimize_strategy_logic(self, deepseek_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         优化策略逻辑，基于DeepSeek的情绪得分调整入场条件
         基于ValueCell的实现，支持JSON模式输出
@@ -137,6 +137,7 @@ class QwenClient:
             current_market_data (Dict[str, Any]): 当前市场数据
             technical_signals (Optional[Dict[str, Any]]): 其他技术模型的信号（CRT, Price Equation等）
             current_positions (Optional[List[Dict[str, Any]]]): 当前持仓信息 (用于决定加仓或平仓)
+            performance_stats (Optional[List[Dict[str, Any]]]): 历史交易绩效统计 (用于自学习)
         
         Returns:
             Dict[str, Any]: 优化后的策略参数
@@ -150,31 +151,58 @@ class QwenClient:
         else:
             pos_context = "\n当前无持仓。\n"
 
-        if technical_signals:
-            # 提取性能统计 (如果存在) 并单独处理，避免被 json.dumps 混淆
-            perf_stats = technical_signals.get('performance_stats')
-            if perf_stats:
-                # 构建 MFE/MAE 象限分析数据
-                recent_trades = perf_stats.get('recent_trades', [])
-                trades_summary = ""
-                if recent_trades:
-                    trades_summary = json.dumps(recent_trades[:10], indent=2, cls=CustomJSONEncoder) # 仅取最近10笔避免Prompt过长
+        # 处理当前挂单信息
+        open_orders = current_market_data.get('open_orders', [])
+        orders_context = ""
+        if open_orders:
+             orders_context = f"\n当前挂单状态 (Limit/SL/TP):\n{json.dumps(open_orders, indent=2, cls=CustomJSONEncoder)}\n"
+        else:
+             orders_context = "\n当前无挂单。\n"
 
-                perf_context = (
-                    f"\n历史交易绩效参考 (用于 MFE/MAE 象限分析与 SL/TP 优化):\n"
-                    f"- 平均 MFE: {perf_stats.get('avg_mfe', 0):.2f}%\n"
-                    f"- 平均 MAE: {perf_stats.get('avg_mae', 0):.2f}%\n"
-                    f"- 平均利润: {perf_stats.get('avg_profit', 0):.2f}\n"
-                    f"- 样本交易数: {perf_stats.get('trade_count', 0)}\n"
-                    f"- 最近交易详情 (用于分析体质): \n{trades_summary}\n"
-                )
-                # 从 technical_signals 中移除 stats 以免重复 (浅拷贝处理)
-                sigs_copy = technical_signals.copy()
-                if 'performance_stats' in sigs_copy:
-                    del sigs_copy['performance_stats']
-                tech_context = f"\n其他技术模型信号 (CRT/PriceEq/Hybrid):\n{json.dumps(sigs_copy, indent=2, cls=CustomJSONEncoder)}\n"
-            else:
-                tech_context = f"\n其他技术模型信号 (CRT/PriceEq/Hybrid):\n{json.dumps(technical_signals, indent=2, cls=CustomJSONEncoder)}\n"
+        # 处理性能统计 (优先使用 explicit argument)
+        stats_to_use = performance_stats
+        
+        # 兼容旧逻辑：如果 explicit 为空，尝试从 technical_signals 中提取
+        if not stats_to_use and technical_signals and isinstance(technical_signals.get('performance_stats'), list):
+             stats_to_use = technical_signals.get('performance_stats')
+
+        if stats_to_use:
+            # 构建 MFE/MAE 象限分析数据
+            recent_trades = []
+            summary_stats = {}
+            
+            if isinstance(stats_to_use, list):
+                recent_trades = stats_to_use
+                if len(recent_trades) > 0:
+                     mfe_list = [t.get('mfe', 0) for t in recent_trades if t.get('mfe') is not None]
+                     mae_list = [t.get('mae', 0) for t in recent_trades if t.get('mae') is not None]
+                     summary_stats = {
+                         'avg_mfe': sum(mfe_list)/len(mfe_list) if mfe_list else 0,
+                         'avg_mae': sum(mae_list)/len(mae_list) if mae_list else 0,
+                         'trade_count': len(recent_trades)
+                     }
+            elif isinstance(stats_to_use, dict):
+                summary_stats = stats_to_use
+                recent_trades = stats_to_use.get('recent_trades', [])
+
+            trades_summary = ""
+            if recent_trades:
+                trades_summary = json.dumps(recent_trades[:10], indent=2, cls=CustomJSONEncoder)
+
+            perf_context = (
+                f"\n历史交易绩效参考 (用于 MFE/MAE 象限分析与 SL/TP 优化):\n"
+                f"- 平均 MFE: {summary_stats.get('avg_mfe', 0):.2f}%\n"
+                f"- 平均 MAE: {summary_stats.get('avg_mae', 0):.2f}%\n"
+                f"- 样本交易数: {summary_stats.get('trade_count', 0)}\n"
+                f"- 最近交易详情 (用于分析体质): \n{trades_summary}\n"
+            )
+
+        if technical_signals:
+            # 从 technical_signals 中移除 stats 以免重复 (浅拷贝处理)
+            sigs_copy = technical_signals.copy()
+            if 'performance_stats' in sigs_copy:
+                del sigs_copy['performance_stats']
+            tech_context = f"\n其他技术模型信号 (CRT/PriceEq/Hybrid):\n{json.dumps(sigs_copy, indent=2, cls=CustomJSONEncoder)}\n"
 
         prompt = f"""
         作为专业的量化交易策略优化专家，你是混合交易系统的核心决策层。请根据DeepSeek的市场分析结果、当前市场数据、当前持仓状态以及其他技术模型的信号，优化策略逻辑并做出最终执行决定。
