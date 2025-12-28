@@ -176,13 +176,17 @@ class DeepSeekClient:
         prompt = f"""
         作为专业的量化交易分析师，你是混合交易系统的一部分。请分析以下市场数据，识别当前的市场结构。
         
-        你现在拥有来自多个高级算法策略的信号输入，请仔细综合这些信息：
-        1. SMC (Smart Money Concepts): 关注订单块(OB)和流动性缺口(FVG)。
-        2. IFVG (Inverse FVG): 关注反向价值缺口。
+        你现在拥有来自多个高级算法策略的信号输入，请仔细综合这些信息，特别是SMC策略：
+        1. **SMC (Smart Money Concepts) - 核心策略**: 
+           - 重点关注订单块(Order Blocks, OB)的位置。
+           - 识别流动性缺口(Fair Value Gaps, FVG)。
+           - 寻找流动性扫荡(Liquidity Sweeps)和市场结构破坏(Market Structure Break, MSB)。
+           - 关注溢价区(Premium)和折价区(Discount)的平衡。
+        2. IFVG (Inverse FVG): 关注反向价值缺口作为支撑/阻力互换。
         3. CRT (Candle Range Theory): 关注K线区间操纵行为。
-        4. RVGI+CCI: 复合动量策略。
+        4. RVGI+CCI: 复合动量策略，确认趋势强度。
         5. MFH (Multiple Forecast Horizons): 多周期预测。
-        6. MTF (Multi-Timeframe): 多时间周期一致性。
+        6. MTF (Multi-Timeframe): 多时间周期一致性，大周期制约小周期。
         7. 优化器状态: 当前策略参数已由 {opt_algo} 算法优化。
         {opt_info_str}
 
@@ -193,14 +197,12 @@ class DeepSeekClient:
         
         请提供以下分析结果：
         1. 市场状态：趋势（上升/下降）、震荡、高波动
-        2. 主要支撑位和阻力位
+        2. 主要支撑位和阻力位 (基于SMC的OB/FVG)
         3. 市场结构评分（0-100）：高分表示趋势明确，低分表示震荡
-        4. 短期预测（1-3天）：请提供完整、详细的预测逻辑和目标位描述，不要使用"..."或省略号
+        4. 短期预测（1-3天）：请提供完整、详细的预测逻辑和目标位描述
         5. 关键指标解读
-        6. **综合交易建议 (Preliminary Trade Idea)**: 基于你的结构分析和所有输入的高级算法信号，给出一个初步的交易建议 (Buy/Sell/Wait)，供 Qwen 大模型参考。
-        7. **策略一致性评估**: 评估各个高级算法信号之间的一致性 (例如: SMC 和 CRT 是否都看多?)。
-
-        如果提供了额外技术分析（如CRT或价格方程），请将其纳入考虑，验证你的结构分析。
+        6. **综合交易建议 (Preliminary Trade Idea)**: 基于你的结构分析和所有输入的高级算法信号，给出一个初步的交易建议 (Buy/Sell/Wait)。
+        7. **策略一致性评估**: 评估各个高级算法信号之间的一致性。
         
         请以JSON格式返回结果，包含以下字段：
         - market_state: str
