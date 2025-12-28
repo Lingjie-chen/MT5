@@ -257,21 +257,49 @@ class CryptoTradingBot:
         action = decision.get('action')
         rationale = decision.get('strategy_rationale', 'No rationale provided')
         
-        # ... (Previous code) ...
-        
-        # Check if we need to update SL/TP for EXISTING positions (Hold logic)
+        # Determine current positions status for logic handling
+        target_pos = None
+        try:
+            positions = self.data_processor.exchange.fetch_positions([self.symbol])
+            if positions:
+                # Assuming simple mode: one position per symbol
+                for p in positions:
+                    if float(p['contracts']) > 0:
+                        target_pos = p
+                        break
+        except Exception as e:
+            logger.error(f"Failed to fetch positions during execution: {e}")
+
+        # --- CASE 1: Close Logic (close_buy / close_sell) ---
+        if action in ['close_buy', 'close_sell']:
+            if target_pos:
+                logger.info(f"Executing CLOSE position for {self.symbol} based on AI decision")
+                try:
+                    # Close position by placing market order in opposite direction
+                    pos_side = target_pos['side'] # 'long' or 'short'
+                    # Verify if action matches position side (optional safety)
+                    # if (action == 'close_buy' and pos_side != 'long') or ...
+                    
+                    close_side = 'sell' if pos_side == 'long' else 'buy'
+                    close_amount = float(target_pos['contracts'])
+                    
+                    # Cancel existing open orders (SL/TPs) first
+                    self.data_processor.cancel_all_orders(self.symbol)
+                    
+                    logger.info(f"Closing {pos_side} position: {close_side} {close_amount} contracts")
+                    order = self.data_processor.create_order(self.symbol, close_side, close_amount, type='market')
+                    
+                    if order:
+                        self.send_telegram_message(f"🚫 *Position Closed*\nSymbol: `{self.symbol}`\nReason: AI Signal `{action}`")
+                except Exception as e:
+                    logger.error(f"Failed to close position: {e}")
+            else:
+                logger.info("AI suggested closing position, but no open position found.")
+            return
+
+        # --- CASE 2: Hold / Update SL/TP Logic ---
         if action == 'hold':
-            # Get current position info
-            # We need to find the matching position for this symbol
-            target_pos = None
-            try:
-                positions = self.data_processor.exchange.fetch_positions([self.symbol])
-                if positions:
-                    target_pos = positions[0] # Assuming one position per symbol mode
-            except:
-                pass
-                
-            if target_pos and float(target_pos['contracts']) > 0:
+            if target_pos:
                 exit_conditions = decision.get('exit_conditions', {})
                 new_sl = exit_conditions.get('sl_price')
                 new_tp = exit_conditions.get('tp_price')
@@ -282,15 +310,61 @@ class CryptoTradingBot:
                     # Determine direction for SL order (opposite to position)
                     pos_side = target_pos['side'] # 'long' or 'short'
                     sl_tp_side = 'sell' if pos_side == 'long' else 'buy'
-                    pos_amount = float(target_pos['contracts']) # Contracts amount
+                    pos_amount = float(target_pos['contracts']) 
                     
                     # Cancel existing open orders (SL/TPs) to avoid stacking
                     self.data_processor.cancel_all_orders(self.symbol)
                     
                     # Place new SL/TP
                     self.data_processor.place_sl_tp_order(self.symbol, sl_tp_side, pos_amount, sl_price=new_sl, tp_price=new_tp)
+                    self.send_telegram_message(f"🔄 *Updated SL/TP*\nSymbol: `{self.symbol}`\nNew SL: `{new_sl}`\nNew TP: `{new_tp}`")
             return
 
+        # --- CASE 3: Open New Position (buy / sell) ---
+        # If we have an existing position, check if we need to flip (reverse) it
+        if target_pos:
+            pos_side = target_pos['side'] # 'long' or 'short'
+            
+            # Check for Reversal: Signal is Buy but we are Short, OR Signal is Sell but we are Long
+            is_reversal = (action == 'buy' and pos_side == 'short') or (action == 'sell' and pos_side == 'long')
+            
+            if is_reversal:
+                logger.info(f"reversal signal detected: Current {pos_side}, New Signal {action}. Closing existing position first.")
+                try:
+                    # 1. Close existing position
+                    close_side = 'sell' if pos_side == 'long' else 'buy'
+                    close_amount = float(target_pos['contracts'])
+                    self.data_processor.cancel_all_orders(self.symbol)
+                    self.data_processor.create_order(self.symbol, close_side, close_amount, type='market')
+                    self.send_telegram_message(f"🔄 *Position Reversal Initiated*\nClosing existing {pos_side} position.")
+                    
+                    # Wait a moment for processing (optional but safer)
+                    time.sleep(1)
+                    
+                    # 2. Proceed to open new position (code continues below)
+                except Exception as e:
+                    logger.error(f"Failed to close position for reversal: {e}")
+                    return # Stop if close fails to avoid mixed positions (if not hedge mode)
+            else:
+                # Same direction signal: 
+                # Option A: Add to position (Pyramiding) - For now, we might skip or just update SL/TP
+                # Option B: Ignore if already in position
+                logger.info(f"Signal {action} matches existing {pos_side} position. Checking for SL/TP updates.")
+                # Treat as 'hold' logic to update SL/TP
+                exit_conditions = decision.get('exit_conditions', {})
+                new_sl = exit_conditions.get('sl_price')
+                new_tp = exit_conditions.get('tp_price')
+                
+                # Update SL/TP if provided
+                if new_sl or new_tp:
+                    sl_tp_side = 'sell' if pos_side == 'long' else 'buy'
+                    pos_amount = float(target_pos['contracts'])
+                    self.data_processor.cancel_all_orders(self.symbol)
+                    self.data_processor.place_sl_tp_order(self.symbol, sl_tp_side, pos_amount, sl_price=new_sl, tp_price=new_tp)
+                    self.send_telegram_message(f"🔄 *Updated SL/TP (Same Direction)*\nSymbol: `{self.symbol}`\nNew SL: `{new_sl}`\nNew TP: `{new_tp}`")
+                return # Exit, don't open duplicate position for now
+
+        # ... (Proceed with standard Open Logic for buy/sell/limit) ...
         logger.info(f"Strategy Decision: {action}")
         logger.info(f"Rationale: {rationale}")
         leverage = int(decision.get('leverage', 1))
@@ -413,17 +487,6 @@ class CryptoTradingBot:
                     order = self.data_processor.create_order(self.symbol, 'sell', num_contracts, type='limit', price=limit_price, params=order_params)
                 else:
                     logger.warning("Sell limit order requested but no limit price provided")
-                
-            elif action == 'close_buy':
-                logger.info(f"Executing CLOSE BUY position for {self.symbol}")
-                # Logic to close buy position would go here (e.g., sell current holding)
-                # For closing, we might need to know the exact position size to close.
-                # Assuming full close for now or handle via specific close logic
-                pass
-                
-            elif action == 'close_sell':
-                logger.info(f"Executing CLOSE SELL position for {self.symbol}")
-                pass
             
             # Log trade to database if order was created
             if order:
