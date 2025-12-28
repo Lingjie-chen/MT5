@@ -144,23 +144,26 @@ class CryptoTradingBot:
         # Get current balance/positions (simplified)
         # In a real scenario, you'd fetch actual positions from OKX
         # Fetch actual positions to provide accurate context to AI
+        # Filter out invalid positions (contracts = 0)
+        valid_positions = []
         try:
             positions = self.data_processor.exchange.fetch_positions([self.symbol])
             # Process positions for AI context
-            formatted_positions = []
             for pos in positions:
-                formatted_positions.append({
-                    "symbol": pos['symbol'],
-                    "side": pos['side'], # long or short
-                    "contracts": pos['contracts'],
-                    "size": pos['info'].get('sz', 0), # Position size in base currency or contracts
-                    "notional": pos['notional'], # Position value in USDT
-                    "leverage": pos['leverage'],
-                    "unrealized_pnl": pos['unrealizedPnl'],
-                    "margin_mode": pos['marginMode'],
-                    "liquidation_price": pos['liquidationPrice']
-                })
-            current_positions = formatted_positions
+                contracts = float(pos['contracts'])
+                if contracts > 0:
+                    valid_positions.append({
+                        "symbol": pos['symbol'],
+                        "side": pos['side'], # long or short
+                        "contracts": contracts,
+                        "size": pos['info'].get('sz', 0), # Position size in base currency or contracts
+                        "notional": pos['notional'], # Position value in USDT
+                        "leverage": pos['leverage'],
+                        "unrealized_pnl": pos['unrealizedPnl'],
+                        "margin_mode": pos['marginMode'],
+                        "liquidation_price": pos['liquidationPrice']
+                    })
+            current_positions = valid_positions
             logger.info(f"Current Positions: {json.dumps(current_positions, default=str)}")
         except Exception as e:
             logger.error(f"Error fetching positions: {e}")
