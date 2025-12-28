@@ -157,7 +157,7 @@ class QwenClient:
         else:
             pos_context = "\n当前无持仓。\n"
 
-r        # 处理当前挂单信息
+        # 处理当前挂单信息
         open_orders = current_market_data.get('open_orders', [])
         orders_context = ""
         if open_orders:
