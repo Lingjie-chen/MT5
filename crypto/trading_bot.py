@@ -26,13 +26,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class CryptoTradingBot:
-    def __init__(self, symbol='ETH/USDT', timeframe='M15', interval=3600):
+    def __init__(self, symbol='ETH/USDT', timeframe='15m', interval=3600):
         """
         Initialize the Crypto Trading Bot
         
         Args:
             symbol (str): Trading pair
-            timeframe (str): Candle timeframe
+            timeframe (str): Candle timeframe (e.g., '15m', '1h', '4h')
             interval (int): Loop interval in seconds
         """
         self.symbol = symbol
@@ -285,8 +285,16 @@ class CryptoTradingBot:
         mfh_analysis = self.mfh_analyzer.predict(df)
 
         # 7. MTF Analysis (New) - Fetch Higher TF Data
-        # Assume 4H data for HTF if current is 1H or 15m
-        htf_timeframe = '4H' if self.timeframe in ['1H', '15m'] else '1D'
+        # Assume 4h data for HTF if current is 1h or 15m
+        # Normalize timeframe for check
+        tf_lower = self.timeframe.lower()
+        if tf_lower in ['1h', '15m', '30m']:
+            htf_timeframe = '4h'
+        elif tf_lower in ['4h', 'h4']:
+            htf_timeframe = '1d'
+        else:
+            htf_timeframe = '1d' # Default fallback
+            
         df_htf = self.data_processor.get_historical_data(self.symbol, htf_timeframe, limit=100)
         mtf_analysis = {"signal": "neutral", "reason": "No HTF Data"}
         if not df_htf.empty:
