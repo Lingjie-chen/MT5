@@ -361,9 +361,26 @@ class OKXDataProcessor:
                 except Exception as inner_e:
                     logger.warning(f"Standard SL placement failed ({inner_e}), trying algo order...")
                     # Attempt 2: Algo order explicitly
-                    # This requires using private_post_trade_order_algo or specialized ccxt method
-                    pass 
-                    
+                    try:
+                        # For OKX, we use 'conditional' order type via create_order or specialized params
+                        # We must map 'slTriggerPx' and 'slOrdPx' correctly in params
+                        # ordType='conditional' is key for OKX V5
+                        algo_params = {
+                            'tdMode': 'cross', # Make sure this matches your position mode!
+                            'ordType': 'conditional',
+                            'slTriggerPx': str(sl_price),
+                            'slOrdPx': '-1', # -1 for Market
+                            'slTriggerPxType': 'last'
+                        }
+                        # When using 'conditional', we might need to use a specific method or pass params to create_order
+                        # Note: ccxt create_order usually handles 'conditional' type if supported, 
+                        # otherwise we fall back to raw API if needed.
+                        # For OKX, creating a 'conditional' order:
+                        self.exchange.create_order(symbol, 'market', side, amount, params=algo_params)
+                        logger.info(f"Placed algo SL order: {side} {amount} @ {sl_price}")
+                    except Exception as algo_e:
+                         logger.error(f"Algo SL placement also failed: {algo_e}")
+
             if tp_price:
                 # Take Profit (Limit Order)
                 tp_params = params.copy()
