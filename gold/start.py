@@ -1685,7 +1685,7 @@ class AI_MT5_Bot:
                         logger.info(f"Matrix ML 预测: {ml_result['signal']} (Raw: {ml_result.get('raw_output', 0.0):.2f})")
                         
                         # --- 3.2.4 SMC 分析 (新增) ---
-                        smc_result = self.smc_analyzer.analyze_with_symbol(df, self.symbol)
+                        smc_result = self.smc_analyzer.analyze(df, self.symbol)
                         logger.info(f"SMC 结构: {smc_result['structure']} (信号: {smc_result['signal']})")
                         
                         # --- 3.2.5 MFH 分析 (新增) ---
