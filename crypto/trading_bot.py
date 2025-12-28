@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 from .okx_data_processor import OKXDataProcessor
 from .ai_client_factory import AIClientFactory
 from .database_manager import DatabaseManager
+from .advanced_analysis import AdvancedMarketAnalysis, SMCAnalyzer, MFHAnalyzer, MTFAnalyzer, PEMAnalyzer, MatrixMLAnalyzer
+from .optimization import WOAm
 
 # Load environment variables
 load_dotenv()
@@ -38,8 +40,31 @@ class CryptoTradingBot:
         self.interval = interval
         self.is_running = False
         
+        # Optimization Engine (WOAm - Whale Optimization Algorithm Modified)
+        # Used for real-time parameter tuning based on recent market data
+        self.optimizer = WOAm(pop_size=10) # Lightweight population for speed
+        self.last_optimization_time = 0
+        self.optimization_interval = 3600 * 4 # Re-optimize every 4 hours
+        
+        # Adaptive Parameters (Initial defaults for Medium-term Strategy)
+        self.strategy_params = {
+            'crt_range_period': 20,       # Wider range for medium-term
+            'crt_confirm_period': 2,
+            'rvgi_sma_period': 30,
+            'rvgi_cci_period': 14,
+            'ifvg_min_gap': 50            # Tighter gap check for crypto
+        }
+        
         # Initialize Data Processor
         self.data_processor = OKXDataProcessor()
+
+        # Initialize Advanced Analysis
+        self.advanced_analysis = AdvancedMarketAnalysis()
+        self.smc_analyzer = SMCAnalyzer()
+        self.mfh_analyzer = MFHAnalyzer()
+        self.mtf_analyzer = MTFAnalyzer()
+        self.pem_analyzer = PEMAnalyzer()
+        self.matrix_ml = MatrixMLAnalyzer()
 
         # Initialize Database Manager
         # Using a dedicated database file for Crypto strategy to keep it separate from Gold strategy
@@ -75,10 +100,105 @@ class CryptoTradingBot:
         except Exception as e:
             logger.error(f"Error sending Telegram message: {e}")
             
+    def optimize_parameters(self, df):
+        """Run real-time parameter optimization"""
+        logger.info("Running real-time parameter optimization...")
+        
+        # Define objective function: Maximize returns on recent data
+        def objective_function(params):
+            # params: [crt_range, crt_confirm, rvgi_sma, rvgi_cci, ifvg_gap]
+            p_crt_range = int(params[0])
+            p_crt_confirm = int(params[1])
+            p_rvgi_sma = int(params[2])
+            p_rvgi_cci = int(params[3])
+            p_ifvg_gap = int(params[4])
+            
+            # Backtest loop on the last 100 candles
+            # We use a simplified loop for performance
+            score = 0
+            trades = 0
+            wins = 0
+            
+            # To avoid re-calculating everything inside the loop, we pick a sample
+            # But indicators depend on lookback.
+            # We iterate every 5th candle to speed up
+            test_indices = range(len(df)-100, len(df)-1, 5)
+            
+            for i in test_indices:
+                if i < 50: continue
+                sub_df = df.iloc[:i+1]
+                
+                # Future result (1 candle later)
+                future_close = df.iloc[i+1]['close']
+                current_close = df.iloc[i]['close']
+                
+                # 1. CRT
+                crt = self.advanced_analysis.analyze_crt_strategy(sub_df, range_period=p_crt_range, confirm_period=p_crt_confirm)
+                
+                # 2. RVGI
+                rvgi = self.advanced_analysis.analyze_rvgi_cci_strategy(sub_df, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci)
+                
+                # 3. IFVG
+                ifvg = self.advanced_analysis.analyze_ifvg(sub_df, min_gap_points=p_ifvg_gap)
+                
+                # Vote
+                vote = 0
+                if crt['signal'] == 'buy': vote += 1
+                elif crt['signal'] == 'sell': vote -= 1
+                
+                if rvgi['signal'] == 'buy': vote += 1
+                elif rvgi['signal'] == 'sell': vote -= 1
+                
+                if ifvg['signal'] == 'buy': vote += 1
+                elif ifvg['signal'] == 'sell': vote -= 1
+                
+                if vote > 0: # Buy
+                    trades += 1
+                    if future_close > current_close: wins += 1
+                    else: score -= 1
+                elif vote < 0: # Sell
+                    trades += 1
+                    if future_close < current_close: wins += 1
+                    else: score -= 1
+                    
+            if trades == 0: return 0
+            win_rate = wins / trades
+            final_score = (win_rate * 100) + (trades * 2) # Reward activity slightly
+            return final_score
+
+        # Bounds: [crt_range, crt_confirm, rvgi_sma, rvgi_cci, ifvg_gap]
+        bounds = [
+            (10.0, 50.0), # crt_range
+            (1.0, 5.0),   # crt_confirm
+            (10.0, 50.0), # rvgi_sma
+            (7.0, 21.0),  # rvgi_cci
+            (10.0, 100.0) # ifvg_gap
+        ]
+        
+        steps = [1.0, 1.0, 1.0, 1.0, 5.0]
+        
+        # Use a larger population or more epochs for better results if resources allow
+        best_params, best_score = self.optimizer.optimize(
+            objective_function, 
+            bounds=bounds, 
+            steps=steps, 
+            epochs=3 
+        )
+        
+        # Update strategy parameters
+        self.strategy_params['crt_range_period'] = int(best_params[0])
+        self.strategy_params['crt_confirm_period'] = int(best_params[1])
+        self.strategy_params['rvgi_sma_period'] = int(best_params[2])
+        self.strategy_params['rvgi_cci_period'] = int(best_params[3])
+        self.strategy_params['ifvg_min_gap'] = int(best_params[4])
+        
+        logger.info(f"Optimized Parameters (Score {best_score:.2f}): {self.strategy_params}")
+
     def analyze_market(self):
         """Analyze market using DeepSeek"""
         logger.info(f"Fetching data for {self.symbol}...")
-        df = self.data_processor.get_historical_data(self.symbol, self.timeframe, limit=100)
+        # Increase limit to allow for optimization history
+        df = self.data_processor.get_historical_data(self.symbol, self.timeframe, limit=200)
         
         if df.empty:
             logger.error("Failed to fetch historical data")
@@ -87,6 +207,24 @@ class CryptoTradingBot:
         # Generate features
         df = self.data_processor.generate_features(df)
         
+        # Check if we need to run optimization
+        current_time = time.time()
+        if current_time - self.last_optimization_time > self.optimization_interval:
+            self.optimize_parameters(df)
+            self.last_optimization_time = current_time
+        
+        # --- Self-Learning: Train Local Models ---
+        if len(df) > 2:
+            current_close = df['close'].iloc[-1]
+            prev_close = df['close'].iloc[-2]
+            actual_return = current_close - prev_close
+            
+            # Train MFH
+            self.mfh_analyzer.train(actual_return)
+            
+            # Train MatrixML
+            self.matrix_ml.train(actual_return)
+            
         # Prepare data for AI analysis
         # We take the last few candles and latest indicators
         latest_data = df.iloc[-1].to_dict()
@@ -116,14 +254,79 @@ class CryptoTradingBot:
 
         technical_signals = market_data.get('indicators', {})
 
+        # --- Advanced Algorithm Integration ---
+        # 1. CRT (Candle Range Theory) Analysis
+        crt_analysis = self.advanced_analysis.analyze_crt_strategy(
+            df, 
+            range_period=self.strategy_params['crt_range_period'],
+            confirm_period=self.strategy_params['crt_confirm_period']
+        )
+        
+        # 2. IFVG (Inverse Fair Value Gap) Analysis
+        ifvg_analysis = self.advanced_analysis.analyze_ifvg(
+            df, 
+            min_gap_points=self.strategy_params['ifvg_min_gap']
+        )
+        
+        # 3. RVGI + CCI Strategy
+        rvgi_analysis = self.advanced_analysis.analyze_rvgi_cci_strategy(
+            df, 
+            sma_period=self.strategy_params['rvgi_sma_period'],
+            cci_period=self.strategy_params['rvgi_cci_period']
+        )
+        
+        # 4. Market Regime Detection
+        regime_analysis = self.advanced_analysis.detect_market_regime(df)
+
+        # 5. SMC Analysis
+        smc_analysis = self.smc_analyzer.analyze(df)
+
+        # 6. MFH Analysis
+        mfh_analysis = self.mfh_analyzer.predict(df)
+
+        # 7. MTF Analysis (New) - Fetch Higher TF Data
+        # Assume 4H data for HTF if current is 1H or 15m
+        htf_timeframe = '4H' if self.timeframe in ['1H', '15m'] else '1D'
+        df_htf = self.data_processor.get_historical_data(self.symbol, htf_timeframe, limit=100)
+        mtf_analysis = {"signal": "neutral", "reason": "No HTF Data"}
+        if not df_htf.empty:
+            mtf_analysis = self.mtf_analyzer.analyze(df, df_htf)
+            
+        # 8. PEM Analysis (Price Equation Model)
+        pem_analysis = self.pem_analyzer.analyze(df)
+        
+        # 9. MatrixML Analysis
+        returns_data = df['close'].diff().dropna().values
+        matrix_ml_analysis = self.matrix_ml.predict(returns_data)
+        
+        # Combine into extra_analysis for DeepSeek
+        extra_analysis_data = {
+            "technical_indicators": technical_signals,
+            "crt_strategy": crt_analysis,
+            "ifvg_strategy": ifvg_analysis,
+            "rvgi_cci_strategy": rvgi_analysis,
+            "market_regime": regime_analysis,
+            "smc_strategy": smc_analysis,
+            "mfh_strategy": mfh_analysis,
+            "mtf_strategy": mtf_analysis,
+            "pem_strategy": pem_analysis,
+            "matrix_ml_strategy": matrix_ml_analysis
+        }
+        
+        logger.info(f"Advanced Analysis Signals: CRT={crt_analysis['signal']}, IFVG={ifvg_analysis['signal']}, RVGI={rvgi_analysis['signal']}")
+        logger.info(f"SMC: {smc_analysis['signal']}, MTF: {mtf_analysis['signal']}, PEM: {pem_analysis['signal']}, MatrixML: {matrix_ml_analysis['signal']}")
+
         # 1. DeepSeek Market Structure Analysis
         logger.info("Requesting DeepSeek market structure analysis...")
         structure_analysis = self.deepseek_client.analyze_market_structure(
             market_data, 
             current_positions=current_positions,
-            extra_analysis=technical_signals
+            extra_analysis=extra_analysis_data
         )
         logger.info(f"Market Structure Analysis: {structure_analysis.get('market_state')}")
+        
+        # Add technical_signals to structure_analysis for Qwen
+        structure_analysis['technical_signals'] = extra_analysis_data
         
         # Log analysis to database
         try:
@@ -218,11 +421,20 @@ class CryptoTradingBot:
             "open_orders": open_orders
         }
         
+        # --- Feedback Loop: Fetch Historical Performance ---
+        performance_stats = []
+        try:
+            performance_stats = self.db_manager.get_trade_performance_stats(limit=50)
+            logger.info(f"Fetched {len(performance_stats)} past trades for feedback learning")
+        except Exception as e:
+            logger.error(f"Failed to fetch performance stats: {e}")
+            
         logger.info("Requesting Qwen strategy optimization...")
         decision = self.qwen_client.optimize_strategy_logic(
             structure_analysis,
             market_data,
-            current_positions=current_positions
+            current_positions=current_positions,
+            performance_stats=performance_stats # Passing feedback for self-learning
         )
         
         # Send Analysis to Telegram

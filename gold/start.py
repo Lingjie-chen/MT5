@@ -1,4 +1,3 @@
-
 import time
 import sys
 import os
@@ -8,1231 +7,14 @@ import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
 
-# 尝试导入 MetaTrader5，如果不在 Windows 或未安装则报错
+# Try importing MetaTrader5
 try:
     import MetaTrader5 as mt5
 except ImportError:
-    print("错误: 请在安装了 MetaTrader 5 的 Windows 环境中运行此脚本")
-    print("pip install MetaTrader5")
+    print("Error: MetaTrader5 module not found.")
     sys.exit(1)
 
-# --- 新增模块: MFH (Multiple Forecast Horizons) 分析器 ---
-# 基于 MQL5 Article 19383 & MFH_1.4.mq5
-# 实现了具体的特征工程和基于斜率的预测逻辑
-class MFHAnalyzer:
-    def __init__(self, input_size=16, learning_rate=0.01):
-        self.input_size = input_size
-        self.learning_rate = learning_rate
-        self.horizon = 5 # Horizon defined in MQ5
-        self.ma_period = 5 # MA Period defined in MQ5
-        
-        # 我们模拟两个 Horizon 的预测输出 (类似于 MQ5 中的 pred[3,6] 和 pred[5,8])
-        # Group A (Short Term): Represents current state
-        # Group B (Long Term): Represents future state (Horizon)
-        
-        self.weights = np.random.randn(input_size) * np.sqrt(1 / input_size)
-        self.bias = 0.0
-        
-        # 简单的线性回归模型 (模拟文章中的 LR)
-        # 实际上我们希望预测的是未来的价格变化
-        # 这里我们使用在线学习来拟合 Price(t+Horizon) - Price(t)
-        
-        self.last_features = None
-        self.last_prediction = 0.0
-        
-        # Online Normalization Stats (Welford's Algorithm)
-        self.count = 0
-        self.mean = np.zeros(input_size)
-        self.m2 = np.zeros(input_size) # Sum of squares of differences
-        
-    def calculate_features(self, df):
-        """
-        根据 MFH_1.4.mq5 逻辑计算 16 个特征
-        """
-        if len(df) < (self.ma_period + self.horizon + 1):
-            return None
-            
-        # 准备数据
-        closes = df['close'].values
-        opens = df['open'].values
-        highs = df['high'].values
-        lows = df['low'].values
-        
-        # 计算 MA (SMA 5)
-        # 使用 pandas rolling mean
-        ma_close = df['close'].rolling(window=self.ma_period).mean().values
-        ma_open = df['open'].rolling(window=self.ma_period).mean().values
-        ma_high = df['high'].rolling(window=self.ma_period).mean().values
-        ma_low = df['low'].rolling(window=self.ma_period).mean().values
-        
-        curr = -1 # 当前索引
-        prev_h = -1 - self.horizon # Horizon 之前的索引
-        
-        features = np.zeros(16)
-        
-        # 1. OHLC Raw
-        features[0] = closes[curr]
-        features[1] = opens[curr]
-        features[2] = highs[curr]
-        features[3] = lows[curr]
-        
-        # 2. OHLC MA
-        features[4] = ma_close[curr]
-        features[5] = ma_open[curr]
-        features[6] = ma_high[curr]
-        features[7] = ma_low[curr]
-        
-        # 3. OHLC Change (Momentum)
-        features[8] = opens[curr] - opens[prev_h]
-        features[9] = highs[curr] - highs[prev_h]
-        features[10] = lows[curr] - lows[prev_h]
-        features[11] = closes[curr] - closes[prev_h]
-        
-        # 4. MA Change (Momentum)
-        features[12] = ma_close[curr] - ma_close[prev_h]
-        features[13] = ma_open[curr] - ma_open[prev_h]
-        features[14] = ma_high[curr] - ma_high[prev_h]
-        features[15] = ma_low[curr] - ma_low[prev_h]
-        
-        # 归一化特征 (StandardScaler Logic)
-        # 使用在线 Welford 算法更新均值和方差，确保归一化基于历史分布
-        
-        # 1. 更新统计量 (Welford's Algorithm)
-        if self.count == 0:
-            self.mean = features.copy()
-            self.m2 = np.zeros_like(features)
-        else:
-            delta = features - self.mean
-            self.mean += delta / (self.count + 1)
-            delta2 = features - self.mean
-            self.m2 += delta * delta2
-            
-        self.count += 1
-        
-        # 2. 计算标准差
-        if self.count < 2:
-            std = np.ones_like(features) # 避免除零
-        else:
-            variance = self.m2 / (self.count - 1)
-            std = np.sqrt(variance)
-            std[std == 0] = 1.0 # 避免除零
-            
-        # 3. Z-Score 归一化
-        normalized_features = (features - self.mean) / std
-        
-        return normalized_features
-
-    def predict(self, df):
-        """
-        执行预测
-        """
-        features = self.calculate_features(df)
-        if features is None:
-            return {"signal": "neutral", "slope": 0.0}
-            
-        self.last_features = features
-        
-        # 线性预测: W * X + b
-        # 这里预测的是 "未来 Horizon 的价格相对于当前的涨跌幅"
-        prediction = np.dot(self.weights, features) + self.bias
-        self.last_prediction = prediction
-        
-        signal = "neutral"
-        slope = prediction # 预测值本身就是斜率 (预期涨跌幅)
-        
-        # 阈值判断 (需要根据归一化后的数值范围调整，假设归一化后是百分比)
-        if slope > 0.001: # 预期上涨 0.1%
-            signal = "buy"
-        elif slope < -0.001: # 预期下跌 0.1%
-            signal = "sell"
-            
-        return {
-            "signal": signal,
-            "slope": float(slope),
-            "features": features.tolist() if features is not None else []
-        }
-        
-    def train(self, current_price_change):
-        """
-        在线训练
-        current_price_change: 实际发生的 (Price_t - Price_t-h) / Price_t-h
-        """
-        if self.last_features is None:
-            return
-            
-        # 目标是拟合实际的 Horizon 收益率
-        target = current_price_change
-        
-        # 误差
-        error = target - self.last_prediction
-        
-        # 更新权重 (SGD)
-        self.weights += self.learning_rate * error * self.last_features
-        self.bias += self.learning_rate * error
-        
-        return error
-        
-    def update_buffer(self, features, current_price, current_time):
-        # Python 版本简化了 Buffer 逻辑，直接在 Main Loop 中计算实际 Return 传入 Train
-        pass
-
-# --- 新增模块: SMC (Smart Money Concepts) 分析器 ---
-# 基于 MQL5 Article 20414 & SMC_Sent.mq5 完整复刻
-class SMCAnalyzer:
-    def __init__(self):
-        self.last_structure = "neutral" 
-        self.ma_period = 200
-        self.swing_lookback = 5
-        self.atr_threshold = 0.002
-        
-        # Strategy Flags (defaults from MQL5)
-        self.allow_bos = True
-        self.allow_ob = True
-        self.allow_fvg = True
-        self.use_sentiment = True
-
-    def calculate_ema(self, series, period):
-        return series.ewm(span=period, adjust=False).mean()
-
-    def get_mtf_data(self, symbol, timeframe, count=250):
-        """获取多时间周期数据"""
-        rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
-        if rates is None or len(rates) == 0:
-            return None
-        df = pd.DataFrame(rates)
-        return df
-
-    def get_market_sentiment(self, df_current, symbol):
-        """
-        计算市场情绪 (Bullish, Bearish, Risk-On, Risk-Off, Neutral)
-        复刻 SMC_Sent.mq5 逻辑
-        """
-        # 1. Higher TF Bias (使用 H1 作为 Bias TF)
-        df_h1 = self.get_mtf_data(symbol, mt5.TIMEFRAME_H1, 300)
-        if df_h1 is None:
-            return 0, "Neutral"
-            
-        ema_long = self.calculate_ema(df_h1['close'], self.ma_period).iloc[-1]
-        current_price_h1 = df_h1['close'].iloc[-1]
-        
-        deviation = abs(current_price_h1 - ema_long) / ema_long
-        higher_tf_bias = 0
-        if current_price_h1 > ema_long and deviation > self.atr_threshold:
-            higher_tf_bias = 1
-        elif current_price_h1 < ema_long and deviation > self.atr_threshold:
-            higher_tf_bias = -1
-            
-        # 2. Local Structure (TF1 & TF2)
-        # 辅助函数: 检测结构 (使用我们之前实现的 robust fractal logic)
-        def check_structure(df):
-            highs = df['high'].values
-            lows = df['low'].values
-            n = len(df)
-            swing_highs = []
-            swing_lows = []
-            
-            for i in range(n - 3, 2, -1):
-                if len(swing_highs) < 2:
-                    if (highs[i] > highs[i-1] and highs[i] > highs[i-2] and 
-                        highs[i] > highs[i+1] and highs[i] > highs[i+2]):
-                        swing_highs.append(highs[i])
-                if len(swing_lows) < 2:
-                    if (lows[i] < lows[i-1] and lows[i] < lows[i-2] and 
-                        lows[i] < lows[i+1] and lows[i] < lows[i+2]):
-                        swing_lows.append(lows[i])
-                if len(swing_highs) >= 2 and len(swing_lows) >= 2: break
-            
-            is_bull = False
-            is_bear = False
-            if len(swing_highs) >= 2 and len(swing_lows) >= 2:
-                if swing_highs[0] > swing_highs[1] and swing_lows[0] > swing_lows[1]: is_bull = True
-                if swing_highs[0] < swing_highs[1] and swing_lows[0] < swing_lows[1]: is_bear = True
-            
-            # Breakout Detection
-            has_break = False
-            curr_close = df['close'].iloc[-1]
-            rec_high = swing_highs[0] if swing_highs else highs[-20:].max()
-            rec_low = swing_lows[0] if swing_lows else lows[-20:].min()
-            
-            if higher_tf_bias == 1 and curr_close > rec_high: has_break = True
-            elif higher_tf_bias == -1 and curr_close < rec_low: has_break = True
-            
-            return is_bull, is_bear, has_break
-
-        tf1_bull, tf1_bear, tf1_break = check_structure(df_h1)
-        tf2_bull, tf2_bear, tf2_break = check_structure(df_current)
-        
-        # 3. Determine Sentiment
-        sentiment = 0
-        text = "Neutral"
-        
-        # Priority 1: Strong Structure
-        if higher_tf_bias == 1 and tf1_bull and tf2_bull:
-            sentiment = 1; text = "Bullish"
-        elif higher_tf_bias == -1 and tf1_bear and tf2_bear:
-            sentiment = -1; text = "Bearish"
-            
-        # Priority 2: Breakout (Risk-On/Off)
-        elif higher_tf_bias == 1 and (tf1_break or tf2_break):
-            sentiment = 2; text = "Risk-On"
-        elif higher_tf_bias == -1 and (tf1_break or tf2_break):
-            sentiment = -2; text = "Risk-Off"
-            
-        return sentiment, text
-
-    def analyze(self, df):
-        """
-        分析市场结构 (BOS), 订单块 (OB), 和价值缺口 (FVG)
-        基于 Sentiment 选择策略 (Strategy Switching)
-        """
-        if df is None or len(df) < 50:
-            return {"signal": "neutral", "structure": "neutral", "reason": "数据不足"}
-            
-        # 1. 获取市场情绪
-        # 注意: 需要 symbol 来获取 MTF 数据，但 analyze 接口目前只传了 df
-        # 我们假设 df 是当前周期的。为了获取 MTF，我们需要 symbol。
-        # 临时 hack: start.py 的调用方应该已经有了 symbol。
-        # 由于我们是在 class 内部，且 get_market_sentiment 需要 symbol
-        # 我们需要修改 analyze 签名或者 假设 self.symbol 被设置
-        # 但 SMCAnalyzer 是无状态工具类 (init 没有 symbol)
-        # 我们假设 df 是最新的，我们无法在 analyze 内部获取 symbol 除非传入
-        # 这里为了兼容，我们暂时只用单周期情绪 (降级) 或请求调用方传入 symbol
-        # 但为了"完整复刻"，必须用 MTF。
-        # 我将修改 analyze 签名，在 start.py 调用处传入 symbol
-        
-        # 但这里是 SearchReplace，我不能轻易修改调用处 (start.py:2700左右)
-        # 检查 start.py 调用: smc_result = self.smc_analyzer.analyze(df)
-        # 调用处 self.symbol 是可用的。
-        # 我需要修改调用处。
-        # 暂时，我将在 analyze 中硬编码 symbol (不可行) 或者
-        # 让 get_market_sentiment 只用当前 df (降级)。
-        # 为了"完整复刻"，我必须修改 start.py 的调用行。
-        
-        # 假设 start.py 的调用代码会被我稍后修改，这里先写好带有 symbol 参数的 analyze
-        # 或者，我可以在 __init__ 里不传 symbol，但在 analyze 里传。
-        pass # Placeholder, 实际代码在下面 SearchReplace
-
-    def analyze_with_symbol(self, df, symbol): # New method signature
-        if df is None or len(df) < 50:
-            return {"signal": "neutral", "structure": "neutral", "reason": "数据不足"}
-            
-        sentiment_score, sentiment_text = self.get_market_sentiment(df, symbol)
-        
-        # 2. Strategy Selection (MQL5 Logic)
-        active_strategy = "OB"
-        if self.use_sentiment:
-            if abs(sentiment_score) == 1: active_strategy = "BOS"
-            elif abs(sentiment_score) == 2: active_strategy = "FVG"
-            else: active_strategy = "OB"
-        else:
-            active_strategy = "ALL"
-            
-        # 3. Detect Patterns
-        ob_signal = self.detect_order_blocks(df)
-        fvg_signal = self.detect_fvg(df)
-        bos_signal = self.detect_bos(df)
-        
-        final_signal = "neutral"
-        reason = f"Sentiment: {sentiment_text} ({active_strategy})"
-        strength = 0
-        
-        # 4. Execute Logic based on Strategy
-        
-        # BOS Strategy
-        if (active_strategy == "ALL" or active_strategy == "BOS") and self.allow_bos:
-            if bos_signal['signal'] != "neutral":
-                # Check sentiment alignment
-                aligned = False
-                if (bos_signal['signal'] == 'buy' and sentiment_score > 0) or \
-                   (bos_signal['signal'] == 'sell' and sentiment_score < 0):
-                    aligned = True
-                if sentiment_score == 0: aligned = True # Caution
-                
-                if aligned:
-                    final_signal = bos_signal['signal']
-                    reason = f"SMC BOS: {bos_signal['reason']}"
-                    strength = 80
-                    
-        # FVG Strategy
-        if final_signal == "neutral" and (active_strategy == "ALL" or active_strategy == "FVG") and self.allow_fvg:
-            if fvg_signal['signal'] != "neutral":
-                aligned = False
-                if (fvg_signal['signal'] == 'buy' and sentiment_score > 0) or \
-                   (fvg_signal['signal'] == 'sell' and sentiment_score < 0):
-                    aligned = True
-                if sentiment_score == 0: aligned = True
-                
-                if aligned:
-                    final_signal = fvg_signal['signal']
-                    reason = f"SMC FVG: {fvg_signal['reason']}"
-                    strength = 85
-                    
-        # OB Strategy
-        if final_signal == "neutral" and (active_strategy == "ALL" or active_strategy == "OB") and self.allow_ob:
-            if ob_signal['signal'] != "neutral":
-                # OB trades often work in neutral or trend continuations
-                final_signal = ob_signal['signal']
-                reason = f"SMC OB: {ob_signal['reason']}"
-                strength = 75
-
-        return {
-            "signal": final_signal,
-            "structure": sentiment_text,
-            "reason": reason,
-            "sentiment_score": sentiment_score,
-            "active_strategy": active_strategy,
-            "details": {"ob": ob_signal, "fvg": fvg_signal, "bos": bos_signal}
-        }
-        
-    def detect_order_blocks(self, df):
-        # MQL5 Logic: 
-        # Bullish: Bear(i-1) -> Bull(i), BullBody > BearBody * 1.5
-        # Entry: Ask >= Low(i-1) && Ask <= High(i-1)
-        closes = df['close'].values
-        opens = df['open'].values
-        highs = df['high'].values
-        lows = df['low'].values
-        current_ask = closes[-1] # Approximation using close
-        
-        for i in range(len(df)-2, len(df)-30, -1):
-            # Bullish OB
-            if (opens[i] < closes[i] and # Bull
-                opens[i-1] > closes[i-1] and # Bear
-                closes[i-1] > opens[i] and # Gap check? No, MQL5 logic: Close(i-1) > Open(i) is weird for Bear->Bull. 
-                # MQL5: getOpen(i) > getClose(i) (Bear) ?? No MQL5 i is left.
-                # Let's read MQL5 loop: i from 3 to 30.
-                # getOpen(i) > getClose(i) (Bear candle at i)
-                # getOpen(i-1) < getClose(i-1) (Bull candle at i-1, which is to the right of i)
-                # So Pattern is: Bear Candle -> Bull Candle.
-                # Condition: abs(BullBody) > abs(BearBody) * 1.5
-                
-                # In Python list, -1 is latest. -2 is previous.
-                # So we look for Bear at -2, Bull at -1.
-                
-                opens[i-1] > closes[i-1] and # Bear at i-1
-                opens[i] < closes[i] and     # Bull at i
-                (closes[i] - opens[i]) > (opens[i-1] - closes[i-1]) * 1.5): # Strong Move
-                
-                ob_high = highs[i-1]
-                ob_low = lows[i-1]
-                
-                # Retest Condition
-                if current_ask >= ob_low and current_ask <= ob_high:
-                     return {"signal": "buy", "reason": "Bullish OB Retest", "price": ob_high}
-                     
-            # Bearish OB (Bull -> Bear)
-            if (opens[i-1] < closes[i-1] and # Bull at i-1
-                opens[i] > closes[i] and     # Bear at i
-                (opens[i] - closes[i]) > (closes[i-1] - opens[i-1]) * 1.5):
-                
-                ob_high = highs[i-1]
-                ob_low = lows[i-1]
-                
-                if current_ask <= ob_high and current_ask >= ob_low:
-                     return {"signal": "sell", "reason": "Bearish OB Retest", "price": ob_low}
-
-        return {"signal": "neutral", "reason": ""}
-
-    def detect_fvg(self, df):
-        # MQL5 Logic:
-        # Bullish FVG: Low(i+2) > High(i) (Indices are reverse in MQL5, i+2 is older)
-        # Python: i-2 (Older) -> i (Newer). 
-        # Gap: Low(i-2) > High(i) ?? No.
-        # FVG is 3 candles: A(old), B(mid), C(new).
-        # Bullish Gap: High(A) < Low(C). 
-        # Wait, MQL5 code: lowA = getLow(i+2), highC = getHigh(i).
-        # lowA > highC -> Gap.
-        # So it is: Candle i+2 (Old) Low > Candle i (New) High.
-        # This implies Old Low is ABOVE New High? That's a GAP DOWN (Bearish)?
-        # Let's re-read MQL5: 
-        # Bullish FVG: lowA > highC.
-        # This means the Low of the older candle is higher than the High of the newer candle.
-        # This is a gap, but usually Bullish FVG (Imbalance) is High(A) < Low(C) in an UP move.
-        # If Low(A) > High(C), it means price dropped and left a gap. That's a BEARISH FVG (Supply).
-        # MQL5 code says: "Bullish FVG ... if(lowA > highC)".
-        # And "Bearish FVG ... if(highA < lowC)".
-        # This seems INVERTED or I am misinterpreting "Bullish FVG".
-        # Usually Bullish FVG = Demand = Price went UP. High(1) < Low(3).
-        # Bearish FVG = Supply = Price went DOWN. Low(1) > High(3).
-        # Let's stick to standard SMC definitions if MQL5 code is weird, OR trust the MQL5 code logic for "Replication".
-        # "Bullish FVG detected... newFVG.dir = 1".
-        # Trade: if(Ask <= top && Ask >= bot) -> BUY.
-        # If Low(A) > High(C), Top=Low(A), Bot=High(C).
-        # Price is below Top and above Bot.
-        # This is a GAP DOWN. Buying a Gap Down is filling the gap?
-        # Maybe it's a "Gap Fill" strategy?
-        # BUT standard SMC FVG:
-        # Bullish FVG (BIS): Created by up candle. High(1) < Low(3). Zone is between High(1) and Low(3).
-        # Price retraces DOWN into it.
-        
-        # Let's assume MQL5 code `i` is increasing backwards?
-        # `for(int i=2; i<30; i++)`
-        # `getLow(i+2)` is older than `getHigh(i)`.
-        # If MQL5 standard array (0 is current): i+2 is older.
-        # If Low(Old) > High(New) -> Gap Down.
-        # If High(Old) < Low(New) -> Gap Up.
-        
-        # MQL5 Code: "Bullish FVG: lowA > highC". (Gap Down).
-        # Trade: Buy.
-        # So it buys the Gap Down (Gap Fill?).
-        # "Bearish FVG: highA < lowC". (Gap Up).
-        # Trade: Sell.
-        
-        # Okay, I will replicate this "Gap Fill" logic as per MQL5 code.
-        
-        highs = df['high'].values
-        lows = df['low'].values
-        closes = df['close'].values
-        point = 0.00001 # approx
-        
-        for i in range(len(df)-1, 2, -1): # i is current/newest
-            # Need A(i-2), B(i-1), C(i).
-            # Python indices: i is newest. i-2 is oldest.
-            
-            # MQL5: A=i+2 (Old), C=i (New).
-            # Python: A=i-2, C=i.
-            
-            # MQL5 Bullish: Low(A) > High(C) -> Gap Down -> Buy
-            if lows[i-2] > highs[i] + (3*point):
-                gap_top = lows[i-2]
-                gap_bot = highs[i]
-                curr = closes[-1]
-                mid = (gap_top + gap_bot) / 2
-                # Trade: Ask <= top && Ask >= bot && Ask <= mid (Deep retest?)
-                if curr <= gap_top and curr >= gap_bot:
-                    return {"signal": "buy", "reason": "Bullish FVG (Gap Fill)", "top": gap_top, "bottom": gap_bot}
-            
-            # MQL5 Bearish: High(A) < Low(C) -> Gap Up -> Sell
-            if highs[i-2] < lows[i] - (3*point):
-                gap_top = lows[i]
-                gap_bot = highs[i-2]
-                curr = closes[-1]
-                if curr <= gap_top and curr >= gap_bot:
-                    return {"signal": "sell", "reason": "Bearish FVG (Gap Fill)", "top": gap_top, "bottom": gap_bot}
-                    
-        return {"signal": "neutral", "reason": ""}
-
-    def detect_bos(self, df):
-        # MQL5 Logic: 3-bar Fractal.
-        # Swing High: High[i] > High[i-1, i-2, i+1, i+2] (MQL5 uses j=1..3)
-        # BOS Sell: Break Above Swing High. (Liquidity Sweep)
-        # BOS Buy: Break Below Swing Low.
-        
-        highs = df['high'].values
-        lows = df['low'].values
-        closes = df['close'].values
-        
-        # Find recent Swing High
-        swing_high = -1
-        for i in range(len(df)-4, len(df)-30, -1):
-            if (highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i-3] and
-                highs[i] > highs[i+1] and highs[i] > highs[i+2] and highs[i] > highs[i+3]):
-                swing_high = highs[i]
-                break
-                
-        # Find recent Swing Low
-        swing_low = -1
-        for i in range(len(df)-4, len(df)-30, -1):
-            if (lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i-3] and
-                lows[i] < lows[i+1] and lows[i] < lows[i+2] and lows[i] < lows[i+3]):
-                swing_low = lows[i]
-                break
-                
-        current_bid = closes[-1]
-        
-        # MQL5: BOS Sell (Break Above High) -> Trade Sell
-        if swing_high > 0 and current_bid > swing_high:
-            return {"signal": "sell", "reason": "BOS Sell (Liquidity Sweep)", "price": swing_high}
-            
-        # MQL5: BOS Buy (Break Below Low) -> Trade Buy
-        if swing_low > 0 and current_bid < swing_low:
-             return {"signal": "buy", "reason": "BOS Buy (Liquidity Sweep)", "price": swing_low}
-             
-        return {"signal": "neutral", "reason": ""}
-
-
-# --- 新增模块: Matrix ML Analyzer (基于 MQL5 矩阵机器学习概念) ---
-class MatrixMLAnalyzer:
-    """
-    基于 MQL5 文档中的矩阵和向量机器学习概念实现的 Python 版本
-    参考: https://www.mql5.com/en/book/common/matrices/matrices_ml
-    使用 Numpy 矩阵运算模拟简单的在线学习神经网络
-    """
-    def __init__(self, input_size=10, learning_rate=0.01):
-        self.input_size = input_size
-        self.learning_rate = learning_rate
-        # 初始化权重向量 (相当于单层神经网络)
-        # 使用 Xavier 初始化
-        self.weights = np.random.randn(input_size) * np.sqrt(1 / input_size)
-        self.bias = 0.0
-        self.last_inputs = None
-        self.last_prediction = 0.0
-        
-    def sigmoid(self, x):
-        return 1 / (1 + np.exp(-x))
-        
-    def sigmoid_derivative(self, x):
-        s = self.sigmoid(x)
-        return s * (1 - s)
-        
-    def tanh(self, x):
-        return np.tanh(x)
-        
-    def tanh_derivative(self, x):
-        return 1.0 - np.tanh(x)**2
-
-    def predict(self, tick_data):
-        """
-        输入: 最近的 tick 价格列表
-        输出: 预测下一个 tick 的涨跌概率 (-1 到 1)
-        """
-        if len(tick_data) < self.input_size + 1:
-            return {"signal": "neutral", "strength": 0.0, "raw_output": 0.0}
-            
-        # 1. 特征工程: 计算价格变化 (Returns)
-        # 我们使用最近 input_size 个价格变化作为输入特征
-        prices = np.array([t['ask'] for t in tick_data])
-        returns = np.diff(prices) # 计算一阶差分
-        
-        if len(returns) < self.input_size:
-            return {"signal": "neutral", "strength": 0.0, "raw_output": 0.0}
-            
-        # 取最近的 input_size 个变化量并归一化
-        features = returns[-self.input_size:]
-        
-        # 简单的归一化: 除以标准差 (防止数值爆炸)
-        std = np.std(features)
-        if std > 0:
-            features = features / std
-        else:
-            features = np.zeros_like(features)
-            
-        self.last_inputs = features
-        
-        # 2. 矩阵运算 (Matrix Operation)
-        # Dot Product: W * X + b
-        linear_output = np.dot(self.weights, features) + self.bias
-        
-        # 3. 激活函数 (Activation)
-        # 使用 Tanh 将输出映射到 [-1, 1]
-        prediction = self.tanh(linear_output)
-        self.last_prediction = prediction
-        
-        # 转换信号 (Comprehensive Logic)
-        # 只要预测有方向，就给出信号，不轻易 Neutral
-        signal = "neutral"
-        strength = abs(prediction) * 100
-        
-        # 降低阈值，捕获微弱信号
-        if prediction > 0.1: # 原来是 0.3
-            signal = "buy"
-        elif prediction < -0.1:
-            signal = "sell"
-            
-        return {
-            "signal": signal,
-            "strength": float(strength),
-            "raw_output": float(prediction)
-        }
-        
-    def train(self, actual_price_change):
-        """
-        在线学习: 根据实际发生的价格变化更新权重
-        """
-        if self.last_inputs is None:
-            return
-            
-        # 目标值: 如果涨了就是 1.0, 跌了就是 -1.0
-        target = 1.0 if actual_price_change > 0 else -1.0
-        if actual_price_change == 0:
-            target = 0.0
-            
-        # 计算误差 (Loss)
-        error = target - self.last_prediction
-        
-        # 反向传播 (Backpropagation) - 简单的梯度下降
-        # d_Error/d_Weight = error * derivative * input
-        derivative = self.tanh_derivative(self.last_prediction)
-        
-        # 更新权重和偏置
-        self.weights += self.learning_rate * error * derivative * self.last_inputs
-        self.bias += self.learning_rate * error * derivative
-        
-        return error
-
-# --- 新增模块: CRT (Candle Range Theory) 分析器 ---
-class CRTAnalyzer:
-    def __init__(self, timeframe_htf=mt5.TIMEFRAME_H1, min_manipulation_percent=5.0):
-        self.timeframe_htf = timeframe_htf
-        self.min_manipulation_percent = min_manipulation_percent # 最小操纵深度百分比
-        self.last_range_time = 0
-        self.range_high = 0.0
-        self.range_low = 0.0
-        self.is_bullish_range = False # Range Candle Direction
-        self.range_broken = False # 是否发生过突破(操纵)
-        self.breakout_price = 0.0 # 突破后的极值
-        
-    def analyze(self, symbol, current_price, current_time):
-        """
-        基于 CRT (Candle Range Theory) 分析市场
-        逻辑: 检查高时间周期 (HTF) 的 K 线范围，寻找流动性猎取 (Sweep) 和回归
-        """
-        # 1. 获取定义 Range 的 HTF K线 (上一根已完成的 H4)
-        # copy_rates_from returns bars with open time <= date.
-        # We need the completed H4 bar before current_time.
-        # Assuming current_time is the open time of the current H1 bar.
-        
-        # 获取最近的2根 H4 K线: [Previous_H4, Current_Forming_H4] (if aligned)
-        # Or just get 2 bars from current time backwards
-        htf_rates = mt5.copy_rates_from(symbol, self.timeframe_htf, current_time, 2)
-        
-        if htf_rates is None or len(htf_rates) < 2:
-            return {"signal": "neutral", "reason": "数据不足"}
-        
-        # htf_rates[-1] is likely the current forming H4 (or just started)
-        # htf_rates[-2] is the completed H4 (The Range)
-        # Let's verify timestamps to be sure.
-        
-        prev_htf = htf_rates[-2] # The Range Candle
-        curr_htf_start = htf_rates[-1]['time']
-        
-        # 检查是否进入了新的 Range 周期
-        if prev_htf['time'] != self.last_range_time:
-            self.last_range_time = prev_htf['time']
-            self.range_high = prev_htf['high']
-            self.range_low = prev_htf['low']
-            self.is_bullish_range = (prev_htf['close'] > prev_htf['open'])
-            self.range_broken = False
-            self.breakout_price = self.range_low if self.is_bullish_range else self.range_high
-            
-        range_size = self.range_high - self.range_low
-        if range_size == 0:
-             return {"signal": "neutral", "reason": "Range Size 0"}
-
-        # 2. 检测操纵 (Manipulation)
-        # 我们不仅要看当前 H1 K线，还要看当前 H4 周期内发生过的所有价格行为
-        # 但在 simplify 模式下 (stateless call or updated sequentially), 
-        # 我们假设 analyze 被顺序调用，或者我们检查当前 H1 K线的极值来更新状态
-        
-        curr_close = current_price['close']
-        curr_high = current_price['high']
-        curr_low = current_price['low']
-        
-        signal = ""
-        reason = ""
-        strength = 0
-        
-        # 更新突破状态
-        if self.is_bullish_range:
-            # 多头区间 (上一根H4是阳线) -> 关注下方流动性猎取
-            if curr_low < self.range_low:
-                self.range_broken = True
-                self.breakout_price = min(self.breakout_price, curr_low)
-                
-            # 检测信号: 曾发生突破 + 价格回到区间内
-            if self.range_broken and curr_close > self.range_low:
-                # 检查操纵深度
-                manipulation_depth = self.range_low - self.breakout_price
-                manipulation_pct = (manipulation_depth / range_size) * 100
-                
-                if manipulation_pct >= self.min_manipulation_percent:
-                    signal = "buy"
-                    strength = min(100, 50 + manipulation_pct * 2) # 深度越大强度越高
-                    reason = f"Bullish CRT: Manipulation {manipulation_pct:.1f}% & Reclaim"
-                else:
-                    reason = f"Bullish CRT: Manipulation too shallow ({manipulation_pct:.1f}%)"
-                    
-        else:
-            # 空头区间 (上一根H4是阴线) -> 关注上方流动性猎取
-            if curr_high > self.range_high:
-                self.range_broken = True
-                self.breakout_price = max(self.breakout_price, curr_high)
-                
-            # 检测信号: 曾发生突破 + 价格回到区间内
-            if self.range_broken and curr_close < self.range_high:
-                # 检查操纵深度
-                manipulation_depth = self.breakout_price - self.range_high
-                manipulation_pct = (manipulation_depth / range_size) * 100
-                
-                if manipulation_pct >= self.min_manipulation_percent:
-                    signal = "sell"
-                    strength = min(100, 50 + manipulation_pct * 2)
-                    reason = f"Bearish CRT: Manipulation {manipulation_pct:.1f}% & Reclaim"
-                else:
-                    reason = f"Bearish CRT: Manipulation too shallow ({manipulation_pct:.1f}%)"
-        
-        # Comprehensive Logic: 如果没有检测到操纵信号，分析当前价格在 Range 中的位置 (Bias)
-        if signal == "":
-            range_mid = (self.range_high + self.range_low) / 2
-            if self.is_bullish_range:
-                if curr_close > range_mid:
-                    # Bullish Range + Premium Price -> Wait for Pullback (Weak Bullish Bias)
-                    signal = "buy" # Weak
-                    strength = 40
-                    reason = "Bullish Range (Price in Premium)"
-                else:
-                    # Bullish Range + Discount Price -> Good to Buy (Weak Bullish Bias)
-                    signal = "buy" # Weak
-                    strength = 45
-                    reason = "Bullish Range (Price in Discount)"
-            else:
-                if curr_close < range_mid:
-                    # Bearish Range + Discount Price -> Wait for Pullback (Weak Bearish Bias)
-                    signal = "sell" # Weak
-                    strength = 40
-                    reason = "Bearish Range (Price in Discount)"
-                else:
-                    # Bearish Range + Premium Price -> Good to Sell (Weak Bearish Bias)
-                    signal = "sell" # Weak
-                    strength = 45
-                    reason = "Bearish Range (Price in Premium)"
-            
-        return {
-            "signal": signal,
-            "strength": float(strength),
-            "reason": reason,
-            "range_high": float(self.range_high),
-            "range_low": float(self.range_low),
-            "breakout_price": float(self.breakout_price),
-            "manipulation_pct": float((abs(self.breakout_price - (self.range_low if self.is_bullish_range else self.range_high)) / range_size * 100) if self.range_broken else 0)
-        }
-
-# --- 新增模块: 价格方程模型 (Price Equation) ---
-class PriceEquationModel:
-    def __init__(self):
-        # Coefficients from PEM EA
-        self.coeffs = [0.2752466, 0.01058082, 0.55162082, 0.03687016, 0.27721318, 0.1483476, 0.0008025]
-        
-        # Trend Filter Parameters
-        self.ma_fast_period = 25
-        self.ma_slow_period = 200
-        self.adx_threshold = 20.0
-        
-        self.price_history = []
-        
-    def update(self, current_price):
-        self.price_history.append(current_price)
-        if len(self.price_history) > 100:
-            self.price_history.pop(0)
-            
-    def predict(self, df_history=None):
-        """
-        基于 PEM 逻辑进行预测
-        需要传入 DataFrame 历史数据以计算 MA 和 ADX
-        """
-        signal = "neutral"
-        predicted_price = 0.0
-        
-        if df_history is None or len(df_history) < max(self.ma_fast_period, self.ma_slow_period, 14):
-            return {"signal": "neutral", "predicted_price": 0.0}
-            
-        # 1. 计算预测价格 (Equation)
-        # Equation uses t-1 and t-2 close prices
-        try:
-            price_t1 = df_history['close'].iloc[-2]
-            price_t2 = df_history['close'].iloc[-3]
-            current_price = df_history['close'].iloc[-1]
-            
-            # Normalize prices to avoid polynomial explosion
-            # We normalize relative to the older price (t2)
-            base_price = price_t2
-            if base_price == 0:
-                return {"signal": "neutral", "predicted_price": 0.0}
-                
-            norm_t1 = price_t1 / base_price
-            norm_t2 = price_t2 / base_price # Always 1.0
-            
-            # Calculate normalized prediction ratio
-            pred_ratio = (self.coeffs[0] * norm_t1 +
-                          self.coeffs[1] * (norm_t1**2) +
-                          self.coeffs[2] * norm_t2 +
-                          self.coeffs[3] * (norm_t2**2) +
-                          self.coeffs[4] * (norm_t1 - norm_t2) +
-                          self.coeffs[5] * np.sin(norm_t1) +
-                          self.coeffs[6])
-                          
-            predicted_price = pred_ratio * base_price
-            
-        except IndexError:
-            return {"signal": "neutral", "predicted_price": 0.0}
-                           
-        # 2. 计算趋势过滤指标 (MA + ADX)
-        closes = df_history['close']
-        ma_fast = closes.rolling(window=self.ma_fast_period).mean().iloc[-1]
-        ma_slow = closes.rolling(window=self.ma_slow_period).mean().iloc[-1]
-        
-        # 简单 ADX 计算 (使用 pandas_ta 如果有，否则手动计算)
-        # 这里手动实现一个简化的 ADX (TR, +DM, -DM)
-        adx = self.calculate_adx(df_history)
-        
-        is_strong_trend = adx >= self.adx_threshold
-        is_uptrend = ma_fast > ma_slow
-        is_downtrend = ma_fast < ma_slow
-        
-        # 3. 生成信号 (Comprehensive Logic)
-        # 不要直接返回 neutral，根据趋势强度和方向给出分级信号
-        if predicted_price > current_price:
-            if is_uptrend:
-                if is_strong_trend:
-                    signal = "buy" # 强趋势且方向一致
-                else:
-                    signal = "buy" # 弱趋势但方向一致 (Weak Buy)
-            else:
-                # 预测价格上涨但目前处于下跌趋势 -> 可能的反转或反弹
-                # 检查距离: 如果预测涨幅很大，可能是反转
-                if (predicted_price - current_price) / current_price > 0.005:
-                    signal = "buy" # 潜在反转
-                else:
-                    signal = "neutral" # 冲突，保持观望
-                    
-        elif predicted_price < current_price:
-            if is_downtrend:
-                if is_strong_trend:
-                    signal = "sell"
-                else:
-                    signal = "sell" # Weak Sell
-            else:
-                # 预测下跌但目前处于上涨趋势
-                if (current_price - predicted_price) / current_price > 0.005:
-                    signal = "sell" # 潜在反转
-                else:
-                    signal = "neutral"
-                
-        return {
-            "signal": signal,
-            "predicted_price": predicted_price,
-            "trend_strength": float(adx),
-            "ma_fast": float(ma_fast),
-            "ma_slow": float(ma_slow)
-        }
-        
-    def calculate_adx(self, df, period=14):
-        # 简化的 ADX 计算
-        try:
-            high = df['high']
-            low = df['low']
-            close = df['close']
-            
-            # TR
-            tr1 = high - low
-            tr2 = abs(high - close.shift(1))
-            tr3 = abs(low - close.shift(1))
-            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            
-            # DM
-            up_move = high - high.shift(1)
-            down_move = low.shift(1) - low
-            
-            plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
-            minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
-            
-            # Smoothed
-            tr_smooth = tr.rolling(window=period).sum() # 简单起见用 SUM/SMA 代替 Wilders
-            plus_dm_smooth = pd.Series(plus_dm).rolling(window=period).sum()
-            minus_dm_smooth = pd.Series(minus_dm).rolling(window=period).sum()
-            
-            plus_di = 100 * (plus_dm_smooth / tr_smooth)
-            minus_di = 100 * (minus_dm_smooth / tr_smooth)
-            
-            dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
-            adx = dx.rolling(window=period).mean().iloc[-1]
-            
-            return 0.0 if np.isnan(adx) else adx
-        except Exception:
-            return 0.0
-
-# --- 新增模块: Timeframe Visual Analyzer (多时间周期分析) ---
-class TimeframeVisualAnalyzer:
-    def __init__(self):
-        # 定义要分析的时间周期
-        self.timeframes = {
-            "M15": mt5.TIMEFRAME_M15,
-            "H1": mt5.TIMEFRAME_H1,
-            "H4": mt5.TIMEFRAME_H4
-        }
-        
-    def analyze(self, symbol, current_time):
-        """
-        分析多时间周期趋势一致性
-        """
-        trends = {}
-        alignment_score = 0
-        
-        for tf_name, tf_const in self.timeframes.items():
-            # 获取最近 50 根 K 线计算 EMA
-            rates = mt5.copy_rates_from(symbol, tf_const, current_time, 50)
-            if rates is None or len(rates) < 50:
-                trends[tf_name] = "neutral"
-                continue
-                
-            df = pd.DataFrame(rates)
-            # 简单计算 EMA20 和 EMA50
-            df['close'] = df['close'].astype(float)
-            ema20 = df['close'].ewm(span=20, adjust=False).mean().iloc[-1]
-            ema50 = df['close'].ewm(span=50, adjust=False).mean().iloc[-1]
-            current_close = df['close'].iloc[-1]
-            
-            if current_close > ema20 > ema50:
-                trends[tf_name] = "bullish"
-                alignment_score += 1
-            elif current_close < ema20 < ema50:
-                trends[tf_name] = "bearish"
-                alignment_score -= 1
-            else:
-                trends[tf_name] = "neutral"
-                
-        # 综合信号 (Comprehensive Logic)
-        signal = "neutral"
-        reason = f"Trends: {trends}"
-        
-        # 不要直接 neutral，只要有 Bias 就给出信号
-        if alignment_score >= 2: # 强一致性 (2/3 或 3/3)
-            signal = "buy"
-            reason = f"Strong Bullish Alignment ({alignment_score}/3)"
-        elif alignment_score == 1: # 弱一致性
-            signal = "buy" 
-            reason = "Weak Bullish Bias"
-            
-        elif alignment_score <= -2:
-            signal = "sell"
-            reason = f"Strong Bearish Alignment ({alignment_score}/3)"
-        elif alignment_score == -1:
-            signal = "sell"
-            reason = "Weak Bearish Bias"
-            
-        return {
-            "signal": signal,
-            "reason": reason,
-            "details": trends
-        }
-
-# --- 新增模块: AdvancedAnalysisAdapter (高级分析适配器) ---
-class AdvancedAnalysisAdapter:
-    def __init__(self):
-        # 延迟导入以避免循环依赖
-        self.analyzer = None
-        self.available = False
-        
-        try:
-            # 尝试标准包导入
-            from python.advanced_analysis import AdvancedMarketAnalysis
-            self.analyzer = AdvancedMarketAnalysis()
-            self.available = True
-        except ImportError:
-            try:
-                # 尝试直接导入 (如果 python/ 在路径中)
-                import advanced_analysis as adv_mod
-                self.analyzer = adv_mod.AdvancedMarketAnalysis()
-                self.available = True
-            except ImportError:
-                # 尝试动态导入
-                try:
-                    import importlib.util
-                    current_dir = os.path.dirname(os.path.abspath(__file__))
-                    python_dir = os.path.join(current_dir, 'python')
-                    file_path = os.path.join(python_dir, 'advanced_analysis.py')
-                    
-                    if os.path.exists(file_path):
-                        spec = importlib.util.spec_from_file_location("advanced_analysis", file_path)
-                        if spec and spec.loader:
-                            mod = importlib.util.module_from_spec(spec)
-                            spec.loader.exec_module(mod)
-                            self.analyzer = mod.AdvancedMarketAnalysis()
-                            self.available = True
-                except Exception as e:
-                    logger.warning(f"高级分析模块加载彻底失败: {e}")
-        
-        if not self.available:
-            logger.warning("无法导入 AdvancedMarketAnalysis，将禁用高级技术指标功能")
-            
-    def analyze(self, df):
-        """
-        调用 AdvancedMarketAnalysis 进行全面分析
-        """
-        if not self.available or df is None or len(df) < 50:
-            return None
-            
-        try:
-            # 1. 计算技术指标
-            indicators = self.analyzer.calculate_technical_indicators(df)
-            
-            # 2. 检测市场状态
-            regime = self.analyzer.detect_market_regime(df)
-            
-            # 3. 生成支撑阻力位
-            levels = self.analyzer.generate_support_resistance(df)
-            
-            # 4. 计算风险指标
-            risk = self.analyzer.calculate_risk_metrics(df)
-            
-            # 5. 生成信号
-            signal_info = self.analyzer.generate_signal_from_indicators(indicators)
-            
-            # 6. 生成摘要
-            summary = self.analyzer.generate_analysis_summary(df)
-            
-            # 7. IFVG 分析
-            ifvg_result = self.analyzer.analyze_ifvg(df)
-            
-            # 8. RVGI+CCI 分析
-            rvgi_cci_result = self.analyzer.analyze_rvgi_cci_strategy(df)
-            
-            return {
-                "indicators": indicators,
-                "regime": regime,
-                "levels": levels,
-                "risk": risk,
-                "signal_info": signal_info,
-                "summary": summary,
-                "ifvg": ifvg_result,
-                "rvgi_cci": rvgi_cci_result
-            }
-        except Exception as e:
-            logger.error(f"Advanced Analysis failed: {e}")
-            return None
-
-# --- 混合优化引擎 (Hybrid Optimization) ---
-class HybridOptimizer:
-    def __init__(self):
-        # 初始化策略权重
-        self.weights = {
-            "deepseek": 1.0,
-            "qwen": 1.0,
-            "crt": 1.0,
-            "price_equation": 0.8,
-            "tf_visual": 0.9,
-            "advanced_tech": 0.85,
-            "matrix_ml": 0.7,
-            "smc": 1.0,
-            "mfh": 0.75,
-            "mtf": 0.9,
-            "ifvg": 1.2,
-            "rvgi_cci": 0.95 # 新增
-        }
-        self.history = []
-        self.performance = {k: {"correct": 0, "total": 0} for k in self.weights.keys()}
-    
-    # ... update_performance ...
-    def update_performance(self, last_signals, actual_movement):
-        # ... (保持不变) ...
-        for strategy, signal in last_signals.items():
-            if signal == "buy" and actual_movement > 0:
-                self.performance[strategy]["correct"] += 1
-            elif signal == "sell" and actual_movement < 0:
-                self.performance[strategy]["correct"] += 1
-            
-            self.performance[strategy]["total"] += 1
-            
-        for strategy in self.weights:
-            total = self.performance[strategy]["total"]
-            if total > 0:
-                accuracy = self.performance[strategy]["correct"] / total
-                self.weights[strategy] = 0.5 + accuracy
-
-    def combine_signals(self, signals):
-        # ... (保持不变) ...
-        score = 0
-        total_weight = 0
-        
-        for strategy, signal in signals.items():
-            weight = self.weights.get(strategy, 1.0)
-            
-            if signal == "buy":
-                score += weight
-                total_weight += weight
-            elif signal == "sell":
-                score -= weight
-                total_weight += weight
-            
-        final_signal = "hold"
-        strength = 0
-        
-        if total_weight > 0:
-            normalized_score = score / total_weight 
-            strength = abs(normalized_score) * 100
-            
-            if normalized_score > 0.3:
-                final_signal = "buy"
-            elif normalized_score < -0.3:
-                final_signal = "sell"
-                
-        return final_signal, strength, self.weights
-
-# 添加当前目录到路径以确保可以正确导入模块
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# 1. Add current_dir to sys.path (for importing 'python.xxx')
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
-# 2. Add current_dir/python to sys.path (for importing 'xxx' directly if needed)
-python_dir = os.path.join(current_dir, 'python')
-if python_dir not in sys.path:
-    sys.path.append(python_dir)
-
-try:
-    # Try importing as package first (Standard way)
-    try:
-        from python.ai_client_factory import AIClientFactory
-        from python.data_processor import MT5DataProcessor
-        from python.database_manager import DatabaseManager
-        from python.optimization import GWO, WOAm, DE, COAm, BBO, TETA
-    except ImportError:
-        # Fallback: Try importing directly if 'python' dir is in path but not treated as package
-        import ai_client_factory as ai_mod
-        import data_processor as dp_mod
-        import database_manager as db_mod
-        import optimization as opt_mod
-        
-        AIClientFactory = ai_mod.AIClientFactory
-        MT5DataProcessor = dp_mod.MT5DataProcessor
-        DatabaseManager = db_mod.DatabaseManager
-        GWO = opt_mod.GWO
-        WOAm = opt_mod.WOAm
-        DE = opt_mod.DE
-        COAm = opt_mod.COAm
-        BBO = opt_mod.BBO
-        TETA = opt_mod.TETA
-
-except ImportError as e:
-    # Final Fallback: Manual loading via importlib
-    try:
-        import importlib.util
-        
-        def load_module_from_file(module_name, file_name):
-            file_path = os.path.join(python_dir, file_name)
-            spec = importlib.util.spec_from_file_location(module_name, file_path)
-            if spec and spec.loader:
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                return module
-            else:
-                raise ImportError(f"Cannot load {file_path}")
-
-        ai_mod = load_module_from_file("ai_client_factory", "ai_client_factory.py")
-        AIClientFactory = ai_mod.AIClientFactory
-        
-        dp_mod = load_module_from_file("data_processor", "data_processor.py")
-        MT5DataProcessor = dp_mod.MT5DataProcessor
-        
-        db_mod = load_module_from_file("database_manager", "database_manager.py")
-        DatabaseManager = db_mod.DatabaseManager
-        
-        opt_mod = load_module_from_file("optimization", "optimization.py")
-        GWO = opt_mod.GWO
-        WOAm = opt_mod.WOAm
-        DE = opt_mod.DE
-        COAm = opt_mod.COAm
-        BBO = opt_mod.BBO
-        
-    except Exception as e2:
-        print(f"导入错误: {e}")
-        print(f"备用导入也失败: {e2}")
-        print("请确保 'python' 文件夹在当前目录下")
-        sys.exit(1)
-
-# 加载环境变量
-load_dotenv()
-
-# 配置日志
+# Configure Logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -1243,195 +25,134 @@ logging.basicConfig(
 )
 logger = logging.getLogger("WindowsBot")
 
-# --- 新增模块: MTF (Multi-Timeframe) 分析器 ---
-class MTFAnalyzer:
-    def __init__(self, htf1=mt5.TIMEFRAME_H1, htf2=mt5.TIMEFRAME_H4, swing_length=20):
-        self.htf1 = htf1
-        self.htf2 = htf2
-        self.swing_length = swing_length
-        self.demand_zones = [] # [(top, bottom), ...]
-        self.supply_zones = []
-        self.last_zone_update = 0
-        
-    def analyze(self, symbol, current_price, current_time):
-        # 1. MTF Alignment
-        dir_htf1 = self.get_candle_direction(symbol, self.htf1, 1) 
-        dir_htf2 = self.get_candle_direction(symbol, self.htf2, 1)
-        
-        # Current TF
-        dir_curr = 0
-        if current_price['close'] > current_price['open']:
-            dir_curr = 1
-        elif current_price['close'] < current_price['open']:
-            dir_curr = -1
-            
-        confirmed_dir = 0
-        if dir_htf1 == dir_htf2 and dir_htf1 != 0:
-             if dir_curr == 0 or dir_curr == dir_htf1:
-                 confirmed_dir = dir_htf1
-        
-        # 2. Zone Check
-        if time.time() - self.last_zone_update > 900: 
-            self.update_zones(symbol)
-            self.last_zone_update = time.time()
-        
-        bid = current_price['close']
-        in_demand = self.is_in_zone(bid, is_demand=True)
-        in_supply = self.is_in_zone(bid, is_demand=False)
-        
-        signal = "neutral"
-        strength = 0
-        reason = ""
-        
-        # 宽松逻辑: 只要 H1 和 Current 同向，或者 H4 和 Current 同向，就给出一个弱信号
-        # 严格逻辑: H1 和 H4 必须同向 (confirmed_dir)
-        
-        if confirmed_dir > 0: # H1 & H4 Bullish
-            if in_supply:
-                 reason = "Bullish MTF but in Supply Zone (Risk)"
-            else:
-                 signal = "buy"
-                 strength = 85 if in_demand else 70
-                 reason = f"MTF Strong Bullish (H1+H4). {'In Demand Zone' if in_demand else ''}"
-        elif confirmed_dir < 0: # H1 & H4 Bearish
-            if in_demand:
-                 reason = "Bearish MTF but in Demand Zone (Risk)"
-            else:
-                 signal = "sell"
-                 strength = 85 if in_supply else 70
-                 reason = f"MTF Strong Bearish (H1+H4). {'In Supply Zone' if in_supply else ''}"
-        else:
-            # 尝试次级信号 (Weak Alignment)
-            if dir_htf1 == dir_curr and dir_htf1 != 0:
-                signal = "buy" if dir_htf1 > 0 else "sell"
-                strength = 50
-                reason = f"MTF Weak {signal.capitalize()} (H1 aligned only)"
-            elif dir_htf2 == dir_curr and dir_htf2 != 0:
-                signal = "buy" if dir_htf2 > 0 else "sell"
-                strength = 50
-                reason = f"MTF Weak {signal.capitalize()} (H4 aligned only)"
-            else:
-                reason = f"MTF Misaligned (H1:{dir_htf1}, H4:{dir_htf2}, Curr:{dir_curr})"
+# Load Environment Variables
+load_dotenv()
 
-        return {
-            "signal": signal,
-            "strength": float(strength),
-            "reason": reason,
-            "htf1_dir": dir_htf1,
-            "htf2_dir": dir_htf2
+# Add current directory to sys.path to ensure local imports work
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+
+# Import Local Modules
+try:
+    from .ai_client_factory import AIClientFactory
+    from .mt5_data_processor import MT5DataProcessor
+    from .database_manager import DatabaseManager
+    from .optimization import GWO, WOAm, DE, COAm, BBO, TETA
+    from .advanced_analysis import (
+        AdvancedMarketAnalysis, AdvancedMarketAnalysisAdapter, MFHAnalyzer, SMCAnalyzer, 
+        MatrixMLAnalyzer, CRTAnalyzer, PriceEquationModel, 
+        TimeframeVisualAnalyzer, MTFAnalyzer
+    )
+except ImportError:
+    # Fallback for direct script execution
+    try:
+        from ai_client_factory import AIClientFactory
+        from mt5_data_processor import MT5DataProcessor
+        from database_manager import DatabaseManager
+        from optimization import GWO, WOAm, DE, COAm, BBO, TETA
+        from advanced_analysis import (
+            AdvancedMarketAnalysis, AdvancedMarketAnalysisAdapter, MFHAnalyzer, SMCAnalyzer, 
+            MatrixMLAnalyzer, CRTAnalyzer, PriceEquationModel, 
+            TimeframeVisualAnalyzer, MTFAnalyzer
+        )
+    except ImportError as e:
+        logger.error(f"Failed to import modules: {e}")
+        sys.exit(1)
+
+class HybridOptimizer:
+    def __init__(self):
+        self.weights = {
+            "deepseek": 1.0,
+            "qwen": 1.2, 
+            "crt": 0.8,
+            "price_equation": 0.6,
+            "tf_visual": 0.5,
+            "advanced_tech": 0.7,
+            "matrix_ml": 0.9,
+            "smc": 1.1,
+            "mfh": 0.8,
+            "mtf": 0.8,
+            "ifvg": 0.7,
+            "rvgi_cci": 0.6
         }
+        self.history = []
 
-    def get_candle_direction(self, symbol, timeframe, index=0):
-        rates = mt5.copy_rates_from_pos(symbol, timeframe, index, 1)
-        if rates is None or len(rates) == 0:
-            return 0
-        candle = rates[0]
-        if candle['close'] > candle['open']:
-            return 1
-        elif candle['close'] < candle['open']:
-            return -1
-        return 0
+    def combine_signals(self, signals):
+        weighted_sum = 0
+        total_weight = 0
         
-    def update_zones(self, symbol):
-        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M15, 0, 500)
-        if rates is None or len(rates) < 50: return
+        details = {}
         
-        self.demand_zones = []
-        self.supply_zones = []
-        
-        tr_sum = 0
-        for i in range(len(rates)-14, len(rates)):
-            tr_sum += (rates[i]['high'] - rates[i]['low'])
-        atr = tr_sum / 14 if tr_sum > 0 else 0.001
-        box_width = atr * 1.0
-        
-        swing_len = self.swing_length
-        highs = np.array([r['high'] for r in rates])
-        lows = np.array([r['low'] for r in rates])
-        
-        for i in range(swing_len, len(rates) - swing_len):
-            is_low = True
-            curr_low = lows[i]
-            if np.min(lows[i-swing_len:i]) < curr_low or np.min(lows[i+1:i+swing_len+1]) < curr_low:
-                is_low = False
+        for source, signal in signals.items():
+            weight = self.weights.get(source, 0.5)
+            val = 0
+            if signal == 'buy': val = 1
+            elif signal == 'sell': val = -1
             
-            if is_low and len(self.demand_zones) < 50:
-                self.demand_zones.append((curr_low + box_width, curr_low))
-                
-            is_high = True
-            curr_high = highs[i]
-            if np.max(highs[i-swing_len:i]) > curr_high or np.max(highs[i+1:i+swing_len+1]) > curr_high:
-                is_high = False
-                
-            if is_high and len(self.supply_zones) < 50:
-                self.supply_zones.append((curr_high, curr_high - box_width))
-                
-    def is_in_zone(self, price, is_demand):
-        tolerance = 0.0005
-        zones = self.demand_zones if is_demand else self.supply_zones
-        for top, bottom in zones:
-            if price >= (bottom - tolerance) and price <= (top + tolerance):
-                return True
-        return False
-
+            # DeepSeek/Qwen 信号包含强度，可以进一步加权?
+            # 这里简化处理，只看方向
+            
+            weighted_sum += val * weight
+            total_weight += weight
+            details[source] = val * weight
+            
+        if total_weight == 0: return "neutral", 0, self.weights
+        
+        final_score = weighted_sum / total_weight
+        
+        final_signal = "neutral"
+        if final_score > 0.15: final_signal = "buy" # 降低阈值，更灵敏
+        elif final_score < -0.15: final_signal = "sell"
+        
+        return final_signal, final_score, self.weights
 class AI_MT5_Bot:
-    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M15):
+    def __init__(self, symbol="XAUUSD", timeframe=mt5.TIMEFRAME_M15):
         self.symbol = symbol
         self.timeframe = timeframe
-        self.magic_number = 20241122
-        self.lot_size = 0.01
-        self.last_bar_time = 0
-        
-        # 获取 timeframe 的字符串名称用于数据库和日志
         self.tf_name = "M15"
-        if self.timeframe == mt5.TIMEFRAME_M1: self.tf_name = "M1"
-        elif self.timeframe == mt5.TIMEFRAME_M5: self.tf_name = "M5"
-        elif self.timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
-        elif self.timeframe == mt5.TIMEFRAME_M30: self.tf_name = "M30"
-        elif self.timeframe == mt5.TIMEFRAME_H1: self.tf_name = "H1"
-        elif self.timeframe == mt5.TIMEFRAME_H4: self.tf_name = "H4"
-        elif self.timeframe == mt5.TIMEFRAME_D1: self.tf_name = "D1"
+        if timeframe == mt5.TIMEFRAME_H1: self.tf_name = "H1"
+        elif timeframe == mt5.TIMEFRAME_H4: self.tf_name = "H4"
         
-        # 初始化 AI 客户端
+        self.magic_number = 123456
+        self.lot_size = 0.01 
+        self.max_drawdown_pct = 0.05
+        
+        self.db_manager = DatabaseManager()
         self.ai_factory = AIClientFactory()
-        clients = self.ai_factory.initialize_all_clients()
-        self.deepseek_client = clients.get('deepseek')
-        self.qwen_client = clients.get('qwen')
         
-        # 初始化高级分析模块
-        # 用户指定时间框架: M15 (交易) 和 H1 (趋势/结构)
+        self.deepseek_client = self.ai_factory.create_client("deepseek")
+        self.qwen_client = self.ai_factory.create_client("qwen")
+        
         self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_H1)
-        # MTF 分析调整为 M30 和 H1，以匹配用户的 H1 关注点
-        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_M30, htf2=mt5.TIMEFRAME_H1) 
+        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_M30, htf2=mt5.TIMEFRAME_H1)
         self.price_model = PriceEquationModel()
         self.tf_analyzer = TimeframeVisualAnalyzer()
-        self.advanced_adapter = AdvancedAnalysisAdapter() # 初始化高级分析适配器
-        self.matrix_ml = MatrixMLAnalyzer() # 新增 Matrix ML
-        self.smc_analyzer = SMCAnalyzer() # 新增 SMC 分析器
-        self.mfh_analyzer = MFHAnalyzer() # 新增 MFH 分析器
+        self.advanced_adapter = AdvancedMarketAnalysisAdapter()
+        self.matrix_ml = MatrixMLAnalyzer()
+        self.smc_analyzer = SMCAnalyzer()
+        self.mfh_analyzer = MFHAnalyzer()
+        
         self.optimizer = HybridOptimizer()
-        self.db_manager = DatabaseManager()
         
-        # 初始化参数优化器池 (Auto-Selection)
-        self.optimizers = {
-            "GWO": GWO(pop_size=10, alpha_number=3),
-            "WOAm": WOAm(pop_size=10, ref_prob=0.1),
-            "DE": DE(pop_size=10, F=0.5, CR=0.7),
-            "COAm": COAm(pop_size=10, nests_number=10, koef_pa=0.6),
-            "BBO": BBO(pop_size=10, immigration_max=1.0, emigration_max=1.0),
-            "TETA": TETA(pop_size=10) # 新增 TETA
-        }
-        self.active_optimizer_name = "TETA" # 默认使用 TETA (作为最新引入的强力算法)
+        self.last_bar_time = 0
+        self.last_analysis_time = 0
+        self.signal_history = []
         self.last_optimization_time = 0
-        self.last_realtime_save = 0 # Added for realtime dashboard
-        self.last_analysis_time = 0 # Added for periodic analysis (1 min)
-        self.latest_strategy = None # 存储最新的策略参数 (用于 manage_positions)
-        self.latest_signal = "neutral" # 存储最新的信号
-        self.signal_history = [] # 存储历史信号用于实时权重优化
+        self.last_realtime_save = 0
         
-        if not self.deepseek_client or not self.qwen_client:
-            logger.warning("AI 客户端未完全初始化，将仅运行在观察模式")
-
+        self.latest_strategy = None
+        self.latest_signal = "neutral"
+        
+        self.optimizers = {
+            "GWO": GWO(),
+            "WOAm": WOAm(),
+            "DE": DE(),
+            "COAm": COAm(),
+            "BBO": BBO(),
+            "TETA": TETA()
+        }
+        self.active_optimizer_name = "WOAm"
     def initialize_mt5(self):
         """初始化 MT5 连接"""
         # 尝试使用指定账户登录
@@ -1441,8 +162,15 @@ class AI_MT5_Bot:
         
         if not mt5.initialize(login=account, server=server, password=password):
             logger.error(f"MT5 初始化失败, 错误码: {mt5.last_error()}")
-            return False
+            # 尝试不带账号初始化
+            if not mt5.initialize():
+                return False
             
+        # 确保数据库路径设置正确
+        if not os.path.isabs(self.db_manager.db_path):
+             current_dir = os.path.dirname(os.path.abspath(__file__))
+             self.db_manager.db_path = os.path.join(current_dir, 'trading_data.db')
+
         # 检查终端状态
         term_info = mt5.terminal_info()
         if term_info is None:
@@ -1734,7 +462,16 @@ class AI_MT5_Bot:
                 # 策略优化: 如果 LLM 未提供明确价格，则使用基于 MFE/MAE 的统计优化值
                 # 移除旧的 ATR 动态计算，确保策略的一致性和基于绩效的优化
                 logger.info("LLM 未提供明确 SL/TP，使用 MFE/MAE 统计优化值")
-                explicit_sl, explicit_tp = self.calculate_optimized_sl_tp(trade_type, price)
+                
+                # 计算 ATR
+                rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+                atr = 0.0
+                if rates is not None and len(rates) > 14:
+                     df_temp = pd.DataFrame(rates)
+                     high_low = df_temp['high'] - df_temp['low']
+                     atr = high_low.rolling(14).mean().iloc[-1]
+                
+                explicit_sl, explicit_tp = self.calculate_optimized_sl_tp(trade_type, price, atr)
                 
                 if explicit_sl == 0 or explicit_tp == 0:
                      logger.error("无法计算优化 SL/TP，放弃交易")
@@ -1743,65 +480,7 @@ class AI_MT5_Bot:
             comment = f"AI: {llm_action.upper()}"
             self._send_order(trade_type, price, explicit_sl, explicit_tp, comment=comment)
 
-    def calculate_optimized_sl_tp(self, trade_type, price):
-        """
-        计算基于 MFE/MAE 统计的优化止损止盈点
-        完全移除 ATR 动态逻辑，使用历史绩效数据的统计特征
-        """
-        sl = 0.0
-        tp = 0.0
-        
-        # 默认兜底参数 (基于价格的固定百分比，非 ATR)
-        # 黄金通常波动较大，给予 0.5% SL 和 1.0% TP 作为初始冷启动值
-        default_sl_pct = 0.005 
-        default_tp_pct = 0.010
-        
-        try:
-             # 获取历史交易绩效统计
-             # 我们关注最近 100 笔交易的 MFE (最大潜在收益) 和 MAE (最大潜在回撤)
-             trades = self.db_manager.get_trade_performance_stats(limit=100)
-             
-             if trades and len(trades) > 10:
-                 # 提取有效的 MFE/MAE 数据 (假设 DB 中存储的是百分比值)
-                 mfes = [t.get('mfe', 0) for t in trades if t.get('mfe', 0) > 0]
-                 maes = [t.get('mae', 0) for t in trades if t.get('mae', 0) > 0]
-                 
-                 if mfes and maes:
-                     # 策略核心:
-                     # TP: 设置在 75% 的历史交易都能到达的 MFE 水平 (75分位数) -> 更容易达成的目标
-                     # SL: 设置在能覆盖 90% 历史交易回撤的 MAE 水平 (90分位数) -> 更宽的容错空间
-                     
-                     # 优化调整: 
-                     # 如果我们要追求高盈亏比，TP 应该更大，但胜率会降
-                     # 如果我们要追求高胜率，SL 应该宽，TP 适中
-                     # 这里采用 "宽止损 + 适中止盈" 的高胜率配置
-                     
-                     opt_tp_pct = np.percentile(mfes, 50) / 100.0 # 中位数目标 (稳健)
-                     opt_sl_pct = np.percentile(maes, 90) / 100.0 # 90% 容错空间 (宽止损)
-                     
-                     # 安全范围检查
-                     if 0.001 < opt_tp_pct < 0.05:
-                         default_tp_pct = opt_tp_pct
-                     if 0.001 < opt_sl_pct < 0.03:
-                         default_sl_pct = opt_sl_pct
-                         
-                     logger.info(f"应用 MFE/MAE 优化: TP={default_tp_pct:.2%}, SL={default_sl_pct:.2%}")
-                     
-        except Exception as e:
-             logger.warning(f"获取 MFE/MAE 统计失败，使用默认参数: {e}")
 
-        # 计算具体价格
-        sl_dist = price * default_sl_pct
-        tp_dist = price * default_tp_pct
-        
-        if 'buy' in trade_type:
-            sl = price - sl_dist
-            tp = price + tp_dist
-        elif 'sell' in trade_type:
-            sl = price + sl_dist
-            tp = price - tp_dist
-            
-        return sl, tp
 
     def _send_order(self, type_str, price, sl, tp, comment=""):
         """底层下单函数"""
@@ -2555,7 +1234,14 @@ class AI_MT5_Bot:
         mae_sl_dist = atr * 1.5 # 默认
         
         try:
-             trades = self.db_manager.get_trade_performance_stats(limit=100)
+             stats = self.db_manager.get_trade_performance_stats(limit=100)
+             
+             trades = []
+             if isinstance(stats, list):
+                 trades = stats
+             elif isinstance(stats, dict) and 'recent_trades' in stats:
+                 trades = stats['recent_trades']
+             
              if trades and len(trades) > 10:
                  mfes = [t.get('mfe', 0) for t in trades if t.get('mfe', 0) > 0]
                  maes = [t.get('mae', 0) for t in trades if t.get('mae', 0) > 0]
@@ -2708,20 +1394,104 @@ class AI_MT5_Bot:
 
         return final_sl, final_tp
 
-    def initialize_mt5(self):
-        """初始化 MT5 连接"""
-        if not mt5.initialize():
-            logger.error("MT5 初始化失败")
-            mt5.shutdown()
-            return False
+
+
+    def optimize_short_term_params(self):
+        """
+        Optimize short-term strategy parameters (RVGI+CCI, IFVG)
+        Executed every 1 hour
+        """
+        logger.info("Running Short-Term Parameter Optimization (WOAm)...")
         
-        # 确保数据库路径设置正确 (在 __init__ 中已经设置了绝对路径)
-        # 再次确认一下，如果是相对路径，则转换为绝对路径
-        if not os.path.isabs(self.db_manager.db_path):
-             current_dir = os.path.dirname(os.path.abspath(__file__))
-             self.db_manager.db_path = os.path.join(current_dir, 'trading_data.db')
-             
-        return True
+        # 1. Get Data (Last 200 M15 candles)
+        df = self.get_market_data(200)
+        if df is None or len(df) < 100:
+            return
+
+        # 2. Define Objective Function
+        # Optimize for RVGI+CCI and IFVG parameters
+        def objective(params):
+            # Params: [rvgi_sma, rvgi_cci, ifvg_gap]
+            p_rvgi_sma = int(params[0])
+            p_rvgi_cci = int(params[1])
+            p_ifvg_gap = int(params[2])
+            
+            # Run simulation
+            # We use a simplified simulation here for speed
+            # Calculate indicators on the whole dataframe
+            try:
+                # RVGI+CCI
+                # We need to call analyze_rvgi_cci_strategy for each candle? No, too slow.
+                # We rely on the fact that we can calculate the whole series.
+                # But the Analyzer methods currently return a single snapshot for the last candle.
+                # To do this efficiently without rewriting everything, we iterate over the last 50 candles.
+                
+                score = 0
+                trades = 0
+                wins = 0
+                
+                # Iterate through the last 50 candles as "current"
+                for i in range(len(df)-50, len(df)):
+                    sub_df = df.iloc[:i+1]
+                    future_close = df.iloc[i+1]['close'] if i+1 < len(df) else df.iloc[i]['close']
+                    current_close = df.iloc[i]['close']
+                    
+                    # RVGI Signal
+                    res_rvgi = self.advanced_adapter.analyze_rvgi_cci_strategy(
+                        sub_df, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci
+                    )
+                    
+                    # IFVG Signal
+                    res_ifvg = self.advanced_adapter.analyze_ifvg(
+                        sub_df, min_gap_points=p_ifvg_gap
+                    )
+                    
+                    signal = 0
+                    if res_rvgi['signal'] == 'buy': signal += 1
+                    elif res_rvgi['signal'] == 'sell': signal -= 1
+                    
+                    if res_ifvg['signal'] == 'buy': signal += 1
+                    elif res_ifvg['signal'] == 'sell': signal -= 1
+                    
+                    if signal > 0: # Buy
+                        trades += 1
+                        if future_close > current_close: wins += 1
+                        else: score -= 1
+                    elif signal < 0: # Sell
+                        trades += 1
+                        if future_close < current_close: wins += 1
+                        else: score -= 1
+                        
+                if trades == 0: return 0
+                win_rate = wins / trades
+                score += (win_rate * 100)
+                return score
+                
+            except Exception:
+                return -100
+
+        # 3. Optimization
+        optimizer = WOAm()
+        bounds = [(10, 50), (7, 21), (10, 100)] # [sma, cci, gap]
+        steps = [1, 1, 5]
+        
+        best_params, best_score = optimizer.optimize(objective, bounds, steps=steps, epochs=3)
+        
+        # 4. Apply
+        if best_score > 0:
+            logger.info(f"Short-Term Optimization Complete. Score: {best_score}")
+            logger.info(f"New Params: RVGI_SMA={int(best_params[0])}, RVGI_CCI={int(best_params[1])}, IFVG_GAP={int(best_params[2])}")
+            
+            # Store these params in a property to be used by analyze_full
+            # We need to add a property to store these or pass them
+            self.short_term_params = {
+                'rvgi_sma': int(best_params[0]),
+                'rvgi_cci': int(best_params[1]),
+                'ifvg_gap': int(best_params[2])
+            }
+            # We also need to update the analyze call in run() to use these
+        else:
+            logger.info("Short-Term Optimization found no improvement.")
 
     def run(self):
         """主循环"""
@@ -2747,6 +1517,10 @@ class AI_MT5_Bot:
                 if time.time() - self.last_optimization_time > 14400:
                     self.optimize_strategy_parameters()
                     self.last_optimization_time = time.time()
+                
+                # 0.7 执行短线参数优化 (每 1 小时一次)
+                if int(time.time()) % 3600 == 0:
+                    self.optimize_short_term_params()
                 
                 # 1. 检查新 K 线
                 # 获取最后一根 K 线的时间
@@ -2890,7 +1664,9 @@ class AI_MT5_Bot:
                         logger.info(f"TF 分析: {tf_result['signal']} ({tf_result['reason']})")
                         
                         # --- 3.2.2 高级技术分析 (新增) ---
-                        adv_result = self.advanced_adapter.analyze(df)
+                        # Use optimized parameters if available
+                        st_params = getattr(self, 'short_term_params', {})
+                        adv_result = self.advanced_adapter.analyze_full(df, params=st_params)
                         adv_signal = "neutral"
                         if adv_result:
                             adv_signal = adv_result['signal_info']['signal']
