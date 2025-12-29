@@ -733,15 +733,61 @@ class AI_MT5_Bot:
             
             changed = False
             
-            # --- 1. SL/TP 静态管理 ---
-            # 策略要求: 不要动态止盈止损，只使用基于 MFE/MAE/SMC 计算出的固定点位
-            # 因此，这里移除了所有的 Trailing Stop 和 动态更新逻辑
+            # --- 1. 基于最新策略更新 SL/TP (全量覆盖更新) ---
+            # 策略调整: 恢复 AI 驱动的持仓参数更新逻辑
+            # 但不使用机械式的 Trailing Stop，而是依赖 LLM 的 MFE/MAE 分析给出的新点位
             
-            # 仅在极少数情况下（如为了风控强制平仓等）才进行干预
-            # 目前保持静默，完全信任开仓时设定的 SL/TP
-            pass
+            if has_new_params:
+                # 尝试从 exit_conditions 中直接获取明确的 SL/TP 价格
+                exit_conditions = strategy_params.get('exit_conditions', {})
+                explicit_sl = exit_conditions.get('sl_price', 0.0)
+                explicit_tp = exit_conditions.get('tp_price', 0.0)
+                
+                # 如果 LLM 给出了明确的新 SL/TP 价格，则优先使用
+                if explicit_sl > 0 or explicit_tp > 0:
+                    if explicit_sl > 0 and abs(explicit_sl - sl) > point * 5:
+                         request['sl'] = explicit_sl
+                         changed = True
+                         logger.info(f"AI 更新 SL: {sl:.2f} -> {explicit_sl:.2f}")
+                    
+                    if explicit_tp > 0 and abs(explicit_tp - tp) > point * 10:
+                         request['tp'] = explicit_tp
+                         changed = True
+                         logger.info(f"AI 更新 TP: {tp:.2f} -> {explicit_tp:.2f}")
+                
+                # 如果没有明确价格，但有 ATR 倍数建议 (兼容旧逻辑或备用)，则计算
+                elif new_sl_multiplier > 0 or new_tp_multiplier > 0:
+                    current_sl_dist = atr * new_sl_multiplier
+                    current_tp_dist = atr * new_tp_multiplier
+                    
+                    suggested_sl = 0.0
+                    suggested_tp = 0.0
+                    
+                    if type_pos == mt5.POSITION_TYPE_BUY:
+                        suggested_sl = current_price - current_sl_dist
+                        suggested_tp = current_price + current_tp_dist
+                    elif type_pos == mt5.POSITION_TYPE_SELL:
+                        suggested_sl = current_price + current_sl_dist
+                        suggested_tp = current_price - current_tp_dist
+                        
+                    # 仅当差异显著时更新
+                    if suggested_sl > 0 and abs(suggested_sl - sl) > point * 5:
+                        request['sl'] = suggested_sl
+                        changed = True
+                    
+                    if suggested_tp > 0 and abs(suggested_tp - tp) > point * 10:
+                        request['tp'] = suggested_tp
+                        changed = True
             
-            # --- 3. 检查信号平仓 ---
+            # --- 2. 兜底移动止损 (Trailing Stop) ---
+            # 已禁用，仅依赖 AI 更新
+            # if not changed: ... pass
+             
+            if changed:
+                logger.info(f"更新持仓 #{pos.ticket}: SL={request['sl']:.2f}, TP={request['tp']:.2f}")
+                result = mt5.order_send(request)
+                if result.retcode != mt5.TRADE_RETCODE_DONE:
+                    logger.error(f"持仓修改失败: {result.comment}")
             # 如果最新信号转为反向或中立，且强度足够，可以考虑提前平仓
             # 但 execute_trade 已经处理了反向开仓(会先平仓)。
             # 这里只处理: 信号变 Weak/Neutral 时的防御性平仓 (如果需要)

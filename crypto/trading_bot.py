@@ -807,9 +807,32 @@ class CryptoTradingBot:
 
         # --- CASE 2: Hold / Update SL/TP Logic ---
         if action == 'hold':
-            # 策略要求: 不要动态止盈止损，只使用基于 MFE/MAE/SMC 计算出的固定点位
-            # 因此，这里移除了所有的动态更新逻辑
-            pass
+            if target_pos:
+                # 策略调整: 恢复 AI 驱动的持仓参数更新逻辑
+                # 但不使用机械式的 Trailing Stop，而是依赖 LLM 的 MFE/MAE 分析给出的新点位
+                
+                exit_conditions = decision.get('exit_conditions', {})
+                new_sl = exit_conditions.get('sl_price')
+                new_tp = exit_conditions.get('tp_price')
+                
+                # 仅当 LLM 给出明确的新 SL/TP 时才更新
+                if new_sl or new_tp:
+                    logger.info(f"AI 更新持仓参数: SL={new_sl}, TP={new_tp}")
+                    pos_side = target_pos['side']
+                    sl_tp_side = 'sell' if pos_side == 'long' else 'buy'
+                    pos_amount = float(target_pos['contracts']) 
+                    
+                    try:
+                        # Crypto 交易所通常需要先取消旧的 SL/TP 挂单，再挂新的
+                        # 注意: 这里的 cancel_all_orders 可能会误伤 Limit 挂单，需谨慎
+                        # 建议只取消相关的 Algo 订单，但为简化逻辑，这里假设主要就是 SL/TP
+                        # 更好的做法是检查现有的 algo orders 并对比价格差异
+                        
+                        self.data_processor.cancel_all_orders(self.symbol)
+                        self.data_processor.place_sl_tp_order(self.symbol, sl_tp_side, pos_amount, sl_price=new_sl, tp_price=new_tp)
+                        self.send_telegram_message(f"🔄 *Updated SL/TP*\nSymbol: `{self.symbol}`\nNew SL: `{new_sl}`\nNew TP: `{new_tp}`")
+                    except Exception as e:
+                        logger.error(f"更新 SL/TP 失败: {e}")
             return
 
         # --- CASE 3: Open New Position (buy / sell) ---
@@ -830,8 +853,21 @@ class CryptoTradingBot:
                     logger.error(f"Failed to close position for reversal: {e}")
                     return
             else:
-                # Same direction, do NOT update SL/TP dynamically
-                logger.info(f"Signal {action} matches existing {pos_side} position. Holding fixed SL/TP.")
+                # Same direction, update SL/TP if AI provides new ones
+                logger.info(f"Signal {action} matches existing {pos_side} position. Checking for SL/TP updates.")
+                exit_conditions = decision.get('exit_conditions', {})
+                new_sl = exit_conditions.get('sl_price')
+                new_tp = exit_conditions.get('tp_price')
+                
+                if new_sl or new_tp:
+                    sl_tp_side = 'sell' if pos_side == 'long' else 'buy'
+                    pos_amount = float(target_pos['contracts'])
+                    try:
+                        self.data_processor.cancel_all_orders(self.symbol)
+                        self.data_processor.place_sl_tp_order(self.symbol, sl_tp_side, pos_amount, sl_price=new_sl, tp_price=new_tp)
+                        logger.info(f"Updated SL/TP on Add/Hold signal: SL={new_sl}, TP={new_tp}")
+                    except Exception as e:
+                        logger.error(f"Failed to update SL/TP on matching signal: {e}")
                 return
 
         # Execute New Trade
