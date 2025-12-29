@@ -807,19 +807,9 @@ class CryptoTradingBot:
 
         # --- CASE 2: Hold / Update SL/TP Logic ---
         if action == 'hold':
-            if target_pos:
-                exit_conditions = decision.get('exit_conditions', {})
-                new_sl = exit_conditions.get('sl_price')
-                new_tp = exit_conditions.get('tp_price')
-                
-                if new_sl or new_tp:
-                    logger.info(f"Updating SL/TP for existing position: SL={new_sl}, TP={new_tp}")
-                    pos_side = target_pos['side']
-                    sl_tp_side = 'sell' if pos_side == 'long' else 'buy'
-                    pos_amount = float(target_pos['contracts']) 
-                    self.data_processor.cancel_all_orders(self.symbol)
-                    self.data_processor.place_sl_tp_order(self.symbol, sl_tp_side, pos_amount, sl_price=new_sl, tp_price=new_tp)
-                    self.send_telegram_message(f"🔄 *Updated SL/TP*\nSymbol: `{self.symbol}`\nNew SL: `{new_sl}`\nNew TP: `{new_tp}`")
+            # 策略要求: 不要动态止盈止损，只使用基于 MFE/MAE/SMC 计算出的固定点位
+            # 因此，这里移除了所有的动态更新逻辑
+            pass
             return
 
         # --- CASE 3: Open New Position (buy / sell) ---
@@ -840,16 +830,8 @@ class CryptoTradingBot:
                     logger.error(f"Failed to close position for reversal: {e}")
                     return
             else:
-                # Same direction, update SL/TP
-                logger.info(f"Signal {action} matches existing {pos_side} position. Updating SL/TP.")
-                exit_conditions = decision.get('exit_conditions', {})
-                new_sl = exit_conditions.get('sl_price')
-                new_tp = exit_conditions.get('tp_price')
-                if new_sl or new_tp:
-                    sl_tp_side = 'sell' if pos_side == 'long' else 'buy'
-                    pos_amount = float(target_pos['contracts'])
-                    self.data_processor.cancel_all_orders(self.symbol)
-                    self.data_processor.place_sl_tp_order(self.symbol, sl_tp_side, pos_amount, sl_price=new_sl, tp_price=new_tp)
+                # Same direction, do NOT update SL/TP dynamically
+                logger.info(f"Signal {action} matches existing {pos_side} position. Holding fixed SL/TP.")
                 return
 
         # Execute New Trade

@@ -352,54 +352,12 @@ class QwenClient:
     
     def generate_dynamic_stoploss_takeprofit(self, volatility: float, market_state: str, signal_strength: int) -> Dict[str, float]:
         """
-        根据市场波动率生成自适应止盈止损
-        
-        Args:
-            volatility (float): 当前波动率(ATR百分比)
-            market_state (str): 市场状态(趋势/震荡/高波动)
-            signal_strength (int): 信号强度(0-100)
-        
-        Returns:
-            Dict[str, float]: 动态止盈止损参数
+        [DEPRECATED] 该方法已弃用。
+        现在 SL/TP 完全由 optimize_strategy_logic 中的 MFE/MAE/SMC 逻辑决定，不再使用基于 ATR 倍数的动态生成。
+        保留此方法仅为了接口兼容性，返回默认占位值。
         """
-        prompt = f"""
-        作为专业的风险管理专家，请根据以下参数生成动态止盈止损：
-        
-        当前波动率(ATR百分比)：{volatility}
-        市场状态：{market_state}
-        信号强度：{signal_strength}
-        
-        请基于以下原则生成参数：
-        1. 趋势市场：止盈较大，止损较小
-        2. 震荡市场：止盈较小，止损较小
-        3. 高波动市场：止盈较大，止损较大
-        4. 信号强度高：止盈较大，止损相对较小
-        5. 波动率高：止盈止损都较大
-        
-        请以ATR倍数返回止盈止损参数，格式为：
-        {{"take_profit": X.XX, "stop_loss": X.XX}}
-        
-        请只返回JSON格式的结果，不要包含其他解释。
-        """
-        
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": "你是一位专业的风险管理专家，擅长根据市场条件生成动态止盈止损参数。"},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.2,
-            "max_tokens": 100
-        }
-        
-        response = self._call_api("chat/completions", payload)
-        if response and "choices" in response:
-            try:
-                sl_tp = json.loads(response["choices"][0]["message"]["content"])
-                return sl_tp
-            except json.JSONDecodeError as e:
-                logger.error(f"解析止盈止损参数失败: {e}")
-        return {"take_profit": 1.5, "stop_loss": 1.0}
+        logger.warning("generate_dynamic_stoploss_takeprofit 被调用，但策略已切换为固定 SL/TP 模式。")
+        return {"take_profit": 0.0, "stop_loss": 0.0}
     
     def judge_signal_strength(self, deepseek_signal: Dict[str, Any], technical_indicators: Dict[str, Any]) -> int:
         """
