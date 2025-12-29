@@ -915,6 +915,18 @@ class CryptoTradingBot:
             elif action == 'sell':
                 order = self.data_processor.create_order(self.symbol, 'sell', num_contracts, type='market', params=order_params)
             elif action in ['buy_limit', 'limit_buy']:
+                # Check existing limit orders
+                try:
+                    current_orders = self.data_processor.get_open_orders(self.symbol)
+                    for o in current_orders:
+                        # o['side'] is 'buy' or 'sell'
+                        # If we are placing Buy Limit, cancel Sell Limit (Opposite)
+                        if o.get('side') == 'sell':
+                            logger.info(f"Cancelling opposite Sell Limit order {o['id']}")
+                            self.data_processor.exchange.cancel_order(o['id'], self.symbol)
+                except Exception as e:
+                    logger.warning(f"Error checking/cancelling existing orders: {e}")
+
                 lp = decision.get('entry_conditions', {}).get('limit_price')
                 
                 # Auto-fallback if limit price is invalid
@@ -940,6 +952,17 @@ class CryptoTradingBot:
                     order = self.data_processor.create_order(self.symbol, 'buy', num_contracts, type='limit', price=lp, params=order_params)
                     
             elif action in ['sell_limit', 'limit_sell']:
+                # Check existing limit orders
+                try:
+                    current_orders = self.data_processor.get_open_orders(self.symbol)
+                    for o in current_orders:
+                        # If we are placing Sell Limit, cancel Buy Limit (Opposite)
+                        if o.get('side') == 'buy':
+                            logger.info(f"Cancelling opposite Buy Limit order {o['id']}")
+                            self.data_processor.exchange.cancel_order(o['id'], self.symbol)
+                except Exception as e:
+                    logger.warning(f"Error checking/cancelling existing orders: {e}")
+
                 lp = decision.get('entry_conditions', {}).get('limit_price')
                 
                 # Auto-fallback

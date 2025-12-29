@@ -457,6 +457,18 @@ class AI_MT5_Bot:
             trade_type = "sell"
             price = tick.bid
         elif llm_action in ['limit_buy', 'buy_limit']:
+            # 检查现有 Limit 挂单
+            current_orders = mt5.orders_get(symbol=self.symbol)
+            if current_orders:
+                for o in current_orders:
+                    if o.magic == self.magic_number:
+                        # 如果是 Sell Limit/Stop (反向)，则取消
+                        if o.type in [mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP]:
+                             logger.info(f"取消反向挂单 #{o.ticket} (Type: {o.type})")
+                             req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
+                             mt5.order_send(req)
+                        # 如果是同向 (Buy Limit/Stop)，则保留 (叠加)
+                        
             # 优先使用 limit_price (与 prompt 一致)，回退使用 entry_price
             price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
             
@@ -481,6 +493,18 @@ class AI_MT5_Bot:
                     trade_type = "limit_buy" # 价格低于当前价 -> 回调买入
                 
         elif llm_action in ['limit_sell', 'sell_limit']:
+            # 检查现有 Limit 挂单
+            current_orders = mt5.orders_get(symbol=self.symbol)
+            if current_orders:
+                for o in current_orders:
+                    if o.magic == self.magic_number:
+                        # 如果是 Buy Limit/Stop (反向)，则取消
+                        if o.type in [mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP]:
+                             logger.info(f"取消反向挂单 #{o.ticket} (Type: {o.type})")
+                             req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
+                             mt5.order_send(req)
+                        # 如果是同向 (Sell Limit/Stop)，则保留 (叠加)
+
             price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
             
             # 增强：如果价格无效，尝试自动修复
