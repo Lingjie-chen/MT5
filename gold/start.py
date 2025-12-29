@@ -873,6 +873,12 @@ class AI_MT5_Bot:
         Comprehensive Objective Function: Evaluates ALL dataframe-based strategy parameters together.
         params: Vector of parameter values corresponding to the defined structure.
         """
+        # Global counter for progress logging
+        if not hasattr(self, '_opt_counter'): self._opt_counter = 0
+        self._opt_counter += 1
+        if self._opt_counter % 50 == 0:
+            logger.info(f"Optimization Progress: {self._opt_counter} evaluations...")
+
         # 1. Decode Parameters
         # 0: smc_ma (int)
         # 1: smc_atr (float)
@@ -985,13 +991,17 @@ class AI_MT5_Bot:
         """
         logger.info("开始执行全策略参数优化 (Comprehensive Auto-AO)...")
         
+        # Reset progress counter
+        self._opt_counter = 0
+        
         # 1. 获取历史数据
-        df = self.get_market_data(600) # Need more data for comprehensive test
-        if df is None or len(df) < 400:
+        # Reduce data size for speed (300 candles ~ 75 hours of M15 data)
+        df = self.get_market_data(300) 
+        if df is None or len(df) < 200:
             logger.warning("数据不足，跳过优化")
             return
             
-        # 2. 定义搜索空间 (10 Dimensions)
+        # 2. Define Search Space (10 Dimensions)
         # smc_ma, smc_atr, mfh_lr, mfh_horizon, pem_fast, pem_slow, pem_adx, rvgi_sma, rvgi_cci, ifvg_gap
         bounds = [
             (100, 300),     # smc_ma
@@ -1016,7 +1026,13 @@ class AI_MT5_Bot:
         import random
         algo_name = random.choice(list(self.optimizers.keys()))
         optimizer = self.optimizers[algo_name]
-        logger.info(f"本次选择的优化算法: {algo_name}")
+        
+        # Adjust population size for realtime performance
+        # Default is 50, which is too slow for 10-dim complex sim
+        if hasattr(optimizer, 'pop_size'):
+            optimizer.pop_size = 20
+            
+        logger.info(f"本次选择的优化算法: {algo_name} (Pop: {optimizer.pop_size})")
         
         # 5. Run
         # Increase epochs slightly as space is larger, but keep low for realtime
@@ -1024,7 +1040,7 @@ class AI_MT5_Bot:
             objective, 
             bounds, 
             steps=steps, 
-            epochs=8 
+            epochs=4  # Reduced from 8 to 4 for speed
         )
         
         # 6. Apply Results

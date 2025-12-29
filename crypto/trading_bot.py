@@ -166,6 +166,12 @@ class CryptoTradingBot:
         Comprehensive Objective Function: Evaluates ALL dataframe-based strategy parameters together.
         params: Vector of parameter values corresponding to the defined structure.
         """
+        # Global counter for progress logging
+        if not hasattr(self, '_opt_counter'): self._opt_counter = 0
+        self._opt_counter += 1
+        if self._opt_counter % 50 == 0:
+            logger.info(f"Optimization Progress: {self._opt_counter} evaluations...")
+
         # 1. Decode Parameters
         # 0: smc_ma (int)
         # 1: smc_atr (float)
@@ -273,9 +279,16 @@ class CryptoTradingBot:
         """
         logger.info("Starting Comprehensive Strategy Optimization (Auto-AO)...")
         
-        if df is None or len(df) < 400:
+        # Reset progress counter
+        self._opt_counter = 0
+        
+        if df is None or len(df) < 200:
             logger.warning("Insufficient data for optimization, skipping")
             return
+            
+        # Reduce data size for speed (300 candles)
+        if len(df) > 300:
+            df = df.tail(300).copy()
             
         # 2. Define Search Space (10 Dimensions)
         # smc_ma, smc_atr, mfh_lr, mfh_horizon, pem_fast, pem_slow, pem_adx, rvgi_sma, rvgi_cci, ifvg_gap
@@ -301,14 +314,19 @@ class CryptoTradingBot:
         # 4. Optimizer
         algo_name = random.choice(list(self.optimizers.keys()))
         optimizer = self.optimizers[algo_name]
-        logger.info(f"Selected Optimizer: {algo_name}")
+        
+        # Adjust population size for realtime performance
+        if hasattr(optimizer, 'pop_size'):
+            optimizer.pop_size = 20
+            
+        logger.info(f"Selected Optimizer: {algo_name} (Pop: {optimizer.pop_size})")
         
         # 5. Run
         best_params, best_score = optimizer.optimize(
             objective, 
             bounds, 
             steps=steps, 
-            epochs=5 # Lower epochs for faster crypto loop
+            epochs=4 # Reduced from 5 to 4
         )
         
         # 6. Apply Results
