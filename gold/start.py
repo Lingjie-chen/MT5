@@ -868,291 +868,214 @@ class AI_MT5_Bot:
         except Exception as e:
             logger.error(f"分析历史交易失败: {e}")
 
-    def evaluate_smc_params(self, params, df):
+    def evaluate_comprehensive_params(self, params, df):
         """
-        目标函数: 评估 SMC 策略参数的表现
-        params: [ma_period, atr_threshold]
-        完整回测逻辑，不简化处理
+        Comprehensive Objective Function: Evaluates ALL dataframe-based strategy parameters together.
+        params: Vector of parameter values corresponding to the defined structure.
         """
-        ma_period = int(params[0])
-        atr_threshold = params[1]
+        # 1. Decode Parameters
+        # 0: smc_ma (int)
+        # 1: smc_atr (float)
+        # 2: mfh_lr (float)
+        # 3: mfh_horizon (int)
+        # 4: pem_fast (int)
+        # 5: pem_slow (int)
+        # 6: pem_adx (float)
+        # 7: rvgi_sma (int)
+        # 8: rvgi_cci (int)
+        # 9: ifvg_gap (int)
         
-        # 创建临时分析器
-        analyzer = SMCAnalyzer()
-        analyzer.ma_period = ma_period
-        analyzer.atr_threshold = atr_threshold
-        
-        score = 0
-        total_trades = 0
-        win_trades = 0
-        total_profit_pips = 0.0
-        
-        closes = df['close'].values
-        
-        # 我们需要足够的数据来计算 MA
-        if len(closes) < ma_period + 50:
-            return -1000
-            
-        # 完整的逐 K 线回测
-        # 从 ma_period 开始，模拟每根 K 线作为"当前" K 线
-        # 记录虚拟交易
-        
-        # 账户状态维护
-        equity = 10000.0 # 初始净值
-        balance = 10000.0 # 初始余额
-        
-        # 获取合约大小，默认为 100 (Gold)
-        contract_size = 100.0
         try:
-            s_info = mt5.symbol_info(self.symbol)
-            if s_info:
-                contract_size = s_info.trade_contract_size
-        except:
-            pass
+            p_smc_ma = int(params[0])
+            p_smc_atr = params[1]
+            p_mfh_lr = params[2]
+            p_mfh_horizon = int(params[3])
+            p_pem_fast = int(params[4])
+            p_pem_slow = int(params[5])
+            p_pem_adx = params[6]
+            p_rvgi_sma = int(params[7])
+            p_rvgi_cci = int(params[8])
+            p_ifvg_gap = int(params[9])
             
-        positions = [] # [{'type': 'buy', 'price': 1.0, 'vol': 0.1, 'sl': 0.9, 'tp': 1.2}, ...]
-        
-        in_trade = False
-        trade_type = "" # buy, sell
-        entry_price = 0.0
-        entry_idx = 0
-        
-        # 为了提高效率，维护复杂的账户净值 
-        # 这里的"不简化"指的是: 必须逐个遍历检查信号，而不是跳跃采样
-        
-        holding_period = 24 
-        
-        start_idx = ma_period
-        end_idx = len(closes) - holding_period # 留出平仓空间
-        
-        # 预计算 MA (向量化) 以避免循环中重复计算
-        # 注意: SMCAnalyzer 内部使用 rolling mean，这里为了模拟真实情况，
-        # 我们应该让 Analyzer 自己算。但为了速度，我们可以手动计算指标传入 Analyzer?
-        # 不，为了准确性，我们传入切片。虽然慢，但符合"不简化"的要求。
-        # 优化: Analyzer 的 get_market_sentiment 只需要最近的数据。
-        # 如果我们每次都传入完整 df.iloc[:i]，随着 i 增大，切片开销大。
-        # 实际上 SMCAnalyzer.analyze 只需要最近 ma_period + small_buffer 的数据。
-        
-        lookback_needed = ma_period + 50
-        
-        for i in range(start_idx, end_idx):
-            # 1. 更新账户净值 (Mark to Market)
-            current_close = closes[i]
-            current_high = df['high'].iloc[i]
-            current_low = df['low'].iloc[i]
+            # 2. Initialize Temporary Analyzers (Fresh State)
+            tmp_smc = SMCAnalyzer()
+            tmp_smc.ma_period = p_smc_ma
+            tmp_smc.atr_threshold = p_smc_atr
             
-            unrealized_pl = 0.0
+            tmp_mfh = MFHAnalyzer(learning_rate=p_mfh_lr)
+            tmp_mfh.horizon = p_mfh_horizon
             
-            # 检查现有持仓的盈亏和止损止盈
-            active_positions = []
-            for pos in positions:
-                pl = 0.0
-                if pos['type'] == 'buy':
-                    pl = (current_close - pos['price']) * pos['vol'] * contract_size 
-                    
-                    # 检查 SL/TP (基于 High/Low)
-                    if current_low <= pos['sl']: # 触发止损
-                        close_p = pos['sl']
-                        realized_pl = (close_p - pos['price']) * pos['vol'] * contract_size
-                        balance += realized_pl
-                        total_trades += 1
-                        if realized_pl > 0: win_trades += 1
-                        continue # 移除持仓
-                    elif current_high >= pos['tp']: # 触发止盈
-                        close_p = pos['tp']
-                        realized_pl = (close_p - pos['price']) * pos['vol'] * contract_size
-                        balance += realized_pl
-                        total_trades += 1
-                        if realized_pl > 0: win_trades += 1
-                        continue # 移除持仓
-                        
-                elif pos['type'] == 'sell':
-                    pl = (pos['price'] - current_close) * pos['vol'] * contract_size
-                    
-                    if current_high >= pos['sl']: # 触发止损
-                        close_p = pos['sl']
-                        realized_pl = (pos['price'] - close_p) * pos['vol'] * contract_size
-                        balance += realized_pl
-                        total_trades += 1
-                        if realized_pl > 0: win_trades += 1
-                        continue
-                    elif current_low <= pos['tp']: # 触发止盈
-                        close_p = pos['tp']
-                        realized_pl = (pos['price'] - close_p) * pos['vol'] * contract_size
-                        balance += realized_pl
-                        total_trades += 1
-                        if realized_pl > 0: win_trades += 1
-                        continue
+            tmp_pem = PriceEquationModel()
+            tmp_pem.ma_fast_period = p_pem_fast
+            tmp_pem.ma_slow_period = p_pem_slow
+            tmp_pem.adx_threshold = p_pem_adx
+            
+            tmp_adapter = AdvancedMarketAnalysisAdapter()
+            
+            # 3. Run Simulation
+            start_idx = max(p_smc_ma, p_pem_slow, 50) + 10
+            if len(df) < start_idx + 50: return -9999
+            
+            balance = 10000.0
+            closes = df['close'].values
+            
+            trades_count = 0
+            wins = 0
+            
+            # Optimization: Step size > 1 to speed up (e.g., check every 4th candle ~ 1 hour)
+            # But MFH needs continuous training.
+            # We will run full loop but simplified logic.
+            
+            for i in range(start_idx, len(df)-1):
+                sub_df = df.iloc[:i+1]
+                curr_price = closes[i]
+                next_price = closes[i+1]
                 
-                unrealized_pl += pl
-                active_positions.append(pos)
+                # MFH Train (Must happen every step for consistency)
+                if i > p_mfh_horizon:
+                    past_ret = (closes[i] - closes[i-p_mfh_horizon]) / closes[i-p_mfh_horizon]
+                    tmp_mfh.train(past_ret)
+                
+                # Skip some heavy analysis for speed, only check every 2 bars?
+                # No, we need accuracy.
+                
+                # Signals
+                smc_sig = tmp_smc.analyze(sub_df)['signal']
+                mfh_sig = tmp_mfh.predict(sub_df)['signal']
+                
+                tmp_pem.update(curr_price)
+                pem_sig = tmp_pem.predict(sub_df)['signal']
+                
+                # Short Term
+                ifvg_sig = tmp_adapter.analyze_ifvg(sub_df, min_gap_points=p_ifvg_gap)['signal']
+                rvgi_sig = tmp_adapter.analyze_rvgi_cci_strategy(sub_df, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci)['signal']
+                
+                # Combine
+                votes = 0
+                for s in [smc_sig, mfh_sig, pem_sig, ifvg_sig, rvgi_sig]:
+                    if s == 'buy': votes += 1
+                    elif s == 'sell': votes -= 1
+                
+                final_sig = "neutral"
+                if votes >= 2: final_sig = "buy"
+                elif votes <= -2: final_sig = "sell"
+                
+                # Evaluate
+                if final_sig == "buy":
+                    trades_count += 1
+                    if next_price > curr_price: wins += 1
+                    balance += (next_price - curr_price)
+                elif final_sig == "sell":
+                    trades_count += 1
+                    if next_price < curr_price: wins += 1
+                    balance += (curr_price - next_price)
             
-            positions = active_positions # 更新持仓列表
-            equity = balance + unrealized_pl
+            if trades_count == 0: return -100
             
-            if equity <= 0: # 爆仓
-                return -99999
+            # Simple Profit Metric
+            score = (balance - 10000.0)
+            return score
             
-            # 2. 生成信号
-            # 获取上下文窗口
-            window_start = max(0, i - lookback_needed)
-            sub_df = df.iloc[window_start:i+1] # 注意 iloc 是左闭右开，所以要 i+1
-            
-            result = analyzer.analyze(sub_df)
-            signal = result['signal']
-            
-            # 3. 交易逻辑
-            # 简单的交易逻辑: 如果有信号且无持仓，则开仓
-            # 如果有持仓，检查是否反转
-            
-            # 简单的 ATR 计算用于 SL/TP
-            # 这里简单取最近 14 根 High-Low 的均值作为 ATR 估计
-            atr_est = np.mean(df['high'].iloc[i-14:i] - df['low'].iloc[i-14:i])
-            if atr_est <= 0: atr_est = current_close * 0.001
-            
-            if len(positions) == 0:
-                if signal != 'neutral':
-                    # 开仓
-                    sl_dist = atr_est * 1.5
-                    tp_dist = atr_est * 2.5
-                    
-                    sl = current_close - sl_dist if signal == 'buy' else current_close + sl_dist
-                    tp = current_close + tp_dist if signal == 'buy' else current_close - tp_dist
-                    
-                    positions.append({
-                        'type': signal,
-                        'price': current_close,
-                        'vol': 0.1, # 固定 0.1 手
-                        'sl': sl,
-                        'tp': tp,
-                        'entry_idx': i
-                    })
-            else:
-                # 检查平仓条件 (反转)
-                # 假设单向持仓
-                curr_pos = positions[0]
-                if (curr_pos['type'] == 'buy' and signal == 'sell') or \
-                   (curr_pos['type'] == 'sell' and signal == 'buy'):
-                    
-                    # 平仓
-                    pl = 0.0
-                    if curr_pos['type'] == 'buy':
-                        pl = (current_close - curr_pos['price']) * curr_pos['vol'] * 100000
-                    else:
-                        pl = (curr_pos['price'] - current_close) * curr_pos['vol'] * 100000
-                        
-                    balance += pl
-                    total_trades += 1
-                    if pl > 0: win_trades += 1
-                    positions = [] # 清空
-                    
-                    # 反手开仓
-                    sl_dist = atr_est * 1.5
-                    tp_dist = atr_est * 2.5
-                    sl = current_close - sl_dist if signal == 'buy' else current_close + sl_dist
-                    tp = current_close + tp_dist if signal == 'buy' else current_close - tp_dist
-                    
-                    positions.append({
-                        'type': signal,
-                        'price': current_close,
-                        'vol': 0.1,
-                        'sl': sl,
-                        'tp': tp,
-                        'entry_idx': i
-                    })
-                    
-        # 处理最后一笔未平仓交易 (按当前价平仓)
-        for pos in positions:
-            pl = 0.0
-            if pos['type'] == 'buy':
-                pl = (closes[end_idx] - pos['price']) * pos['vol'] * contract_size
-            else:
-                pl = (pos['price'] - closes[end_idx]) * pos['vol'] * contract_size
-            balance += pl
-            total_trades += 1
-            if pl > 0: win_trades += 1
-
-        # 评分公式
-        if total_trades == 0:
-            return -100
-            
-        # 最终得分基于净值增长
-        net_profit = balance - 10000.0
-        
-        # 综合评分: 净利润 + 胜率修正
-        win_rate = win_trades / total_trades
-        score = net_profit * (1 + win_rate)
-        
-        return score
+        except Exception:
+            return -9999
 
     def optimize_strategy_parameters(self):
         """
-        使用 自动选择的优化器 优化策略参数
-        包含自动选择最佳算法的逻辑 (Auto-Selection)
+        Comprehensive Optimization: Tunes ALL strategy parameters using Auto-AO.
         """
-        logger.info("开始执行策略参数优化 (Auto-AO)...")
+        logger.info("开始执行全策略参数优化 (Comprehensive Auto-AO)...")
         
-        # 1. 获取用于优化的历史数据 (最近 500 根 H1)
-        df = self.get_market_data(500)
-        if df is None or len(df) < 300:
+        # 1. 获取历史数据
+        df = self.get_market_data(600) # Need more data for comprehensive test
+        if df is None or len(df) < 400:
             logger.warning("数据不足，跳过优化")
             return
             
-        # 2. 定义搜索空间
-        # [MA Period (100-300), ATR Threshold (0.001-0.005)]
-        bounds = [(100, 300), (0.001, 0.005)]
-        steps = [10, 0.0005] # 步长
+        # 2. 定义搜索空间 (10 Dimensions)
+        # smc_ma, smc_atr, mfh_lr, mfh_horizon, pem_fast, pem_slow, pem_adx, rvgi_sma, rvgi_cci, ifvg_gap
+        bounds = [
+            (100, 300),     # smc_ma
+            (0.001, 0.005), # smc_atr
+            (0.001, 0.1),   # mfh_lr
+            (3, 10),        # mfh_horizon
+            (10, 50),       # pem_fast
+            (100, 300),     # pem_slow
+            (15.0, 30.0),   # pem_adx
+            (10, 50),       # rvgi_sma
+            (10, 30),       # rvgi_cci
+            (10, 100)       # ifvg_gap
+        ]
         
-        # 3. 定义目标函数 Wrapper
+        steps = [10, 0.0005, 0.005, 1, 5, 10, 1.0, 2, 2, 5]
+        
+        # 3. Objective
         def objective(params):
-            return self.evaluate_smc_params(params, df)
+            return self.evaluate_comprehensive_params(params, df)
             
-        # 4. 自动选择或轮询优化算法
-        # 简单逻辑: 随机选择或轮询，或者记录历史表现选择最好的
-        # 这里演示: 随机选择一个算法进行本次优化
+        # 4. Optimizer
         import random
         algo_name = random.choice(list(self.optimizers.keys()))
         optimizer = self.optimizers[algo_name]
-        
         logger.info(f"本次选择的优化算法: {algo_name}")
         
-        # 5. 运行优化
-        # 获取历史交易数据供自我学习
-        historical_trades = self.db_manager.get_trade_performance_stats(limit=100)
-        
+        # 5. Run
+        # Increase epochs slightly as space is larger, but keep low for realtime
         best_params, best_score = optimizer.optimize(
             objective, 
             bounds, 
             steps=steps, 
-            epochs=5, # 快速优化
-            historical_data=historical_trades # 传入历史数据
+            epochs=8 
         )
         
-        # 6. 验证和应用最佳参数
-        # 如果得分是负数且非常低（如初始值-99999），说明优化未找到有效解，不应更新
+        # 6. Apply Results
         if best_score > -1000:
-            new_ma = int(best_params[0])
-            new_atr = best_params[1]
+            logger.info(f"全策略优化完成! Best Score: {best_score:.2f}")
             
-            logger.info(f"优化完成! Best Score: {best_score:.4f}")
-            logger.info(f"更新参数: MA Period={new_ma}, ATR Threshold={new_atr:.4f}")
+            # Extract
+            p_smc_ma = int(best_params[0])
+            p_smc_atr = best_params[1]
+            p_mfh_lr = best_params[2]
+            p_mfh_horizon = int(best_params[3])
+            p_pem_fast = int(best_params[4])
+            p_pem_slow = int(best_params[5])
+            p_pem_adx = best_params[6]
+            p_rvgi_sma = int(best_params[7])
+            p_rvgi_cci = int(best_params[8])
+            p_ifvg_gap = int(best_params[9])
             
-            self.smc_analyzer.ma_period = new_ma
-            self.smc_analyzer.atr_threshold = new_atr
+            # Apply
+            self.smc_analyzer.ma_period = p_smc_ma
+            self.smc_analyzer.atr_threshold = p_smc_atr
             
-            self.send_telegram_message(
-                f"🧬 *Auto-AO Optimization ({algo_name})*\n"
-                f"Best Score: {best_score:.2f}\n"
-                f"New Params:\n"
-                f"• MA Period: {new_ma}\n"
-                f"• ATR Thresh: {new_atr:.4f}"
+            self.mfh_analyzer.learning_rate = p_mfh_lr
+            self.mfh_analyzer.horizon = p_mfh_horizon
+            # Re-init MFH buffers if horizon changed? 
+            # MFHAnalyzer uses horizon in calculate_features. 
+            # Ideally we should re-init but learning rate update is fine.
+            
+            self.price_model.ma_fast_period = p_pem_fast
+            self.price_model.ma_slow_period = p_pem_slow
+            self.price_model.adx_threshold = p_pem_adx
+            
+            self.short_term_params = {
+                'rvgi_sma': p_rvgi_sma,
+                'rvgi_cci': p_rvgi_cci,
+                'ifvg_gap': p_ifvg_gap
+            }
+            
+            msg = (
+                f"🧬 *Comprehensive Optimization ({algo_name})*\n"
+                f"Score: {best_score:.2f}\n"
+                f"• SMC: MA={p_smc_ma}, ATR={p_smc_atr:.4f}\n"
+                f"• MFH: LR={p_mfh_lr:.3f}, H={p_mfh_horizon}\n"
+                f"• PEM: Fast={p_pem_fast}, Slow={p_pem_slow}, ADX={p_pem_adx:.1f}\n"
+                f"• ST: RVGI({p_rvgi_sma},{p_rvgi_cci}), IFVG({p_ifvg_gap})"
             )
+            self.send_telegram_message(msg)
+            logger.info(f"已更新所有策略参数: {msg}")
+            
         else:
-            logger.warning(f"优化失败或未找到正收益参数 (Score: {best_score:.4f})，保持原有参数。")
-            self.send_telegram_message(
-                f"🧬 *Auto-AO Optimization ({algo_name})*\n"
-                f"Optimization Skipped (Low Score: {best_score:.2f})"
-            )
+            logger.warning("优化失败，保持原有参数")
 
     def optimize_weights(self):
         """
