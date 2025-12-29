@@ -1901,6 +1901,7 @@ class AI_MT5_Bot:
                         
                         # --- 3.5 最终决策 (LLM Centric) ---
                         # 依据用户指令：完全基于大模型的最终决策 (以 Qwen 的 Action 为主)
+                        # Qwen 已经接收了所有技术指标(technical_signals)作为输入，因此它的输出即为"集合最终分析结果"
                         
                         # final_signal 已在上面由 qw_action 解析得出
                         reason = strategy.get('reason', 'LLM Decision')
@@ -1924,7 +1925,7 @@ class AI_MT5_Bot:
                                 if sig == final_signal:
                                     matching_count += 1
                         
-                        if final_signal in ['buy', 'sell']:
+                        if final_signal in ['buy', 'sell', 'limit_buy', 'limit_sell']:
                             # 基础分 60 (既然 LLM 敢喊单)
                             base_strength = 60
                             # 技术面加成
@@ -2063,13 +2064,14 @@ class AI_MT5_Bot:
 
                         
                         # 4. 执行交易
-                        # 修正逻辑: 优先尊重 Qwen 的信号和参数
+                        # 修正逻辑: 优先尊重 Qwen 的信号和参数 (大模型集合最终结果)
                         # 如果 Qwen 明确说 "hold" 或 "neutral"，即使 final_signal 是 buy/sell，也应该谨慎
                         # 但如果 final_signal 极强 (如 100.0)，我们可能还是想交易
                         # 现在的逻辑是: 交易方向以 final_signal 为准 (因为它是混合投票的结果，Qwen 也是其中一票)
                         # 但 参数 (Entry/Exit) 必须优先使用 Qwen 的建议
                         
                         if final_signal != 'hold':
+                            logger.info(f">>> 准备执行 AI 集合决策: {final_signal.upper()} <<<")
                             entry_params = strategy.get('entry_conditions')
                             exit_params = strategy.get('exit_conditions')
                             
