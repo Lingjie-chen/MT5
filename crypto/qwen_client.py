@@ -270,8 +270,14 @@ class QwenClient:
         
         请提供以下优化结果，并确保分析全面、逻辑严密，不要使用省略号或简化描述。**请务必使用中文进行输出（Strategy Logic Rationale 部分）**：
         1. 核心决策：买入/卖出/持有/平仓/加仓/挂单(Limit)
-        2. 入场/加仓条件：基于情绪得分和技术指标的优化规则。如果是挂单，请明确价格。
-        3. 出场/减仓条件：**基于 MFE/MAE 分析的合理优化止盈止损点**。请直接给出具体价格（sl_price, tp_price）或 ATR 倍数。不要使用简单的动态追踪，而是根据市场结构和 MFE/MAE 给出固定的最佳离场点。
+        2. 入场/加仓条件：基于情绪得分和技术指标的优化规则。**如果是挂单(Limit/Stop)，必须明确给出具体的挂单价格(limit_price)，这非常重要！** 
+           - 对于 Buy Limit，价格应低于当前市价（回调买入）。
+           - 对于 Sell Limit，价格应高于当前市价（反弹卖出）。
+           - 请结合 SMC 的 FVG 或 OB 区域来设定精确的挂单点位。
+        3. 出场/减仓条件：**基于 MFE/MAE 分析的合理优化止盈止损点**。请直接给出具体价格（sl_price, tp_price）。
+           - **Stop Loss (SL)**: 参考 MAE 分布，设定在能过滤掉大部分"假突破"但又能控制最大亏损的位置。结合市场结构，放在最近的 Swing High/Low 或结构位之外。
+           - **Take Profit (TP)**: 参考 MFE 分布，设定在能捕获 80% 潜在收益的位置。结合市场结构，放在下一个 Liquidity Pool (流动性池) 或 OB 之前。
+           - 不要使用 ATR 倍数，请给出具体的数值。
         4. 仓位管理：针对当前持仓的具体操作建议（如加仓、减仓、反手）。
         5. 风险管理建议：针对当前市场状态的风险控制措施。
         6. **参数自适应优化建议 (Parameter Optimization)**: 
@@ -282,8 +288,8 @@ class QwenClient:
         
         请以JSON格式返回结果，包含以下字段：
         - action: str ("buy", "sell", "hold", "close_buy", "close_sell", "add_buy", "add_sell", "buy_limit", "sell_limit")
-        - entry_conditions: dict (包含 "trigger_type", "limit_price", "confirmation")
-        - exit_conditions: dict (包含 "sl_price", "tp_price", "sl_atr_multiplier", "tp_atr_multiplier", "close_rationale")
+        - entry_conditions: dict (包含 "trigger_type", "limit_price", "confirmation") **确保 limit_price 是一个具体的数字**
+        - exit_conditions: dict (包含 "sl_price", "tp_price", "close_rationale") **确保 sl_price 和 tp_price 是具体的数字**
         - position_management: dict (包含 "action", "volume_percent", "reason")
         - position_size: float (0.0 - 1.0, representing percentage of available USDT to use)
         - leverage: int (1-100)

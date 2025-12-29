@@ -134,7 +134,7 @@ class DeepSeekClient:
                 logger.error(f"API调用失败，已达到最大重试次数 {max_retries}")
                 return None
     
-    def analyze_market_structure(self, market_data: Dict[str, Any], current_positions: Optional[List[Dict[str, Any]]] = None, extra_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def analyze_market_structure(self, market_data: Dict[str, Any], current_positions: Optional[List[Dict[str, Any]]] = None, extra_analysis: Optional[Dict[str, Any]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         分析市场结构，识别趋势与震荡行情
         基于ValueCell的实现，支持JSON模式输出
@@ -143,6 +143,7 @@ class DeepSeekClient:
             market_data (Dict[str, Any]): 市场数据，包含价格、成交量、指标等
             current_positions (Optional[List[Dict[str, Any]]]): 当前实时持仓数据
             extra_analysis (Optional[Dict[str, Any]]): 额外的技术分析数据（如CRT、价格方程等）
+            performance_stats (Optional[List[Dict[str, Any]]]): 历史交易绩效统计 (MFE/MAE)
         
         Returns:
             Dict[str, Any]: 市场结构分析结果
@@ -157,6 +158,22 @@ class DeepSeekClient:
              pos_context = f"\n当前实时持仓:\n{json.dumps(current_positions, indent=2, cls=CustomJSONEncoder)}\n"
         elif market_data.get('current_positions'):
              pos_context = f"\n当前实时持仓:\n{json.dumps(market_data.get('current_positions'), indent=2, cls=CustomJSONEncoder)}\n"
+
+        # 处理性能统计 (MFE/MAE)
+        perf_context = ""
+        if performance_stats:
+            # 简单统计
+            mfe_list = [t.get('mfe', 0) for t in performance_stats if t.get('mfe') is not None]
+            mae_list = [t.get('mae', 0) for t in performance_stats if t.get('mae') is not None]
+            avg_mfe = sum(mfe_list)/len(mfe_list) if mfe_list else 0
+            avg_mae = sum(mae_list)/len(mae_list) if mae_list else 0
+            
+            perf_context = (
+                f"\n历史交易绩效参考 (MFE/MAE):\n"
+                f"- 平均最大有利幅度 (Avg MFE): {avg_mfe:.2f}%\n"
+                f"- 平均最大不利幅度 (Avg MAE): {avg_mae:.2f}%\n"
+                f"- 最近交易记录: {json.dumps(performance_stats[:5], indent=2, cls=CustomJSONEncoder)}\n"
+            )
 
         opt_algo = "Auto-AO"
         opt_info_str = ""
@@ -187,21 +204,22 @@ class DeepSeekClient:
         4. RVGI+CCI: 复合动量策略，确认趋势强度。
         5. MFH (Multiple Forecast Horizons): 多周期预测。
         6. MTF (Multi-Timeframe): 多时间周期一致性，大周期制约小周期。
-        7. 优化器状态: 当前策略参数已由 {opt_algo} 算法优化。
+        8. **基于 MFE/MAE 的结构质量评估**: 结合历史绩效 (Avg MFE/MAE)，评估当前市场结构是否有利于产生高盈亏比的交易。
         {opt_info_str}
 
         {pos_context}
+        {perf_context}
         {extra_context}
         市场数据：
         {json.dumps(market_data, indent=2, cls=CustomJSONEncoder)}
         
         请提供以下分析结果：
         1. 市场状态：趋势（上升/下降）、震荡、高波动
-        2. 主要支撑位和阻力位 (基于SMC的OB/FVG)
+        2. 主要支撑位和阻力位 (基于SMC的OB/FVG)。**请参考 Avg MAE，确保识别的关键位在合理的风控范围内。**
         3. 市场结构评分（0-100）：高分表示趋势明确，低分表示震荡
         4. 短期预测（1-3天）：请提供完整、详细的预测逻辑和目标位描述
         5. 关键指标解读
-        6. **综合交易建议 (Preliminary Trade Idea)**: 基于你的结构分析和所有输入的高级算法信号，给出一个初步的交易建议 (Buy/Sell/Wait)。
+        6. **综合交易建议 (Preliminary Trade Idea)**: 基于你的结构分析和所有输入的高级算法信号，给出一个初步的交易建议 (Buy/Sell/Wait)。**如果建议挂单(Limit)，请基于 SMC 结构给出精确的建议价格。**
         7. **策略一致性评估**: 评估各个高级算法信号之间的一致性。
         
         请以JSON格式返回结果，包含以下字段：

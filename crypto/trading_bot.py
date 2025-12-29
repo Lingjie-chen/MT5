@@ -599,10 +599,19 @@ class CryptoTradingBot:
 
         # 1. DeepSeek
         logger.info("Requesting DeepSeek market structure analysis...")
+        
+        # Get performance stats for DeepSeek context
+        performance_stats = []
+        try:
+            performance_stats = self.db_manager.get_trade_performance_stats(limit=50)
+        except Exception:
+            pass
+            
         structure_analysis = self.deepseek_client.analyze_market_structure(
             market_data, 
             current_positions=current_positions,
-            extra_analysis=extra_analysis_data
+            extra_analysis=extra_analysis_data,
+            performance_stats=performance_stats
         )
         
         # DeepSeek Signal Logic (similar to Gold)
@@ -889,10 +898,42 @@ class CryptoTradingBot:
                 order = self.data_processor.create_order(self.symbol, 'sell', num_contracts, type='market', params=order_params)
             elif action in ['buy_limit', 'limit_buy']:
                 lp = decision.get('entry_conditions', {}).get('limit_price')
-                if lp: order = self.data_processor.create_order(self.symbol, 'buy', num_contracts, type='limit', price=lp, params=order_params)
+                
+                # Auto-fallback if limit price is invalid
+                if not lp or float(lp) <= 0:
+                    logger.warning("LLM suggested Limit Buy but no price provided. Using ATR fallback.")
+                    atr = latest_data.get('atr', 0)
+                    if atr > 0:
+                        lp = current_price - (atr * 0.5)
+                        logger.info(f"Auto-set Limit Buy Price: {lp:.2f}")
+                
+                if lp and float(lp) > 0: 
+                    # Determine Limit vs Stop
+                    if float(lp) > current_price:
+                        # Price > Current = Stop Buy (Breakout)
+                        # OKX uses 'trigger' orders for stop, but 'limit' for standard limit.
+                        # Standard Limit Buy must be < Current Price.
+                        # If we want a Stop Buy, we need a trigger order.
+                        # For simplicity in this bot, we might convert Stop Buy to Market if close, or use trigger.
+                        # Let's assume standard limit for now, and if price > current, we might need to use 'market' or skip.
+                        # Actually, placing a limit buy above market price executes immediately as taker (market).
+                        # So we can just place it.
+                        pass
+                    order = self.data_processor.create_order(self.symbol, 'buy', num_contracts, type='limit', price=lp, params=order_params)
+                    
             elif action in ['sell_limit', 'limit_sell']:
                 lp = decision.get('entry_conditions', {}).get('limit_price')
-                if lp: order = self.data_processor.create_order(self.symbol, 'sell', num_contracts, type='limit', price=lp, params=order_params)
+                
+                # Auto-fallback
+                if not lp or float(lp) <= 0:
+                    logger.warning("LLM suggested Limit Sell but no price provided. Using ATR fallback.")
+                    atr = latest_data.get('atr', 0)
+                    if atr > 0:
+                        lp = current_price + (atr * 0.5)
+                        logger.info(f"Auto-set Limit Sell Price: {lp:.2f}")
+                        
+                if lp and float(lp) > 0: 
+                    order = self.data_processor.create_order(self.symbol, 'sell', num_contracts, type='limit', price=lp, params=order_params)
             
             if order:
                 trade_record = {
