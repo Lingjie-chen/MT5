@@ -549,9 +549,13 @@ class AI_MT5_Bot:
         # SYMBOL_FILLING_FOK = 1
         # SYMBOL_FILLING_IOC = 2
         
-        if modes & 1: # SYMBOL_FILLING_FOK
+        # Check using integer values to avoid AttributeError if constants are missing
+        SYMBOL_FILLING_FOK_VAL = 1
+        SYMBOL_FILLING_IOC_VAL = 2
+        
+        if modes & SYMBOL_FILLING_FOK_VAL: 
             return mt5.ORDER_FILLING_FOK
-        elif modes & 2: # SYMBOL_FILLING_IOC
+        elif modes & SYMBOL_FILLING_IOC_VAL: 
             return mt5.ORDER_FILLING_IOC
         else:
             return mt5.ORDER_FILLING_RETURN
