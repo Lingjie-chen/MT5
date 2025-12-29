@@ -549,6 +549,16 @@ class AI_MT5_Bot:
 
 
 
+    def escape_markdown(self, text):
+        """Helper to escape Markdown special characters for Telegram"""
+        if not isinstance(text, str):
+            text = str(text)
+        # Escaping for Markdown (V1)
+        escape_chars = '_*[`'
+        for char in escape_chars:
+            text = text.replace(char, f'\\{char}')
+        return text
+
     def send_telegram_message(self, message):
         """发送消息到 Telegram"""
         token = "8253887074:AAE_o7hfEb6iJCZ2MdVIezOC_E0OnTCvCzY"
