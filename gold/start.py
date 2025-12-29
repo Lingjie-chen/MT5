@@ -493,6 +493,26 @@ class AI_MT5_Bot:
 
 
 
+    def _get_filling_mode(self):
+        """
+        Get the correct order filling mode for the symbol.
+        Checks broker support for FOK/IOC.
+        """
+        symbol_info = mt5.symbol_info(self.symbol)
+        if symbol_info is None:
+            return mt5.ORDER_FILLING_FOK # Default
+            
+        # filling_mode is a flag property
+        # 1: FOK, 2: IOC
+        modes = symbol_info.filling_mode
+        
+        if modes & mt5.SYMBOL_FILLING_FOK:
+            return mt5.ORDER_FILLING_FOK
+        elif modes & mt5.SYMBOL_FILLING_IOC:
+            return mt5.ORDER_FILLING_IOC
+        else:
+            return mt5.ORDER_FILLING_RETURN
+
     def _send_order(self, type_str, price, sl, tp, comment=""):
         """底层下单函数"""
         order_type = mt5.ORDER_TYPE_BUY
