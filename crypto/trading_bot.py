@@ -69,7 +69,7 @@ class CryptoTradingBot:
         # Initialize Database Manager
         # Using a dedicated database file for Crypto strategy to keep it separate from Gold strategy
         # Ensure db is stored in the same directory as this script
-        current_dir = os.path.dirname(os.path.abspath(__file__))
+        current_dir = os.path.dirname(os.path.realpath(__file__))
         db_path = os.path.join(current_dir, 'crypto_trading.db')
         self.db_manager = DatabaseManager(db_name=db_path)
         
@@ -99,6 +99,34 @@ class CryptoTradingBot:
                 logger.error(f"Failed to send Telegram message: {response.text}")
         except Exception as e:
             logger.error(f"Error sending Telegram message: {e}")
+
+    def _load_opt_history(self):
+        """Load optimization history for seeding"""
+        if not os.path.exists(self.opt_history_path):
+            return []
+        try:
+            with open(self.opt_history_path, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load optimization history: {e}")
+            return []
+
+    def _save_opt_history(self, params, score):
+        """Save optimization result"""
+        history = self._load_opt_history()
+        # Add new result
+        history.append({
+            'timestamp': time.time(),
+            'params': list(params), # Convert numpy array to list
+            'score': float(score)
+        })
+        # Keep top 50
+        history = sorted(history, key=lambda x: x['score'], reverse=True)[:50]
+        try:
+            with open(self.opt_history_path, 'w') as f:
+                json.dump(history, f, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to save optimization history: {e}")
             
     def optimize_parameters(self, df):
         """Run real-time parameter optimization"""
@@ -451,12 +479,21 @@ class CryptoTradingBot:
             sl_price = exit_cond.get('sl_price', 'N/A')
             tp_price = exit_cond.get('tp_price', 'N/A')
             
+            action = decision.get('action')
+            display_action = action
+            
+            # Check if we should display "Waiting for Market Direction" instead of "hold"
+            # Logic: If action is hold and we have no positions, be more descriptive
+            has_positions = len(current_positions) > 0
+            if action == 'hold' and not has_positions:
+                display_action = "WAITING FOR MARKET DIRECTION ⏳"
+            
             msg = (
                 f"🤖 *AI Crypto Strategy Analysis*\n"
                 f"Symbol: `{self.symbol}`\n"
                 f"Timeframe: `{self.timeframe}`\n\n"
                 f"📊 *Market Structure*: {structure_analysis.get('market_state')} (Score: {structure_analysis.get('structure_score')})\n"
-                f"💡 *Action*: `{decision.get('action')}`\n"
+                f"💡 *Action*: `{display_action}`\n"
                 f"💪 *Signal Strength*: {decision.get('signal_strength')}\n\n"
                 f"📝 *Rationale*:\n{decision.get('strategy_rationale')}\n\n"
                 f"🎯 *Targets*:\n"
@@ -767,5 +804,9 @@ class CryptoTradingBot:
 
 if __name__ == "__main__":
     # Example usage
-    bot = CryptoTradingBot(symbol='ETH/USDT:USDT', timeframe='15m', interval=900) # 15 minutes interval
+    bot = CryptoTradingBot(symbol='ETH/USDT:USDT', timeframe='15m', interval=3600 ) # 15 minutes interval
+    bot.start()
+if __name__ == "__main__":
+    # Example usage
+    bot = CryptoTradingBot(symbol='ETH/USDT:USDT', timeframe='15m', interval=3600 ) # 15 minutes interval
     bot.start()

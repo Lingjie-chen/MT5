@@ -29,7 +29,17 @@ class WOAm(Optimizer):
         self.spiral_coeff = spiral_coeff
         self.spiral_prob = spiral_prob
         
-    def optimize(self, objective_function: Callable, bounds: List[Tuple[float, float]], steps: List[float] = None, epochs: int = 100):
+    def optimize(self, objective_function: Callable, bounds: List[Tuple[float, float]], steps: List[float] = None, epochs: int = 100, historical_data: List[Dict] = None):
+        """
+        Run the optimization process.
+        
+        Args:
+            objective_function: Evaluation function
+            bounds: Parameter bounds
+            steps: Step sizes
+            epochs: Number of iterations
+            historical_data: Optional historical trade data for self-learning initialization
+        """
         dim = len(bounds)
         if steps is None:
             steps = [0.0] * dim
@@ -42,11 +52,34 @@ class WOAm(Optimizer):
         agent_prev_pos = np.zeros((self.pop_size, dim)) # agent.cPrev
         agent_prev_fit = np.full(self.pop_size, -float('inf')) # agent.fPrev
         
-        # Initial Random Population
+        # Initial Random Population with Heuristic Seeding
+        # Use AI-guided heuristics if historical data is available
+        ai_suggestions = []
+        if historical_data:
+            # Simple logic: use best past parameters as seeds
+            # Assume historical_data contains dicts with 'params' and 'score'
+            sorted_history = sorted(historical_data, key=lambda x: x.get('score', 0), reverse=True)
+            for h in sorted_history[:int(self.pop_size * 0.2)]: # Top 20%
+                if 'params' in h:
+                    ai_suggestions.append(h['params'])
+
         for i in range(self.pop_size):
-            for j in range(dim):
-                population[i, j] = random.uniform(bounds[j][0], bounds[j][1])
-                if steps[j] > 0: population[i, j] = round(population[i, j] / steps[j]) * steps[j]
+            if i < len(ai_suggestions):
+                # Initialize with AI suggestion
+                suggested_params = ai_suggestions[i]
+                for j in range(dim):
+                    # Add small noise to avoid stagnation
+                    noise = random.uniform(-0.05, 0.05) * (bounds[j][1] - bounds[j][0])
+                    val = suggested_params[j] + noise
+                    # Boundary check
+                    val = max(bounds[j][0], min(bounds[j][1], val))
+                    if steps[j] > 0: val = round(val / steps[j]) * steps[j]
+                    population[i, j] = val
+            else:
+                # Random initialization
+                for j in range(dim):
+                    population[i, j] = random.uniform(bounds[j][0], bounds[j][1])
+                    if steps[j] > 0: population[i, j] = round(population[i, j] / steps[j]) * steps[j]
             
             fitness[i] = objective_function(population[i])
             
@@ -61,6 +94,7 @@ class WOAm(Optimizer):
         
         # Main Loop
         for epoch in range(epochs):
+            # ... existing logic ...
             a_ko = 2.0 - epoch * (2.0 / epochs)
             
             new_population = np.zeros_like(population)
@@ -145,13 +179,14 @@ class GWO(Optimizer):
         self.pop_size = pop_size
         self.alpha_number = alpha_number # Standard GWO uses 3 (Alpha, Beta, Delta)
         
-    def optimize(self, objective_function: Callable, bounds: List[Tuple[float, float]], steps: List[float] = None, epochs: int = 100):
+    def optimize(self, objective_function: Callable, bounds: List[Tuple[float, float]], steps: List[float] = None, epochs: int = 100, historical_data: List[Dict] = None):
         """
         Run the GWO optimization
         :param objective_function: Function that takes a list of parameters and returns a score (higher is better)
         :param bounds: List of (min, max) tuples for each parameter
         :param steps: List of step sizes for each parameter (optional, for discrete optimization)
         :param epochs: Number of iterations
+        :param historical_data: Optional historical trade data for self-learning initialization
         """
         dim = len(bounds)
         if steps is None:
@@ -161,14 +196,31 @@ class GWO(Optimizer):
         population = np.zeros((self.pop_size, dim))
         fitness = np.full(self.pop_size, -float('inf'))
         
-        # Random initialization within bounds
+        # Prepare seeding from history
+        ai_suggestions = []
+        if historical_data:
+            sorted_history = sorted(historical_data, key=lambda x: x.get('score', 0), reverse=True)
+            for h in sorted_history[:int(self.pop_size * 0.2)]: 
+                if 'params' in h:
+                    ai_suggestions.append(h['params'])
+
+        # Random initialization within bounds with seeding
         for i in range(self.pop_size):
-            for j in range(dim):
-                min_val, max_val = bounds[j]
-                population[i, j] = random.uniform(min_val, max_val)
-                # Snap to step if needed
-                if steps[j] > 0:
-                    population[i, j] = round(population[i, j] / steps[j]) * steps[j]
+            if i < len(ai_suggestions):
+                # Seed from history
+                suggested = ai_suggestions[i]
+                for j in range(dim):
+                    noise = random.uniform(-0.05, 0.05) * (bounds[j][1] - bounds[j][0])
+                    val = suggested[j] + noise
+                    val = max(bounds[j][0], min(bounds[j][1], val))
+                    if steps[j] > 0: val = round(val / steps[j]) * steps[j]
+                    population[i, j] = val
+            else:
+                for j in range(dim):
+                    min_val, max_val = bounds[j]
+                    population[i, j] = random.uniform(min_val, max_val)
+                    if steps[j] > 0:
+                        population[i, j] = round(population[i, j] / steps[j]) * steps[j]
             
             # Evaluate initial fitness
             fitness[i] = objective_function(population[i])
@@ -268,25 +320,37 @@ class COAm(Optimizer):
         self.koef_alpha = koef_alpha
         self.change_prob = change_prob
         
-    def optimize(self, objective_function: Callable, bounds: List[Tuple[float, float]], steps: List[float] = None, epochs: int = 100):
+    def optimize(self, objective_function: Callable, bounds: List[Tuple[float, float]], steps: List[float] = None, epochs: int = 100, historical_data: List[Dict] = None):
         dim = len(bounds)
         if steps is None:
             steps = [0.0] * dim
             
         # Initialize Nests
-        # Note: MQL5 uses separate 'nests' array and 'a' (agents).
-        # We will simplify by using just population as nests.
-        # pop_size in MQL5 seems to be the number of agents trying to replace nests?
-        # Actually in MQL5 COAm, 'nests' is the population of solutions.
-        
         nests = np.zeros((self.pop_size, dim))
         fitness = np.full(self.pop_size, -float('inf'))
         
+        # Prepare seeding
+        ai_suggestions = []
+        if historical_data:
+            sorted_history = sorted(historical_data, key=lambda x: x.get('score', 0), reverse=True)
+            for h in sorted_history[:int(self.pop_size * 0.2)]: 
+                if 'params' in h:
+                    ai_suggestions.append(h['params'])
+
         # Initial Random Population
         for i in range(self.pop_size):
-            for j in range(dim):
-                nests[i, j] = random.uniform(bounds[j][0], bounds[j][1])
-                if steps[j] > 0: nests[i, j] = round(nests[i, j] / steps[j]) * steps[j]
+            if i < len(ai_suggestions):
+                suggested = ai_suggestions[i]
+                for j in range(dim):
+                    noise = random.uniform(-0.05, 0.05) * (bounds[j][1] - bounds[j][0])
+                    val = suggested[j] + noise
+                    val = max(bounds[j][0], min(bounds[j][1], val))
+                    if steps[j] > 0: val = round(val / steps[j]) * steps[j]
+                    nests[i, j] = val
+            else:
+                for j in range(dim):
+                    nests[i, j] = random.uniform(bounds[j][0], bounds[j][1])
+                    if steps[j] > 0: nests[i, j] = round(nests[i, j] / steps[j]) * steps[j]
             fitness[i] = objective_function(nests[i])
             
         # Find global best
@@ -407,7 +471,7 @@ class BBO(Optimizer):
         self.mutation_prob = mutation_prob
         self.elitism_count = elitism_count
         
-    def optimize(self, objective_function: Callable, bounds: List[Tuple[float, float]], steps: List[float] = None, epochs: int = 100):
+    def optimize(self, objective_function: Callable, bounds: List[Tuple[float, float]], steps: List[float] = None, epochs: int = 100, historical_data: List[Dict] = None):
         dim = len(bounds)
         if steps is None:
             steps = [0.0] * dim
@@ -416,10 +480,27 @@ class BBO(Optimizer):
         population = np.zeros((self.pop_size, dim))
         fitness = np.full(self.pop_size, -float('inf'))
         
+        # Seeding
+        ai_suggestions = []
+        if historical_data:
+            sorted_history = sorted(historical_data, key=lambda x: x.get('score', 0), reverse=True)
+            for h in sorted_history[:int(self.pop_size * 0.2)]: 
+                if 'params' in h:
+                    ai_suggestions.append(h['params'])
+
         for i in range(self.pop_size):
-            for j in range(dim):
-                population[i, j] = random.uniform(bounds[j][0], bounds[j][1])
-                if steps[j] > 0: population[i, j] = round(population[i, j] / steps[j]) * steps[j]
+            if i < len(ai_suggestions):
+                suggested = ai_suggestions[i]
+                for j in range(dim):
+                    noise = random.uniform(-0.05, 0.05) * (bounds[j][1] - bounds[j][0])
+                    val = suggested[j] + noise
+                    val = max(bounds[j][0], min(bounds[j][1], val))
+                    if steps[j] > 0: val = round(val / steps[j]) * steps[j]
+                    population[i, j] = val
+            else:
+                for j in range(dim):
+                    population[i, j] = random.uniform(bounds[j][0], bounds[j][1])
+                    if steps[j] > 0: population[i, j] = round(population[i, j] / steps[j]) * steps[j]
             fitness[i] = objective_function(population[i])
             
         # Sort by fitness (HSI)
@@ -534,7 +615,7 @@ class DE(Optimizer):
         self.F = F   # Mutation factor
         self.CR = CR # Crossover rate
         
-    def optimize(self, objective_function: Callable, bounds: List[Tuple[float, float]], steps: List[float] = None, epochs: int = 100):
+    def optimize(self, objective_function: Callable, bounds: List[Tuple[float, float]], steps: List[float] = None, epochs: int = 100, historical_data: List[Dict] = None):
         dim = len(bounds)
         if steps is None:
             steps = [0.0] * dim
@@ -543,10 +624,27 @@ class DE(Optimizer):
         population = np.zeros((self.pop_size, dim))
         fitness = np.full(self.pop_size, -float('inf'))
         
+        # Seeding
+        ai_suggestions = []
+        if historical_data:
+            sorted_history = sorted(historical_data, key=lambda x: x.get('score', 0), reverse=True)
+            for h in sorted_history[:int(self.pop_size * 0.2)]: 
+                if 'params' in h:
+                    ai_suggestions.append(h['params'])
+
         for i in range(self.pop_size):
-            for j in range(dim):
-                population[i, j] = random.uniform(bounds[j][0], bounds[j][1])
-                if steps[j] > 0: population[i, j] = round(population[i, j] / steps[j]) * steps[j]
+            if i < len(ai_suggestions):
+                suggested = ai_suggestions[i]
+                for j in range(dim):
+                    noise = random.uniform(-0.05, 0.05) * (bounds[j][1] - bounds[j][0])
+                    val = suggested[j] + noise
+                    val = max(bounds[j][0], min(bounds[j][1], val))
+                    if steps[j] > 0: val = round(val / steps[j]) * steps[j]
+                    population[i, j] = val
+            else:
+                for j in range(dim):
+                    population[i, j] = random.uniform(bounds[j][0], bounds[j][1])
+                    if steps[j] > 0: population[i, j] = round(population[i, j] / steps[j]) * steps[j]
             fitness[i] = objective_function(population[i])
             
         best_idx = np.argmax(fitness)
@@ -595,7 +693,7 @@ class TETA(Optimizer):
         super().__init__("TETA")
         self.pop_size = pop_size
 
-    def optimize(self, objective_function: Callable, bounds: List[Tuple[float, float]], steps: List[float] = None, epochs: int = 100):
+    def optimize(self, objective_function: Callable, bounds: List[Tuple[float, float]], steps: List[float] = None, epochs: int = 100, historical_data: List[Dict] = None):
         dim = len(bounds)
         if steps is None:
             steps = [0.0] * dim
@@ -615,11 +713,28 @@ class TETA(Optimizer):
         self.best_solution = np.zeros(dim)
         self.best_score = -float('inf')
 
+        # Seeding
+        ai_suggestions = []
+        if historical_data:
+            sorted_history = sorted(historical_data, key=lambda x: x.get('score', 0), reverse=True)
+            for h in sorted_history[:int(self.pop_size * 0.2)]: 
+                if 'params' in h:
+                    ai_suggestions.append(h['params'])
+
         # Initialization
         for i in range(self.pop_size):
-            for j in range(dim):
-                population[i, j] = random.uniform(bounds[j][0], bounds[j][1])
-                if steps[j] > 0: population[i, j] = round(population[i, j] / steps[j]) * steps[j]
+            if i < len(ai_suggestions):
+                suggested = ai_suggestions[i]
+                for j in range(dim):
+                    noise = random.uniform(-0.05, 0.05) * (bounds[j][1] - bounds[j][0])
+                    val = suggested[j] + noise
+                    val = max(bounds[j][0], min(bounds[j][1], val))
+                    if steps[j] > 0: val = round(val / steps[j]) * steps[j]
+                    population[i, j] = val
+            else:
+                for j in range(dim):
+                    population[i, j] = random.uniform(bounds[j][0], bounds[j][1])
+                    if steps[j] > 0: population[i, j] = round(population[i, j] / steps[j]) * steps[j]
             
             # Initial Evaluation
             fitness[i] = objective_function(population[i])

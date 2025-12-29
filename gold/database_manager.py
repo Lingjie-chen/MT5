@@ -9,12 +9,10 @@ logger = logging.getLogger("DatabaseManager")
 
 class DatabaseManager:
     def __init__(self, db_path="trading_data.db"):
-        # 如果传入的是默认相对路径，将其转换为基于项目根目录的绝对路径
-        if db_path == "trading_data.db":
-            # 假设当前文件在 python/ 目录下，项目根目录在上一级
+        # 如果传入的是默认文件名（非绝对路径），将其转换为基于当前文件所在目录的绝对路径
+        if not os.path.isabs(db_path):
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            project_root = os.path.dirname(current_dir)
-            self.db_path = os.path.join(project_root, db_path)
+            self.db_path = os.path.join(current_dir, os.path.basename(db_path))
         else:
             self.db_path = db_path
             

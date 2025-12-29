@@ -167,9 +167,14 @@ class AI_MT5_Bot:
                 return False
             
         # 确保数据库路径设置正确
-        if not os.path.isabs(self.db_manager.db_path):
-             current_dir = os.path.dirname(os.path.abspath(__file__))
-             self.db_manager.db_path = os.path.join(current_dir, 'trading_data.db')
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        db_path = os.path.join(current_dir, 'trading_data.db')
+        
+        # 检查是否需要更新 db_manager 的路径
+        # DatabaseManager 默认初始化时可能使用了不同的路径，这里强制覆盖
+        if self.db_manager.db_path != db_path:
+             logger.info(f"重新定向数据库路径到: {db_path}")
+             self.db_manager = DatabaseManager(db_path=db_path)
 
         # 检查终端状态
         term_info = mt5.terminal_info()
@@ -1086,11 +1091,15 @@ class AI_MT5_Bot:
         logger.info(f"本次选择的优化算法: {algo_name}")
         
         # 5. 运行优化
+        # 获取历史交易数据供自我学习
+        historical_trades = self.db_manager.get_trade_performance_stats(limit=100)
+        
         best_params, best_score = optimizer.optimize(
             objective, 
             bounds, 
             steps=steps, 
-            epochs=5 # 快速优化
+            epochs=5, # 快速优化
+            historical_data=historical_trades # 传入历史数据
         )
         
         # 6. 验证和应用最佳参数
@@ -2014,51 +2023,91 @@ class AI_MT5_Bot:
                                 pos_details.append(f"{type_str} {p.volume} (PnL: {pnl:.2f})")
                             pos_summary = "\n".join(pos_details)
 
-                        # 获取建议的 SL/TP (仅供参考)
-                        # 注意：这里只是预估值，实际值在 execute_trade 中计算
-                        # 为了展示，我们调用 calculate_optimized_sl_tp 获取一次
-                        ref_price = mt5.symbol_info_tick(self.symbol).ask
+                        # 获取建议的 SL/TP (用于展示最优 SL/TP)
+                        # 逻辑: 优先展示 Qwen 策略中明确的 SL/TP，如果没有，则展示基于 MFE/MAE 优化的计算值
+                        current_bid = mt5.symbol_info_tick(self.symbol).bid
+                        current_ask = mt5.symbol_info_tick(self.symbol).ask
+                        ref_price = current_ask # 默认参考价
                         
-                        # 准备市场上下文供 SL/TP 计算
-                        sl_tp_context = {
-                            "supply_zones": adv_result.get('ifvg', {}).get('active_zones', []), # 假设 ifvg 中包含 supply/demand
-                            "demand_zones": [], # 需要从 ifvg 或其他地方提取
-                            "bearish_fvgs": [], 
-                            "bullish_fvgs": []
-                        }
-                        # 尝试从 adv_result 中提取更详细的结构信息 (如果存在)
-                        if adv_result and 'ifvg' in adv_result:
-                             # 假设 ifvg 结果包含 zones 列表 [(top, bottom, type), ...]
-                             # 这里简化处理，实际需要根据 ifvg 返回结构适配
-                             pass
+                        trade_dir_for_calc = "buy"
+                        if final_signal in ['sell', 'limit_sell']:
+                            trade_dir_for_calc = "sell"
+                            ref_price = current_bid
+                        
+                        # 1. 尝试从 Qwen 策略获取
+                        exit_conds = strategy.get('exit_conditions', {})
+                        opt_sl = exit_conds.get('sl_price')
+                        opt_tp = exit_conds.get('tp_price')
+                        
+                        # 2. 如果 Qwen 未提供，使用内部优化算法计算
+                        if not opt_sl or not opt_tp:
+                            # 准备市场上下文
+                            sl_tp_context = {
+                                "supply_zones": adv_result.get('ifvg', {}).get('active_zones', []),
+                                "demand_zones": [],
+                                "bearish_fvgs": [], 
+                                "bullish_fvgs": []
+                            }
+                            # 计算 ATR (复用)
+                            atr_val = float(latest_features.get('atr', 0))
+                            if atr_val == 0: atr_val = ref_price * 0.005
+                            
+                            calc_sl, calc_tp = self.calculate_optimized_sl_tp(trade_dir_for_calc, ref_price, atr_val, market_context=sl_tp_context)
+                            
+                            if not opt_sl: opt_sl = calc_sl
+                            if not opt_tp: opt_tp = calc_tp
 
-                        # 计算 ATR (复用之前的计算或重新获取)
-                        atr_val = 0.0 # 这里简化，实际应传入有效 ATR
+                        # 计算盈亏比 (R:R)
+                        rr_str = "N/A"
+                        if opt_sl and opt_tp and ref_price:
+                            risk = abs(ref_price - opt_sl)
+                            reward = abs(opt_tp - ref_price)
+                            if risk > 0:
+                                rr = reward / risk
+                                rr_str = f"1:{rr:.2f}"
+
+                        # 优化显示逻辑: 如果是 Hold 且无持仓，显示为 "Waiting for Market Direction"
+                        display_decision = final_signal.upper()
+                        if final_signal == 'hold' and (not positions or len(positions) == 0):
+                            display_decision = "WAITING FOR MARKET DIRECTION ⏳"
+
+                        # 格式化 DeepSeek 和 Qwen 的详细分析
+                        ds_analysis_text = f"• Signal: {ds_signal.upper()}\n"
+                        ds_analysis_text += f"• Conf: {ds_score}/100\n"
+                        ds_analysis_text += f"• Pred: {ds_pred}"
                         
-                        ref_sl, ref_tp = self.calculate_optimized_sl_tp("buy", ref_price, atr_val, market_context=sl_tp_context)
-                        
+                        qw_analysis_text = f"• Action: {qw_action.upper()}\n"
+                        if param_updates:
+                            qw_analysis_text += f"• Params Updated: {len(param_updates)} items"
+
                         analysis_msg = (
-                            f"🤖 *AI Market Analysis - {self.symbol}*\n"
-                            f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                            f"🧠 *Dual-LLM Decision:*\n"
-                            f"• DeepSeek: `{ds_signal.upper()}` (Conf: {ds_score})\n"
-                            f"• Qwen Strategy: `{qw_action.upper()}`\n"
-                            f"• Final Action: *{final_signal.upper()}* (Strength: {strength:.1f})\n"
-                            f"• Reason: _{reason}_\n\n"
-                            f"📊 *Technical Confluence:*\n"
-                            f"• Support: {matching_count}/{valid_tech_count} indicators\n"
-                            f"• SMC: `{smc_result['signal']}` | CRT: `{crt_result['signal']}`\n"
-                            f"• MTF: `{mtf_result['signal']}` | MFH: `{mfh_result['signal']}`\n\n"
-                            f"📈 *Market Context:*\n"
-                            f"• State: {structure.get('market_state', 'N/A')}\n"
-                            f"• Regime: {regime_info}\n"
-                            f"• Volatility: {volatility_info}\n"
-                            f"• Prediction: {structure.get('short_term_prediction', 'N/A')}\n\n"
-                            f"💼 *Position Status:*\n"
-                            f"{pos_summary}\n\n"
-                            f"🛡️ *Risk Management (MFE/MAE Optimized):*\n"
-                            f"• Est. SL Distance: ~{abs(ref_price - ref_sl):.2f}\n"
-                            f"• Est. TP Distance: ~{abs(ref_tp - ref_price):.2f}"
+                            f"🤖 *AI Gold Strategy Insight*\n"
+                            f"Symbol: `{self.symbol}` | TF: `{self.tf_name}`\n"
+                            f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
+                            
+                            f"🧠 *AI Consensus Analysis*\n"
+                            f"• Final Decision: *{display_decision}* (Strength: {strength:.0f}%)\n"
+                            f"• Rationale: _{reason}_\n\n"
+                            
+                            f"🕵️ *Model Details*\n"
+                            f"*DeepSeek (Market Structure):*\n{ds_analysis_text}\n"
+                            f"*Qwen (Strategy Logic):*\n{qw_analysis_text}\n\n"
+                            
+                            f"🎯 *Optimal Trade Setup*\n"
+                            f"• Direction: `{trade_dir_for_calc.upper()}`\n"
+                            f"• Ref Entry: `{ref_price:.2f}`\n"
+                            f"• 🛑 Opt. SL: `{opt_sl:.2f}`\n"
+                            f"• 🏆 Opt. TP: `{opt_tp:.2f}`\n"
+                            f"• R:R Ratio: `{rr_str}`\n\n"
+                            
+                            f"📊 *Market X-Ray*\n"
+                            f"• State: `{structure.get('market_state', 'N/A')}`\n"
+                            f"• Volatility: `{volatility_info}`\n"
+                            f"• Tech Confluence: {matching_count}/{valid_tech_count} signals match\n"
+                            f"• Key Signals: SMC[{smc_result['signal']}], CRT[{crt_result['signal']}], MTF[{mtf_result['signal']}]\n\n"
+                            
+                            f"💼 *Account & Positions*\n"
+                            f"{pos_summary}"
                         )
                         self.send_telegram_message(analysis_msg)
 
