@@ -887,10 +887,10 @@ class CryptoTradingBot:
                 order = self.data_processor.create_order(self.symbol, 'buy', num_contracts, type='market', params=order_params)
             elif action == 'sell':
                 order = self.data_processor.create_order(self.symbol, 'sell', num_contracts, type='market', params=order_params)
-            elif action == 'buy_limit':
+            elif action in ['buy_limit', 'limit_buy']:
                 lp = decision.get('entry_conditions', {}).get('limit_price')
                 if lp: order = self.data_processor.create_order(self.symbol, 'buy', num_contracts, type='limit', price=lp, params=order_params)
-            elif action == 'sell_limit':
+            elif action in ['sell_limit', 'limit_sell']:
                 lp = decision.get('entry_conditions', {}).get('limit_price')
                 if lp: order = self.data_processor.create_order(self.symbol, 'sell', num_contracts, type='limit', price=lp, params=order_params)
             

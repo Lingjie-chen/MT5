@@ -456,11 +456,11 @@ class AI_MT5_Bot:
         elif llm_action == 'sell':
             trade_type = "sell"
             price = tick.bid
-        elif llm_action == 'limit_buy':
+        elif llm_action in ['limit_buy', 'buy_limit']:
             trade_type = "limit_buy"
             # 优先使用 limit_price (与 prompt 一致)，回退使用 entry_price
             price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
-        elif llm_action == 'limit_sell':
+        elif llm_action in ['limit_sell', 'sell_limit']:
             trade_type = "limit_sell"
             price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
 
