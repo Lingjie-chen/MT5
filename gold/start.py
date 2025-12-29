@@ -460,20 +460,48 @@ class AI_MT5_Bot:
             # 优先使用 limit_price (与 prompt 一致)，回退使用 entry_price
             price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
             
+            # 增强：如果价格无效，尝试自动修复
+            if price <= 0:
+                logger.warning(f"LLM 建议 Limit Buy 但未提供价格，尝试使用 ATR 自动计算")
+                # 获取 ATR
+                rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+                if rates is not None and len(rates) > 14:
+                     df_temp = pd.DataFrame(rates)
+                     high_low = df_temp['high'] - df_temp['low']
+                     atr = high_low.rolling(14).mean().iloc[-1]
+                     if atr > 0:
+                        price = tick.ask - (atr * 0.5) # 默认在当前价格下方 0.5 ATR 处挂单
+                        logger.info(f"自动设定 Limit Buy 价格: {price:.2f} (Ask: {tick.ask}, ATR: {atr:.4f})")
+            
             # 智能判断 Limit vs Stop
-            if price > tick.ask:
-                trade_type = "stop_buy" # 价格高于当前价 -> 突破买入
-            else:
-                trade_type = "limit_buy" # 价格低于当前价 -> 回调买入
+            if price > 0:
+                if price > tick.ask:
+                    trade_type = "stop_buy" # 价格高于当前价 -> 突破买入
+                else:
+                    trade_type = "limit_buy" # 价格低于当前价 -> 回调买入
                 
         elif llm_action in ['limit_sell', 'sell_limit']:
             price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
             
+            # 增强：如果价格无效，尝试自动修复
+            if price <= 0:
+                logger.warning(f"LLM 建议 Limit Sell 但未提供价格，尝试使用 ATR 自动计算")
+                # 获取 ATR
+                rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+                if rates is not None and len(rates) > 14:
+                     df_temp = pd.DataFrame(rates)
+                     high_low = df_temp['high'] - df_temp['low']
+                     atr = high_low.rolling(14).mean().iloc[-1]
+                     if atr > 0:
+                        price = tick.bid + (atr * 0.5) # 默认在当前价格上方 0.5 ATR 处挂单
+                        logger.info(f"自动设定 Limit Sell 价格: {price:.2f} (Bid: {tick.bid}, ATR: {atr:.4f})")
+            
             # 智能判断 Limit vs Stop
-            if price < tick.bid:
-                trade_type = "stop_sell" # 价格低于当前价 -> 突破卖出
-            else:
-                trade_type = "limit_sell" # 价格高于当前价 -> 反弹卖出
+            if price > 0:
+                if price < tick.bid:
+                    trade_type = "stop_sell" # 价格低于当前价 -> 突破卖出
+                else:
+                    trade_type = "limit_sell" # 价格高于当前价 -> 反弹卖出
 
         if trade_type and price > 0:
             # 再次确认 SL/TP 是否存在
@@ -569,6 +597,7 @@ class AI_MT5_Bot:
                  del request['type_filling']
              request['type_filling'] = mt5.ORDER_FILLING_RETURN
         
+        logger.info(f"发送订单请求: Action={action}, Type={order_type}, Price={price:.2f}, SL={sl:.2f}, TP={tp:.2f}")
         result = mt5.order_send(request)
         if result is None:
              logger.error("order_send 返回 None")
@@ -1765,6 +1794,29 @@ class AI_MT5_Bot:
 
                         # --- 3.3 DeepSeek 分析 ---
                         logger.info("正在调用 DeepSeek 分析市场结构...")
+                        
+                        # 获取历史交易绩效 (MFE/MAE) - 提前获取供 DeepSeek 使用
+                        trade_stats = self.db_manager.get_trade_performance_stats(limit=50)
+                        
+                        # 获取当前持仓状态 (供 DeepSeek 和 Qwen 决策) - 提前获取
+                        positions = mt5.positions_get(symbol=self.symbol)
+                        current_positions_list = []
+                        if positions:
+                            for pos in positions:
+                                cur_mfe, cur_mae = self.get_position_stats(pos)
+                                current_positions_list.append({
+                                    "ticket": pos.ticket,
+                                    "type": "buy" if pos.type == mt5.POSITION_TYPE_BUY else "sell",
+                                    "volume": pos.volume,
+                                    "open_price": pos.price_open,
+                                    "current_price": pos.price_current,
+                                    "profit": pos.profit,
+                                    "sl": pos.sl,
+                                    "tp": pos.tp,
+                                    "mfe_pct": cur_mfe,
+                                    "mae_pct": cur_mae
+                                })
+                        
                         # 准备当前优化状态上下文
                         optimization_status = {
                             "active_optimizer": self.active_optimizer_name,
@@ -1792,7 +1844,14 @@ class AI_MT5_Bot:
                             "rvgi_cci": rvgi_cci_result,
                             "optimization_status": optimization_status # 新增: 当前参数状态
                         }
-                        structure = self.deepseek_client.analyze_market_structure(market_snapshot, extra_analysis=extra_analysis)
+                        
+                        # 调用 DeepSeek，传入性能数据和持仓信息
+                        structure = self.deepseek_client.analyze_market_structure(
+                            market_snapshot, 
+                            current_positions=current_positions_list,
+                            extra_analysis=extra_analysis, 
+                            performance_stats=trade_stats
+                        )
                         logger.info(f"DeepSeek 分析完成: {structure.get('market_state')}")
                         
                         # DeepSeek 信号转换
@@ -1809,28 +1868,6 @@ class AI_MT5_Bot:
                         
                         # --- 3.4 Qwen 策略 ---
                         logger.info("正在调用 Qwen 生成策略...")
-                        
-                        # 获取历史交易绩效 (MFE/MAE)
-                        trade_stats = self.db_manager.get_trade_performance_stats(limit=50)
-                        
-                        # 获取当前持仓状态 (供 Qwen 决策)
-                        positions = mt5.positions_get(symbol=self.symbol)
-                        current_positions_list = []
-                        if positions:
-                            for pos in positions:
-                                cur_mfe, cur_mae = self.get_position_stats(pos)
-                                current_positions_list.append({
-                                    "ticket": pos.ticket,
-                                    "type": "buy" if pos.type == mt5.POSITION_TYPE_BUY else "sell",
-                                    "volume": pos.volume,
-                                    "open_price": pos.price_open,
-                                    "current_price": pos.price_current,
-                                    "profit": pos.profit,
-                                    "sl": pos.sl,
-                                    "tp": pos.tp,
-                                    "mfe_pct": cur_mfe,
-                                    "mae_pct": cur_mae
-                                })
                         
                         # 准备混合信号供 Qwen 参考
                         technical_signals = {
