@@ -18,10 +18,6 @@ logs/
 cache/
 data/
 
-# SQLite 临时文件
-*.db-shm
-*.db-wal
-
 # 可视化图表文件
 figures/
 charts/
@@ -45,3 +41,4 @@ Thumbs.db
 # 临时文件
 *.tmp
 *.temp
+
