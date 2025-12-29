@@ -457,12 +457,23 @@ class AI_MT5_Bot:
             trade_type = "sell"
             price = tick.bid
         elif llm_action in ['limit_buy', 'buy_limit']:
-            trade_type = "limit_buy"
             # 优先使用 limit_price (与 prompt 一致)，回退使用 entry_price
             price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
+            
+            # 智能判断 Limit vs Stop
+            if price > tick.ask:
+                trade_type = "stop_buy" # 价格高于当前价 -> 突破买入
+            else:
+                trade_type = "limit_buy" # 价格低于当前价 -> 回调买入
+                
         elif llm_action in ['limit_sell', 'sell_limit']:
-            trade_type = "limit_sell"
             price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
+            
+            # 智能判断 Limit vs Stop
+            if price < tick.bid:
+                trade_type = "stop_sell" # 价格低于当前价 -> 突破卖出
+            else:
+                trade_type = "limit_sell" # 价格高于当前价 -> 反弹卖出
 
         if trade_type and price > 0:
             # 再次确认 SL/TP 是否存在
@@ -530,6 +541,12 @@ class AI_MT5_Bot:
         elif type_str == "limit_sell":
             order_type = mt5.ORDER_TYPE_SELL_LIMIT
             action = mt5.TRADE_ACTION_PENDING
+        elif type_str == "stop_buy":
+            order_type = mt5.ORDER_TYPE_BUY_STOP
+            action = mt5.TRADE_ACTION_PENDING
+        elif type_str == "stop_sell":
+            order_type = mt5.ORDER_TYPE_SELL_STOP
+            action = mt5.TRADE_ACTION_PENDING
             
         request = {
             "action": action,
@@ -547,7 +564,7 @@ class AI_MT5_Bot:
         }
         
         # 挂单需要不同的 filling type? 通常 Pending 订单不用 FOK，用 RETURN 或默认
-        if "limit" in type_str:
+        if "limit" in type_str or "stop" in type_str:
              if 'type_filling' in request:
                  del request['type_filling']
              request['type_filling'] = mt5.ORDER_FILLING_RETURN
@@ -2057,46 +2074,50 @@ class AI_MT5_Bot:
                             display_decision = "WAITING FOR MARKET DIRECTION ⏳"
 
                         # 格式化 DeepSeek 和 Qwen 的详细分析
-                        ds_analysis_text = f"• Signal: {self.escape_markdown(ds_signal.upper())}\n"
-                        ds_analysis_text += f"• Conf: {ds_score}/100\n"
-                        ds_analysis_text += f"• Pred: {self.escape_markdown(ds_pred)}"
+                        # DeepSeek Report
+                        ds_analysis_text = f"• Market State: {self.escape_markdown(structure.get('market_state', 'N/A'))}\n"
+                        ds_analysis_text += f"• Signal: {self.escape_markdown(ds_signal.upper())} (Conf: {ds_score}/100)\n"
+                        ds_analysis_text += f"• Prediction: {self.escape_markdown(ds_pred)}"
                         
+                        # Qwen Report
+                        qw_reason = strategy.get('reason', strategy.get('rationale', 'Strategy Optimization'))
                         qw_analysis_text = f"• Action: {self.escape_markdown(qw_action.upper())}\n"
+                        qw_analysis_text += f"• Logic: _{self.escape_markdown(qw_reason)}_\n"
                         if param_updates:
                             qw_analysis_text += f"• Params Updated: {len(param_updates)} items"
 
                         safe_reason = self.escape_markdown(reason)
-                        safe_market_state = self.escape_markdown(structure.get('market_state', 'N/A'))
                         safe_volatility = self.escape_markdown(volatility_info)
                         safe_pos_summary = self.escape_markdown(pos_summary)
                         
                         analysis_msg = (
-                            f"🤖 *AI Gold Strategy Insight*\n"
+                            f"🤖 *AI Gold Strategy Comprehensive Report*\n"
                             f"Symbol: `{self.symbol}` | TF: `{self.tf_name}`\n"
                             f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
                             
-                            f"🧠 *AI Consensus Analysis*\n"
-                            f"• Final Decision: *{display_decision}* (Strength: {strength:.0f}%)\n"
-                            f"• Rationale: _{safe_reason}_\n\n"
+                            f"🕵️ *DeepSeek Analysis (Structure)*\n"
+                            f"{ds_analysis_text}\n\n"
                             
-                            f"🕵️ *Model Details*\n"
-                            f"*DeepSeek (Market Structure):*\n{ds_analysis_text}\n"
-                            f"*Qwen (Strategy Logic):*\n{qw_analysis_text}\n\n"
+                            f"🧙‍♂️ *Qwen Analysis (Strategy)*\n"
+                            f"{qw_analysis_text}\n\n"
                             
-                            f"🎯 *Optimal Trade Setup*\n"
+                            f"🧠 *Final Consolidated Result*\n"
+                            f"• Decision: *{display_decision}* (Strength: {strength:.0f}%)\n"
                             f"• Direction: `{trade_dir_for_calc.upper()}`\n"
+                            f"• Reason: _{safe_reason}_\n\n"
+                            
+                            f"🎯 *Optimal Trade Setup (Best SL/TP)*\n"
                             f"• Ref Entry: `{ref_price:.2f}`\n"
-                            f"• 🛑 Opt. SL: `{opt_sl:.2f}`\n"
-                            f"• 🏆 Opt. TP: `{opt_tp:.2f}`\n"
+                            f"• 🛑 Stop Loss: `{opt_sl:.2f}`\n"
+                            f"• 🏆 Take Profit: `{opt_tp:.2f}`\n"
                             f"• R:R Ratio: `{rr_str}`\n\n"
                             
-                            f"📊 *Market X-Ray*\n"
-                            f"• State: `{safe_market_state}`\n"
+                            f"📊 *Market Context*\n"
                             f"• Volatility: `{safe_volatility}`\n"
-                            f"• Tech Confluence: {matching_count}/{valid_tech_count} signals match\n"
-                            f"• Key Signals: SMC[{smc_result['signal']}], CRT[{crt_result['signal']}], MTF[{mtf_result['signal']}]\n\n"
+                            f"• Tech Consensus: {matching_count}/{valid_tech_count} agree\n"
+                            f"• Signals: SMC[{smc_result['signal']}] | CRT[{crt_result['signal']}] | MTF[{mtf_result['signal']}]\n\n"
                             
-                            f"💼 *Account & Positions*\n"
+                            f"💼 *Account Status*\n"
                             f"{safe_pos_summary}"
                         )
                         self.send_telegram_message(analysis_msg)
