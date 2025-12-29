@@ -849,10 +849,10 @@ class AI_MT5_Bot:
                         
                         if action == 'BUY':
                             mfe = (max_high - open_price) / open_price * 100 # %
-                            mae = (min_low - open_price) / open_price * 100 # % (Negative)
+                            mae = abs((min_low - open_price) / open_price * 100) # % (Absolute)
                         elif action == 'SELL':
                             mfe = (open_price - min_low) / open_price * 100 # %
-                            mae = (open_price - max_high) / open_price * 100 # % (Negative)
+                            mae = abs((open_price - max_high) / open_price * 100) # % (Absolute)
                             
                         # 更新数据库
                         self.db_manager.update_trade_performance(ticket, {
@@ -1202,7 +1202,7 @@ class AI_MT5_Bot:
              
              if trades and len(trades) > 10:
                  mfes = [t.get('mfe', 0) for t in trades if t.get('mfe', 0) > 0]
-                 maes = [t.get('mae', 0) for t in trades if t.get('mae', 0) > 0]
+                 maes = [abs(t.get('mae', 0)) for t in trades if abs(t.get('mae', 0)) > 0]
                  
                  if mfes and maes:
                      # 使用 ATR 倍数来标准化 MFE/MAE (假设 MFE/MAE 也是以 ATR 为单位存储，或者我们需要转换)

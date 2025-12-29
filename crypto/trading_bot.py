@@ -377,24 +377,82 @@ class CryptoTradingBot:
         # 2. Historical Stats (MFE/MAE)
         try:
              stats = self.db_manager.get_trade_performance_stats(limit=100)
-             # ... Logic similar to Gold if stats available ...
-        except Exception:
-             pass
+             
+             trades = []
+             if isinstance(stats, list):
+                 trades = stats
+             elif isinstance(stats, dict) and 'recent_trades' in stats:
+                 trades = stats['recent_trades']
+             
+             if trades and len(trades) > 10:
+                 mfes = [t.get('mfe', 0) for t in trades if t.get('mfe', 0) > 0]
+                 maes = [abs(t.get('mae', 0)) for t in trades if abs(t.get('mae', 0)) > 0]
+                 
+                 if mfes and maes:
+                     # Use 60th percentile for TP (Conservative)
+                     # Use 90th percentile for SL (Wide enough to survive noise)
+                     opt_tp_pct = np.percentile(mfes, 60) / 100.0
+                     opt_sl_pct = np.percentile(maes, 90) / 100.0
+                     
+                     mfe_tp_dist = price * opt_tp_pct
+                     mae_sl_dist = price * opt_sl_pct
+        except Exception as e:
+             logger.warning(f"MFE/MAE calc failed: {e}")
 
-        # 3. Market Structure
+        # 3. Market Structure (Supply/Demand/FVG)
         struct_tp_price = 0.0
         
-        # ... (Simplified version of Gold's logic) ...
-        
+        if market_context:
+            is_buy = 'buy' in trade_type
+            if is_buy:
+                # Find TP: Lowest Bearish FVG above price
+                resistance_candidates = []
+                if 'active_zones' in market_context:
+                     for zone in market_context['active_zones']:
+                         if zone.get('type') == 'bearish' and zone.get('bottom', 0) > price:
+                             resistance_candidates.append(zone['bottom'])
+                
+                if resistance_candidates:
+                    struct_tp_price = min(resistance_candidates)
+            else:
+                # Find TP: Highest Bullish FVG below price
+                support_candidates = []
+                if 'active_zones' in market_context:
+                     for zone in market_context['active_zones']:
+                         if zone.get('type') == 'bullish' and zone.get('top', 0) < price:
+                             support_candidates.append(zone['top'])
+                
+                if support_candidates:
+                    struct_tp_price = max(support_candidates)
+
+        # 4. Final Calculation
         final_sl = 0.0
         final_tp = 0.0
         
         if 'buy' in trade_type:
-            final_tp = price + mfe_tp_dist
-            final_sl = price - mae_sl_dist
+            base_tp = price + mfe_tp_dist
+            base_sl = price - mae_sl_dist
+            
+            if struct_tp_price > price:
+                if struct_tp_price < base_tp:
+                    final_tp = struct_tp_price - (atr * 0.1)
+                else:
+                    final_tp = base_tp
+            else:
+                final_tp = base_tp
+            final_sl = base_sl
         else:
-            final_tp = price - mfe_tp_dist
-            final_sl = price + mae_sl_dist
+            base_tp = price - mfe_tp_dist
+            base_sl = price + mae_sl_dist
+            
+            if struct_tp_price > 0 and struct_tp_price < price:
+                if struct_tp_price > base_tp:
+                    final_tp = struct_tp_price + (atr * 0.1)
+                else:
+                    final_tp = base_tp
+            else:
+                final_tp = base_tp
+            final_sl = base_sl
             
         return final_sl, final_tp
 
@@ -638,7 +696,8 @@ class CryptoTradingBot:
             atr = latest_data.get('atr', 0)
             price = latest_data.get('close')
             
-            calc_sl, calc_tp = self.calculate_optimized_sl_tp(trade_dir, price, atr)
+            market_context = structure_analysis.get('technical_signals', {}).get('ifvg_strategy', {})
+            calc_sl, calc_tp = self.calculate_optimized_sl_tp(trade_dir, price, atr, market_context=market_context)
             
             if not exit_cond.get('sl_price'): exit_cond['sl_price'] = calc_sl
             if not exit_cond.get('tp_price'): exit_cond['tp_price'] = calc_tp
