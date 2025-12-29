@@ -520,7 +520,11 @@ class CRTAnalyzer:
         
     def analyze(self, symbol, current_price, current_time):
         try:
-            htf_rates = mt5.copy_rates_from(symbol, self.timeframe_htf, current_time, 2)
+            # 使用 copy_rates_from_pos 获取最近的已完成 K 线
+            # index 0 is the current unfinished bar (if calling this in real-time) or the latest bar
+            # We want previous 2 completed bars usually, or just latest 2 bars.
+            # 0 is current, 1 is previous.
+            htf_rates = mt5.copy_rates_from_pos(symbol, self.timeframe_htf, 0, 2)
             if htf_rates is None or len(htf_rates) < 2: return {"signal": "neutral", "reason": "数据不足"}
             prev_htf = htf_rates[-2]
             if prev_htf['time'] != self.last_range_time:

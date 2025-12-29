@@ -85,6 +85,12 @@ class CryptoTradingBot:
         if not self.deepseek_client or not self.qwen_client:
             logger.warning("AI Clients not fully initialized. Trading functionality may be limited.")
 
+    def escape_markdown(self, text):
+        """Helper to escape markdown special characters"""
+        if not isinstance(text, str):
+            return str(text)
+        return text.replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
+
     def send_telegram_message(self, message):
         """Send message to Telegram"""
         try:

@@ -436,11 +436,14 @@ class AI_MT5_Bot:
         # 或者是 Reversal (Close 之后)，我们需要看是否需要开新仓。
         
         # 重新检查持仓数 (因为刚才可能平仓了)
-        positions = mt5.positions_get(symbol=self.symbol)
-        has_position = len(positions) > 0 if positions else False
+        # 仅检查由本机器人 (Magic Number) 管理的持仓
+        all_positions = mt5.positions_get(symbol=self.symbol)
+        bot_positions = [p for p in all_positions if p.magic == self.magic_number] if all_positions else []
+        has_position = len(bot_positions) > 0
         
         # 如果有持仓且不是加仓指令，则不再开新仓
         if has_position and 'add' not in llm_action:
+            logger.info(f"已有持仓 ({len(bot_positions)}), 且非加仓指令 ({llm_action}), 跳过开仓")
             return
 
         # 执行开仓/挂单
@@ -484,6 +487,9 @@ class AI_MT5_Bot:
 
             comment = f"AI: {llm_action.upper()}"
             self._send_order(trade_type, price, explicit_sl, explicit_tp, comment=comment)
+        else:
+            if llm_action not in ['hold', 'neutral']:
+                logger.warning(f"无法执行交易: Action={llm_action}, TradeType={trade_type}, Price={price}")
 
 
 
@@ -517,13 +523,14 @@ class AI_MT5_Bot:
             "magic": self.magic_number,
             "comment": comment,
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_FOK,
+            "type_filling": self._get_filling_mode(),
         }
         
         # 挂单需要不同的 filling type? 通常 Pending 订单不用 FOK，用 RETURN 或默认
         if "limit" in type_str:
              if 'type_filling' in request:
                  del request['type_filling']
+             request['type_filling'] = mt5.ORDER_FILLING_RETURN
         
         result = mt5.order_send(request)
         if result is None:
@@ -884,6 +891,15 @@ class AI_MT5_Bot:
         equity = 10000.0 # 初始净值
         balance = 10000.0 # 初始余额
         
+        # 获取合约大小，默认为 100 (Gold)
+        contract_size = 100.0
+        try:
+            s_info = mt5.symbol_info(self.symbol)
+            if s_info:
+                contract_size = s_info.trade_contract_size
+        except:
+            pass
+            
         positions = [] # [{'type': 'buy', 'price': 1.0, 'vol': 0.1, 'sl': 0.9, 'tp': 1.2}, ...]
         
         in_trade = False
@@ -922,37 +938,37 @@ class AI_MT5_Bot:
             for pos in positions:
                 pl = 0.0
                 if pos['type'] == 'buy':
-                    pl = (current_close - pos['price']) * pos['vol'] * 100000 # 假设标准合约
+                    pl = (current_close - pos['price']) * pos['vol'] * contract_size 
                     
                     # 检查 SL/TP (基于 High/Low)
                     if current_low <= pos['sl']: # 触发止损
                         close_p = pos['sl']
-                        realized_pl = (close_p - pos['price']) * pos['vol'] * 100000
+                        realized_pl = (close_p - pos['price']) * pos['vol'] * contract_size
                         balance += realized_pl
                         total_trades += 1
                         if realized_pl > 0: win_trades += 1
                         continue # 移除持仓
                     elif current_high >= pos['tp']: # 触发止盈
                         close_p = pos['tp']
-                        realized_pl = (close_p - pos['price']) * pos['vol'] * 100000
+                        realized_pl = (close_p - pos['price']) * pos['vol'] * contract_size
                         balance += realized_pl
                         total_trades += 1
                         if realized_pl > 0: win_trades += 1
                         continue # 移除持仓
                         
                 elif pos['type'] == 'sell':
-                    pl = (pos['price'] - current_close) * pos['vol'] * 100000
+                    pl = (pos['price'] - current_close) * pos['vol'] * contract_size
                     
                     if current_high >= pos['sl']: # 触发止损
                         close_p = pos['sl']
-                        realized_pl = (pos['price'] - close_p) * pos['vol'] * 100000
+                        realized_pl = (pos['price'] - close_p) * pos['vol'] * contract_size
                         balance += realized_pl
                         total_trades += 1
                         if realized_pl > 0: win_trades += 1
                         continue
                     elif current_low <= pos['tp']: # 触发止盈
                         close_p = pos['tp']
-                        realized_pl = (pos['price'] - close_p) * pos['vol'] * 100000
+                        realized_pl = (pos['price'] - close_p) * pos['vol'] * contract_size
                         balance += realized_pl
                         total_trades += 1
                         if realized_pl > 0: win_trades += 1
@@ -1039,9 +1055,9 @@ class AI_MT5_Bot:
         for pos in positions:
             pl = 0.0
             if pos['type'] == 'buy':
-                pl = (closes[end_idx] - pos['price']) * pos['vol'] * 100000
+                pl = (closes[end_idx] - pos['price']) * pos['vol'] * contract_size
             else:
-                pl = (pos['price'] - closes[end_idx]) * pos['vol'] * 100000
+                pl = (pos['price'] - closes[end_idx]) * pos['vol'] * contract_size
             balance += pl
             total_trades += 1
             if pl > 0: win_trades += 1
@@ -1508,7 +1524,7 @@ class AI_MT5_Bot:
             return
 
         logger.info(f"启动 AI 自动交易机器人 - {self.symbol}")
-        self.send_telegram_message(f"🤖 *AI Bot Started*\nSymbol: {self.symbol}\nTimeframe: {self.timeframe}")
+        self.send_telegram_message(f"🤖 *AI Bot Started*\nSymbol: `{self.symbol}`\nTimeframe: `{self.timeframe}`")
         
         try:
             while True:
@@ -2072,14 +2088,19 @@ class AI_MT5_Bot:
                             display_decision = "WAITING FOR MARKET DIRECTION ⏳"
 
                         # 格式化 DeepSeek 和 Qwen 的详细分析
-                        ds_analysis_text = f"• Signal: {ds_signal.upper()}\n"
+                        ds_analysis_text = f"• Signal: {self.escape_markdown(ds_signal.upper())}\n"
                         ds_analysis_text += f"• Conf: {ds_score}/100\n"
-                        ds_analysis_text += f"• Pred: {ds_pred}"
+                        ds_analysis_text += f"• Pred: {self.escape_markdown(ds_pred)}"
                         
-                        qw_analysis_text = f"• Action: {qw_action.upper()}\n"
+                        qw_analysis_text = f"• Action: {self.escape_markdown(qw_action.upper())}\n"
                         if param_updates:
                             qw_analysis_text += f"• Params Updated: {len(param_updates)} items"
 
+                        safe_reason = self.escape_markdown(reason)
+                        safe_market_state = self.escape_markdown(structure.get('market_state', 'N/A'))
+                        safe_volatility = self.escape_markdown(volatility_info)
+                        safe_pos_summary = self.escape_markdown(pos_summary)
+                        
                         analysis_msg = (
                             f"🤖 *AI Gold Strategy Insight*\n"
                             f"Symbol: `{self.symbol}` | TF: `{self.tf_name}`\n"
@@ -2087,7 +2108,7 @@ class AI_MT5_Bot:
                             
                             f"🧠 *AI Consensus Analysis*\n"
                             f"• Final Decision: *{display_decision}* (Strength: {strength:.0f}%)\n"
-                            f"• Rationale: _{reason}_\n\n"
+                            f"• Rationale: _{safe_reason}_\n\n"
                             
                             f"🕵️ *Model Details*\n"
                             f"*DeepSeek (Market Structure):*\n{ds_analysis_text}\n"
@@ -2101,13 +2122,13 @@ class AI_MT5_Bot:
                             f"• R:R Ratio: `{rr_str}`\n\n"
                             
                             f"📊 *Market X-Ray*\n"
-                            f"• State: `{structure.get('market_state', 'N/A')}`\n"
-                            f"• Volatility: `{volatility_info}`\n"
+                            f"• State: `{safe_market_state}`\n"
+                            f"• Volatility: `{safe_volatility}`\n"
                             f"• Tech Confluence: {matching_count}/{valid_tech_count} signals match\n"
                             f"• Key Signals: SMC[{smc_result['signal']}], CRT[{crt_result['signal']}], MTF[{mtf_result['signal']}]\n\n"
                             
                             f"💼 *Account & Positions*\n"
-                            f"{pos_summary}"
+                            f"{safe_pos_summary}"
                         )
                         self.send_telegram_message(analysis_msg)
 
