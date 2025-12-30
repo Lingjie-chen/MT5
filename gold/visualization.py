@@ -55,25 +55,57 @@ class TradingVisualizer:
 
         # 3. Add Signals Markers (Neon Glow)
         if signals_df is not None and not signals_df.empty:
-            buy_signals = signals_df[signals_df['signal'] == 'buy']
-            sell_signals = signals_df[signals_df['signal'] == 'sell']
+            # 解析 details 以识别 Override 信号
+            signals_df['is_override'] = signals_df['details'].apply(
+                lambda x: '[Override]' in json.loads(x).get('reason', '') if isinstance(x, str) else False
+            )
+            
+            # 普通信号
+            normal_buy = signals_df[(signals_df['signal'] == 'buy') & (~signals_df['is_override'])]
+            normal_sell = signals_df[(signals_df['signal'] == 'sell') & (~signals_df['is_override'])]
+            
+            # Override 信号 (高亮显示)
+            override_buy = signals_df[(signals_df['signal'] == 'buy') & (signals_df['is_override'])]
+            override_sell = signals_df[(signals_df['signal'] == 'sell') & (signals_df['is_override'])]
 
-            if not buy_signals.empty:
+            # Draw Normal Buy
+            if not normal_buy.empty:
                 fig.add_trace(go.Scatter(
-                    x=buy_signals['timestamp'],
-                    y=df.loc[df['timestamp'].isin(buy_signals['timestamp']), 'low'] * 0.999,
+                    x=normal_buy['timestamp'],
+                    y=df.loc[df['timestamp'].isin(normal_buy['timestamp']), 'low'] * 0.999,
                     mode='markers',
                     marker=dict(symbol='triangle-up', size=12, color='#00ff00', line=dict(width=2, color='#00ff9d')),
                     name='Buy Signal'
                 ), row=1, col=1)
 
-            if not sell_signals.empty:
+            # Draw Normal Sell
+            if not normal_sell.empty:
                 fig.add_trace(go.Scatter(
-                    x=sell_signals['timestamp'],
-                    y=df.loc[df['timestamp'].isin(sell_signals['timestamp']), 'high'] * 1.001,
+                    x=normal_sell['timestamp'],
+                    y=df.loc[df['timestamp'].isin(normal_sell['timestamp']), 'high'] * 1.001,
                     mode='markers',
                     marker=dict(symbol='triangle-down', size=12, color='#ff0000', line=dict(width=2, color='#ff0055')),
                     name='Sell Signal'
+                ), row=1, col=1)
+                
+            # Draw Override Buy (Gold Star)
+            if not override_buy.empty:
+                fig.add_trace(go.Scatter(
+                    x=override_buy['timestamp'],
+                    y=df.loc[df['timestamp'].isin(override_buy['timestamp']), 'low'] * 0.998,
+                    mode='markers',
+                    marker=dict(symbol='star', size=15, color='#ffd700', line=dict(width=2, color='#ffffff')),
+                    name='Override Buy (Strong)'
+                ), row=1, col=1)
+
+            # Draw Override Sell (Gold Star)
+            if not override_sell.empty:
+                fig.add_trace(go.Scatter(
+                    x=override_sell['timestamp'],
+                    y=df.loc[df['timestamp'].isin(override_sell['timestamp']), 'high'] * 1.002,
+                    mode='markers',
+                    marker=dict(symbol='star', size=15, color='#ff8c00', line=dict(width=2, color='#ffffff')),
+                    name='Override Sell (Strong)'
                 ), row=1, col=1)
 
         # 4. Visualize SMC/CRT Zones
