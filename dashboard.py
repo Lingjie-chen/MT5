@@ -7,10 +7,10 @@ import os
 import json
 
 # Ensure python path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'python'))
+sys.path.append(os.path.join(os.path.dirname(__file__), 'gold'))
 
-from python.database_manager import DatabaseManager
-from python.visualization import TradingVisualizer
+from gold.database_manager import DatabaseManager
+from gold.visualization import TradingVisualizer
 
 # Page Config
 st.set_page_config(

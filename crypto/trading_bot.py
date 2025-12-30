@@ -1004,6 +1004,9 @@ class CryptoTradingBot:
                 if decision:
                     self.execute_trade(decision)
             
+            # Perform DB Checkpoint
+            self.db_manager.perform_checkpoint()
+            
             logger.info("Trading cycle completed")
             
         except Exception as e:

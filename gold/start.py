@@ -487,10 +487,25 @@ class AI_MT5_Bot:
             
             # 智能判断 Limit vs Stop
             if price > 0:
+                # 检查最小间距 (Stops Level)
+                symbol_info = mt5.symbol_info(self.symbol)
+                stop_level = symbol_info.trade_stops_level * symbol_info.point if symbol_info else 0
+                price = self._normalize_price(price)
+                
                 if price > tick.ask:
                     trade_type = "stop_buy" # 价格高于当前价 -> 突破买入
+                    # Buy Stop must be >= Ask + StopLevel
+                    min_price = tick.ask + stop_level
+                    if price < min_price:
+                        logger.warning(f"Stop Buy Price {price} too close to Ask {tick.ask}, adjusting to {min_price}")
+                        price = self._normalize_price(min_price)
                 else:
                     trade_type = "limit_buy" # 价格低于当前价 -> 回调买入
+                    # Buy Limit must be <= Ask - StopLevel
+                    max_price = tick.ask - stop_level
+                    if price > max_price:
+                         logger.warning(f"Limit Buy Price {price} too close to Ask {tick.ask}, adjusting to {max_price}")
+                         price = self._normalize_price(max_price)
                 
         elif llm_action in ['limit_sell', 'sell_limit']:
             # 检查现有 Limit 挂单
@@ -522,10 +537,25 @@ class AI_MT5_Bot:
             
             # 智能判断 Limit vs Stop
             if price > 0:
+                # 检查最小间距 (Stops Level)
+                symbol_info = mt5.symbol_info(self.symbol)
+                stop_level = symbol_info.trade_stops_level * symbol_info.point if symbol_info else 0
+                price = self._normalize_price(price)
+
                 if price < tick.bid:
                     trade_type = "stop_sell" # 价格低于当前价 -> 突破卖出
+                    # Sell Stop must be <= Bid - StopLevel
+                    max_price = tick.bid - stop_level
+                    if price > max_price:
+                        logger.warning(f"Stop Sell Price {price} too close to Bid {tick.bid}, adjusting to {max_price}")
+                        price = self._normalize_price(max_price)
                 else:
                     trade_type = "limit_sell" # 价格高于当前价 -> 反弹卖出
+                    # Sell Limit must be >= Bid + StopLevel
+                    min_price = tick.bid + stop_level
+                    if price < min_price:
+                        logger.warning(f"Limit Sell Price {price} too close to Bid {tick.bid}, adjusting to {min_price}")
+                        price = self._normalize_price(min_price)
 
         if trade_type and price > 0:
             # 再次确认 SL/TP 是否存在
@@ -584,8 +614,24 @@ class AI_MT5_Bot:
         else:
             return mt5.ORDER_FILLING_RETURN
 
+    def _normalize_price(self, price):
+        """Standardize price to symbol's tick size"""
+        if price is None or price == 0:
+            return 0.0
+        symbol_info = mt5.symbol_info(self.symbol)
+        if symbol_info is None:
+            return price
+        
+        digits = symbol_info.digits
+        return round(price, digits)
+
     def _send_order(self, type_str, price, sl, tp, comment=""):
         """底层下单函数"""
+        # Normalize prices
+        price = self._normalize_price(price)
+        sl = self._normalize_price(sl)
+        tp = self._normalize_price(tp)
+        
         order_type = mt5.ORDER_TYPE_BUY
         action = mt5.TRADE_ACTION_DEAL
         
@@ -731,6 +777,7 @@ class AI_MT5_Bot:
         if not symbol_info:
             return
         point = symbol_info.point
+        stop_level_dist = symbol_info.trade_stops_level * point
 
         # 遍历所有持仓，独立管理
         for pos in positions:
@@ -767,6 +814,32 @@ class AI_MT5_Bot:
                 explicit_sl = exit_conditions.get('sl_price', 0.0)
                 explicit_tp = exit_conditions.get('tp_price', 0.0)
                 
+                # Normalize and Validate
+                if explicit_sl > 0:
+                    explicit_sl = self._normalize_price(explicit_sl)
+                    # 验证 Stops Level
+                    is_valid_sl = True
+                    if type_pos == mt5.POSITION_TYPE_BUY:
+                        if current_price - explicit_sl < stop_level_dist: is_valid_sl = False
+                    else:
+                        if explicit_sl - current_price < stop_level_dist: is_valid_sl = False
+                    
+                    if not is_valid_sl:
+                        # 如果无效，暂不更新，避免报错
+                        explicit_sl = 0.0
+                
+                if explicit_tp > 0:
+                    explicit_tp = self._normalize_price(explicit_tp)
+                    # 验证 Stops Level
+                    is_valid_tp = True
+                    if type_pos == mt5.POSITION_TYPE_BUY:
+                        if explicit_tp - current_price < stop_level_dist: is_valid_tp = False
+                    else:
+                        if current_price - explicit_tp < stop_level_dist: is_valid_tp = False
+                        
+                    if not is_valid_tp:
+                        explicit_tp = 0.0
+
                 # 如果 LLM 给出了明确的新 SL/TP 价格，则优先使用
                 if explicit_sl > 0 or explicit_tp > 0:
                     if explicit_sl > 0 and abs(explicit_sl - sl) > point * 5:
@@ -793,15 +866,30 @@ class AI_MT5_Bot:
                     elif type_pos == mt5.POSITION_TYPE_SELL:
                         suggested_sl = current_price + current_sl_dist
                         suggested_tp = current_price - current_tp_dist
-                        
+                    
+                    # Normalize
+                    suggested_sl = self._normalize_price(suggested_sl)
+                    suggested_tp = self._normalize_price(suggested_tp)
+
                     # 仅当差异显著时更新
                     if suggested_sl > 0 and abs(suggested_sl - sl) > point * 5:
-                        request['sl'] = suggested_sl
-                        changed = True
+                        # 简单验证 Stops Level
+                        valid = True
+                        if type_pos == mt5.POSITION_TYPE_BUY and (current_price - suggested_sl < stop_level_dist): valid = False
+                        if type_pos == mt5.POSITION_TYPE_SELL and (suggested_sl - current_price < stop_level_dist): valid = False
+                        
+                        if valid:
+                            request['sl'] = suggested_sl
+                            changed = True
                     
                     if suggested_tp > 0 and abs(suggested_tp - tp) > point * 10:
-                        request['tp'] = suggested_tp
-                        changed = True
+                        valid = True
+                        if type_pos == mt5.POSITION_TYPE_BUY and (suggested_tp - current_price < stop_level_dist): valid = False
+                        if type_pos == mt5.POSITION_TYPE_SELL and (current_price - suggested_tp < stop_level_dist): valid = False
+                        
+                        if valid:
+                            request['tp'] = suggested_tp
+                            changed = True
             
             # --- 2. 兜底移动止损 (Trailing Stop) ---
             # 已禁用，仅依赖 AI 更新
@@ -1568,6 +1656,10 @@ class AI_MT5_Bot:
                 if int(time.time()) % 3600 == 0:
                     self.optimize_short_term_params()
                 
+                # 0.8 执行数据库 Checkpoint (每 5 分钟一次) - 确保数据写入磁盘
+                if int(time.time()) % 300 == 0:
+                    self.db_manager.perform_checkpoint()
+
                 # 1. 检查新 K 线
                 # 获取最后一根 K 线的时间
                 rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 1)

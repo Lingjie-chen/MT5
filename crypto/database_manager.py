@@ -29,10 +29,28 @@ class DatabaseManager:
         try:
             conn = sqlite3.connect(self.db_name)
             conn.row_factory = sqlite3.Row
+            # Enable WAL mode for better concurrency and consistency
+            conn.execute('PRAGMA journal_mode=WAL;')
             return conn
         except sqlite3.Error as e:
             logger.error(f"Error connecting to database {self.db_name}: {e}")
             return None
+
+    def perform_checkpoint(self):
+        """Force a WAL checkpoint to merge data into the main DB file"""
+        conn = self._get_connection()
+        if not conn: return False
+        try:
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            res = cursor.fetchone()
+            logger.info(f"WAL Checkpoint executed: {res}")
+            return True
+        except sqlite3.Error as e:
+            logger.warning(f"WAL Checkpoint failed: {e}")
+            return False
+        finally:
+            conn.close()
 
     def _initialize_db(self):
         """Initialize database tables"""

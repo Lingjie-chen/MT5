@@ -318,6 +318,22 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to update trade performance: {e}")
 
+    def perform_checkpoint(self):
+        """Force a WAL checkpoint to merge data into the main DB file"""
+        try:
+            conn = self._get_connection()
+            # PASSIVE: Checkpoint as many frames as possible without waiting for readers/writers
+            # TRUNCATE: Block until checkpoint complete and truncate WAL file (best for integration)
+            # We use TRUNCATE to ensure data is moved, but catch errors if busy
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            res = cursor.fetchone()
+            logger.info(f"WAL Checkpoint executed: {res}") # (0, x, y) means success
+            return True
+        except Exception as e:
+            logger.warning(f"WAL Checkpoint failed: {e}")
+            return False
+
     def get_trade_performance_stats(self, limit=50):
         """Get aggregated performance stats (MFE, MAE) for recent closed trades"""
         try:
