@@ -315,6 +315,103 @@ class AI_MT5_Bot:
             self.send_telegram_message(f"🔄 *Position Closed*\nTicket: `{position.ticket}`\nReason: {comment}\nProfit: {profit}")
             return True
 
+    def calculate_dynamic_lot(self, strength, market_context=None, mfe_mae_ratio=None):
+        """
+        根据信心分数、账户资金、MFE/MAE 比率和市场结构动态计算手数
+        """
+        try:
+            account_info = mt5.account_info()
+            if account_info is None:
+                return self.lot_size # 默认值
+                
+            balance = account_info.balance
+            equity = account_info.equity
+            
+            # 1. 基础风险模型 (每笔交易最大风险百分比)
+            # 默认 2% 风险
+            base_risk_pct = 0.02 
+            
+            # 2. 信心分数调整 (Strength: 0-100)
+            # 强度越高，风险越大 (最高可达 3% 或 4%)
+            # 强度 50 -> 1.0x (2%), 强度 100 -> 2.0x (4%)
+            confidence_multiplier = 1.0
+            if strength > 60:
+                confidence_multiplier = 1.0 + ((strength - 60) / 40.0) # 60->1.0, 100->2.0
+            elif strength < 50:
+                confidence_multiplier = 0.5 # 低信心减半
+            
+            # 3. MFE/MAE 调整 (盈亏比潜力)
+            # 如果 MFE/MAE 比率高 (例如 > 2.0)，说明历史/当前形态的盈亏比极好，可以适当放大
+            r_r_multiplier = 1.0
+            if mfe_mae_ratio and mfe_mae_ratio > 0:
+                if mfe_mae_ratio > 2.0:
+                    r_r_multiplier = 1.2
+                elif mfe_mae_ratio < 1.0:
+                    r_r_multiplier = 0.8
+            
+            # 4. SMC 结构调整 (如果有)
+            # 如果是 SMC 确认的 Strong Trend，加仓
+            smc_multiplier = 1.0
+            if market_context and 'smc' in market_context:
+                smc_res = market_context['smc']
+                if smc_res.get('structure') == 'Strong Bullish' or smc_res.get('structure') == 'Strong Bearish':
+                    smc_multiplier = 1.2
+            
+            # 综合风险百分比
+            final_risk_pct = base_risk_pct * confidence_multiplier * r_r_multiplier * smc_multiplier
+            
+            # 限制最大风险上限 (例如 5%)
+            final_risk_pct = min(final_risk_pct, 0.05)
+            
+            # 计算止损距离对应的金额
+            # 假设平均止损距离为 500 points (50 pips) 如果没有明确 SL
+            # 如果有明确 SL，应该在 execute_trade 里计算，这里先估算
+            # 为了简化，我们直接基于余额计算手数，假设固定止损距离
+            # 更好的做法是: Risk Amount / (SL Distance * Point Value)
+            
+            risk_amount = equity * final_risk_pct
+            
+            # 获取品种合约规格
+            symbol_info = mt5.symbol_info(self.symbol)
+            if not symbol_info: return self.lot_size
+            
+            contract_size = symbol_info.trade_contract_size
+            tick_value = symbol_info.trade_tick_value
+            # 如果 tick_value 获取失败，手动估算 (Gold 1 lot = 100 oz)
+            
+            # 假设默认止损为 500 points (5美元)
+            # 1 Lot 波动 1美元 = $100
+            # 5美元止损 = $500 风险/Lot
+            
+            estimated_sl_loss_per_lot = 500.0 # 估算值，实际应传入 SL 价格计算
+            
+            # 如果我们能获取到最近的 ATR，用 ATR * 1.5 作为止损距离估算
+            if market_context and 'atr' in market_context:
+                atr = market_context['atr']
+                if atr > 0:
+                    estimated_sl_loss_per_lot = (atr * 1.5) * 100.0 # 假设 1 lot = 100 units (Gold)
+            
+            calculated_lot = risk_amount / estimated_sl_loss_per_lot
+            
+            # 标准化手数
+            step = symbol_info.volume_step
+            min_lot = symbol_info.volume_min
+            max_lot = symbol_info.volume_max
+            
+            # Round to nearest step
+            calculated_lot = round(calculated_lot / step) * step
+            
+            # Clamp
+            final_lot = max(min_lot, min(calculated_lot, max_lot))
+            
+            logger.info(f"动态仓位计算: Equity={equity:.2f}, Risk%={final_risk_pct:.2%}, Risk=${risk_amount:.2f}, Strength={strength}, Lot={final_lot}")
+            
+            return final_lot
+            
+        except Exception as e:
+            logger.error(f"动态仓位计算失败: {e}")
+            return self.lot_size
+
     def execute_trade(self, signal, strength, sl_tp_params, entry_params=None):
         """
         执行交易指令，完全由大模型驱动
@@ -579,6 +676,34 @@ class AI_MT5_Bot:
                      return 
 
             comment = f"AI: {llm_action.upper()}"
+            
+            # --- 动态仓位计算 ---
+            # 准备上下文
+            # 获取历史 MFE/MAE 统计 (如果有缓存，从 db_manager 获取)
+            trade_stats = self.db_manager.get_trade_performance_stats(limit=50)
+            mfe_mae_ratio = 1.0
+            if trade_stats and 'avg_mfe' in trade_stats and 'avg_mae' in trade_stats:
+                if abs(trade_stats['avg_mae']) > 0:
+                    mfe_mae_ratio = trade_stats['avg_mfe'] / abs(trade_stats['avg_mae'])
+            
+            # 准备 SMC 上下文 (如果 self.smc_analyzer 最近分析过)
+            # 我们从 latest_strategy 的 details 中尝试获取
+            market_ctx = {}
+            if self.latest_strategy and 'details' in self.latest_strategy:
+                 market_ctx['smc'] = {'structure': self.latest_strategy['details'].get('smc_structure')}
+            
+            # 获取 ATR (复用上面的计算)
+            rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+            if rates is not None:
+                df_temp = pd.DataFrame(rates)
+                high_low = df_temp['high'] - df_temp['low']
+                atr = high_low.rolling(14).mean().iloc[-1]
+                market_ctx['atr'] = atr
+            
+            # 计算最终仓位
+            optimized_lot = self.calculate_dynamic_lot(strength, market_context=market_ctx, mfe_mae_ratio=mfe_mae_ratio)
+            self.lot_size = optimized_lot # 临时覆盖 self.lot_size 供 _send_order 使用
+            
             self._send_order(trade_type, price, explicit_sl, explicit_tp, comment=comment)
         else:
             if llm_action not in ['hold', 'neutral']:
