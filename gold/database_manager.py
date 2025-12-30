@@ -394,6 +394,53 @@ class DatabaseManager:
             logger.error(f"Failed to get trade stats: {e}")
             return None
 
+    def get_performance_metrics(self, limit=20):
+        """
+        计算近期交易的胜率和盈亏比，用于智能资金管理
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT profit FROM trades 
+                WHERE result = 'CLOSED' 
+                ORDER BY close_time DESC 
+                LIMIT ?
+            ''', (limit,))
+            
+            rows = cursor.fetchall()
+            if not rows:
+                return {"win_rate": 0.0, "profit_factor": 0.0, "consecutive_losses": 0}
+                
+            profits = [r[0] for r in rows]
+            wins = [p for p in profits if p > 0]
+            losses = [p for p in profits if p <= 0]
+            
+            win_rate = len(wins) / len(profits) if profits else 0.0
+            
+            gross_profit = sum(wins)
+            gross_loss = abs(sum(losses))
+            profit_factor = gross_profit / gross_loss if gross_loss > 0 else (10.0 if gross_profit > 0 else 0.0)
+            
+            # 计算当前连败次数 (用于反马丁格尔或防御性减仓)
+            consecutive_losses = 0
+            for p in profits: # profits 是按时间倒序的
+                if p < 0:
+                    consecutive_losses += 1
+                else:
+                    break
+            
+            return {
+                "win_rate": win_rate,
+                "profit_factor": profit_factor,
+                "consecutive_losses": consecutive_losses
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get performance metrics: {e}")
+            return {"win_rate": 0.0, "profit_factor": 0.0, "consecutive_losses": 0}
+
     def get_open_trades(self):
         """Get all trades that are currently marked as OPEN in the database"""
         try:
