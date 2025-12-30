@@ -2368,6 +2368,7 @@ class AI_MT5_Bot:
                             "strength": strength,
                             "details": {
                                 "source": "LLM_Centric",
+                                "reason": reason, # Add reason field for dashboard/visualization
                                 "weights": weights,
                                 "signals": all_signals,
                                 "market_state": structure.get('market_state'),

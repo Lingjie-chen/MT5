@@ -241,19 +241,40 @@ def update_dashboard():
                     # Extract Key AI Insights
                     market_state = details.get('market_state', 'N/A')
                     prediction = details.get('prediction', 'N/A')
+                    reason = details.get('reason', 'N/A')
+                    
+                    # Override Alert
+                    if '[Override]' in reason:
+                        st.error(f"🔥 STRATEGY OVERRIDE ACTIVATED: {reason}")
+                    else:
+                        st.info(f"Strategy Logic: {reason}")
+                    
                     adv_summary = details.get('adv_summary', {})
                     if isinstance(adv_summary, str): # Handle if it's a string
-                         st.info(adv_summary)
+                         st.markdown(f"**Technical Summary:** {adv_summary}")
                     elif isinstance(adv_summary, dict):
                          summary_text = adv_summary.get('summary', 'No summary available')
                          regime = adv_summary.get('regime_analysis', 'N/A')
                          st.markdown(f"**Market State:** {market_state} | **Prediction:** {prediction}")
-                         st.markdown(f"**Technical Summary:** {summary_text}")
                          st.markdown(f"**Regime Analysis:** {regime}")
+                         st.markdown(f"**Technical Summary:** {summary_text}")
+                    
+                    # Consensus Analysis
+                    signals_map = details.get('signals', {})
+                    if signals_map:
+                        buy_count = sum(1 for v in signals_map.values() if v == 'buy')
+                        sell_count = sum(1 for v in signals_map.values() if v == 'sell')
+                        total_valid = sum(1 for v in signals_map.values() if v not in ['neutral', 'hold'])
+                        
+                        st.markdown("### 📊 Algo Consensus")
+                        col_c1, col_c2, col_c3 = st.columns(3)
+                        col_c1.metric("Buy Votes", f"{buy_count}", delta=f"{buy_count/len(signals_map):.0%}" if signals_map else None)
+                        col_c2.metric("Sell Votes", f"{sell_count}", delta=f"-{sell_count/len(signals_map):.0%}" if signals_map else None, delta_color="inverse")
+                        col_c3.metric("Active Signals", f"{total_valid}/{len(signals_map)}")
                     
                     # Show Reasons/Signals
                     with st.expander("Detailed Strategy Signals", expanded=False):
-                        st.json(details.get('signals', {}))
+                        st.json(signals_map)
                         
                 except Exception as e:
                     st.error(f"Failed to parse AI details: {e}")
