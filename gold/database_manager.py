@@ -43,6 +43,7 @@ class DatabaseManager:
                 # check_same_thread=False allows Streamlit to use connection across threads
                 self.conn = sqlite3.connect(self.db_path, timeout=30.0, check_same_thread=False)
                 # Enable WAL mode for better concurrency immediately upon connection
+                # This ensures that even without checkpointing, readers can see the latest data in WAL
                 self.conn.execute('PRAGMA journal_mode=WAL;')
                 return self.conn
             except sqlite3.OperationalError as e:
