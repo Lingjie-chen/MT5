@@ -2254,15 +2254,46 @@ class AI_MT5_Bot:
                             final_signal = "close" # 特殊信号: 平仓
                         elif qw_action == 'hold':
                             final_signal = "hold"
+                            
+                        # --- 增强: 多模型与技术共振修正 (Consensus Override) ---
+                        # 如果 Qwen 偏向保守 (Hold/Neutral)，但 DeepSeek 或 技术指标极强，则进行覆盖
+                        reason = strategy.get('reason', 'LLM Decision')
                         
+                        if final_signal in ['hold', 'neutral']:
+                            # 1. DeepSeek 强信号覆盖
+                            if ds_signal in ['buy', 'sell'] and ds_score >= 80:
+                                final_signal = ds_signal
+                                reason = f"[Override] DeepSeek High Confidence ({ds_score}): {structure.get('market_state')}"
+                                logger.info(f"策略修正: DeepSeek 强信号 ({ds_score}) 覆盖 Qwen Hold -> {final_signal}")
+                            
+                            # 2. 技术指标共振覆盖 (如果 DeepSeek 也没信号)
+                            elif final_signal in ['hold', 'neutral']:
+                                tech_signals_list = [
+                                    crt_result['signal'], price_eq_result['signal'], tf_result['signal'],
+                                    adv_signal, ml_result['signal'], smc_result['signal'],
+                                    mfh_result['signal'], mtf_result['signal'], ifvg_result['signal'],
+                                    rvgi_cci_result['signal']
+                                ]
+                                buy_votes = sum(1 for s in tech_signals_list if s == 'buy')
+                                sell_votes = sum(1 for s in tech_signals_list if s == 'sell')
+                                total_tech = len(tech_signals_list)
+                                
+                                if total_tech > 0:
+                                    buy_ratio = buy_votes / total_tech
+                                    sell_ratio = sell_votes / total_tech
+                                    
+                                    if buy_ratio >= 0.7: # 70% 指标看多
+                                        final_signal = "buy"
+                                        reason = f"[Override] Technical Consensus Buy ({buy_votes}/{total_tech})"
+                                        logger.info(f"策略修正: 技术指标共振 ({buy_ratio:.1%}) 覆盖 Hold -> Buy")
+                                    elif sell_ratio >= 0.7: # 70% 指标看空
+                                        final_signal = "sell"
+                                        reason = f"[Override] Technical Consensus Sell ({sell_votes}/{total_tech})"
+                                        logger.info(f"策略修正: 技术指标共振 ({sell_ratio:.1%}) 覆盖 Hold -> Sell")
+
                         qw_signal = final_signal if final_signal not in ['hold', 'close'] else 'neutral'
                         
-                        # --- 3.5 最终决策 (LLM Centric) ---
-                        # 依据用户指令：完全基于大模型的最终决策 (以 Qwen 的 Action 为主)
-                        # Qwen 已经接收了所有技术指标(technical_signals)作为输入，因此它的输出即为"集合最终分析结果"
-                        
-                        # final_signal 已在上面由 qw_action 解析得出
-                        reason = strategy.get('reason', 'LLM Decision')
+                        # --- 3.5 最终决策 (LLM Centric + Consensus) ---
                         
                         # 计算置信度/强度 (Strength)
                         # 我们使用技术指标的一致性作为置信度评分
