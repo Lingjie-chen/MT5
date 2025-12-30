@@ -3,9 +3,6 @@
 # 切换到脚本所在目录
 cd "$(dirname "$0")"
 
-# 检查并安装依赖
-echo "Checking dependencies..."
-pip install -r requirements.txt
 
 # 切换到上级目录(项目根目录)，以便作为模块运行
 cd ..
