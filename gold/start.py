@@ -1869,8 +1869,9 @@ class AI_MT5_Bot:
                 
                 # 0.8 执行数据库 Checkpoint (每 1 分钟一次，以满足高实时性整合需求)
                 # 虽然 WAL 模式下读取已是实时，但定期 Checkpoint 可确保 .db 文件物理更新
-                if int(time.time()) % 60 == 0:
-                    self.db_manager.perform_checkpoint()
+                # 已由独立的 checkpoint 服务接管，此处移除以避免锁竞争
+                # if int(time.time()) % 60 == 0:
+                #    self.db_manager.perform_checkpoint()
 
                 # 1. 检查新 K 线
                 # 获取最后一根 K 线的时间
