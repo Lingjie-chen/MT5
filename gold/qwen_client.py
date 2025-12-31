@@ -147,7 +147,7 @@ class QwenClient:
         pos_context = ""
         
         if current_positions:
-            pos_context = f"\n当前持仓状态 (包含实时 MFE/MAE):\n{json.dumps(current_positions, indent=2, cls=CustomJSONEncoder)}\n"
+            pos_context = f"\n当前持仓状态 (包含实时 MFE/MAE 和 R-Multiple):\n{json.dumps(current_positions, indent=2, cls=CustomJSONEncoder)}\n"
         else:
             pos_context = "\n当前无持仓。\n"
 
@@ -247,6 +247,10 @@ class QwenClient:
         6. **持仓管理**: 
            - 如果有持仓且趋势延续，请考虑**加仓 (Add Position)**。
            - 如果有持仓但趋势反转或动能减弱，请考虑**平仓 (Close Position)** 或 **减仓 (Reduce Position)**。
+           - **智能平仓逻辑 (Smart Exit)**: 如果当前持仓已有盈利，且满足以下任一条件，请果断建议平仓 (action: 'close')：
+             1. **盈利达标**: 当前盈利已经达到合理的风险回报比 (例如 R-Multiple >= 1.5)，且市场情绪转弱 (Sentiment Score 下降)。
+             2. **结构阻力**: 价格到达强阻力位/支撑位 (SMC OB/Liquidity)，且出现反转信号。
+             3. **情绪满足**: 即使未到 TP，但 DeepSeek 认为当前市场情绪已充分释放 (Overextended)，且获利已足够安全。
            - 如果无持仓且信号明确，请**开仓 (Open Position)**。
         
         请提供以下优化结果，并确保分析全面、逻辑严密，不要使用省略号或简化描述。**请务必使用中文进行输出（Strategy Logic Rationale 部分）**：

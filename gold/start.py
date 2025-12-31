@@ -2421,6 +2421,12 @@ class AI_MT5_Bot:
                                         final_signal = "sell"
                                         reason = f"[Override] Technical Consensus Sell ({sell_votes}/{total_tech})"
                                         logger.info(f"策略修正: 技术指标共振 ({sell_ratio:.1%}) 覆盖 Hold -> Sell")
+                        
+                        # 3. 智能平仓信号处理 (High Priority)
+                        if qw_action == 'close' and final_signal != 'close':
+                            final_signal = 'close'
+                            reason = f"[Smart Exit] Qwen Profit Taking: {qw_reason}"
+                            logger.info(f"策略修正: Qwen 触发智能平仓 -> CLOSE")
 
                         qw_signal = final_signal if final_signal not in ['hold', 'close'] else 'neutral'
                         
