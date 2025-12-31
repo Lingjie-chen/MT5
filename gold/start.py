@@ -1865,6 +1865,89 @@ class AI_MT5_Bot:
         else:
             logger.info("Short-Term Optimization found no improvement.")
 
+    def sync_account_history(self):
+        """
+        Sync historical account trades to local DB to enable immediate self-learning.
+        Fetches last 30 days of history.
+        """
+        try:
+            # Sync last 30 days
+            from_date = datetime.now() - pd.Timedelta(days=30)
+            to_date = datetime.now()
+            
+            # Fetch history deals
+            deals = mt5.history_deals_get(from_date, to_date)
+            
+            if deals is None or len(deals) == 0:
+                logger.info("No historical deals found in the last 30 days.")
+                return
+
+            count = 0
+            for deal in deals:
+                # Only care about exits (deals that closed a position) to record profit
+                # ENTRY_OUT = 1, ENTRY_INOUT = 2 (Reversal)
+                if deal.entry in [mt5.DEAL_ENTRY_OUT, mt5.DEAL_ENTRY_INOUT]:
+                    # Use position_id as ticket
+                    ticket = deal.position_id
+                    symbol = deal.symbol
+                    profit = deal.profit + deal.swap + deal.commission
+                    
+                    # We need to ensure this trade exists in our DB
+                    # Since we don't have the full open info easily without searching IN deals,
+                    # we do a partial update/insert just for the metrics (profit)
+                    
+                    # Check if exists
+                    # This is a direct DB operation, effectively "Upsert" for performance stats
+                    # We use a custom SQL in db_manager or just standard save logic if possible.
+                    # But save_trade expects more fields.
+                    # Let's manually insert/ignore to ensure we have the record for stats.
+                    
+                    conn = self.db_manager._get_connection()
+                    cursor = conn.cursor()
+                    
+                    # Try to get existing
+                    cursor.execute("SELECT ticket FROM trades WHERE ticket = ?", (ticket,))
+                    exists = cursor.fetchone()
+                    
+                    if not exists:
+                        # Insert new record from history
+                        # We might not know if it was BUY or SELL without checking IN deal, 
+                        # but for WinRate/ProfitFactor, direction doesn't matter much.
+                        # We can infer direction from profit vs price change if needed, but let's skip for now.
+                        action = "UNKNOWN"
+                        if deal.type == mt5.DEAL_TYPE_BUY: action = "BUY" # This is the closing deal type!
+                        elif deal.type == mt5.DEAL_TYPE_SELL: action = "SELL"
+                        
+                        # Note: Closing deal type is opposite to Position type usually.
+                        # If I closed with a SELL deal, I was Long (BUY).
+                        pos_type = "BUY" if deal.type == mt5.DEAL_TYPE_SELL else "SELL"
+                        
+                        cursor.execute('''
+                            INSERT OR IGNORE INTO trades (ticket, symbol, action, volume, price, time, result, close_price, close_time, profit, mfe, mae)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            ticket, 
+                            symbol, 
+                            pos_type, 
+                            deal.volume, 
+                            0.0, # Open price unknown
+                            datetime.fromtimestamp(deal.time), # Approximate open time (actually this is close time)
+                            'CLOSED',
+                            deal.price,
+                            datetime.fromtimestamp(deal.time),
+                            profit,
+                            0.0, # MFE unknown without analysis
+                            0.0  # MAE unknown
+                        ))
+                        count += 1
+            
+            if count > 0:
+                self.db_manager.conn.commit()
+                logger.info(f"Synced {count} historical trades from MT5 to local DB.")
+                
+        except Exception as e:
+            logger.error(f"Failed to sync account history: {e}")
+
     def run(self):
         """主循环"""
         if not self.initialize_mt5():
@@ -1872,6 +1955,9 @@ class AI_MT5_Bot:
 
         logger.info(f"启动 AI 自动交易机器人 - {self.symbol}")
         self.send_telegram_message(f"🤖 *AI Bot Started*\nSymbol: `{self.symbol}`\nTimeframe: `{self.timeframe}`")
+        
+        # Sync history on startup
+        self.sync_account_history()
         
         try:
             while True:
@@ -1974,14 +2060,14 @@ class AI_MT5_Bot:
                 # 如果是新 K 线 或者 这是第一次运行 (last_bar_time 为 0)
                 # 用户需求: 高频交易，每 1 分钟执行一次全量分析，而非等待 M15 收盘
                 # is_new_bar = current_bar_time != self.last_bar_time
-                # 改为基于时间的触发器 (60秒)
-                should_analyze = (time.time() - self.last_analysis_time >= 60) or (self.last_analysis_time == 0)
+                # 改为基于时间的触发器 (120秒)
+                should_analyze = (time.time() - self.last_analysis_time >= 120) or (self.last_analysis_time == 0)
                 
                 if should_analyze:
                     if self.last_analysis_time == 0:
                         logger.info("首次运行，立即执行分析...")
                     else:
-                        logger.info(f"执行周期性高频分析 (60s)...")
+                        logger.info(f"执行周期性高频分析 (120s)...")
                     
                     self.last_bar_time = current_bar_time
                     self.last_analysis_time = time.time()
