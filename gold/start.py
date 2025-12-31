@@ -485,9 +485,10 @@ class AI_MT5_Bot:
             logger.error(f"动态仓位计算失败: {e}")
             return self.lot_size
 
-    def execute_trade(self, signal, strength, sl_tp_params, entry_params=None):
+    def execute_trade(self, signal, strength, sl_tp_params, entry_params=None, suggested_lot=None):
         """
         执行交易指令，完全由大模型驱动
+        :param suggested_lot: 预计算的建议手数 (可选)
         """
         # 允许所有相关指令进入
         valid_actions = ['buy', 'sell', 'limit_buy', 'limit_sell', 'close', 'add_buy', 'add_sell', 'hold']
@@ -751,45 +752,50 @@ class AI_MT5_Bot:
             comment = f"AI: {llm_action.upper()}"
             
             # --- 动态仓位计算 ---
-            # 准备上下文
-            # 获取历史 MFE/MAE 统计 (如果有缓存，从 db_manager 获取)
-            trade_stats = self.db_manager.get_trade_performance_stats(limit=50)
-            mfe_mae_ratio = 1.0
-            if trade_stats and 'avg_mfe' in trade_stats and 'avg_mae' in trade_stats:
-                if abs(trade_stats['avg_mae']) > 0:
-                    mfe_mae_ratio = trade_stats['avg_mfe'] / abs(trade_stats['avg_mae'])
-            
-            # 准备 SMC 上下文 (如果 self.smc_analyzer 最近分析过)
-            # 我们从 latest_strategy 的 details 中尝试获取
-            market_ctx = {}
-            if self.latest_strategy and 'details' in self.latest_strategy:
-                 market_ctx['smc'] = {'structure': self.latest_strategy['details'].get('smc_structure')}
-            
-            # 获取 ATR (复用上面的计算)
-            rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
-            if rates is not None:
-                df_temp = pd.DataFrame(rates)
-                high_low = df_temp['high'] - df_temp['low']
-                atr = high_low.rolling(14).mean().iloc[-1]
-                market_ctx['atr'] = atr
-            
-            # 从 strategy details 中提取所有 AI 信号
-            ai_signals_data = None
-            if self.latest_strategy and 'details' in self.latest_strategy:
-                ai_signals_data = self.latest_strategy['details'].get('signals', {})
-                # 尝试获取 Volatility Regime
-                if 'adv_summary' in self.latest_strategy['details']:
-                    adv_sum = self.latest_strategy['details']['adv_summary']
-                    if isinstance(adv_sum, dict) and 'regime_analysis' in adv_sum:
-                        market_ctx['volatility_regime'] = adv_sum.get('risk', {}).get('level', 'Normal')
+            if suggested_lot and suggested_lot > 0:
+                optimized_lot = suggested_lot
+                logger.info(f"使用预计算的建议手数: {optimized_lot}")
+            else:
+                # 准备上下文 (Fallback)
+                # 获取历史 MFE/MAE 统计 (如果有缓存，从 db_manager 获取)
+                trade_stats = self.db_manager.get_trade_performance_stats(limit=50)
+                mfe_mae_ratio = 1.0
+                if trade_stats and 'avg_mfe' in trade_stats and 'avg_mae' in trade_stats:
+                    if abs(trade_stats['avg_mae']) > 0:
+                        mfe_mae_ratio = trade_stats['avg_mfe'] / abs(trade_stats['avg_mae'])
+                
+                # 准备 SMC 上下文 (如果 self.smc_analyzer 最近分析过)
+                # 我们从 latest_strategy 的 details 中尝试获取
+                market_ctx = {}
+                if self.latest_strategy and 'details' in self.latest_strategy:
+                     market_ctx['smc'] = {'structure': self.latest_strategy['details'].get('smc_structure')}
+                
+                # 获取 ATR (复用上面的计算)
+                rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+                if rates is not None:
+                    df_temp = pd.DataFrame(rates)
+                    high_low = df_temp['high'] - df_temp['low']
+                    atr = high_low.rolling(14).mean().iloc[-1]
+                    market_ctx['atr'] = atr
+                
+                # 从 strategy details 中提取所有 AI 信号
+                ai_signals_data = None
+                if self.latest_strategy and 'details' in self.latest_strategy:
+                    ai_signals_data = self.latest_strategy['details'].get('signals', {})
+                    # 尝试获取 Volatility Regime
+                    if 'adv_summary' in self.latest_strategy['details']:
+                        adv_sum = self.latest_strategy['details']['adv_summary']
+                        if isinstance(adv_sum, dict) and 'regime_analysis' in adv_sum:
+                            market_ctx['volatility_regime'] = adv_sum.get('risk', {}).get('level', 'Normal')
 
-            # 计算最终仓位
-            optimized_lot = self.calculate_dynamic_lot(
-                strength, 
-                market_context=market_ctx, 
-                mfe_mae_ratio=mfe_mae_ratio,
-                ai_signals=ai_signals_data
-            )
+                # 计算最终仓位
+                optimized_lot = self.calculate_dynamic_lot(
+                    strength, 
+                    market_context=market_ctx, 
+                    mfe_mae_ratio=mfe_mae_ratio,
+                    ai_signals=ai_signals_data
+                )
+            
             self.lot_size = optimized_lot # 临时覆盖 self.lot_size 供 _send_order 使用
             
             self._send_order(trade_type, price, explicit_sl, explicit_tp, comment=comment)
