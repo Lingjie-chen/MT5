@@ -2067,16 +2067,16 @@ class AI_MT5_Bot:
                 # ---------------------------------------------------
 
                 # 如果是新 K 线 或者 这是第一次运行 (last_bar_time 为 0)
-                # 用户需求: 高频交易，每 1 分钟执行一次全量分析，而非等待 M15 收盘
+                # 用户需求: 每 5 分钟执行一次全量分析
                 # is_new_bar = current_bar_time != self.last_bar_time
-                # 改为基于时间的触发器 (120秒)
-                should_analyze = (time.time() - self.last_analysis_time >= 120) or (self.last_analysis_time == 0)
+                # 改为基于时间的触发器 (300秒)
+                should_analyze = (time.time() - self.last_analysis_time >= 300) or (self.last_analysis_time == 0)
                 
                 if should_analyze:
                     if self.last_analysis_time == 0:
                         logger.info("首次运行，立即执行分析...")
                     else:
-                        logger.info(f"执行周期性高频分析 (120s)...")
+                        logger.info(f"执行周期性分析 (300s)...")
                     
                     self.last_bar_time = current_bar_time
                     self.last_analysis_time = time.time()
