@@ -107,11 +107,12 @@ class HybridOptimizer:
         
         return final_signal, final_score, self.weights
 class AI_MT5_Bot:
-    def __init__(self, symbol="XAUUSD", timeframe=mt5.TIMEFRAME_M15):
+    def __init__(self, symbol="XAUUSD", timeframe=mt5.TIMEFRAME_M1):
         self.symbol = symbol
         self.timeframe = timeframe
-        self.tf_name = "M15"
-        if timeframe == mt5.TIMEFRAME_H1: self.tf_name = "H1"
+        self.tf_name = "M1"
+        if timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
+        elif timeframe == mt5.TIMEFRAME_H1: self.tf_name = "H1"
         elif timeframe == mt5.TIMEFRAME_H4: self.tf_name = "H4"
         
         self.magic_number = 123456
@@ -124,8 +125,9 @@ class AI_MT5_Bot:
         self.deepseek_client = self.ai_factory.create_client("deepseek")
         self.qwen_client = self.ai_factory.create_client("qwen")
         
-        self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_H1)
-        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_M30, htf2=mt5.TIMEFRAME_H1)
+        # Adjusted for M1 Timeframe Scalping
+        self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_M15)
+        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_M5, htf2=mt5.TIMEFRAME_M15)
         self.price_model = PriceEquationModel()
         self.tf_analyzer = TimeframeVisualAnalyzer()
         self.advanced_adapter = AdvancedMarketAnalysisAdapter()
