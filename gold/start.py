@@ -2723,7 +2723,8 @@ class AI_MT5_Bot:
                                 final_signal, 
                                 strength, 
                                 exit_params,
-                                entry_params
+                                entry_params,
+                                suggested_lot=suggested_lot
                             )
                             
                 time.sleep(1) # 避免 CPU 占用过高
