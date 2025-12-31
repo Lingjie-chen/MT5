@@ -2378,9 +2378,11 @@ class AI_MT5_Bot:
                         elif qw_action in ['sell', 'add_sell']:
                             final_signal = "sell"
                         elif qw_action in ['buy_limit', 'limit_buy']:
-                            final_signal = "limit_buy"
+                            final_signal = "buy" # 强制转换为市价单
+                            logger.info("[Override] Converting Limit Buy -> Market Buy per user preference")
                         elif qw_action in ['sell_limit', 'limit_sell']:
-                            final_signal = "limit_sell"
+                            final_signal = "sell" # 强制转换为市价单
+                            logger.info("[Override] Converting Limit Sell -> Market Sell per user preference")
                         elif qw_action in ['close_buy', 'close_sell', 'close']:
                             final_signal = "close" # 特殊信号: 平仓
                         elif qw_action == 'hold':
@@ -2451,7 +2453,7 @@ class AI_MT5_Bot:
                                 if sig == final_signal:
                                     matching_count += 1
                         
-                        if final_signal in ['buy', 'sell', 'limit_buy', 'limit_sell']:
+                        if final_signal in ['buy', 'sell']:
                             # 基础分 60 (既然 LLM 敢喊单)
                             base_strength = 60
                             # 技术面加成
@@ -2548,7 +2550,7 @@ class AI_MT5_Bot:
                         ref_price = current_ask # 默认参考价
                         
                         trade_dir_for_calc = "buy"
-                        if final_signal in ['sell', 'limit_sell']:
+                        if final_signal == 'sell':
                             trade_dir_for_calc = "sell"
                             ref_price = current_bid
                         

@@ -253,12 +253,11 @@ class QwenClient:
              3. **情绪满足**: 即使未到 TP，但 DeepSeek 认为当前市场情绪已充分释放 (Overextended)，且获利已足够安全。
            - 如果无持仓且信号明确，请**开仓 (Open Position)**。
         
+        **重要提示**: 为了避免错过行情或在反转时错误成交，**请尽量使用市价单 (Market Execution)**，不要使用限价单 (Limit Orders)。如果看多，直接 Buy；如果看空，直接 Sell。
+
         请提供以下优化结果，并确保分析全面、逻辑严密，不要使用省略号或简化描述。**请务必使用中文进行输出（Strategy Logic Rationale 部分）**：
-        1. 核心决策：买入/卖出/持有/平仓/加仓/挂单(Limit)
-        2. 入场/加仓条件：基于情绪得分和技术指标的优化规则。**如果是挂单(Limit/Stop)，必须明确给出具体的挂单价格(limit_price)，这非常重要！** 
-           - 对于 Buy Limit，价格应低于当前市价（回调买入）。
-           - 对于 Sell Limit，价格应高于当前市价（反弹卖出）。
-           - 请结合 SMC 的 FVG 或 OB 区域来设定精确的挂单点位。
+        1. 核心决策：buy/sell/hold/close/add_buy/add_sell (请避免使用 limit 挂单)
+        2. 入场/加仓条件：基于情绪得分和技术指标的优化规则。
         3. 出场/减仓条件：**基于 MFE/MAE 分析的合理优化止盈止损点**。请直接给出具体价格（sl_price, tp_price）。
            - **Stop Loss (SL)**: 参考 MAE 分布，设定在能过滤掉大部分"假突破"但又能控制最大亏损的位置。结合市场结构，放在最近的 Swing High/Low 或结构位之外。
            - **Take Profit (TP)**: 参考 MFE 分布，设定在能捕获 80% 潜在收益的位置。结合市场结构，放在下一个 Liquidity Pool (流动性池) 或 OB 之前。
@@ -272,8 +271,8 @@ class QwenClient:
         7. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 SMC 信号的解读、MFE/MAE 数据的分析以及为何选择该 SL/TP 点位**。
         
         请以JSON格式返回结果，包含以下字段：
-        - action: str ("buy", "sell", "hold", "close_buy", "close_sell", "add_buy", "add_sell", "buy_limit", "sell_limit")
-        - entry_conditions: dict (包含 "trigger_type", "limit_price", "confirmation") **确保 limit_price 是一个具体的数字**
+        - action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell")
+        - entry_conditions: dict (包含 "trigger_type": "market", "confirmation")
         - exit_conditions: dict (包含 "sl_price", "tp_price", "close_rationale") **确保 sl_price 和 tp_price 是具体的数字**
         - position_management: dict (包含 "action", "volume_percent", "reason")
         - position_size: float
