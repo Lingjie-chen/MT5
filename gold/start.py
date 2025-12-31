@@ -2230,6 +2230,20 @@ class AI_MT5_Bot:
                         if positions:
                             for pos in positions:
                                 cur_mfe, cur_mae = self.get_position_stats(pos)
+                                # Calculate R-Multiple (Current Profit / Initial Risk)
+                                # Assuming Risk = SL Distance * Volume * TickValue, but simpler:
+                                # R = (Current Price - Open Price) / (Open Price - SL)
+                                r_multiple = 0.0
+                                if pos.sl > 0:
+                                    risk_dist = abs(pos.price_open - pos.sl)
+                                    if risk_dist > 0:
+                                        profit_dist = 0.0
+                                        if pos.type == mt5.POSITION_TYPE_BUY:
+                                            profit_dist = pos.price_current - pos.price_open
+                                        else:
+                                            profit_dist = pos.price_open - pos.price_current
+                                        r_multiple = profit_dist / risk_dist
+                                
                                 current_positions_list.append({
                                     "ticket": pos.ticket,
                                     "type": "buy" if pos.type == mt5.POSITION_TYPE_BUY else "sell",
@@ -2240,7 +2254,8 @@ class AI_MT5_Bot:
                                     "sl": pos.sl,
                                     "tp": pos.tp,
                                     "mfe_pct": cur_mfe,
-                                    "mae_pct": cur_mae
+                                    "mae_pct": cur_mae,
+                                    "r_multiple": r_multiple
                                 })
                         
                         # 准备当前优化状态上下文
@@ -2575,18 +2590,30 @@ class AI_MT5_Bot:
                         profit_factor = metrics.get('profit_factor', 0.0)
                         
                         # 预计算建议手数 (用于展示)
-                        # 准备市场上下文 (简化版)
-                        preview_market_ctx = {}
-                        if 'smc' in extra_analysis: preview_market_ctx['smc'] = extra_analysis['smc']
-                        if 'atr' in latest_features: preview_market_ctx['atr'] = float(latest_features['atr'])
+                        # 准备完整的市场上下文 (与 execute_trade 一致，移除简化)
+                        full_market_ctx = {}
+                        if 'smc' in extra_analysis: full_market_ctx['smc'] = extra_analysis['smc']
+                        if 'atr' in latest_features: full_market_ctx['atr'] = float(latest_features['atr'])
                         if adv_result and 'risk' in adv_result:
-                             preview_market_ctx['volatility_regime'] = adv_result['risk'].get('level', 'Normal')
+                             full_market_ctx['volatility_regime'] = adv_result['risk'].get('level', 'Normal')
+                        
+                        # 添加更多详细上下文，确保资金管理模块能获取完整信息
+                        full_market_ctx['supply_zones'] = ifvg_result.get('active_zones', [])
+                        if adv_result and 'demand_zones' in adv_result: full_market_ctx['demand_zones'] = adv_result['demand_zones']
+                        if smc_result and 'bearish_fvgs' in smc_result: full_market_ctx['bearish_fvgs'] = smc_result['bearish_fvgs']
+                        if smc_result and 'bullish_fvgs' in smc_result: full_market_ctx['bullish_fvgs'] = smc_result['bullish_fvgs']
+
+                        # 计算真实的 MFE/MAE Ratio
+                        real_mfe_mae_ratio = 1.0
+                        if trade_stats and 'avg_mfe' in trade_stats and 'avg_mae' in trade_stats:
+                             if abs(trade_stats['avg_mae']) > 0:
+                                 real_mfe_mae_ratio = trade_stats['avg_mfe'] / abs(trade_stats['avg_mae'])
                         
                         # 计算
                         suggested_lot = self.calculate_dynamic_lot(
                             strength, 
-                            market_context=preview_market_ctx, 
-                            mfe_mae_ratio=1.0, # 简化，execute_trade 会用更精确的
+                            market_context=full_market_ctx, 
+                            mfe_mae_ratio=real_mfe_mae_ratio, # 使用真实计算值
                             ai_signals=all_signals
                         )
                         
