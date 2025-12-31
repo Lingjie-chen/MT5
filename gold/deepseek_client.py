@@ -251,6 +251,16 @@ class DeepSeekClient:
                 logger.info(f"收到模型响应: {message_content}")
                 
                 analysis_result = json.loads(message_content)
+                if not isinstance(analysis_result, dict):
+                    logger.error(f"DeepSeek响应格式错误 (期望dict, 实际{type(analysis_result)}): {analysis_result}")
+                    return {
+                        "market_state": "neutral",
+                        "support_levels": [],
+                        "resistance_levels": [],
+                        "structure_score": 50,
+                        "short_term_prediction": "neutral",
+                        "indicator_analysis": "响应格式错误"
+                    }
                 return analysis_result
             except json.JSONDecodeError as e:
                 logger.error(f"解析DeepSeek响应失败: {e}")

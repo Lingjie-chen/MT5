@@ -307,6 +307,18 @@ class QwenClient:
                 
                 optimized_strategy = json.loads(message_content)
                 
+                if not isinstance(optimized_strategy, dict):
+                    logger.error(f"Qwen响应格式错误 (期望dict, 实际{type(optimized_strategy)}): {optimized_strategy}")
+                    return {
+                        "action": "hold",
+                        "entry_conditions": {"trigger_type": "market"},
+                        "exit_conditions": {"sl_atr_multiplier": 1.5, "tp_atr_multiplier": 2.5},
+                        "position_size": 0.01,
+                        "signal_strength": 50,
+                        "risk_management": {"max_risk": 0.02},
+                        "strategy_rationale": "响应格式错误"
+                    }
+
                 # 强制统一 position_size 为 0.01 (User Request)
                 optimized_strategy["position_size"] = 0.01
                 
