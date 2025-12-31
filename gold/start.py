@@ -111,9 +111,9 @@ class AI_MT5_Bot:
         self.symbol = symbol
         self.timeframe = timeframe
         self.tf_name = "M1"
-        if timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
-        elif timeframe == mt5.TIMEFRAME_H1: self.tf_name = "H1"
-        elif timeframe == mt5.TIMEFRAME_H4: self.tf_name = "H4"
+        if timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M5"
+        elif timeframe == mt5.TIMEFRAME_H1: self.tf_name = "H15"
+        elif timeframe == mt5.TIMEFRAME_H4: self.tf_name = "H1"
         
         self.magic_number = 123456
         self.lot_size = 0.01 
@@ -1395,9 +1395,10 @@ class AI_MT5_Bot:
         self._opt_counter = 0
         
         # 1. 获取历史数据
-        # Reduce data size for speed (300 candles ~ 75 hours of M15 data)
-        df = self.get_market_data(300) 
-        if df is None or len(df) < 200:
+        # For M1, we need more candles to cover enough time for valid optimization
+        # 1000 candles = ~16 hours of M1 data
+        df = self.get_market_data(1000) 
+        if df is None or len(df) < 500:
             logger.warning("数据不足，跳过优化")
             return
             
@@ -1405,7 +1406,7 @@ class AI_MT5_Bot:
         # smc_ma, smc_atr, mfh_lr, mfh_horizon, pem_fast, pem_slow, pem_adx, rvgi_sma, rvgi_cci, ifvg_gap
         bounds = [
             (100, 300),     # smc_ma
-            (0.001, 0.005), # smc_atr
+            (0.0002, 0.002), # smc_atr (Adjusted for M1: $0.2 - $2.0)
             (0.001, 0.1),   # mfh_lr
             (3, 10),        # mfh_horizon
             (10, 50),       # pem_fast
@@ -1777,9 +1778,9 @@ class AI_MT5_Bot:
         """
         logger.info("Running Short-Term Parameter Optimization (WOAm)...")
         
-        # 1. Get Data (Last 200 M15 candles)
-        df = self.get_market_data(200)
-        if df is None or len(df) < 100:
+        # 1. Get Data (Last 500 M1 candles)
+        df = self.get_market_data(500)
+        if df is None or len(df) < 200:
             return
 
         # 2. Define Objective Function
@@ -2077,8 +2078,8 @@ class AI_MT5_Bot:
                     # 2. 获取数据并分析
                     # ... 这里的代码保持不变 ...
                     # PEM 需要至少 108 根 K 线 (ma_fast_period)，MTF 更新 Zones 需要 500 根
-                    # 为了确保所有模块都有足够数据，我们获取 300 根 (MTF Zones 在 update_zones 内部单独获取)
-                    df = self.get_market_data(300) 
+                    # 为了确保所有模块都有足够数据，我们获取 600 根 (10 hours of M1)
+                    df = self.get_market_data(600) 
                     
                     # 获取最近的 Tick 数据用于 Matrix ML
                     # 尝试获取最近 20 个 tick
