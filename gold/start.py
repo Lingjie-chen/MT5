@@ -2482,11 +2482,42 @@ class AI_MT5_Bot:
                         if final_signal == 'hold' and (not positions or len(positions) == 0):
                             display_decision = "WAITING FOR MARKET DIRECTION ⏳"
 
+                        # --- 准备资金管理与自我学习数据 ---
+                        # 获取自我学习状态
+                        metrics = self.db_manager.get_performance_metrics(limit=20)
+                        win_rate = metrics.get('win_rate', 0.0)
+                        profit_factor = metrics.get('profit_factor', 0.0)
+                        
+                        # 预计算建议手数 (用于展示)
+                        # 准备市场上下文 (简化版)
+                        preview_market_ctx = {}
+                        if 'smc' in extra_analysis: preview_market_ctx['smc'] = extra_analysis['smc']
+                        if 'atr' in latest_features: preview_market_ctx['atr'] = float(latest_features['atr'])
+                        if adv_result and 'risk' in adv_result:
+                             preview_market_ctx['volatility_regime'] = adv_result['risk'].get('level', 'Normal')
+                        
+                        # 计算
+                        suggested_lot = self.calculate_dynamic_lot(
+                            strength, 
+                            market_context=preview_market_ctx, 
+                            mfe_mae_ratio=1.0, # 简化，execute_trade 会用更精确的
+                            ai_signals=all_signals
+                        )
+                        
+                        # 估算风险百分比
+                        account_equity = mt5.account_info().equity if mt5.account_info() else 0
+                        risk_pct_display = "N/A"
+                        if account_equity > 0 and opt_sl and ref_price:
+                            risk_usd = abs(ref_price - opt_sl) * suggested_lot * (mt5.symbol_info(self.symbol).trade_tick_value or 1.0)
+                            risk_pct_val = (risk_usd / account_equity) * 100
+                            risk_pct_display = f"{risk_pct_val:.2f}%"
+
                         # 格式化 DeepSeek 和 Qwen 的详细分析
                         # DeepSeek Report
                         ds_analysis_text = f"• Market State: {self.escape_markdown(structure.get('market_state', 'N/A'))}\n"
                         ds_analysis_text += f"• Signal: {self.escape_markdown(ds_signal.upper())} (Conf: {ds_score}/100)\n"
-                        ds_analysis_text += f"• Prediction: {self.escape_markdown(ds_pred)}"
+                        ds_analysis_text += f"• Prediction: {self.escape_markdown(ds_pred)}\n"
+                        ds_analysis_text += f"• Reasoning: {self.escape_markdown(structure.get('reasoning', 'N/A')[:100])}..." # 截取前100字
                         
                         # Qwen Report
                         qw_reason = strategy.get('reason', strategy.get('rationale', 'Strategy Optimization'))
@@ -2499,20 +2530,27 @@ class AI_MT5_Bot:
                         safe_volatility = self.escape_markdown(volatility_info)
                         safe_pos_summary = self.escape_markdown(pos_summary)
                         
+                        # 构建单一整合消息
                         analysis_msg = (
                             f"🤖 *AI Gold Strategy Comprehensive Report*\n"
                             f"Symbol: `{self.symbol}` | TF: `{self.tf_name}`\n"
                             f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
                             
+                            f"🧠 *Self-Learning Status*\n"
+                            f"• Win Rate (20): `{win_rate:.1%}`\n"
+                            f"• Profit Factor: `{profit_factor:.2f}`\n"
+                            f"• Adaptive Risk: `{risk_pct_display}`\n\n"
+                            
                             f"🕵️ *DeepSeek Analysis (Structure)*\n"
-                            f"{ds_analysis_text}\n\n"
+                            f"{ds_analysis_text}\n"
                             
                             f"🧙‍♂️ *Qwen Analysis (Strategy)*\n"
-                            f"{qw_analysis_text}\n\n"
+                            f"{qw_analysis_text}\n"
                             
-                            f"🧠 *Final Consolidated Result*\n"
+                            f"🏆 *Final Consolidated Result*\n"
                             f"• Decision: *{display_decision}* (Strength: {strength:.0f}%)\n"
                             f"• Direction: `{trade_dir_for_calc.upper()}`\n"
+                            f"• Recommended Lot: `{suggested_lot}`\n"
                             f"• Reason: _{safe_reason}_\n\n"
                             
                             f"🎯 *Optimal Trade Setup (Best SL/TP)*\n"
