@@ -851,6 +851,63 @@ class AI_MT5_Bot:
         sl = self._normalize_price(sl)
         tp = self._normalize_price(tp)
         
+        # --- 增强验证逻辑 (Fix Invalid Stops) ---
+        symbol_info = mt5.symbol_info(self.symbol)
+        if not symbol_info:
+            logger.error("无法获取品种信息")
+            return
+
+        point = symbol_info.point
+        stops_level = (symbol_info.trade_stops_level + 10) * point # 额外加 10 points 缓冲
+        
+        is_buy = "buy" in type_str
+        is_sell = "sell" in type_str
+        
+        # 1. 检查方向性 (Directionality)
+        if is_buy:
+            # Buy: SL must be < Price, TP must be > Price
+            if sl > 0 and sl >= price:
+                logger.warning(f"Invalid SL for BUY (SL {sl:.2f} >= Price {price:.2f}). Auto-Correcting: Removing SL.")
+                sl = 0.0 # 移除无效 SL，优先保证成交
+            
+            if tp > 0 and tp <= price:
+                logger.warning(f"Invalid TP for BUY (TP {tp:.2f} <= Price {price:.2f}). Auto-Correcting: Removing TP.")
+                tp = 0.0
+                
+        elif is_sell:
+            # Sell: SL must be > Price, TP must be < Price
+            if sl > 0 and sl <= price:
+                logger.warning(f"Invalid SL for SELL (SL {sl:.2f} <= Price {price:.2f}). Auto-Correcting: Removing SL.")
+                sl = 0.0
+                
+            if tp > 0 and tp >= price:
+                logger.warning(f"Invalid TP for SELL (TP {tp:.2f} >= Price {price:.2f}). Auto-Correcting: Removing TP.")
+                tp = 0.0
+
+        # 2. 检查最小间距 (Stops Level)
+        # 防止 SL/TP 距离价格太近导致 Error 10016
+        if sl > 0:
+            dist = abs(price - sl)
+            if dist < stops_level:
+                logger.warning(f"SL too close (Dist {dist:.5f} < Level {stops_level:.5f}). Adjusting.")
+                if is_buy: 
+                    sl = price - stops_level
+                else: 
+                    sl = price + stops_level
+                sl = self._normalize_price(sl)
+                
+        if tp > 0:
+            dist = abs(price - tp)
+            if dist < stops_level:
+                logger.warning(f"TP too close (Dist {dist:.5f} < Level {stops_level:.5f}). Adjusting.")
+                if is_buy: 
+                    tp = price + stops_level
+                else: 
+                    tp = price - stops_level
+                tp = self._normalize_price(tp)
+        
+        # ----------------------------------------
+        
         order_type = mt5.ORDER_TYPE_BUY
         action = mt5.TRADE_ACTION_DEAL
         
