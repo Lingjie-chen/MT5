@@ -155,17 +155,32 @@ class DeepSeekClient:
         # 处理性能统计 (MFE/MAE)
         perf_context = ""
         if performance_stats:
-            # 简单统计
-            mfe_list = [t.get('mfe', 0) for t in performance_stats if t.get('mfe') is not None]
-            mae_list = [t.get('mae', 0) for t in performance_stats if t.get('mae') is not None]
-            avg_mfe = sum(mfe_list)/len(mfe_list) if mfe_list else 0
-            avg_mae = sum(mae_list)/len(mae_list) if mae_list else 0
+            # Check if performance_stats is a dict (aggregated stats) or list (raw trades)
+            mfe_list = []
+            mae_list = []
+            recent_trades = []
+            
+            if isinstance(performance_stats, dict):
+                # Using pre-calculated stats from database_manager
+                avg_mfe = performance_stats.get('avg_mfe', 0)
+                avg_mae = performance_stats.get('avg_mae', 0)
+                recent_trades = performance_stats.get('recent_trades', [])
+            elif isinstance(performance_stats, list):
+                # Calculating from list of trades
+                mfe_list = [t.get('mfe', 0) for t in performance_stats if isinstance(t, dict) and t.get('mfe') is not None]
+                mae_list = [t.get('mae', 0) for t in performance_stats if isinstance(t, dict) and t.get('mae') is not None]
+                avg_mfe = sum(mfe_list)/len(mfe_list) if mfe_list else 0
+                avg_mae = sum(mae_list)/len(mae_list) if mae_list else 0
+                recent_trades = performance_stats[:5]
+            else:
+                avg_mfe = 0
+                avg_mae = 0
             
             perf_context = (
                 f"\n历史交易绩效参考 (MFE/MAE):\n"
                 f"- 平均最大有利幅度 (Avg MFE): {avg_mfe:.2f}%\n"
                 f"- 平均最大不利幅度 (Avg MAE): {avg_mae:.2f}%\n"
-                f"- 最近交易记录: {json.dumps(performance_stats[:5], indent=2, cls=CustomJSONEncoder)}\n"
+                f"- 最近交易记录: {json.dumps(recent_trades[:5], indent=2, cls=CustomJSONEncoder)}\n"
             )
 
         opt_algo = "Auto-AO"
