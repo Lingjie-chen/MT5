@@ -107,10 +107,10 @@ class HybridOptimizer:
         
         return final_signal, final_score, self.weights
 class AI_MT5_Bot:
-    def __init__(self, symbol="XAUUSD", timeframe=mt5.TIMEFRAME_M5):
+    def __init__(self, symbol="XAUUSD", timeframe=mt5.TIMEFRAME_M15):
         self.symbol = symbol
         self.timeframe = timeframe
-        self.tf_name = "M5"
+        self.tf_name = "M15"
         if timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
         elif timeframe == mt5.TIMEFRAME_H1: self.tf_name = "H1"
         elif timeframe == mt5.TIMEFRAME_H4: self.tf_name = "H4"
@@ -125,9 +125,9 @@ class AI_MT5_Bot:
         self.deepseek_client = self.ai_factory.create_client("deepseek")
         self.qwen_client = self.ai_factory.create_client("qwen")
         
-        # Adjusted for M5 Timeframe with M15/H1 MTF Analysis
-        self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_M15)
-        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_M15, htf2=mt5.TIMEFRAME_H1)
+        # Adjusted for M15 Timeframe with H1/H4 MTF Analysis
+        self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_H1)
+        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_H1, htf2=mt5.TIMEFRAME_H4)
         self.price_model = PriceEquationModel()
         self.tf_analyzer = TimeframeVisualAnalyzer()
         self.advanced_adapter = AdvancedMarketAnalysisAdapter()
@@ -1458,8 +1458,8 @@ class AI_MT5_Bot:
         self._opt_counter = 0
         
         # 1. 获取历史数据
-        # For M1, we need more candles to cover enough time for valid optimization
-        # 1000 candles = ~16 hours of M1 data
+        # For M15, we fetch 1000 candles to cover enough time for valid optimization
+        # 1000 candles = ~250 hours (10 days) of M15 data
         df = self.get_market_data(1000) 
         if df is None or len(df) < 500:
             logger.warning("数据不足，跳过优化")
@@ -1469,7 +1469,7 @@ class AI_MT5_Bot:
         # smc_ma, smc_atr, mfh_lr, mfh_horizon, pem_fast, pem_slow, pem_adx, rvgi_sma, rvgi_cci, ifvg_gap
         bounds = [
             (100, 300),     # smc_ma
-            (0.0002, 0.002), # smc_atr (Adjusted for M1: $0.2 - $2.0)
+            (0.001, 0.005), # smc_atr (Adjusted for M15)
             (0.001, 0.1),   # mfh_lr
             (3, 10),        # mfh_horizon
             (10, 50),       # pem_fast
@@ -1841,7 +1841,7 @@ class AI_MT5_Bot:
         """
         logger.info("Running Short-Term Parameter Optimization (WOAm)...")
         
-        # 1. Get Data (Last 500 M1 candles)
+        # 1. Get Data (Last 500 M15 candles)
         df = self.get_market_data(500)
         if df is None or len(df) < 200:
             return
@@ -2124,16 +2124,16 @@ class AI_MT5_Bot:
                 # ---------------------------------------------------
 
                 # 如果是新 K 线 或者 这是第一次运行 (last_bar_time 为 0)
-                # 用户需求: 每 5 分钟执行一次全量分析
+                # 用户需求: 每 15 分钟执行一次全量分析
                 # is_new_bar = current_bar_time != self.last_bar_time
-                # 改为基于时间的触发器 (300秒)
-                should_analyze = (time.time() - self.last_analysis_time >= 300) or (self.last_analysis_time == 0)
+                # 改为基于时间的触发器 (900秒)
+                should_analyze = (time.time() - self.last_analysis_time >= 900) or (self.last_analysis_time == 0)
                 
                 if should_analyze:
                     if self.last_analysis_time == 0:
                         logger.info("首次运行，立即执行分析...")
                     else:
-                        logger.info(f"执行周期性分析 (300s)...")
+                        logger.info(f"执行周期性分析 (900s)...")
                     
                     self.last_bar_time = current_bar_time
                     self.last_analysis_time = time.time()
@@ -2141,7 +2141,7 @@ class AI_MT5_Bot:
                     # 2. 获取数据并分析
                     # ... 这里的代码保持不变 ...
                     # PEM 需要至少 108 根 K 线 (ma_fast_period)，MTF 更新 Zones 需要 500 根
-                    # 为了确保所有模块都有足够数据，我们获取 600 根 (10 hours of M1)
+                    # 为了确保所有模块都有足够数据，我们获取 600 根 (150 hours of M15)
                     df = self.get_market_data(600) 
                     
                     # 获取最近的 Tick 数据用于 Matrix ML
