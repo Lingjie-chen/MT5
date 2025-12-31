@@ -2647,7 +2647,7 @@ class AI_MT5_Bot:
                         ds_analysis_text = f"• Market State: {self.escape_markdown(structure.get('market_state', 'N/A'))}\n"
                         ds_analysis_text += f"• Signal: {self.escape_markdown(ds_signal.upper())} (Conf: {ds_score}/100)\n"
                         ds_analysis_text += f"• Prediction: {self.escape_markdown(ds_pred)}\n"
-                        ds_analysis_text += f"• Reasoning: {self.escape_markdown(structure.get('reasoning', 'N/A')[:100])}..." # 截取前100字
+                        ds_analysis_text += f"• Reasoning: {self.escape_markdown(structure.get('reasoning', 'N/A'))}\n" 
                         
                         # Qwen Report
                         qw_reason = strategy.get('reason', strategy.get('rationale', 'Strategy Optimization'))
@@ -2688,11 +2688,6 @@ class AI_MT5_Bot:
                             f"• 🛑 Stop Loss: `{opt_sl:.2f}`\n"
                             f"• 🏆 Take Profit: `{opt_tp:.2f}`\n"
                             f"• R:R Ratio: `{rr_str}`\n\n"
-                            
-                            f"📊 *Market Context*\n"
-                            f"• Volatility: `{safe_volatility}`\n"
-                            f"• Tech Consensus: {matching_count}/{valid_tech_count} agree\n"
-                            f"• Signals: SMC[{smc_result['signal']}] | CRT[{crt_result['signal']}] | MTF[{mtf_result['signal']}]\n\n"
                             
                             f"💼 *Account Status*\n"
                             f"{safe_pos_summary}"
