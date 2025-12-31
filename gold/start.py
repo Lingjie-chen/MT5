@@ -1019,6 +1019,17 @@ class AI_MT5_Bot:
             # 策略调整: 恢复 AI 驱动的持仓参数更新逻辑
             # 但不使用机械式的 Trailing Stop，而是依赖 LLM 的 MFE/MAE 分析给出的新点位
             
+            # [Manual Override Protection]
+            # 检查用户是否手动修改了 SL/TP
+            # 我们假设机器人上次设置的 SL/TP 应该与当前持仓的一致
+            # 如果差异很大且不是 0，说明用户手动干预了
+            # 为了简化，我们设定规则: 只有当 AI 建议的新 SL/TP 明显优于当前设置，或者当前设置明显偏离风险控制时才强制更新
+            
+            allow_update = True
+            # if abs(sl - some_last_known_sl) > point * 10: ... (Requires state tracking)
+            # 替代方案: 如果当前 SL 与 建议 SL 差距小于 20 point，视为"差不多"，不频繁修改干扰用户
+            # 如果差距很大，说明 AI 发现了新的结构，或者用户设置的很不合理，需要修正
+            
             if has_new_params:
                 # 尝试从 exit_conditions 中直接获取明确的 SL/TP 价格
                 exit_conditions = strategy_params.get('exit_conditions', {})
@@ -1053,15 +1064,27 @@ class AI_MT5_Bot:
 
                 # 如果 LLM 给出了明确的新 SL/TP 价格，则优先使用
                 if explicit_sl > 0 or explicit_tp > 0:
-                    if explicit_sl > 0 and abs(explicit_sl - sl) > point * 5:
-                         request['sl'] = explicit_sl
-                         changed = True
-                         logger.info(f"AI 更新 SL: {sl:.2f} -> {explicit_sl:.2f}")
+                    if explicit_sl > 0:
+                         # 智能过滤: 仅当差异 > 20 Points 时更新，避免高频刷单干扰手动操作
+                         # 除非是为了保护利润 (移动止损)
+                         diff_sl = abs(explicit_sl - sl)
+                         is_better_sl = False
+                         if type_pos == mt5.POSITION_TYPE_BUY and explicit_sl > sl: is_better_sl = True # 向上移 (保护利润)
+                         if type_pos == mt5.POSITION_TYPE_SELL and explicit_sl < sl: is_better_sl = True # 向下移 (保护利润)
+                         
+                         if diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5):
+                             request['sl'] = explicit_sl
+                             changed = True
+                             logger.info(f"AI 更新 SL (Real-Time): {sl:.2f} -> {explicit_sl:.2f}")
                     
-                    if explicit_tp > 0 and abs(explicit_tp - tp) > point * 10:
-                         request['tp'] = explicit_tp
-                         changed = True
-                         logger.info(f"AI 更新 TP: {tp:.2f} -> {explicit_tp:.2f}")
+                    if explicit_tp > 0:
+                         diff_tp = abs(explicit_tp - tp)
+                         # TP 修改通常比较随意，给用户更多手动空间
+                         # 只有差异较大时才覆盖
+                         if diff_tp > point * 30:
+                             request['tp'] = explicit_tp
+                             changed = True
+                             logger.info(f"AI 更新 TP (Real-Time): {tp:.2f} -> {explicit_tp:.2f}")
                 
                 # 如果没有明确价格，但有 ATR 倍数建议 (兼容旧逻辑或备用)，则计算
                 elif new_sl_multiplier > 0 or new_tp_multiplier > 0:
@@ -1083,17 +1106,21 @@ class AI_MT5_Bot:
                     suggested_tp = self._normalize_price(suggested_tp)
 
                     # 仅当差异显著时更新
-                    if suggested_sl > 0 and abs(suggested_sl - sl) > point * 5:
-                        # 简单验证 Stops Level
+                    if suggested_sl > 0:
+                        diff_sl = abs(suggested_sl - sl)
+                        is_better_sl = False
+                        if type_pos == mt5.POSITION_TYPE_BUY and suggested_sl > sl: is_better_sl = True
+                        if type_pos == mt5.POSITION_TYPE_SELL and suggested_sl < sl: is_better_sl = True
+                        
                         valid = True
                         if type_pos == mt5.POSITION_TYPE_BUY and (current_price - suggested_sl < stop_level_dist): valid = False
                         if type_pos == mt5.POSITION_TYPE_SELL and (suggested_sl - current_price < stop_level_dist): valid = False
                         
-                        if valid:
+                        if valid and (diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5)):
                             request['sl'] = suggested_sl
                             changed = True
                     
-                    if suggested_tp > 0 and abs(suggested_tp - tp) > point * 10:
+                    if suggested_tp > 0 and abs(suggested_tp - tp) > point * 30:
                         valid = True
                         if type_pos == mt5.POSITION_TYPE_BUY and (suggested_tp - current_price < stop_level_dist): valid = False
                         if type_pos == mt5.POSITION_TYPE_SELL and (current_price - suggested_tp < stop_level_dist): valid = False
