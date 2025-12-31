@@ -171,41 +171,49 @@ class QwenClient:
             recent_trades = []
             summary_stats = {}
             
-            if isinstance(stats_to_use, list):
-                recent_trades = stats_to_use
-                if len(recent_trades) > 0:
-                     mfe_list = [t.get('mfe', 0) for t in recent_trades if t.get('mfe') is not None]
-                     mae_list = [t.get('mae', 0) for t in recent_trades if t.get('mae') is not None]
-                     
-                     # Calculate Win Rate and Profit Factor
-                     wins = len([t for t in recent_trades if t.get('profit', 0) > 0])
-                     total_profit = sum([t.get('profit', 0) for t in recent_trades if t.get('profit', 0) > 0])
-                     total_loss = abs(sum([t.get('profit', 0) for t in recent_trades if t.get('profit', 0) < 0]))
-                     
-                     summary_stats = {
-                         'avg_mfe': sum(mfe_list)/len(mfe_list) if mfe_list else 0,
-                         'avg_mae': sum(mae_list)/len(mae_list) if mae_list else 0,
-                         'trade_count': len(recent_trades),
-                         'win_rate': (wins / len(recent_trades)) * 100 if recent_trades else 0,
-                         'profit_factor': (total_profit / total_loss) if total_loss > 0 else 99.9
-                     }
-            elif isinstance(stats_to_use, dict):
-                summary_stats = stats_to_use
-                recent_trades = stats_to_use.get('recent_trades', [])
+            try:
+                if isinstance(stats_to_use, list):
+                    # Robust filtering
+                    valid_trades = [t for t in stats_to_use if isinstance(t, dict)]
+                    recent_trades = valid_trades
+                    
+                    if len(recent_trades) > 0:
+                         mfe_list = [t.get('mfe', 0) for t in recent_trades if t.get('mfe') is not None]
+                         mae_list = [t.get('mae', 0) for t in recent_trades if t.get('mae') is not None]
+                         
+                         # Calculate Win Rate and Profit Factor
+                         wins = len([t for t in recent_trades if t.get('profit', 0) > 0])
+                         total_profit = sum([t.get('profit', 0) for t in recent_trades if t.get('profit', 0) > 0])
+                         total_loss = abs(sum([t.get('profit', 0) for t in recent_trades if t.get('profit', 0) < 0]))
+                         
+                         summary_stats = {
+                             'avg_mfe': sum(mfe_list)/len(mfe_list) if mfe_list else 0,
+                             'avg_mae': sum(mae_list)/len(mae_list) if mae_list else 0,
+                             'trade_count': len(recent_trades),
+                             'win_rate': (wins / len(recent_trades)) * 100 if recent_trades else 0,
+                             'profit_factor': (total_profit / total_loss) if total_loss > 0 else 99.9
+                         }
+                elif isinstance(stats_to_use, dict):
+                    summary_stats = stats_to_use
+                    recent_trades = stats_to_use.get('recent_trades', [])
+                    if not isinstance(recent_trades, list): recent_trades = []
 
-            trades_summary = ""
-            if recent_trades:
-                trades_summary = json.dumps(recent_trades[:10], indent=2, cls=CustomJSONEncoder)
+                trades_summary = ""
+                if recent_trades:
+                    trades_summary = json.dumps(recent_trades[:10], indent=2, cls=CustomJSONEncoder)
 
-            perf_context = (
-                f"\n历史交易绩效参考 (用于 MFE/MAE 象限分析与 SL/TP 优化):\n"
-                f"- 样本交易数: {summary_stats.get('trade_count', 0)}\n"
-                f"- 胜率 (Win Rate): {summary_stats.get('win_rate', 0):.2f}%\n"
-                f"- 盈亏比 (Profit Factor): {summary_stats.get('profit_factor', 0):.2f}\n"
-                f"- 平均 MFE: {summary_stats.get('avg_mfe', 0):.2f}%\n"
-                f"- 平均 MAE: {summary_stats.get('avg_mae', 0):.2f}%\n"
-                f"- 最近交易详情 (用于分析体质): \n{trades_summary}\n"
-            )
+                perf_context = (
+                    f"\n历史交易绩效参考 (用于 MFE/MAE 象限分析与 SL/TP 优化):\n"
+                    f"- 样本交易数: {summary_stats.get('trade_count', 0)}\n"
+                    f"- 胜率 (Win Rate): {summary_stats.get('win_rate', 0):.2f}%\n"
+                    f"- 盈亏比 (Profit Factor): {summary_stats.get('profit_factor', 0):.2f}\n"
+                    f"- 平均 MFE: {summary_stats.get('avg_mfe', 0):.2f}%\n"
+                    f"- 平均 MAE: {summary_stats.get('avg_mae', 0):.2f}%\n"
+                    f"- 最近交易详情 (用于分析体质): \n{trades_summary}\n"
+                )
+            except Exception as e:
+                logger.error(f"Error processing stats_to_use: {e}")
+                perf_context = "\n历史交易绩效: 数据解析错误\n"
 
         if technical_signals:
             # 从 technical_signals 中移除 stats 以免重复 (浅拷贝处理)
