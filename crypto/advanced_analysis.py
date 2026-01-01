@@ -367,6 +367,47 @@ class AdvancedMarketAnalysis:
         
         return {"signal": signal, "strength": strength, "reasons": reasons, "active_zones": [f for f in fvgs if f['start_time'] > times[-50]]}
 
+    def calculate_rvgi_cci_series(self, df: pd.DataFrame, sma_period: int = 30, cci_period: int = 14) -> pd.Series:
+        if len(df) < max(sma_period, cci_period) + 5: return pd.Series(0, index=df.index)
+        
+        closes = df['close']; highs = df['high']; lows = df['low']; opens = df['open']
+        sma = closes.rolling(window=sma_period).mean()
+        tp = (highs + lows + closes) / 3
+        sma_tp = tp.rolling(window=cci_period).mean()
+        mad = tp.rolling(window=cci_period).apply(lambda x: np.mean(np.abs(x - np.mean(x))), raw=True).replace(0, 0.000001)
+        cci = (tp - sma_tp) / (0.015 * mad)
+        
+        co = closes - opens; hl = highs - lows
+        num_val = (co + 2 * co.shift(1) + 2 * co.shift(2) + co.shift(3)) / 6
+        den_val = (hl + 2 * hl.shift(1) + 2 * hl.shift(2) + hl.shift(3)) / 6
+        rvi_period = 10
+        rvi_num = num_val.rolling(window=rvi_period).mean()
+        rvi_den = den_val.rolling(window=rvi_period).mean().replace(0, 0.000001)
+        rvi_main = (rvi_num / rvi_den).fillna(0)
+        rvi_signal = ((rvi_main + 2 * rvi_main.shift(1) + 2 * rvi_main.shift(2) + rvi_main.shift(3)) / 6).fillna(0)
+        
+        # Vectorized Logic
+        price_above_sma = closes > sma
+        price_below_sma = closes < sma
+        
+        rvi_cross_up = (rvi_main.shift(1) <= rvi_signal.shift(1)) & (rvi_main > rvi_signal)
+        rvi_cross_down = (rvi_main.shift(1) >= rvi_signal.shift(1)) & (rvi_main < rvi_signal)
+        
+        cci_buy = cci <= -100
+        cci_sell = cci >= 100
+        
+        signals = pd.Series(0, index=df.index)
+        
+        # Sell Condition: price_above_sma and cci_sell and rvi_cross_down
+        sell_cond = price_above_sma & cci_sell & rvi_cross_down
+        signals[sell_cond] = -1
+        
+        # Buy Condition: price_below_sma and cci_buy and rvi_cross_up
+        buy_cond = price_below_sma & cci_buy & rvi_cross_up
+        signals[buy_cond] = 1
+        
+        return signals
+
     def analyze_rvgi_cci_strategy(self, df: pd.DataFrame, sma_period: int = 30, cci_period: int = 14) -> Dict[str, any]:
         if len(df) < max(sma_period, cci_period) + 5: return {"signal": "hold", "strength": 0, "reasons": []}
         closes = df['close']; highs = df['high']; lows = df['low']; opens = df['open']
@@ -574,6 +615,64 @@ class MFHAnalyzer:
         if self.count < 2: std = np.ones_like(features)
         else: variance = self.m2 / (self.count - 1); std = np.sqrt(variance); std[std == 0] = 1.0
         return (features - self.mean) / std
+
+    def prepare_features_batch(self, df):
+        """Pre-calculate features for the entire dataframe for optimization speedup"""
+        if len(df) < (self.ma_period + self.horizon + 1): return None
+        
+        # Calculate rolling means vectorially
+        ma_close = df['close'].rolling(window=self.ma_period).mean()
+        ma_open = df['open'].rolling(window=self.ma_period).mean()
+        ma_high = df['high'].rolling(window=self.ma_period).mean()
+        ma_low = df['low'].rolling(window=self.ma_period).mean()
+        
+        closes = df['close'].values; opens = df['open'].values; highs = df['high'].values; lows = df['low'].values
+        ma_c_vals = ma_close.values; ma_o_vals = ma_open.values; ma_h_vals = ma_high.values; ma_l_vals = ma_low.values
+        
+        n = len(df)
+        feature_matrix = np.zeros((n, 16))
+        
+        # Shifted arrays for previous values (horizon)
+        # prev_idx = i - self.horizon
+        # We can use pandas shift
+        closes_prev = df['close'].shift(self.horizon).values
+        opens_prev = df['open'].shift(self.horizon).values
+        highs_prev = df['high'].shift(self.horizon).values
+        lows_prev = df['low'].shift(self.horizon).values
+        
+        ma_c_prev = ma_close.shift(self.horizon).values
+        ma_o_prev = ma_open.shift(self.horizon).values
+        ma_h_prev = ma_high.shift(self.horizon).values
+        ma_l_prev = ma_low.shift(self.horizon).values
+        
+        # Fill Matrix
+        # Indices where valid
+        start = self.ma_period + self.horizon
+        
+        feature_matrix[:, 0] = closes
+        feature_matrix[:, 1] = opens
+        feature_matrix[:, 2] = highs
+        feature_matrix[:, 3] = lows
+        feature_matrix[:, 4] = ma_c_vals
+        feature_matrix[:, 5] = ma_o_vals
+        feature_matrix[:, 6] = ma_h_vals
+        feature_matrix[:, 7] = ma_l_vals
+        
+        feature_matrix[:, 8] = opens - opens_prev
+        feature_matrix[:, 9] = highs - highs_prev
+        feature_matrix[:, 10] = lows - lows_prev
+        feature_matrix[:, 11] = closes - closes_prev
+        feature_matrix[:, 12] = ma_c_vals - ma_c_prev
+        feature_matrix[:, 13] = ma_o_vals - ma_o_prev
+        feature_matrix[:, 14] = ma_h_vals - ma_h_prev
+        feature_matrix[:, 15] = ma_l_vals - ma_l_prev
+        
+        mean = np.nanmean(feature_matrix[start:], axis=0)
+        std = np.nanstd(feature_matrix[start:], axis=0)
+        std[std == 0] = 1.0
+        
+        normalized = (feature_matrix - mean) / std
+        return normalized
 
     def predict(self, df):
         features = self.calculate_features(df)

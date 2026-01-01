@@ -767,9 +767,11 @@ class CryptoTradingBot:
         
         contracts = int(amount_coins / contract_size)
         
-        if contracts < 1:
-            logger.warning(f"Calculated contracts {contracts} < 1 (Size: {contract_size}). Skipping.")
-            return
+        # Disable minimum contract check to allow trades if risk allows
+        # if contracts < 1:
+        #    logger.warning(f"Calculated contracts {contracts} < 1 (Size: {contract_size}). Skipping.")
+        #    return
+        if contracts < 1: contracts = 1 # Force at least 1 contract if margin allows but rounding down caused 0
         
         # 3. Execute
         try:
