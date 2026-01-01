@@ -559,18 +559,79 @@ class MFHAnalyzer:
         self.bias += self.learning_rate * error
         return error
 
-class MTFAnalyzer:
+class TimeframeVisualAnalyzer:
+    """
+    Multi-timeframe trend visualization analyzer
+    """
     def __init__(self):
         pass
-    def analyze(self, current_df, htf_df):
+    
+    def analyze(self, symbol, current_time):
+        # Placeholder for visual analysis logic
+        # In a real scenario, this would check trend alignment across M5, M15, H1, H4
+        return {"signal": "neutral", "strength": 0, "reason": "Not implemented"}
+
+class CRTAnalyzer:
+    """
+    Candle Range Theory (CRT) Analyzer
+    Based on identifying manipulation of previous ranges
+    """
+    def __init__(self, timeframe_htf='1h'):
+        self.timeframe_htf = timeframe_htf
+        
+    def analyze(self, symbol, current_candle, current_time):
+        # Simplified CRT logic without fetching HTF data inside
+        # Requires passing HTF candle or dataframe
+        return {"signal": "neutral", "reason": "CRT requires HTF context"}
+
+class PriceEquationModel(PEMAnalyzer):
+    """
+    Alias for PEMAnalyzer to match Gold strategy naming
+    """
+    def update(self, price):
+        pass # PEMAnalyzer is stateless for now
+        
+    def predict(self, df):
+        return self.analyze(df)
+
+class MTFAnalyzer:
+    """
+    Multi-Timeframe Analyzer
+    """
+    def __init__(self, htf1='1h', htf2='4h'):
+        self.htf1 = htf1
+        self.htf2 = htf2
+        
+    def analyze(self, current_df, htf1_df, htf2_df=None):
         curr_trend = self._get_trend(current_df)
-        htf_trend = self._get_trend(htf_df)
+        htf1_trend = self._get_trend(htf1_df)
+        
         signal = "neutral"; strength = 0; reason = ""
-        if curr_trend == htf_trend and curr_trend != 0: signal = "buy" if curr_trend > 0 else "sell"; strength = 80; reason = "MTF Alignment (Trend confirmed)"
-        elif htf_trend != 0: reason = f"MTF Divergence: HTF {htf_trend}, Curr {curr_trend}"
-        return {"signal": signal, "strength": strength, "reason": reason, "htf_trend": htf_trend, "curr_trend": curr_trend}
+        
+        if curr_trend == htf1_trend and curr_trend != 0: 
+            signal = "buy" if curr_trend > 0 else "sell"
+            strength = 70
+            reason = "MTF Alignment (Curr + HTF1)"
+            
+            if htf2_df is not None:
+                htf2_trend = self._get_trend(htf2_df)
+                if htf2_trend == curr_trend:
+                    strength = 90
+                    reason = "Strong MTF Alignment (Curr + HTF1 + HTF2)"
+                elif htf2_trend != 0:
+                    strength = 50
+                    reason = "Partial MTF Alignment (HTF2 Divergence)"
+                    
+        elif htf1_trend != 0: 
+            reason = f"MTF Divergence: HTF {htf1_trend}, Curr {curr_trend}"
+            
+        return {"signal": signal, "strength": strength, "reason": reason, "htf_trend": htf1_trend, "curr_trend": curr_trend}
+        
     def _get_trend(self, df):
-        ema20 = df['close'].ewm(span=20).mean().iloc[-1]; ema50 = df['close'].ewm(span=50).mean().iloc[-1]; close = df['close'].iloc[-1]
+        if df is None or len(df) < 50: return 0
+        ema20 = df['close'].ewm(span=20).mean().iloc[-1]
+        ema50 = df['close'].ewm(span=50).mean().iloc[-1]
+        close = df['close'].iloc[-1]
         if close > ema20 > ema50: return 1
         if close < ema20 < ema50: return -1
         return 0
