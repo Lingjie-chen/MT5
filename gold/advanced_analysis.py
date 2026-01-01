@@ -512,54 +512,76 @@ class MatrixMLAnalyzer:
         return error
 
 class CRTAnalyzer:
+    """
+    Candle Range Theory (CRT) Analyzer
+    Based on identifying manipulation of previous ranges using HTF data
+    """
     def __init__(self, timeframe_htf=mt5.TIMEFRAME_H1, min_manipulation_percent=5.0):
         self.timeframe_htf = timeframe_htf
         self.min_manipulation_percent = min_manipulation_percent 
-        self.last_range_time = 0; self.range_high = 0.0; self.range_low = 0.0
-        self.is_bullish_range = False; self.range_broken = False; self.breakout_price = 0.0
         
     def analyze(self, symbol, current_price, current_time):
         try:
-            # 使用 copy_rates_from_pos 获取最近的已完成 K 线
-            # index 0 is the current unfinished bar (if calling this in real-time) or the latest bar
-            # We want previous 2 completed bars usually, or just latest 2 bars.
-            # 0 is current, 1 is previous.
-            htf_rates = mt5.copy_rates_from_pos(symbol, self.timeframe_htf, 0, 2)
-            if htf_rates is None or len(htf_rates) < 2: return {"signal": "neutral", "reason": "数据不足"}
-            prev_htf = htf_rates[-2]
-            if prev_htf['time'] != self.last_range_time:
-                self.last_range_time = prev_htf['time']
-                self.range_high = prev_htf['high']; self.range_low = prev_htf['low']
-                self.is_bullish_range = (prev_htf['close'] > prev_htf['open'])
-                self.range_broken = False; self.breakout_price = self.range_low if self.is_bullish_range else self.range_high
-            range_size = self.range_high - self.range_low
+            # Fetch completed HTF candles (index 1 is previous completed)
+            htf_rates = mt5.copy_rates_from_pos(symbol, self.timeframe_htf, 1, 2)
+            if htf_rates is None or len(htf_rates) < 1: return {"signal": "neutral", "reason": "Insufficient Data"}
+            
+            prev_htf = htf_rates[-1] # The most recent COMPLETED candle
+            range_high = prev_htf['high']
+            range_low = prev_htf['low']
+            range_open = prev_htf['open']
+            range_close = prev_htf['close']
+            
+            is_bullish_range = range_close > range_open
+            range_size = range_high - range_low
             if range_size == 0: return {"signal": "neutral", "reason": "Range Size 0"}
-            curr_close = current_price['close']; curr_high = current_price['high']; curr_low = current_price['low']
-            signal = ""; reason = ""; strength = 0
-            if self.is_bullish_range:
-                if curr_low < self.range_low: self.range_broken = True; self.breakout_price = min(self.breakout_price, curr_low)
-                if self.range_broken and curr_close > self.range_low:
-                    manipulation_depth = self.range_low - self.breakout_price
-                    manipulation_pct = (manipulation_depth / range_size) * 100
-                    if manipulation_pct >= self.min_manipulation_percent: signal = "buy"; strength = min(100, 50 + manipulation_pct * 2); reason = f"Bullish CRT: Manipulation {manipulation_pct:.1f}% & Reclaim"
-                    else: reason = f"Bullish CRT: Manipulation too shallow ({manipulation_pct:.1f}%)"
-            else:
-                if curr_high > self.range_high: self.range_broken = True; self.breakout_price = max(self.breakout_price, curr_high)
-                if self.range_broken and curr_close < self.range_high:
-                    manipulation_depth = self.breakout_price - self.range_high
-                    manipulation_pct = (manipulation_depth / range_size) * 100
-                    if manipulation_pct >= self.min_manipulation_percent: signal = "sell"; strength = min(100, 50 + manipulation_pct * 2); reason = f"Bearish CRT: Manipulation {manipulation_pct:.1f}% & Reclaim"
-                    else: reason = f"Bearish CRT: Manipulation too shallow ({manipulation_pct:.1f}%)"
-            if signal == "":
-                range_mid = (self.range_high + self.range_low) / 2
-                if self.is_bullish_range:
-                    if curr_close > range_mid: signal = "buy"; strength = 40; reason = "Bullish Range (Price in Premium)"
-                    else: signal = "buy"; strength = 45; reason = "Bullish Range (Price in Discount)"
+            
+            curr_close = current_price['close']
+            curr_high = current_price['high']
+            curr_low = current_price['low']
+            
+            signal = "neutral"; reason = ""; strength = 0
+            
+            # CRT Logic: Sweep & Reclaim
+            # Bullish: Price sweeps below Range Low but closes/is currently above it
+            if curr_low < range_low and curr_close > range_low:
+                manipulation_depth = range_low - curr_low
+                manipulation_pct = (manipulation_depth / range_size) * 100
+                if manipulation_pct >= self.min_manipulation_percent:
+                    signal = "buy"
+                    strength = min(100, 60 + manipulation_pct * 2)
+                    reason = f"CRT Bullish: Swept Range Low ({range_low}) & Reclaimed (Manip: {manipulation_pct:.1f}%)"
+            
+            # Bearish: Price sweeps above Range High but closes/is currently below it
+            elif curr_high > range_high and curr_close < range_high:
+                manipulation_depth = curr_high - range_high
+                manipulation_pct = (manipulation_depth / range_size) * 100
+                if manipulation_pct >= self.min_manipulation_percent:
+                    signal = "sell"
+                    strength = min(100, 60 + manipulation_pct * 2)
+                    reason = f"CRT Bearish: Swept Range High ({range_high}) & Reclaimed (Manip: {manipulation_pct:.1f}%)"
+            
+            if signal == "neutral":
+                # Range Continuation Bias
+                range_mid = (range_high + range_low) / 2
+                if is_bullish_range:
+                    if curr_close < range_mid: # Discount
+                        signal = "buy"; strength = 40; reason = "Bullish Range (Price in Discount)"
                 else:
-                    if curr_close < range_mid: signal = "sell"; strength = 40; reason = "Bearish Range (Price in Discount)"
-                    else: signal = "sell"; strength = 45; reason = "Bearish Range (Price in Premium)"
-            return {"signal": signal, "strength": float(strength), "reason": reason, "range_high": float(self.range_high), "range_low": float(self.range_low), "breakout_price": float(self.breakout_price), "manipulation_pct": float((abs(self.breakout_price - (self.range_low if self.is_bullish_range else self.range_high)) / range_size * 100) if self.range_broken else 0)}
-        except: return {"signal": "neutral", "reason": "CRT Analysis Error"}
+                    if curr_close > range_mid: # Premium
+                        signal = "sell"; strength = 40; reason = "Bearish Range (Price in Premium)"
+                        
+            return {
+                "signal": signal, 
+                "strength": float(strength), 
+                "reason": reason, 
+                "range_high": float(range_high), 
+                "range_low": float(range_low),
+                "manipulation_pct": float(manipulation_pct if signal in ['buy', 'sell'] and strength > 50 else 0)
+            }
+        except Exception as e:
+            logging.error(f"CRT Error: {e}")
+            return {"signal": "neutral", "reason": "CRT Analysis Error"}
 
 class PriceEquationModel:
     def __init__(self):
@@ -618,28 +640,48 @@ class PriceEquationModel:
         except Exception: return 0.0
 
 class TimeframeVisualAnalyzer:
+    """
+    Multi-timeframe trend visualization analyzer
+    Uses Moving Averages alignment to simulate visual trend confirmation
+    """
     def __init__(self):
         self.timeframes = {"M15": mt5.TIMEFRAME_M15, "H1": mt5.TIMEFRAME_H1, "H4": mt5.TIMEFRAME_H4}
+        
     def analyze(self, symbol, current_time):
         trends = {}; alignment_score = 0
         for tf_name, tf_const in self.timeframes.items():
             try:
-                rates = mt5.copy_rates_from(symbol, tf_const, current_time, 50)
+                rates = mt5.copy_rates_from(symbol, tf_const, current_time, 250)
                 if rates is None or len(rates) < 50: trends[tf_name] = "neutral"; continue
                 df = pd.DataFrame(rates); df['close'] = df['close'].astype(float)
+                
+                # Use standard 20/50/200 MA for visual alignment
                 ema20 = df['close'].ewm(span=20, adjust=False).mean().iloc[-1]
                 ema50 = df['close'].ewm(span=50, adjust=False).mean().iloc[-1]
+                ema200 = df['close'].ewm(span=200, adjust=False).mean().iloc[-1]
+                
                 current_close = df['close'].iloc[-1]
-                if current_close > ema20 > ema50: trends[tf_name] = "bullish"; alignment_score += 1
-                elif current_close < ema20 < ema50: trends[tf_name] = "bearish"; alignment_score -= 1
+                
+                if current_close > ema20 > ema50 > ema200: trends[tf_name] = "bullish"; alignment_score += 1
+                elif current_close < ema20 < ema50 < ema200: trends[tf_name] = "bearish"; alignment_score -= 1
+                elif current_close > ema20 > ema50: trends[tf_name] = "weak_bullish"; alignment_score += 0.5
+                elif current_close < ema20 < ema50: trends[tf_name] = "weak_bearish"; alignment_score -= 0.5
                 else: trends[tf_name] = "neutral"
             except: trends[tf_name] = "neutral"
+            
         signal = "neutral"; reason = f"Trends: {trends}"
-        if alignment_score >= 2: signal = "buy"; reason = f"Strong Bullish Alignment ({alignment_score}/3)"
-        elif alignment_score == 1: signal = "buy"; reason = "Weak Bullish Bias"
-        elif alignment_score <= -2: signal = "sell"; reason = f"Strong Bearish Alignment ({alignment_score}/3)"
-        elif alignment_score == -1: signal = "sell"; reason = "Weak Bearish Bias"
-        return {"signal": signal, "reason": reason, "details": trends}
+        strength = 0
+        
+        if alignment_score >= 2.5: 
+            signal = "buy"; strength = 90; reason = f"Strong Bullish Alignment (Score {alignment_score}/3)"
+        elif alignment_score >= 1.5: 
+            signal = "buy"; strength = 70; reason = "Bullish Bias"
+        elif alignment_score <= -2.5: 
+            signal = "sell"; strength = 90; reason = f"Strong Bearish Alignment (Score {alignment_score}/3)"
+        elif alignment_score <= -1.5: 
+            signal = "sell"; strength = 70; reason = "Bearish Bias"
+            
+        return {"signal": signal, "strength": strength, "reason": reason, "details": trends}
 
 class MTFAnalyzer:
     def __init__(self, htf1=mt5.TIMEFRAME_H1, htf2=mt5.TIMEFRAME_H4, swing_length=20):
