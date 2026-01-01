@@ -207,6 +207,43 @@ class DatabaseManager:
         finally:
             conn.close()
 
+    def save_trade_history_batch(self, trades):
+        """Batch insert/update historical trades"""
+        conn = self._get_connection()
+        if not conn: return
+        try:
+            cursor = conn.cursor()
+            count = 0
+            for t in trades:
+                # Check if exists
+                cursor.execute("SELECT id FROM trades WHERE order_id = ?", (t['order_id'],))
+                if cursor.fetchone():
+                    continue
+                    
+                cursor.execute('''
+                INSERT INTO trades (symbol, action, order_type, contracts, price, timestamp, order_id, profit, mfe, mae)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    t.get('symbol'),
+                    t.get('side'),
+                    t.get('type'),
+                    t.get('amount'),
+                    t.get('price'),
+                    t.get('timestamp'), # Ensure datetime string or timestamp
+                    t.get('order_id'),
+                    t.get('profit'),
+                    t.get('mfe', 0),
+                    t.get('mae', 0)
+                ))
+                count += 1
+            conn.commit()
+            if count > 0:
+                logger.info(f"Synced {count} historical trades to DB")
+        except sqlite3.Error as e:
+            logger.error(f"Error syncing history: {e}")
+        finally:
+            conn.close()
+
     def get_trade_performance_stats(self, limit=50):
         """Get statistics of recently closed trades for AI learning"""
         conn = self._get_connection()

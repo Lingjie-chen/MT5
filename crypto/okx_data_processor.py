@@ -51,6 +51,16 @@ class OKXDataProcessor:
         }
         return mapping.get(tf.upper(), tf)
 
+    def get_recent_trades(self, symbol, limit=100):
+        """Fetch recent user trades from OKX"""
+        try:
+            # fetch_my_trades returns a list of dictionaries
+            trades = self.exchange.fetch_my_trades(symbol, limit=limit)
+            return trades
+        except Exception as e:
+            logger.error(f"Error fetching recent trades: {e}")
+            return []
+
     def get_historical_data(self, symbol, timeframe, limit=100, since=None):
         """Get historical data from OKX
         
