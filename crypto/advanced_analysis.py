@@ -596,27 +596,108 @@ class MFHAnalyzer:
 class TimeframeVisualAnalyzer:
     """
     Multi-timeframe trend visualization analyzer
+    Uses Moving Averages alignment to simulate visual trend confirmation
     """
     def __init__(self):
         pass
     
-    def analyze(self, symbol, current_time):
-        # Placeholder for visual analysis logic
-        # In a real scenario, this would check trend alignment across M5, M15, H1, H4
-        return {"signal": "neutral", "strength": 0, "reason": "Not implemented"}
+    def analyze(self, symbol, current_time, df_current=None, df_htf=None):
+        # Requires DataFrames to be passed. If not, we can only return neutral.
+        # To keep interface consistent with Gold, we accept symbol/time but need data.
+        # In Crypto bot, we should pass DFs if possible.
+        # Here we assume df_current is passed or we can't do much.
+        
+        # If DFs are not passed, we return a basic placeholder, 
+        # but User requested "NO SIMPLIFICATION".
+        # So we must implement logic.
+        
+        signal = "neutral"
+        strength = 0
+        reason = "Insufficient Data for Visual Analysis"
+        
+        if df_current is not None and len(df_current) > 50:
+            # Check MA alignment on current TF
+            ma20 = df_current['close'].rolling(20).mean().iloc[-1]
+            ma50 = df_current['close'].rolling(50).mean().iloc[-1]
+            ma200 = df_current['close'].rolling(200).mean().iloc[-1]
+            close = df_current['close'].iloc[-1]
+            
+            uptrend = close > ma20 > ma50 > ma200
+            downtrend = close < ma20 < ma50 < ma200
+            
+            if uptrend:
+                signal = "buy"
+                strength = 80
+                reason = "Perfect Bullish Alignment (Price > 20 > 50 > 200)"
+            elif downtrend:
+                signal = "sell"
+                strength = 80
+                reason = "Perfect Bearish Alignment (Price < 20 < 50 < 200)"
+            else:
+                # Partial
+                if close > ma20 > ma50:
+                    signal = "buy"
+                    strength = 60
+                    reason = "Short-term Bullish Alignment"
+                elif close < ma20 < ma50:
+                    signal = "sell"
+                    strength = 60
+                    reason = "Short-term Bearish Alignment"
+                    
+        return {"signal": signal, "strength": strength, "reason": reason}
 
 class CRTAnalyzer:
     """
     Candle Range Theory (CRT) Analyzer
-    Based on identifying manipulation of previous ranges
+    Based on identifying manipulation of previous ranges using HTF data
     """
     def __init__(self, timeframe_htf='1h'):
         self.timeframe_htf = timeframe_htf
         
-    def analyze(self, symbol, current_candle, current_time):
-        # Simplified CRT logic without fetching HTF data inside
-        # Requires passing HTF candle or dataframe
-        return {"signal": "neutral", "reason": "CRT requires HTF context"}
+    def analyze(self, symbol, current_candle, current_time, df_htf=None):
+        """
+        Analyze CRT Structure.
+        Requires HTF DataFrame to define the "Range".
+        """
+        if df_htf is None or len(df_htf) < 2:
+            return {"signal": "neutral", "reason": "CRT missing HTF data"}
+            
+        # 1. Define Range from Previous HTF Candle
+        # We assume df_htf is indexed by time or we take the last closed candle
+        # The "Range" is usually the previous HTF candle's High/Low
+        prev_htf_candle = df_htf.iloc[-2] # Completed HTF candle
+        range_high = prev_htf_candle['high']
+        range_low = prev_htf_candle['low']
+        
+        current_price = current_candle['close']
+        current_high = current_candle['high']
+        current_low = current_candle['low']
+        
+        signal = "neutral"
+        reason = ""
+        
+        # 2. Check for Manipulation (Sweep of Range High/Low and Reclaim)
+        # Bullish: Price sweeps Range Low but closes back inside/above
+        if current_low < range_low and current_price > range_low:
+            manipulation_size = range_low - current_low
+            range_size = range_high - range_low
+            if range_size > 0:
+                ratio = manipulation_size / range_size
+                if ratio > 0.05: # At least 5% manipulation
+                    signal = "buy"
+                    reason = f"CRT Bullish: Swept Range Low ({range_low}) & Reclaimed"
+
+        # Bearish: Price sweeps Range High but closes back inside/below
+        elif current_high > range_high and current_price < range_high:
+            manipulation_size = current_high - range_high
+            range_size = range_high - range_low
+            if range_size > 0:
+                ratio = manipulation_size / range_size
+                if ratio > 0.05:
+                    signal = "sell"
+                    reason = f"CRT Bearish: Swept Range High ({range_high}) & Reclaimed"
+                    
+        return {"signal": signal, "reason": reason, "range": {"high": range_high, "low": range_low}}
 
 class PriceEquationModel(PEMAnalyzer):
     """
