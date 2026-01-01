@@ -735,7 +735,7 @@ class CryptoTradingBot:
             logger.warning(f"Target margin {target_margin:.2f} exceeds free balance {free_balance:.2f}. Adjusting to {max_margin:.2f}")
             target_margin = max_margin
             
-        if target_margin < 2: # Minimum order size check (approx 2 USDT margin -> 10 USDT notional)
+        if target_margin < 0.5: # Minimum order size check (lowered to allow smaller trades for cheap assets)
             logger.warning(f"Margin {target_margin:.2f} too small. Skipping.")
             return
 
@@ -744,7 +744,14 @@ class CryptoTradingBot:
         amount_coins = amount_usdt / current_price
         
         # Contract Size Logic
-        contract_size = 0.1 if 'ETH' in self.symbol else 0.01 if 'BTC' in self.symbol else 1.0
+        # Try to get contract size from data processor if available, else fallback
+        # For many alts on OKX, size is 1 or 10 or 0.1 or 0.01
+        # We default to 1.0 for alts, but for high value coins it needs to be smaller
+        if 'ETH' in self.symbol: contract_size = 0.1
+        elif 'BTC' in self.symbol: contract_size = 0.01
+        elif 'SOL' in self.symbol: contract_size = 1.0
+        else: contract_size = 1.0 # Default fallback
+        
         contracts = int(amount_coins / contract_size)
         
         if contracts < 1:
