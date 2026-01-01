@@ -394,6 +394,10 @@ class CryptoTradingBot:
         
         # Consensus Override
         reason = strategy.get('reason', 'LLM Decision')
+        
+        # Prepare Technical Consensus List (Initialize it before conditional block)
+        tech_list = [crt_res['signal'], pem_res['signal'], adv_sig, ml_res['signal'], smc_res['signal'], mtf_res['signal']]
+        
         if final_signal in ['hold', 'neutral']:
             # DeepSeek Override
             if ds_signal in ['buy', 'sell'] and ds_score >= 80:
@@ -401,7 +405,6 @@ class CryptoTradingBot:
                 reason = f"[Override] DeepSeek High Confidence ({ds_score})"
             
             # Technical Consensus Override
-            tech_list = [crt_res['signal'], pem_res['signal'], adv_sig, ml_res['signal'], smc_res['signal'], mtf_res['signal']]
             buy_votes = sum(1 for s in tech_list if s == 'buy')
             sell_votes = sum(1 for s in tech_list if s == 'sell')
             total_tech = len(tech_list)
