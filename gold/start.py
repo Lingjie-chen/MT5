@@ -1847,66 +1847,45 @@ class AI_MT5_Bot:
             return
 
         # 2. Define Objective Function
-        # Optimize for RVGI+CCI and IFVG parameters
         def objective(params):
-            # Params: [rvgi_sma, rvgi_cci, ifvg_gap]
             p_rvgi_sma = int(params[0])
             p_rvgi_cci = int(params[1])
             p_ifvg_gap = int(params[2])
             
-            # Run simulation
-            # We use a simplified simulation here for speed
-            # Calculate indicators on the whole dataframe
-            try:
-                # RVGI+CCI
-                # We need to call analyze_rvgi_cci_strategy for each candle? No, too slow.
-                # We rely on the fact that we can calculate the whole series.
-                # But the Analyzer methods currently return a single snapshot for the last candle.
-                # To do this efficiently without rewriting everything, we iterate over the last 50 candles.
+            backtest_window = 100
+            if len(df) < backtest_window + 50: return -100
+            
+            test_data = df.iloc[-(backtest_window+50):]
+            
+            # Simple Backtest Loop (Maximize Total Profit)
+            total_profit = 0
+            trades_count = 0
+            
+            closes = test_data['close'].values
+            
+            for i in range(len(test_data)-20, len(test_data)):
+                sub_df = test_data.iloc[:i+1]
                 
-                score = 0
-                trades = 0
-                wins = 0
+                # Check signals
+                res_rvgi = self.advanced_adapter.analyze_rvgi_cci_strategy(sub_df, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci)
+                res_ifvg = self.advanced_adapter.analyze_ifvg(sub_df, min_gap_points=p_ifvg_gap)
                 
-                # Iterate through the last 50 candles as "current"
-                for i in range(len(df)-50, len(df)):
-                    sub_df = df.iloc[:i+1]
-                    future_close = df.iloc[i+1]['close'] if i+1 < len(df) else df.iloc[i]['close']
-                    current_close = df.iloc[i]['close']
-                    
-                    # RVGI Signal
-                    res_rvgi = self.advanced_adapter.analyze_rvgi_cci_strategy(
-                        sub_df, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci
-                    )
-                    
-                    # IFVG Signal
-                    res_ifvg = self.advanced_adapter.analyze_ifvg(
-                        sub_df, min_gap_points=p_ifvg_gap
-                    )
-                    
-                    signal = 0
-                    if res_rvgi['signal'] == 'buy': signal += 1
-                    elif res_rvgi['signal'] == 'sell': signal -= 1
-                    
-                    if res_ifvg['signal'] == 'buy': signal += 1
-                    elif res_ifvg['signal'] == 'sell': signal -= 1
-                    
-                    if signal > 0: # Buy
-                        trades += 1
-                        if future_close > current_close: wins += 1
-                        else: score -= 1
-                    elif signal < 0: # Sell
-                        trades += 1
-                        if future_close < current_close: wins += 1
-                        else: score -= 1
-                        
-                if trades == 0: return 0
-                win_rate = wins / trades
-                score += (win_rate * 100)
-                return score
+                sig = "neutral"
+                if res_rvgi['signal'] == 'buy' or res_ifvg['signal'] == 'buy': sig = 'buy'
+                elif res_rvgi['signal'] == 'sell' or res_ifvg['signal'] == 'sell': sig = 'sell'
                 
-            except Exception:
-                return -100
+                # Check profit 5 bars later
+                if sig != "neutral" and i + 5 < len(test_data):
+                    entry = closes[i]
+                    exit_p = closes[i+5]
+                    if sig == 'buy': profit = (exit_p - entry) / entry
+                    else: profit = (entry - exit_p) / entry
+                    
+                    total_profit += profit
+                    trades_count += 1
+            
+            if trades_count == 0: return 0
+            return total_profit
 
         # 3. Optimization
         optimizer = WOAm()

@@ -596,17 +596,34 @@ class PriceEquationModel:
         if df_history is None or len(df_history) < max(self.ma_fast_period, self.ma_slow_period, 14): return {"signal": "neutral", "predicted_price": 0.0}
         try:
             price_t1 = df_history['close'].iloc[-2]; price_t2 = df_history['close'].iloc[-3]; current_price = df_history['close'].iloc[-1]
-            base_price = price_t2
-            if base_price == 0: return {"signal": "neutral", "predicted_price": 0.0}
-            norm_t1 = price_t1 / base_price; norm_t2 = price_t2 / base_price
-            pred_ratio = (self.coeffs[0] * norm_t1 + self.coeffs[1] * (norm_t1**2) + self.coeffs[2] * norm_t2 + self.coeffs[3] * (norm_t2**2) + self.coeffs[4] * (norm_t1 - norm_t2) + self.coeffs[5] * np.sin(norm_t1) + self.coeffs[6])
-            predicted_price = pred_ratio * base_price
+            
+            # Normalize inputs relative to mean of last two prices to handle scale
+            scale_factor = (price_t1 + price_t2) / 2.0
+            if scale_factor == 0: scale_factor = 1.0
+            
+            p1_norm = price_t1 / scale_factor
+            p2_norm = price_t2 / scale_factor
+            
+            c = self.coeffs
+            # Apply equation on normalized values
+            pred_norm = (c[0] * p1_norm +                    
+                         c[1] * (p1_norm ** 2) +             
+                         c[2] * p2_norm +                    
+                         c[3] * (p2_norm ** 2) +             
+                         c[4] * (p1_norm - p2_norm) +       
+                         c[5] * np.sin(p1_norm) +            
+                         c[6])
+                         
+            predicted_price = pred_norm * scale_factor
+            
         except IndexError: return {"signal": "neutral", "predicted_price": 0.0}
+        
         closes = df_history['close']
         ma_fast = closes.rolling(window=self.ma_fast_period).mean().iloc[-1]
         ma_slow = closes.rolling(window=self.ma_slow_period).mean().iloc[-1]
         adx = self.calculate_adx(df_history)
         is_strong_trend = adx >= self.adx_threshold; is_uptrend = ma_fast > ma_slow; is_downtrend = ma_fast < ma_slow
+        
         if predicted_price > current_price:
             if is_uptrend:
                 if is_strong_trend: signal = "buy"
@@ -621,6 +638,7 @@ class PriceEquationModel:
             else:
                 if (current_price - predicted_price) / current_price > 0.005: signal = "sell"
                 else: signal = "neutral"
+                
         return {"signal": signal, "predicted_price": predicted_price, "trend_strength": float(adx), "ma_fast": float(ma_fast), "ma_slow": float(ma_slow)}
     def calculate_adx(self, df, period=14):
         try:
