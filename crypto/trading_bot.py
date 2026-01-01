@@ -564,57 +564,29 @@ class CryptoTradingBot:
             # In a real efficient system, we would pre-calculate or use vectorization.
             # Here we call the adapter which uses pandas rolling (fast enough for 100 bars)
             
-            param_dict = {'rvgi_sma': p_rvgi_sma, 'rvgi_cci': p_rvgi_cci, 'ifvg_gap': p_ifvg_gap}
-            
-            # We can't call analyze_full for every bar as it's too heavy.
-            # We call specific strategy functions directly.
-            
-            # Calculate RVGI/CCI signals for the whole window
-            rvgi_res = self.advanced_adapter.analyze_rvgi_cci_strategy(test_data, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci)
-            
-            # Calculate IFVG signals
-            ifvg_res = self.advanced_adapter.analyze_ifvg(test_data, min_gap_points=p_ifvg_gap)
-            
-            # Evaluate
-            # Since analyze_rvgi_cci_strategy only returns the LATEST signal, 
-            # we actually need to run it on a rolling basis or modify the analyzer to return series.
-            # The current AdvancedMarketAnalysis is designed for snapshot analysis.
-            
-            # For "NO SIMPLIFICATION", we must simulate properly.
-            # We will iterate the last 50 bars.
-            
-            balance = 1000.0
-            position = 0
-            entry_price = 0
-            
-            closes = test_data['close'].values
-            
-            # To avoid re-calculating everything 50 times inside the optimizer (which runs 100s of times),
-            # we accept a slight simplification: we optimize based on the LATEST snapshot's strength 
-            # matched against recent trend? No, that's overfitting.
-            
-            # Correct approach: Vectorized backtest of the logic.
-            # But the logic is in `analyze_rvgi_cci_strategy`.
-            
-            # Let's try a robust heuristic:
-            # We optimize for parameters that would have generated a correct signal 
-            # at the most recent significant pivot points.
-            
-            # Or, we just accept the cost and loop 20 times (last 20 candles).
+            # OPTIMIZATION: Use Vectorized Calculation for RVGI
+            rvgi_series = self.advanced_adapter.calculate_rvgi_cci_series(test_data, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci)
             
             total_profit = 0
             trades_count = 0
             
+            # Vectorized IFVG is not fully implemented yet, so we loop but skip heavy calls
+            # However, we can optimize the loop.
+            
+            closes = test_data['close'].values
+            
             for i in range(len(test_data)-20, len(test_data)):
-                sub_df = test_data.iloc[:i+1]
+                # Use vectorized RVGI signal
+                rvgi_sig_val = rvgi_series.iloc[i]
+                rvgi_sig = 'buy' if rvgi_sig_val == 1 else 'sell' if rvgi_sig_val == -1 else 'neutral'
                 
-                # Check signals
-                res_rvgi = self.advanced_adapter.analyze_rvgi_cci_strategy(sub_df, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci)
+                # Check IFVG (still iterative but limited window)
+                sub_df = test_data.iloc[:i+1]
                 res_ifvg = self.advanced_adapter.analyze_ifvg(sub_df, min_gap_points=p_ifvg_gap)
                 
                 sig = "neutral"
-                if res_rvgi['signal'] == 'buy' or res_ifvg['signal'] == 'buy': sig = 'buy'
-                elif res_rvgi['signal'] == 'sell' or res_ifvg['signal'] == 'sell': sig = 'sell'
+                if rvgi_sig == 'buy' or res_ifvg['signal'] == 'buy': sig = 'buy'
+                elif rvgi_sig == 'sell' or res_ifvg['signal'] == 'sell': sig = 'sell'
                 
                 # Check profit 5 bars later (or end of data)
                 if sig != "neutral" and i + 5 < len(test_data):
