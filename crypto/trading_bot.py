@@ -515,24 +515,53 @@ class CryptoTradingBot:
                  logger.warning("Invalid TP for SELL. Removing.")
                  tp = 0.0
                  
-        # 2. Calculate Contracts
+        # 2. Calculate Contracts with Margin Check
         balance = self.data_processor.get_account_balance('USDT')
-        equity = balance['total'] if balance else 1000.0
+        if not balance:
+            logger.error("Failed to fetch balance. Aborting order.")
+            return
+
+        equity = balance.get('total', 0)
+        free_balance = balance.get('free', 0)
         
-        target_val = equity * volume_pct
-        amount = target_val / current_price
-        # Simple contract size logic, adjust per symbol if needed
+        # Leverage (Default 5x)
+        leverage = 5 
+        self.data_processor.set_leverage(self.symbol, leverage)
+        
+        # Calculate target margin
+        # volume_pct is derived from AI risk (e.g. 0.02 for 2% risk)
+        # We treat this as "Risk 2% of Equity", so Margin = Equity * volume_pct
+        target_margin = equity * volume_pct
+        
+        # Safety Check: Ensure we don't exceed available free balance
+        # Leave 5% buffer for fees/fluctuations
+        max_margin = free_balance * 0.95
+        
+        if target_margin > max_margin:
+            logger.warning(f"Target margin {target_margin:.2f} exceeds free balance {free_balance:.2f}. Adjusting to {max_margin:.2f}")
+            target_margin = max_margin
+            
+        if target_margin < 2: # Minimum order size check (approx 2 USDT margin -> 10 USDT notional)
+            logger.warning(f"Margin {target_margin:.2f} too small. Skipping.")
+            return
+
+        # Calculate Notional Value and Contracts
+        amount_usdt = target_margin * leverage
+        amount_coins = amount_usdt / current_price
+        
+        # Contract Size Logic
         contract_size = 0.1 if 'ETH' in self.symbol else 0.01 if 'BTC' in self.symbol else 1.0
-        contracts = max(1, int(amount / contract_size))
+        contracts = int(amount_coins / contract_size)
+        
+        if contracts < 1:
+            logger.warning(f"Calculated contracts {contracts} < 1 (Size: {contract_size}). Skipping.")
+            return
         
         # 3. Execute
         try:
             side = 'buy' if is_buy else 'sell'
-            self.data_processor.set_leverage(self.symbol, 5) # Default 5x
             
-            # Attach Algo (SL/TP)
-            # Use separate method or algo params if supported
-            # Here we place market order then SL/TP
+            logger.info(f"Placing Order: {side} {contracts} contracts (Margin: {target_margin:.2f} USDT)")
             
             order = self.data_processor.create_order(self.symbol, side, contracts, type='market')
             if order:
