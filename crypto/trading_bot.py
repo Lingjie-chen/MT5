@@ -625,7 +625,7 @@ class CryptoTradingBot:
             df, signal, strategy, strength, sl, tp, risk = self.analyze_market()
             if signal:
                 self.execute_trade(signal, strategy, risk, sl, tp)
-            self.db_manager.perform_checkpoint()
+            # self.db_manager.perform_checkpoint() # Managed by external script
         except Exception as e:
             logger.error(f"Cycle Error: {e}", exc_info=True)
 
