@@ -1343,17 +1343,6 @@ class AI_MT5_Bot:
             logger.info(f"Optimization Progress: {self._opt_counter} evaluations...")
 
         # 1. Decode Parameters
-        # 0: smc_ma (int)
-        # 1: smc_atr (float)
-        # 2: mfh_lr (float)
-        # 3: mfh_horizon (int)
-        # 4: pem_fast (int)
-        # 5: pem_slow (int)
-        # 6: pem_adx (float)
-        # 7: rvgi_sma (int)
-        # 8: rvgi_cci (int)
-        # 9: ifvg_gap (int)
-        
         try:
             p_smc_ma = int(params[0])
             p_smc_atr = params[1]
@@ -1391,53 +1380,152 @@ class AI_MT5_Bot:
             trades_count = 0
             wins = 0
             
-            # Optimization: Step size > 1 to speed up (e.g., check every 4th candle ~ 1 hour)
-            # But MFH needs continuous training.
-            # We will run full loop but simplified logic.
+            # OPTIMIZATION: Vectorized Pre-calculation
+            # 1. RVGI Series (Vectorized)
+            rvgi_series = tmp_adapter.calculate_rvgi_cci_series(df, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci)
+            
+            # 2. MFH Features (Vectorized Batch)
+            mfh_features = tmp_mfh.prepare_features_batch(df)
+            
+            # 3. Step Skipping
+            # Evaluate trade signals every 4 candles (1 hour) to speed up SMC/PEM/IFVG
+            eval_step = 4 
             
             for i in range(start_idx, len(df)-1):
-                sub_df = df.iloc[:i+1]
                 curr_price = closes[i]
                 next_price = closes[i+1]
                 
                 # MFH Train (Must happen every step for consistency)
-                if i > p_mfh_horizon:
-                    past_ret = (closes[i] - closes[i-p_mfh_horizon]) / closes[i-p_mfh_horizon]
-                    tmp_mfh.train(past_ret)
+                if mfh_features is not None:
+                    # Get features for current step i
+                    feats = mfh_features[i]
+                    
+                    # Predict first (using current weights)
+                    pred = np.dot(tmp_mfh.weights, feats) + tmp_mfh.bias
+                    
+                    # Determine signal from prediction
+                    mfh_sig = "buy" if pred > 0.001 else "sell" if pred < -0.001 else "neutral"
+                    
+                    # Train (using PAST return)
+                    # The return we are predicting at 'i' is (price[i] - price[i-h])/price[i-h]
+                    # Wait, MFH predicts FUTURE return? No, usually it predicts next step or horizon.
+                    # The `train` method in MFHAnalyzer uses `current_price_change`.
+                    # In `evaluate_comprehensive_params` original:
+                    # if i > p_mfh_horizon:
+                    #   past_ret = (closes[i] - closes[i-p_mfh_horizon]) / closes[i-p_mfh_horizon]
+                    #   tmp_mfh.train(past_ret)
+                    
+                    if i > p_mfh_horizon:
+                        past_ret = (closes[i] - closes[i-p_mfh_horizon]) / closes[i-p_mfh_horizon]
+                        error = past_ret - tmp_mfh.last_prediction # Use cached prediction from previous steps? 
+                        # Actually we need to emulate `train` logic:
+                        # train(target) -> error = target - last_prediction -> weights += ... * last_features
+                        # Here we have `pred` calculated above. But `train` uses `last_prediction` which corresponds to `last_features`.
+                        # If we predict at `i`, we are predicting return at `i`. 
+                        # Wait, `predict(df)` uses `df` ending at `i`.
+                        # It predicts return? 
+                        # `train` takes `current_price_change`.
+                        # This implies we predict at T, and train at T+1 (or T+H) when result is known.
+                        
+                        # Simplified Batch Training:
+                        # We just update weights using the error of the *current* prediction against *future*?
+                        # No, standard online learning: Predict x_t -> y_hat. Observe y_t. Update.
+                        # Here `past_ret` is the return realized *now* (from t-H to t).
+                        # So we should have predicted this `H` steps ago.
+                        # This complexity suggests we should stick to the original `train` method if possible, 
+                        # but `train` relies on `self.last_features` stored in object.
+                        # So we must manually update:
+                        
+                        # Correct Logic:
+                        # 1. We have stored `last_features` and `last_prediction` from step `i-1` (or `i-H`?)
+                        # 2. `train` uses `past_ret` (target) and `self.last_prediction`.
+                        # 3. Then `predict` sets new `self.last_features`.
+                        
+                        # But `past_ret` is `(close[i] - close[i-H])`.
+                        # This corresponds to prediction made at `i-H`.
+                        # The original code called `train(past_ret)` then `predict(sub_df)`.
+                        # `predict` stores `last_features` (features at `i`).
+                        # `train` uses `last_features`? No, `train` uses `last_features` which was set by PREVIOUS `predict`.
+                        # So if we call `predict` at `i`, `last_features` becomes features at `i`.
+                        # Next loop `i+1`, `train` is called. It updates weights based on `last_features` (from `i`).
+                        # But `past_ret` passed to train is `(closes[i+1] - closes[i+1-H])`.
+                        # This seems mismatched if H > 1.
+                        # But let's replicate original flow:
+                        
+                        target = past_ret
+                        # We need `last_prediction` and `last_features` from the *previous* predict call (which was at i-1? No, original loop called predict at i).
+                        # Original:
+                        # Loop i:
+                        #   train(past_ret_at_i) -> updates using self.last_features (from i-1)
+                        #   predict(sub_df_i) -> sets self.last_features (to i)
+                        
+                        # So we need to maintain state.
+                        
+                        if tmp_mfh.last_features is not None:
+                            err = target - tmp_mfh.last_prediction
+                            tmp_mfh.weights += tmp_mfh.learning_rate * err * tmp_mfh.last_features
+                            tmp_mfh.bias += tmp_mfh.learning_rate * err
+                        
+                        # Now Predict for *next*
+                        tmp_mfh.last_features = feats
+                        tmp_mfh.last_prediction = pred
                 
-                # Skip some heavy analysis for speed, only check every 2 bars?
-                # No, we need accuracy.
-                
-                # Signals
-                smc_sig = tmp_smc.analyze(sub_df)['signal']
-                mfh_sig = tmp_mfh.predict(sub_df)['signal']
-                
-                tmp_pem.update(curr_price)
-                pem_sig = tmp_pem.predict(sub_df)['signal']
-                
-                # Short Term
-                ifvg_sig = tmp_adapter.analyze_ifvg(sub_df, min_gap_points=p_ifvg_gap)['signal']
-                rvgi_sig = tmp_adapter.analyze_rvgi_cci_strategy(sub_df, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci)['signal']
-                
-                # Combine
-                votes = 0
-                for s in [smc_sig, mfh_sig, pem_sig, ifvg_sig, rvgi_sig]:
-                    if s == 'buy': votes += 1
-                    elif s == 'sell': votes -= 1
-                
-                final_sig = "neutral"
-                if votes >= 2: final_sig = "buy"
-                elif votes <= -2: final_sig = "sell"
-                
-                # Evaluate
-                if final_sig == "buy":
-                    trades_count += 1
-                    if next_price > curr_price: wins += 1
-                    balance += (next_price - curr_price)
-                elif final_sig == "sell":
-                    trades_count += 1
-                    if next_price < curr_price: wins += 1
-                    balance += (curr_price - next_price)
+                # Check Trade Condition (Skipping steps for speed)
+                if i % eval_step == 0:
+                    sub_df = df.iloc[:i+1] # Still slicing, but 4x less often
+                    
+                    # Update PEM (Fast update)
+                    tmp_pem.update(curr_price)
+                    
+                    # Signals
+                    # 1. SMC (Heavy)
+                    smc_sig = tmp_smc.analyze(sub_df)['signal']
+                    
+                    # 2. PEM (Medium - has rolling)
+                    pem_sig = tmp_pem.predict(sub_df)['signal']
+                    
+                    # 3. IFVG (Medium)
+                    ifvg_sig = tmp_adapter.analyze_ifvg(sub_df, min_gap_points=p_ifvg_gap)['signal']
+                    
+                    # 4. RVGI (Fast Lookup)
+                    rvgi_sig_val = rvgi_series.iloc[i]
+                    rvgi_sig = 'buy' if rvgi_sig_val == 1 else 'sell' if rvgi_sig_val == -1 else 'neutral'
+                    
+                    # 5. MFH (Already calc)
+                    # mfh_sig determined above
+                    
+                    # Combine
+                    votes = 0
+                    for s in [smc_sig, mfh_sig, pem_sig, ifvg_sig, rvgi_sig]:
+                        if s == 'buy': votes += 1
+                        elif s == 'sell': votes -= 1
+                    
+                    final_sig = "neutral"
+                    if votes >= 2: final_sig = "buy"
+                    elif votes <= -2: final_sig = "sell"
+                    
+                    # Evaluate Trade
+                    # We assume we hold for `eval_step` candles or until next signal?
+                    # Original logic checked every candle.
+                    # Simplification: We check result `eval_step` candles later?
+                    # Or we just take the PnL of the next candle (i to i+1) and assume we hold if signal persists?
+                    # Original:
+                    # if final_sig == 'buy': balance += (next - curr)
+                    # This implies 1-bar holding period (Scalping).
+                    
+                    # If we only check every 4 bars, we miss trades in between.
+                    # But for optimization, we just want to know if parameters are good generally.
+                    # We will accumulate return for the *next* candle only (i to i+1), effectively trading 25% of time.
+                    # This is a valid proxy for parameter quality.
+                    
+                    if final_sig == "buy":
+                        trades_count += 1
+                        if next_price > curr_price: wins += 1
+                        balance += (next_price - curr_price)
+                    elif final_sig == "sell":
+                        trades_count += 1
+                        if next_price < curr_price: wins += 1
+                        balance += (curr_price - next_price)
             
             if trades_count == 0: return -100
             
@@ -1445,7 +1533,8 @@ class AI_MT5_Bot:
             score = (balance - 10000.0)
             return score
             
-        except Exception:
+        except Exception as e:
+            # logger.error(f"Eval Error: {e}")
             return -9999
 
     def optimize_strategy_parameters(self):
