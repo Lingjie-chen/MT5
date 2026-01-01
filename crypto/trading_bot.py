@@ -333,8 +333,9 @@ class CryptoTradingBot:
 
         # Run Optimizations (Real-time Param Config)
         if time.time() - self.last_optimization_time > self.optimization_interval:
-            self.optimize_short_term_params()
+            self.optimize_strategy_parameters()
             self.optimize_weights()
+            self.last_optimization_time = time.time()
 
         crt_res = self.crt_analyzer.analyze(self.symbol, latest, current_time, df_htf=df_htf1)
         self.price_model.update(float(latest['close']))
@@ -532,6 +533,226 @@ class CryptoTradingBot:
         self.send_telegram_message(msg)
         
         return df, final_signal, strategy, strength, opt_sl, opt_tp, risk_pct
+
+    def evaluate_comprehensive_params(self, params, df):
+        """
+        Comprehensive Objective Function: Evaluates ALL dataframe-based strategy parameters together.
+        params: Vector of parameter values corresponding to the defined structure.
+        """
+        # Global counter for progress logging
+        if not hasattr(self, '_opt_counter'): self._opt_counter = 0
+        self._opt_counter += 1
+        if self._opt_counter % 50 == 0:
+            logger.info(f"Optimization Progress: {self._opt_counter} evaluations...")
+
+        # 1. Decode Parameters
+        try:
+            p_smc_ma = int(params[0])
+            p_smc_atr = params[1]
+            p_mfh_lr = params[2]
+            p_mfh_horizon = int(params[3])
+            p_pem_fast = int(params[4])
+            p_pem_slow = int(params[5])
+            p_pem_adx = params[6]
+            p_rvgi_sma = int(params[7])
+            p_rvgi_cci = int(params[8])
+            p_ifvg_gap = int(params[9])
+            
+            # 2. Initialize Temporary Analyzers (Fresh State)
+            tmp_smc = SMCAnalyzer()
+            tmp_smc.ma_period = p_smc_ma
+            tmp_smc.atr_threshold = p_smc_atr
+            
+            tmp_mfh = MFHAnalyzer(learning_rate=p_mfh_lr)
+            tmp_mfh.horizon = p_mfh_horizon
+            
+            tmp_pem = PriceEquationModel()
+            tmp_pem.ma_fast_period = p_pem_fast
+            tmp_pem.ma_slow_period = p_pem_slow
+            tmp_pem.adx_threshold = p_pem_adx
+            
+            tmp_adapter = AdvancedMarketAnalysisAdapter()
+            
+            # 3. Run Simulation
+            start_idx = max(p_smc_ma, p_pem_slow, 50) + 10
+            if len(df) < start_idx + 50: return -9999
+            
+            balance = 10000.0
+            closes = df['close'].values
+            
+            trades_count = 0
+            wins = 0
+            
+            # OPTIMIZATION: Vectorized Pre-calculation
+            # 1. RVGI Series (Vectorized)
+            rvgi_series = tmp_adapter.calculate_rvgi_cci_series(df, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci)
+            
+            # 2. MFH Features (Vectorized Batch)
+            mfh_features = tmp_mfh.prepare_features_batch(df)
+            
+            # 3. Step Skipping
+            # Evaluate trade signals every 4 candles (1 hour) to speed up SMC/PEM/IFVG
+            eval_step = 4 
+            
+            for i in range(start_idx, len(df)-1):
+                curr_price = closes[i]
+                next_price = closes[i+1]
+                
+                # MFH Train (Must happen every step for consistency)
+                if mfh_features is not None:
+                    # Get features for current step i
+                    feats = mfh_features[i]
+                    
+                    # Predict first (using current weights)
+                    pred = np.dot(tmp_mfh.weights, feats) + tmp_mfh.bias
+                    
+                    # Determine signal from prediction
+                    mfh_sig = "buy" if pred > 0.001 else "sell" if pred < -0.001 else "neutral"
+                    
+                    # Train (using PAST return)
+                    if i > p_mfh_horizon:
+                        past_ret = (closes[i] - closes[i-p_mfh_horizon]) / closes[i-p_mfh_horizon]
+                        target = past_ret
+                        
+                        if tmp_mfh.last_features is not None:
+                            err = target - tmp_mfh.last_prediction
+                            tmp_mfh.weights += tmp_mfh.learning_rate * err * tmp_mfh.last_features
+                            tmp_mfh.bias += tmp_mfh.learning_rate * err
+                        
+                        # Now Predict for *next*
+                        tmp_mfh.last_features = feats
+                        tmp_mfh.last_prediction = pred
+                
+                # Check Trade Condition (Skipping steps for speed)
+                if i % eval_step == 0:
+                    sub_df = df.iloc[:i+1] # Still slicing, but 4x less often
+                    
+                    # Update PEM (Fast update)
+                    tmp_pem.update(curr_price)
+                    
+                    # Signals
+                    # 1. SMC (Heavy)
+                    smc_sig = tmp_smc.analyze(sub_df)['signal']
+                    
+                    # 2. PEM (Medium - has rolling)
+                    pem_sig = tmp_pem.predict(sub_df)['signal']
+                    
+                    # 3. IFVG (Medium)
+                    ifvg_sig = tmp_adapter.analyze_ifvg(sub_df, min_gap_points=p_ifvg_gap)['signal']
+                    
+                    # 4. RVGI (Fast Lookup)
+                    rvgi_sig_val = rvgi_series.iloc[i]
+                    rvgi_sig = 'buy' if rvgi_sig_val == 1 else 'sell' if rvgi_sig_val == -1 else 'neutral'
+                    
+                    # 5. MFH (Already calc)
+                    # mfh_sig determined above
+                    
+                    # Combine
+                    votes = 0
+                    for s in [smc_sig, mfh_sig, pem_sig, ifvg_sig, rvgi_sig]:
+                        if s == 'buy': votes += 1
+                        elif s == 'sell': votes -= 1
+                    
+                    final_sig = "neutral"
+                    if votes >= 2: final_sig = "buy"
+                    elif votes <= -2: final_sig = "sell"
+                    
+                    # Evaluate Trade
+                    if final_sig == "buy":
+                        trades_count += 1
+                        if next_price > curr_price: wins += 1
+                        balance += (next_price - curr_price)
+                    elif final_sig == "sell":
+                        trades_count += 1
+                        if next_price < curr_price: wins += 1
+                        balance += (curr_price - next_price)
+            
+            if trades_count == 0: return -100
+            
+            # Simple Profit Metric
+            score = (balance - 10000.0)
+            return score
+            
+        except Exception as e:
+            # logger.error(f"Eval Error: {e}")
+            return -9999
+
+    def optimize_strategy_parameters(self):
+        """
+        Comprehensive Optimization: Tunes ALL strategy parameters using Auto-AO.
+        """
+        logger.info("开始执行全策略参数优化 (Comprehensive Auto-AO)...")
+        
+        # Reset progress counter
+        self._opt_counter = 0
+        
+        # 1. 获取历史数据
+        df = self.data_processor.get_historical_data(self.symbol, self.timeframe, limit=1000)
+        if df is None or len(df) < 500:
+            logger.warning("数据不足，跳过优化")
+            return
+            
+        # 2. Define Search Space (10 Dimensions)
+        # smc_ma, smc_atr, mfh_lr, mfh_horizon, pem_fast, pem_slow, pem_adx, rvgi_sma, rvgi_cci, ifvg_gap
+        bounds = [
+            (100, 300),     # smc_ma
+            (0.001, 0.005), # smc_atr
+            (0.001, 0.1),   # mfh_lr
+            (3, 10),        # mfh_horizon
+            (10, 50),       # pem_fast
+            (100, 300),     # pem_slow
+            (15.0, 30.0),   # pem_adx
+            (10, 50),       # rvgi_sma
+            (10, 30),       # rvgi_cci
+            (10, 100)       # ifvg_gap
+        ]
+        
+        steps = [10, 0.0005, 0.005, 1, 5, 10, 1.0, 2, 2, 5]
+        
+        # 3. Objective
+        def objective(params):
+            return self.evaluate_comprehensive_params(params, df)
+            
+        # 4. Optimizer
+        algo_name = random.choice(list(self.optimizers.keys()))
+        optimizer = self.optimizers[algo_name]
+        
+        if hasattr(optimizer, 'pop_size'):
+            optimizer.pop_size = 20
+            
+        logger.info(f"本次选择的优化算法: {algo_name} (Pop: {optimizer.pop_size})")
+        
+        # 5. Run
+        best_params, best_score = optimizer.optimize(
+            objective, 
+            bounds, 
+            steps=steps, 
+            epochs=4
+        )
+        
+        # 6. Apply Results
+        try:
+            self.smc_analyzer.ma_period = int(best_params[0])
+            self.smc_analyzer.atr_threshold = best_params[1]
+            
+            self.mfh_analyzer.learning_rate = best_params[2]
+            self.mfh_analyzer.horizon = int(best_params[3])
+            
+            self.price_model.ma_fast_period = int(best_params[4])
+            self.price_model.ma_slow_period = int(best_params[5])
+            self.price_model.adx_threshold = best_params[6]
+            
+            self.short_term_params['rvgi_sma'] = int(best_params[7])
+            self.short_term_params['rvgi_cci'] = int(best_params[8])
+            self.short_term_params['ifvg_gap'] = int(best_params[9])
+            
+            logger.info(f"Full Strategy Params Updated (Score: {best_score:.4f})")
+            logger.info(f"SMC: MA={int(best_params[0])}, ATR={best_params[1]:.4f}")
+            logger.info(f"PEM: Fast={int(best_params[4])}, Slow={int(best_params[5])}, ADX={best_params[6]:.1f}")
+            logger.info(f"Short-Term: {self.short_term_params}")
+            
+        except Exception as e:
+            logger.error(f"Failed to apply params: {e}")
 
     def optimize_short_term_params(self):
         """
