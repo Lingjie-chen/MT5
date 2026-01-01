@@ -2066,15 +2066,53 @@ class AI_MT5_Bot:
                 # 这样 Dashboard 就可以看到实时价格跳动
                 if time.time() - self.last_realtime_save > 3:
                     try:
-                        # ... (existing saving logic) ...
+                        df_current = pd.DataFrame(rates)
+                        df_current['time'] = pd.to_datetime(df_current['time'], unit='s')
+                        df_current.set_index('time', inplace=True)
+                        if 'tick_volume' in df_current.columns:
+                            df_current.rename(columns={'tick_volume': 'volume'}, inplace=True)
                         
-                        # Run Real-time Parameter Optimization (Short-term)
-                        # We run this less frequently, e.g., every 1 hour (3600s)
-                        # But to align with Crypto logic, we can check interval here
-                        # Or put it in the analysis loop.
-                        # Since it's heavy, let's put it in the analysis loop but with a separate timer.
-                        pass
+                        self.db_manager.save_market_data(df_current.copy(), self.symbol, self.tf_name)
+                        self.last_realtime_save = time.time()
                         
+                        # --- 实时保存账户信息 (新增) ---
+                        try:
+                            account_info = mt5.account_info()
+                            if account_info:
+                                # 计算当前品种的浮动盈亏
+                                positions = mt5.positions_get(symbol=self.symbol)
+                                symbol_pnl = 0.0
+                                magic_positions_count = 0
+                                if positions:
+                                    for pos in positions:
+                                        # 仅统计和计算属于本策略ID的持仓
+                                        if pos.magic == self.magic_number:
+                                            magic_positions_count += 1
+                                            # Handle different position object structures safely
+                                            profit = getattr(pos, 'profit', 0.0)
+                                            swap = getattr(pos, 'swap', 0.0)
+                                            commission = getattr(pos, 'commission', 0.0) # Check attribute existence
+                                            symbol_pnl += profit + swap + commission
+                                
+                                # 显示当前 ID 的持仓状态
+                                # if magic_positions_count > 0:
+                                #     logger.info(f"ID {self.magic_number} 当前持仓: {magic_positions_count} 个")
+                                # else:
+                                #     pass
+                                
+                                metrics = {
+                                    "timestamp": datetime.now(),
+                                    "balance": account_info.balance,
+                                    "equity": account_info.equity,
+                                    "margin": account_info.margin,
+                                    "free_margin": account_info.margin_free,
+                                    "margin_level": account_info.margin_level,
+                                    "total_profit": account_info.profit,
+                                    "symbol_pnl": symbol_pnl
+                                }
+                                self.db_manager.save_account_metrics(metrics)
+                        except Exception as e:
+                            logger.error(f"Failed to save account metrics: {e}")
                         # ------------------------------
                         
                         # 实时更新持仓 SL/TP (使用最近一次分析的策略)
@@ -2092,12 +2130,6 @@ class AI_MT5_Bot:
                 should_analyze = (time.time() - self.last_analysis_time >= 900) or (self.last_analysis_time == 0)
                 
                 if should_analyze:
-                    # Run Optimization if needed (Every 4 hours)
-                    if time.time() - self.last_optimization_time > 3600 * 4: # 4 hours
-                         self.optimize_short_term_params()
-                         self.optimize_weights()
-                         self.last_optimization_time = time.time()
-
                     if self.last_analysis_time == 0:
                         logger.info("首次运行，立即执行分析...")
                     else:
