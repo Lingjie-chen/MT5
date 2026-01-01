@@ -2130,6 +2130,12 @@ class AI_MT5_Bot:
                 should_analyze = (time.time() - self.last_analysis_time >= 900) or (self.last_analysis_time == 0)
                 
                 if should_analyze:
+                    # Run Optimization if needed (Every 4 hours)
+                    if time.time() - self.last_optimization_time > 3600 * 4: # 4 hours
+                         self.optimize_short_term_params()
+                         self.optimize_weights()
+                         self.last_optimization_time = time.time()
+
                     if self.last_analysis_time == 0:
                         logger.info("首次运行，立即执行分析...")
                     else:
