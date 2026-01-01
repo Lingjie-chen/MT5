@@ -745,12 +745,16 @@ class CryptoTradingBot:
         
         # Contract Size Logic
         # Try to get contract size from data processor if available, else fallback
-        # For many alts on OKX, size is 1 or 10 or 0.1 or 0.01
-        # We default to 1.0 for alts, but for high value coins it needs to be smaller
-        if 'ETH' in self.symbol: contract_size = 0.1
-        elif 'BTC' in self.symbol: contract_size = 0.01
-        elif 'SOL' in self.symbol: contract_size = 1.0
-        else: contract_size = 1.0 # Default fallback
+        try:
+            contract_size = self.data_processor.get_contract_size(self.symbol)
+            if not contract_size:
+                raise ValueError("Contract size not found")
+        except:
+             # Fallback if API fails
+             if 'ETH' in self.symbol: contract_size = 0.1
+             elif 'BTC' in self.symbol: contract_size = 0.01
+             elif 'SOL' in self.symbol: contract_size = 1.0
+             else: contract_size = 1.0 
         
         contracts = int(amount_coins / contract_size)
         
