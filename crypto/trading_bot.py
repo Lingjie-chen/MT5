@@ -328,7 +328,7 @@ class CryptoTradingBot:
             self.optimize_short_term_params()
             self.optimize_weights()
 
-        crt_res = self.crt_analyzer.analyze(self.symbol, latest, current_time)
+        crt_res = self.crt_analyzer.analyze(self.symbol, latest, current_time, df_htf=df_htf1)
         self.price_model.update(float(latest['close']))
         
         # Use optimized params for PEM
@@ -337,11 +337,10 @@ class CryptoTradingBot:
         pem_adx = getattr(self.price_model, 'adx_threshold', 20)
         pem_res = self.price_model.analyze(df, ma_fast_period=pem_fast, ma_slow_period=pem_slow, adx_threshold=pem_adx)
         
-        tf_res = self.tf_analyzer.analyze(self.symbol, current_time)
+        tf_res = self.tf_analyzer.analyze(self.symbol, current_time, df_current=df)
         
         # HTF Data for MTF
-        df_htf1 = self.data_processor.get_historical_data(self.symbol, '1h', limit=500)
-        df_htf2 = self.data_processor.get_historical_data(self.symbol, '4h', limit=500)
+        # df_htf1 is already fetched (1h), df_htf2 (4h)
         mtf_res = self.mtf_analyzer.analyze(df, df_htf1, df_htf2) 
         
         # Advanced Tech with Optimized Params
@@ -528,7 +527,7 @@ class CryptoTradingBot:
 
     def optimize_short_term_params(self):
         """
-        Optimize short-term strategy parameters (RVGI+CCI, IFVG)
+        Optimize short-term strategy parameters (RVGI+CCI, IFVG) using WOAm
         """
         logger.info("Running Short-Term Parameter Optimization (WOAm)...")
         
@@ -543,44 +542,147 @@ class CryptoTradingBot:
             p_rvgi_cci = int(params[1])
             p_ifvg_gap = int(params[2])
             
-            # Simulate backtest on recent data
-            score = 0
+            # Backtest Simulation
+            # Use a simplified backtest core to evaluate these params on recent data
+            # We iterate through the last N bars and check signal profitability
             
-            # Simple simulation: Check signal accuracy on last 100 bars
-            # This is computationally expensive, so we do a simplified check
-            # Check last 50 bars
-            test_df = df.iloc[-50:]
+            backtest_window = 100
+            if len(df) < backtest_window + 50: return -100
             
-            # We can't easily re-run indicators here efficiently without refactoring
-            # So we use a heuristic: maximizing trend strength detected?
-            # Or assume current params are baseline.
+            test_data = df.iloc[-(backtest_window+50):] # Add buffer for indicators
             
-            # Real implementation would run backtest_core
-            # Here we just return a random score for placeholder to show structure
-            # In production, use self.advanced_adapter.analyze_full and check profit
+            # Recalculate indicators with new params
+            # Note: This can be slow inside an optimization loop. 
+            # In a real efficient system, we would pre-calculate or use vectorization.
+            # Here we call the adapter which uses pandas rolling (fast enough for 100 bars)
             
-            return np.random.random() # Placeholder
+            param_dict = {'rvgi_sma': p_rvgi_sma, 'rvgi_cci': p_rvgi_cci, 'ifvg_gap': p_ifvg_gap}
+            
+            # We can't call analyze_full for every bar as it's too heavy.
+            # We call specific strategy functions directly.
+            
+            # Calculate RVGI/CCI signals for the whole window
+            rvgi_res = self.advanced_adapter.analyze_rvgi_cci_strategy(test_data, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci)
+            
+            # Calculate IFVG signals
+            ifvg_res = self.advanced_adapter.analyze_ifvg(test_data, min_gap_points=p_ifvg_gap)
+            
+            # Evaluate
+            # Since analyze_rvgi_cci_strategy only returns the LATEST signal, 
+            # we actually need to run it on a rolling basis or modify the analyzer to return series.
+            # The current AdvancedMarketAnalysis is designed for snapshot analysis.
+            
+            # For "NO SIMPLIFICATION", we must simulate properly.
+            # We will iterate the last 50 bars.
+            
+            balance = 1000.0
+            position = 0
+            entry_price = 0
+            
+            closes = test_data['close'].values
+            
+            # To avoid re-calculating everything 50 times inside the optimizer (which runs 100s of times),
+            # we accept a slight simplification: we optimize based on the LATEST snapshot's strength 
+            # matched against recent trend? No, that's overfitting.
+            
+            # Correct approach: Vectorized backtest of the logic.
+            # But the logic is in `analyze_rvgi_cci_strategy`.
+            
+            # Let's try a robust heuristic:
+            # We optimize for parameters that would have generated a correct signal 
+            # at the most recent significant pivot points.
+            
+            # Or, we just accept the cost and loop 20 times (last 20 candles).
+            
+            total_profit = 0
+            trades_count = 0
+            
+            for i in range(len(test_data)-20, len(test_data)):
+                sub_df = test_data.iloc[:i+1]
+                
+                # Check signals
+                res_rvgi = self.advanced_adapter.analyze_rvgi_cci_strategy(sub_df, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci)
+                res_ifvg = self.advanced_adapter.analyze_ifvg(sub_df, min_gap_points=p_ifvg_gap)
+                
+                sig = "neutral"
+                if res_rvgi['signal'] == 'buy' or res_ifvg['signal'] == 'buy': sig = 'buy'
+                elif res_rvgi['signal'] == 'sell' or res_ifvg['signal'] == 'sell': sig = 'sell'
+                
+                # Check profit 5 bars later (or end of data)
+                if sig != "neutral" and i + 5 < len(test_data):
+                    entry = closes[i]
+                    exit_p = closes[i+5]
+                    if sig == 'buy': profit = (exit_p - entry) / entry
+                    else: profit = (entry - exit_p) / entry
+                    
+                    total_profit += profit
+                    trades_count += 1
+            
+            if trades_count == 0: return 0
+            return total_profit
             
         # 3. Optimize
         bounds = [(10, 50), (10, 30), (10, 100)]
-        best_params, best_score = self.optimizers['WOAm'].optimize(objective, bounds, steps=10, epochs=2)
+        # Increased steps/epochs for better convergence
+        best_params, best_score = self.optimizers['WOAm'].optimize(objective, bounds, steps=15, epochs=3)
         
         self.short_term_params['rvgi_sma'] = int(best_params[0])
         self.short_term_params['rvgi_cci'] = int(best_params[1])
         self.short_term_params['ifvg_gap'] = int(best_params[2])
         
-        logger.info(f"Updated Params: {self.short_term_params}")
+        logger.info(f"Updated Params (Score {best_score:.4f}): {self.short_term_params}")
 
     def optimize_weights(self):
-        """Optimize Hybrid Weights based on history"""
-        if len(self.signal_history) < 10: return
+        """Optimize Hybrid Weights based on history (Full Implementation)"""
+        if len(self.signal_history) < 20: return
+        
+        logger.info(f"Running Weight Optimization... Samples: {len(self.signal_history)}")
+        
+        # 1. Prepare Data
+        samples = []
+        for i in range(len(self.signal_history) - 1):
+            curr = self.signal_history[i]
+            next_bar = self.signal_history[i+1]
+            signals = curr[1]
+            price_change = next_bar[2] - curr[2]
+            actual_dir = 1 if price_change > 0 else -1 if price_change < 0 else 0
+            if actual_dir != 0: samples.append((signals, actual_dir))
+            
+        if len(samples) < 10: return
+
+        # 2. Objective Function
+        strategy_keys = list(self.hybrid_optimizer.weights.keys())
         
         def objective(weights_vec):
-            # ... (Implementation similar to Gold) ...
-            return 0.5 # Placeholder
+            correct = 0; total = 0
+            temp_weights = {k: w for k, w in zip(strategy_keys, weights_vec)}
             
-        # ... (Run optimization) ...
-        pass
+            for signals, actual_dir in samples:
+                weighted_sum = 0; total_w = 0
+                for strat, sig in signals.items():
+                    w = temp_weights.get(strat, 1.0)
+                    if sig == 'buy': weighted_sum += w
+                    elif sig == 'sell': weighted_sum -= w
+                    total_w += w
+                
+                if total_w > 0:
+                    score = weighted_sum / total_w
+                    pred = 1 if score > 0.15 else -1 if score < -0.15 else 0
+                    if pred == actual_dir: correct += 1
+                    total += 1
+            return correct / total if total > 0 else 0
+
+        # 3. Optimize
+        bounds = [(0.0, 2.0) for _ in range(len(strategy_keys))]
+        best_weights, best_score = self.optimizers['WOAm'].optimize(objective, bounds, steps=15, epochs=3)
+        
+        # 4. Apply
+        if best_score > 0.4: # Only update if decent accuracy
+            for i, k in enumerate(strategy_keys):
+                self.hybrid_optimizer.weights[k] = best_weights[i]
+            logger.info(f"Weights Updated (Acc {best_score:.2%}): {self.hybrid_optimizer.weights}")
+        else:
+            logger.info(f"Weight optimization score too low ({best_score:.2%}), skipping update.")
 
     def _send_order(self, type_str, price, sl, tp, volume_pct):
         """Wrapper for OKX Order with Validation"""
