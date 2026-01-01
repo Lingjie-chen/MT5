@@ -6,13 +6,17 @@ import requests
 import random
 import numpy as np
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 from .okx_data_processor import OKXDataProcessor
 from .ai_client_factory import AIClientFactory
 from .database_manager import DatabaseManager
-from .advanced_analysis import AdvancedMarketAnalysis, SMCAnalyzer, MFHAnalyzer, MTFAnalyzer, PEMAnalyzer, MatrixMLAnalyzer
+from .advanced_analysis import (
+    AdvancedMarketAnalysis, AdvancedMarketAnalysisAdapter, MFHAnalyzer, SMCAnalyzer, 
+    MatrixMLAnalyzer, CRTAnalyzer, PriceEquationModel, 
+    TimeframeVisualAnalyzer, MTFAnalyzer
+)
 from .optimization import GWO, WOAm, DE, COAm, BBO, TETA
 
 # Load environment variables
@@ -73,14 +77,9 @@ class HybridOptimizer:
         return final_signal, final_score, self.weights
 
 class CryptoTradingBot:
-    def __init__(self, symbol='ETH/USDT', timeframe='15m', interval=3600):
+    def __init__(self, symbol='ETH/USDT', timeframe='15m', interval=900):
         """
         Initialize the Crypto Trading Bot
-        
-        Args:
-            symbol (str): Trading pair
-            timeframe (str): Candle timeframe (e.g., '15m', '1h', '4h')
-            interval (int): Loop interval in seconds
         """
         self.symbol = symbol
         self.timeframe = timeframe
@@ -95,13 +94,17 @@ class CryptoTradingBot:
         # Initialize Data Processor
         self.data_processor = OKXDataProcessor()
 
-        # Initialize Advanced Analysis
-        self.advanced_analysis = AdvancedMarketAnalysis()
+        # Initialize Advanced Analysis (Gold Strategy Alignment)
+        # 15m Timeframe -> H1 CRT, H1/H4 MTF
+        self.crt_analyzer = CRTAnalyzer(timeframe_htf='1h')
+        self.mtf_analyzer = MTFAnalyzer(htf1='1h', htf2='4h')
+        self.price_model = PriceEquationModel()
+        self.tf_analyzer = TimeframeVisualAnalyzer()
+        self.advanced_adapter = AdvancedMarketAnalysisAdapter()
+        self.matrix_ml = MatrixMLAnalyzer()
         self.smc_analyzer = SMCAnalyzer()
         self.mfh_analyzer = MFHAnalyzer()
-        self.mtf_analyzer = MTFAnalyzer()
-        self.pem_analyzer = PEMAnalyzer()
-        self.matrix_ml = MatrixMLAnalyzer()
+        self.advanced_analysis = AdvancedMarketAnalysis() # Legacy adapter
         
         self.hybrid_optimizer = HybridOptimizer()
         
@@ -116,7 +119,7 @@ class CryptoTradingBot:
         }
         self.active_optimizer_name = "WOAm"
         self.last_optimization_time = 0
-        self.optimization_interval = 3600 * 4 # Re-optimize every 4 hours
+        self.optimization_interval = 3600 * 4 
         
         # Short-term params
         self.short_term_params = {
@@ -134,8 +137,23 @@ class CryptoTradingBot:
         self.telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
         self.telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID")
         
+        # State
+        self.latest_strategy = None
+        self.latest_signal = "neutral"
+        self.signal_history = []
+        
         if not self.deepseek_client or not self.qwen_client:
-            logger.warning("AI Clients not fully initialized. Trading functionality may be limited.")
+            logger.warning("AI Clients not fully initialized.")
+
+    def sync_account_history(self):
+        """Sync recent account history to DB for Self-Learning"""
+        logger.info("Syncing account history from OKX...")
+        try:
+            trades = self.data_processor.get_recent_trades(self.symbol, limit=100)
+            if trades:
+                self.db_manager.save_trade_history_batch(trades)
+        except Exception as e:
+            logger.error(f"Failed to sync history: {e}")
 
     def escape_markdown(self, text):
         """Helper to escape markdown special characters"""
@@ -148,6 +166,7 @@ class CryptoTradingBot:
 
     def send_telegram_message(self, message):
         """Send message to Telegram"""
+        if not self.telegram_token or not self.telegram_chat_id: return
         try:
             url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
             payload = {
@@ -155,871 +174,435 @@ class CryptoTradingBot:
                 "text": message,
                 "parse_mode": "Markdown"
             }
-            response = requests.post(url, json=payload, timeout=10)
-            if response.status_code != 200:
-                logger.error(f"Failed to send Telegram message: {response.text}")
+            # Proxy settings for China users (optional, remove if not needed or configure via env)
+            proxies = {
+                "http": "http://127.0.0.1:7890",
+                "https": "http://127.0.0.1:7890"
+            }
+            try:
+                requests.post(url, json=payload, timeout=10, proxies=proxies)
+            except:
+                requests.post(url, json=payload, timeout=10) # Retry without proxy
         except Exception as e:
             logger.error(f"Error sending Telegram message: {e}")
 
-    def evaluate_comprehensive_params(self, params, df):
-        """
-        Comprehensive Objective Function: Evaluates ALL dataframe-based strategy parameters together.
-        params: Vector of parameter values corresponding to the defined structure.
-        """
-        # Global counter for progress logging
-        if not hasattr(self, '_opt_counter'): self._opt_counter = 0
-        self._opt_counter += 1
-        if self._opt_counter % 50 == 0:
-            logger.info(f"Optimization Progress: {self._opt_counter} evaluations...")
-
-        # 1. Decode Parameters
-        # 0: smc_ma (int)
-        # 1: smc_atr (float)
-        # 2: mfh_lr (float)
-        # 3: mfh_horizon (int)
-        # 4: pem_fast (int)
-        # 5: pem_slow (int)
-        # 6: pem_adx (float)
-        # 7: rvgi_sma (int)
-        # 8: rvgi_cci (int)
-        # 9: ifvg_gap (int)
-        
-        try:
-            p_smc_ma = int(params[0])
-            p_smc_atr = params[1]
-            p_mfh_lr = params[2]
-            p_mfh_horizon = int(params[3])
-            p_pem_fast = int(params[4])
-            p_pem_slow = int(params[5])
-            p_pem_adx = params[6]
-            p_rvgi_sma = int(params[7])
-            p_rvgi_cci = int(params[8])
-            p_ifvg_gap = int(params[9])
-            
-            # 2. Initialize Temporary Analyzers (Fresh State)
-            tmp_smc = SMCAnalyzer()
-            tmp_smc.ma_period = p_smc_ma
-            tmp_smc.atr_threshold = p_smc_atr
-            
-            tmp_mfh = MFHAnalyzer(learning_rate=p_mfh_lr)
-            tmp_mfh.horizon = p_mfh_horizon
-            
-            # Note: PEMAnalyzer in Crypto might need attribute adjustment if different from Gold
-            tmp_pem = PEMAnalyzer() 
-            # Assuming PEMAnalyzer has similar analyze method signature or we mock it
-            # Crypto PEMAnalyzer uses analyze(df, ma_fast_period, ma_slow_period, adx_threshold)
-            
-            tmp_adapter = AdvancedMarketAnalysis()
-            
-            # 3. Run Simulation
-            start_idx = max(p_smc_ma, p_pem_slow, 50) + 10
-            if len(df) < start_idx + 50: return -9999
-            
-            balance = 10000.0
-            closes = df['close'].values
-            
-            trades_count = 0
-            wins = 0
-            
-            # Optimization: Step size > 1 to speed up
-            for i in range(start_idx, len(df)-1):
-                sub_df = df.iloc[:i+1]
-                curr_price = closes[i]
-                next_price = closes[i+1]
-                
-                # MFH Train (Must happen every step for consistency)
-                if i > p_mfh_horizon:
-                    past_ret = (closes[i] - closes[i-p_mfh_horizon]) / closes[i-p_mfh_horizon]
-                    tmp_mfh.train(past_ret)
-                
-                # Signals
-                smc_sig = tmp_smc.analyze(sub_df)['signal']
-                mfh_sig = tmp_mfh.predict(sub_df)['signal']
-                
-                # PEM Signal (passing params explicitly as per Crypto implementation)
-                pem_res = tmp_pem.analyze(sub_df, ma_fast_period=p_pem_fast, ma_slow_period=p_pem_slow, adx_threshold=p_pem_adx)
-                pem_sig = pem_res['signal']
-                
-                # Short Term
-                ifvg_sig = tmp_adapter.analyze_ifvg(sub_df, min_gap_points=p_ifvg_gap)['signal']
-                rvgi_sig = tmp_adapter.analyze_rvgi_cci_strategy(sub_df, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci)['signal']
-                
-                # Combine
-                votes = 0
-                for s in [smc_sig, mfh_sig, pem_sig, ifvg_sig, rvgi_sig]:
-                    if s == 'buy': votes += 1
-                    elif s == 'sell': votes -= 1
-                
-                final_sig = "neutral"
-                if votes >= 2: final_sig = "buy"
-                elif votes <= -2: final_sig = "sell"
-                
-                # Evaluate
-                if final_sig == "buy":
-                    trades_count += 1
-                    if next_price > curr_price: wins += 1
-                    balance += (next_price - curr_price)
-                elif final_sig == "sell":
-                    trades_count += 1
-                    if next_price < curr_price: wins += 1
-                    balance += (curr_price - next_price)
-            
-            if trades_count == 0: return -100
-            
-            # Simple Profit Metric
-            score = (balance - 10000.0)
-            return score
-            
-        except Exception:
-            return -9999
-
-    def optimize_strategy_parameters(self, df):
-        """
-        Comprehensive Optimization: Tunes ALL strategy parameters using Auto-AO.
-        """
-        logger.info("Starting Comprehensive Strategy Optimization (Auto-AO)...")
-        
-        # Reset progress counter
-        self._opt_counter = 0
-        
-        if df is None or len(df) < 200:
-            logger.warning("Insufficient data for optimization, skipping")
-            return
-            
-        # Reduce data size for speed (300 candles)
-        if len(df) > 300:
-            df = df.tail(300).copy()
-            
-        # 2. Define Search Space (10 Dimensions)
-        # smc_ma, smc_atr, mfh_lr, mfh_horizon, pem_fast, pem_slow, pem_adx, rvgi_sma, rvgi_cci, ifvg_gap
-        bounds = [
-            (100, 300),     # smc_ma
-            (0.001, 0.005), # smc_atr
-            (0.001, 0.1),   # mfh_lr
-            (3, 10),        # mfh_horizon
-            (10, 50),       # pem_fast
-            (100, 300),     # pem_slow
-            (15.0, 30.0),   # pem_adx
-            (10, 50),       # rvgi_sma
-            (10, 30),       # rvgi_cci
-            (10, 100)       # ifvg_gap
-        ]
-        
-        steps = [10, 0.0005, 0.005, 1, 5, 10, 1.0, 2, 2, 5]
-        
-        # 3. Objective
-        def objective(params):
-            return self.evaluate_comprehensive_params(params, df)
-            
-        # 4. Optimizer
-        algo_name = random.choice(list(self.optimizers.keys()))
-        optimizer = self.optimizers[algo_name]
-        
-        # Adjust population size for realtime performance
-        if hasattr(optimizer, 'pop_size'):
-            optimizer.pop_size = 20
-            
-        logger.info(f"Selected Optimizer: {algo_name} (Pop: {optimizer.pop_size})")
-        
-        # 5. Run
-        best_params, best_score = optimizer.optimize(
-            objective, 
-            bounds, 
-            steps=steps, 
-            epochs=4 # Reduced from 5 to 4
-        )
-        
-        # 6. Apply Results
-        if best_score > -1000:
-            logger.info(f"Optimization Complete! Best Score: {best_score:.2f}")
-            
-            # Extract
-            p_smc_ma = int(best_params[0])
-            p_smc_atr = best_params[1]
-            p_mfh_lr = best_params[2]
-            p_mfh_horizon = int(best_params[3])
-            p_pem_fast = int(best_params[4])
-            p_pem_slow = int(best_params[5])
-            p_pem_adx = best_params[6]
-            p_rvgi_sma = int(best_params[7])
-            p_rvgi_cci = int(best_params[8])
-            p_ifvg_gap = int(best_params[9])
-            
-            # Apply
-            self.smc_analyzer.ma_period = p_smc_ma
-            self.smc_analyzer.atr_threshold = p_smc_atr
-            
-            self.mfh_analyzer.learning_rate = p_mfh_lr
-            self.mfh_analyzer.horizon = p_mfh_horizon
-            
-            # PEM in Crypto might need params passed to analyze method or set attributes if supported
-            # Assuming we can set them for future analyze calls, but analyze() signature requires them passed?
-            # Let's store them in self.pem_params
-            self.pem_params = {
-                'ma_fast': p_pem_fast,
-                'ma_slow': p_pem_slow,
-                'adx_threshold': p_pem_adx
-            }
-            
-            self.short_term_params = {
-                'rvgi_sma': p_rvgi_sma,
-                'rvgi_cci': p_rvgi_cci,
-                'ifvg_gap': p_ifvg_gap
-            }
-            
-            msg = (
-                f"🧬 *Comprehensive Optimization ({algo_name})*\n"
-                f"Score: {best_score:.2f}\n"
-                f"• SMC: MA={p_smc_ma}, ATR={p_smc_atr:.4f}\n"
-                f"• MFH: LR={p_mfh_lr:.3f}, H={p_mfh_horizon}\n"
-                f"• PEM: Fast={p_pem_fast}, Slow={p_pem_slow}, ADX={p_pem_adx:.1f}\n"
-                f"• ST: RVGI({p_rvgi_sma},{p_rvgi_cci}), IFVG({p_ifvg_gap})"
-            )
-            self.send_telegram_message(msg)
-            logger.info(f"Updated all strategy params: {msg}")
-            
-        else:
-            logger.warning("Optimization failed to find positive score, keeping original params")
-
     def calculate_optimized_sl_tp(self, trade_type, price, atr, market_context=None):
-        """
-        Calculate optimized SL/TP based on ATR, MFE/MAE stats, and market structure
-        """
-        if atr <= 0:
-            atr = price * 0.01 # Fallback 1%
+        """Calculate optimized SL/TP based on ATR, MFE/MAE stats, and market structure"""
+        if atr <= 0: atr = price * 0.01 
             
-        # 1. Base Volatility
         mfe_tp_dist = atr * 2.0
         mae_sl_dist = atr * 1.5
         
-        # 2. Historical Stats (MFE/MAE)
+        # MFE/MAE Stats
         try:
              stats = self.db_manager.get_trade_performance_stats(limit=100)
-             
-             trades = []
-             if isinstance(stats, list):
-                 trades = stats
-             elif isinstance(stats, dict) and 'recent_trades' in stats:
-                 trades = stats['recent_trades']
+             trades = stats if isinstance(stats, list) else stats.get('recent_trades', [])
              
              if trades and len(trades) > 10:
                  mfes = [t.get('mfe', 0) for t in trades if t.get('mfe', 0) > 0]
                  maes = [abs(t.get('mae', 0)) for t in trades if abs(t.get('mae', 0)) > 0]
                  
                  if mfes and maes:
-                     # Use 60th percentile for TP (Conservative)
-                     # Use 90th percentile for SL (Wide enough to survive noise)
                      opt_tp_pct = np.percentile(mfes, 60) / 100.0
                      opt_sl_pct = np.percentile(maes, 90) / 100.0
-                     
                      mfe_tp_dist = price * opt_tp_pct
                      mae_sl_dist = price * opt_sl_pct
-        except Exception as e:
-             logger.warning(f"MFE/MAE calc failed: {e}")
+        except Exception: pass
 
-        # 3. Market Structure (Supply/Demand/FVG)
+        # Structure
         struct_tp_price = 0.0
-        
         if market_context:
             is_buy = 'buy' in trade_type
-            if is_buy:
-                # Find TP: Lowest Bearish FVG above price
-                resistance_candidates = []
-                if 'active_zones' in market_context:
-                     for zone in market_context['active_zones']:
-                         if zone.get('type') == 'bearish' and zone.get('bottom', 0) > price:
-                             resistance_candidates.append(zone['bottom'])
-                
-                if resistance_candidates:
-                    struct_tp_price = min(resistance_candidates)
-            else:
-                # Find TP: Highest Bullish FVG below price
-                support_candidates = []
-                if 'active_zones' in market_context:
-                     for zone in market_context['active_zones']:
-                         if zone.get('type') == 'bullish' and zone.get('top', 0) < price:
-                             support_candidates.append(zone['top'])
-                
-                if support_candidates:
-                    struct_tp_price = max(support_candidates)
+            candidates = []
+            if 'active_zones' in market_context:
+                 for zone in market_context['active_zones']:
+                     if is_buy and zone.get('type') == 'bearish' and zone.get('bottom', 0) > price:
+                         candidates.append(zone['bottom'])
+                     elif not is_buy and zone.get('type') == 'bullish' and zone.get('top', 0) < price:
+                         candidates.append(zone['top'])
+            
+            if candidates:
+                struct_tp_price = min(candidates) if is_buy else max(candidates)
 
-        # 4. Final Calculation
         final_sl = 0.0
         final_tp = 0.0
         
         if 'buy' in trade_type:
             base_tp = price + mfe_tp_dist
             base_sl = price - mae_sl_dist
-            
             if struct_tp_price > price:
-                if struct_tp_price < base_tp:
-                    final_tp = struct_tp_price - (atr * 0.1)
-                else:
-                    final_tp = base_tp
+                final_tp = struct_tp_price - (atr * 0.1) if struct_tp_price < base_tp else base_tp
             else:
                 final_tp = base_tp
             final_sl = base_sl
         else:
             base_tp = price - mfe_tp_dist
             base_sl = price + mae_sl_dist
-            
             if struct_tp_price > 0 and struct_tp_price < price:
-                if struct_tp_price > base_tp:
-                    final_tp = struct_tp_price + (atr * 0.1)
-                else:
-                    final_tp = base_tp
+                final_tp = struct_tp_price + (atr * 0.1) if struct_tp_price > base_tp else base_tp
             else:
                 final_tp = base_tp
             final_sl = base_sl
             
         return final_sl, final_tp
 
-    def analyze_market(self):
-        """Analyze market using DeepSeek"""
-        logger.info(f"Fetching data for {self.symbol}...")
-        # Increase limit to allow for optimization history
-        df = self.data_processor.get_historical_data(self.symbol, self.timeframe, limit=600)
+    def calculate_dynamic_lot(self, strength, market_context, mfe_mae_ratio=1.0, ai_signals=None):
+        """
+        Calculate dynamic position size based on signal strength and market context.
+        Adapted for Crypto (returns % of equity).
+        """
+        base_risk = 0.02 # 2% base risk
         
-        if df.empty:
-            logger.error("Failed to fetch historical data")
-            return None, None
+        # 1. Consensus Multiplier
+        consensus_mult = 1.0
+        if ai_signals:
+            buy_votes = sum(1 for k, v in ai_signals.items() if v == 'buy')
+            sell_votes = sum(1 for k, v in ai_signals.items() if v == 'sell')
+            total = len(ai_signals)
+            if total > 0:
+                consensus_ratio = max(buy_votes, sell_votes) / total
+                if consensus_ratio > 0.7: consensus_mult = 1.3
+                elif consensus_ratio < 0.4: consensus_mult = 0.7
+        
+        # 2. Strength Multiplier
+        strength_mult = 1.0
+        if strength >= 80: strength_mult = 1.5
+        elif strength >= 60: strength_mult = 1.2
+        elif strength < 40: strength_mult = 0.5
+        
+        # 3. Structure Multiplier (SMC)
+        struct_mult = 1.0
+        if market_context and 'smc' in market_context:
+             smc = market_context['smc'].get('structure', 'neutral')
+             if smc == 'bullish_breakout' or smc == 'bearish_breakout':
+                 struct_mult = 1.2
+        
+        # 4. MFE/MAE Multiplier
+        perf_mult = 1.0
+        if mfe_mae_ratio > 2.0: perf_mult = 1.2
+        elif mfe_mae_ratio < 0.8: perf_mult = 0.8
+        
+        final_risk = base_risk * consensus_mult * strength_mult * struct_mult * perf_mult
+        final_risk = min(final_risk, 0.05) # Max 5% risk
+        
+        return final_risk # Returns risk percentage (e.g., 0.03 for 3%)
+
+    def analyze_market(self):
+        """Full AI Market Analysis (Gold Logic)"""
+        logger.info(f"Fetching data for {self.symbol}...")
+        df = self.data_processor.get_historical_data(self.symbol, self.timeframe, limit=1000)
+        
+        if df.empty: return None, None
             
-        # Generate features
+        # Features
         df = self.data_processor.generate_features(df)
         
-        # Check if we need to run optimization
-        current_time = time.time()
-        if current_time - self.last_optimization_time > self.optimization_interval:
-            self.optimize_strategy_parameters(df)
-            self.last_optimization_time = current_time
-        
-        # --- Self-Learning: Train Local Models ---
+        # Self-Learning Training
         if len(df) > 2:
-            current_close = df['close'].iloc[-1]
-            prev_close = df['close'].iloc[-2]
-            actual_return = current_close - prev_close
+            change = df['close'].iloc[-1] - df['close'].iloc[-2]
+            self.mfh_analyzer.train(change)
+            self.matrix_ml.train(change)
             
-            # Train MFH
-            self.mfh_analyzer.train(actual_return)
-            
-            # Train MatrixML
-            self.matrix_ml.train(actual_return)
-            
-        # Prepare data for AI analysis
-        latest_data = df.iloc[-1].to_dict()
-        recent_candles = df.iloc[-5:].reset_index().to_dict('records')
-        
-        market_data = {
+        # Snapshot
+        latest = df.iloc[-1]
+        market_snapshot = {
             "symbol": self.symbol,
             "timeframe": self.timeframe,
-            "current_price": latest_data.get('close'),
-            "indicators": {
-                "ema_fast": latest_data.get('ema_fast'),
-                "ema_slow": latest_data.get('ema_slow'),
-                "rsi": latest_data.get('rsi'),
-                "atr": latest_data.get('atr'),
-                "volatility": latest_data.get('volatility')
+            "prices": {
+                "open": float(latest['open']), "high": float(latest['high']), 
+                "low": float(latest['low']), "close": float(latest['close']), "volume": float(latest['volume'])
             },
-            "recent_candles": recent_candles
+            "indicators": {
+                "rsi": float(latest.get('rsi', 50)),
+                "atr": float(latest.get('atr', 0)),
+                "ema_fast": float(latest.get('ema_fast', 0)),
+                "volatility": float(latest.get('volatility', 0))
+            }
         }
         
-        # Fetch current positions
-        current_positions = []
-        try:
-            positions = self.data_processor.exchange.fetch_positions([self.symbol])
-            current_positions = [p for p in positions if float(p['contracts']) > 0]
-        except Exception:
-            pass
-
-        technical_signals = market_data.get('indicators', {})
-
-        # --- Advanced Algorithm Integration ---
-        # 1. CRT
-        crt_analysis = self.advanced_analysis.analyze_crt_strategy(df) # Use default or optimized if method signature updated
+        # --- Advanced Analysis ---
+        current_time = latest.name.timestamp() if hasattr(latest.name, 'timestamp') else time.time()
         
-        # 2. IFVG (Use optimized)
-        ifvg_analysis = self.advanced_analysis.analyze_ifvg(
-            df, 
-            min_gap_points=self.short_term_params.get('ifvg_gap', 50)
-        )
+        crt_res = self.crt_analyzer.analyze(self.symbol, latest, current_time)
+        self.price_model.update(float(latest['close']))
+        pem_res = self.price_model.predict(df)
+        tf_res = self.tf_analyzer.analyze(self.symbol, current_time)
         
-        # 3. RVGI + CCI (Use optimized)
-        rvgi_analysis = self.advanced_analysis.analyze_rvgi_cci_strategy(
-            df, 
-            sma_period=self.short_term_params.get('rvgi_sma', 30),
-            cci_period=self.short_term_params.get('rvgi_cci', 14)
-        )
+        # HTF Data for MTF
+        df_htf1 = self.data_processor.get_historical_data(self.symbol, '1h', limit=500)
+        df_htf2 = self.data_processor.get_historical_data(self.symbol, '4h', limit=500)
+        mtf_res = self.mtf_analyzer.analyze(df, df_htf1, df_htf2) # Updated MTF signature
         
-        # 4. Market Regime
-        regime_analysis = self.advanced_analysis.detect_market_regime(df)
-
-        # 5. SMC
-        smc_analysis = self.smc_analyzer.analyze(df)
-
-        # 6. MFH
-        mfh_analysis = self.mfh_analyzer.predict(df)
-
-        # 7. MTF
-        # ... Fetch HTF data ...
-        tf_lower = self.timeframe.lower()
-        htf_timeframe = '4h' if tf_lower in ['1h', '15m', '30m'] else '1d'
-        df_htf = self.data_processor.get_historical_data(self.symbol, htf_timeframe, limit=100)
-        mtf_analysis = {"signal": "neutral", "reason": "No HTF Data"}
-        if not df_htf.empty:
-            mtf_analysis = self.mtf_analyzer.analyze(df, df_htf)
-            
-        # 8. PEM (Use optimized params)
-        pem_p = getattr(self, 'pem_params', {})
-        pem_analysis = self.pem_analyzer.analyze(
-            df, 
-            ma_fast_period=pem_p.get('ma_fast', 108),
-            ma_slow_period=pem_p.get('ma_slow', 60),
-            adx_threshold=pem_p.get('adx_threshold', 20)
-        )
+        adv_res = self.advanced_adapter.analyze_full(df, params=self.short_term_params)
+        adv_sig = adv_res['signal_info']['signal'] if adv_res else 'neutral'
         
-        # 9. MatrixML
-        returns_data = df['close'].diff().dropna().values
-        matrix_ml_analysis = self.matrix_ml.predict(returns_data)
+        ticks = [] # Crypto tick data hard to fetch in batch here, skip or implement later
+        ml_res = self.matrix_ml.predict(ticks)
         
-        # Combine
-        extra_analysis_data = {
-            "technical_indicators": technical_signals,
-            "crt_strategy": crt_analysis,
-            "ifvg_strategy": ifvg_analysis,
-            "rvgi_cci_strategy": rvgi_analysis,
-            "market_regime": regime_analysis,
-            "smc_strategy": smc_analysis,
-            "mfh_strategy": mfh_analysis,
-            "mtf_strategy": mtf_analysis,
-            "pem_strategy": pem_analysis,
-            "matrix_ml_strategy": matrix_ml_analysis
+        smc_res = self.smc_analyzer.analyze(df)
+        mfh_res = self.mfh_analyzer.predict(df)
+        
+        # --- DeepSeek ---
+        current_positions = [] # Fetch actual positions if possible
+        
+        # Performance Stats
+        trade_stats = self.db_manager.get_trade_performance_stats(limit=50)
+        
+        extra_analysis = {
+            "crt": crt_res, "pem": pem_res, "mtf": mtf_res, "adv": adv_res,
+            "matrix_ml": ml_res, "smc": smc_res, "mfh": mfh_res
         }
         
-        logger.info(f"Signals: SMC={smc_analysis['signal']}, MFH={mfh_analysis['signal']}, PEM={pem_analysis['signal']}, IFVG={ifvg_analysis['signal']}")
-
-        # 1. DeepSeek
-        logger.info("Requesting DeepSeek market structure analysis...")
-        
-        # Get performance stats for DeepSeek context
-        performance_stats = []
-        try:
-            performance_stats = self.db_manager.get_trade_performance_stats(limit=50)
-        except Exception:
-            pass
-            
-        structure_analysis = self.deepseek_client.analyze_market_structure(
-            market_data, 
+        structure = self.deepseek_client.analyze_market_structure(
+            market_snapshot, 
             current_positions=current_positions,
-            extra_analysis=extra_analysis_data,
-            performance_stats=performance_stats
+            extra_analysis=extra_analysis,
+            performance_stats=trade_stats
         )
         
-        # DeepSeek Signal Logic (similar to Gold)
-        ds_signal = structure_analysis.get('preliminary_signal', 'neutral')
-        ds_score = structure_analysis.get('structure_score', 50)
-        ds_pred = structure_analysis.get('short_term_prediction', 'neutral')
-        
-        # Combine Signals using HybridOptimizer logic
-        all_signals = {
-            "deepseek": ds_signal,
-            "crt": crt_analysis['signal'],
-            "price_equation": pem_analysis['signal'],
-            "matrix_ml": matrix_ml_analysis['signal'],
-            "smc": smc_analysis['signal'],
-            "mfh": mfh_analysis['signal'],
-            "mtf": mtf_analysis['signal'],
-            "ifvg": ifvg_analysis['signal'],
-            "rvgi_cci": rvgi_analysis['signal']
-        }
-        
-        final_signal, final_score, _ = self.hybrid_optimizer.combine_signals(all_signals)
-        logger.info(f"Hybrid Signal: {final_signal} (Score: {final_score:.2f})")
-        
-        structure_analysis['technical_signals'] = extra_analysis_data
-        structure_analysis['hybrid_signal'] = final_signal # Pass to Qwen
-        structure_analysis['hybrid_score'] = final_score
-        
-        try:
-            self.db_manager.log_analysis(
-                symbol=self.symbol,
-                market_state=structure_analysis.get('market_state'),
-                structure_score=structure_analysis.get('structure_score'),
-                ai_decision=None,
-                raw_analysis=structure_analysis
-            )
-        except Exception as e:
-            logger.error(f"Failed to log analysis: {e}")
-            
-        return df, structure_analysis
-
-    def make_decision(self, df, structure_analysis):
-        """Make trading decision using Qwen"""
-        if not self.qwen_client: return None
-
-        latest_data = df.iloc[-1].to_dict()
-        balance = self.data_processor.get_account_balance('USDT')
-        available_usdt = balance['free'] if balance else 0.0
-        total_equity = balance['total'] if balance else available_usdt
-        
-        # Fetch actual positions
-        valid_positions = []
-        try:
-            positions = self.data_processor.exchange.fetch_positions([self.symbol])
-            for pos in positions:
-                if float(pos['contracts']) > 0:
-                    valid_positions.append({
-                        "symbol": pos['symbol'],
-                        "side": pos['side'],
-                        "contracts": float(pos['contracts']),
-                        "unrealized_pnl": pos['unrealizedPnl'],
-                        "leverage": pos['leverage']
-                    })
-        except Exception:
-            pass
-            
-        # Open Orders
-        open_orders = []
-        try:
-            raw_orders = self.data_processor.get_open_orders(self.symbol)
-            for o in raw_orders:
-                open_orders.append({"id": o['id'], "type": o['type'], "price": o['price']})
-        except Exception:
-            pass
-        
-        market_data = {
-            "symbol": self.symbol,
-            "price": latest_data.get('close'),
-            "indicators": {
-                "rsi": latest_data.get('rsi'),
-                "atr": latest_data.get('atr')
+        # DeepSeek Signal
+        ds_signal = structure.get('preliminary_signal', 'neutral')
+        ds_score = structure.get('structure_score', 50)
+        ds_pred = structure.get('short_term_prediction', 'neutral')
+        if ds_signal == 'neutral':
+             if ds_pred == 'bullish' and ds_score > 60: ds_signal = "buy"
+             elif ds_pred == 'bearish' and ds_score > 60: ds_signal = "sell"
+             
+        # --- Qwen Strategy ---
+        technical_signals = {
+            "crt": crt_res, "price_equation": pem_res, "timeframe_analysis": tf_res,
+            "advanced_tech": adv_sig, "matrix_ml": ml_res['signal'],
+            "smc": smc_res['signal'], "mfh": mfh_res['signal'], "mtf": mtf_res['signal'],
+            "deepseek_analysis": {
+                "market_state": structure.get('market_state'),
+                "preliminary_signal": ds_signal,
+                "confidence": structure.get('signal_confidence'),
+                "prediction": ds_pred
             },
-            "account_info": {"available_usdt": available_usdt, "total_equity": total_equity},
-            "open_orders": open_orders
+            "performance_stats": trade_stats
         }
         
-        # Feedback
-        performance_stats = []
-        try:
-            performance_stats = self.db_manager.get_trade_performance_stats(limit=50)
-        except Exception:
-            pass
+        strategy = self.qwen_client.optimize_strategy_logic(structure, market_snapshot, technical_signals=technical_signals)
+        
+        # --- Final Decision Logic (Gold Style) ---
+        qw_action = strategy.get('action', 'neutral').lower()
+        final_signal = "neutral"
+        if qw_action in ['buy', 'add_buy', 'limit_buy', 'buy_limit']: final_signal = "buy" # Force Market
+        elif qw_action in ['sell', 'add_sell', 'limit_sell', 'sell_limit']: final_signal = "sell" # Force Market
+        elif qw_action in ['close', 'close_buy', 'close_sell']: final_signal = "close"
+        elif qw_action == 'hold': final_signal = "hold"
+        
+        # Consensus Override
+        reason = strategy.get('reason', 'LLM Decision')
+        if final_signal in ['hold', 'neutral']:
+            # DeepSeek Override
+            if ds_signal in ['buy', 'sell'] and ds_score >= 80:
+                final_signal = ds_signal
+                reason = f"[Override] DeepSeek High Confidence ({ds_score})"
             
-        logger.info("Requesting Qwen strategy optimization...")
-        decision = self.qwen_client.optimize_strategy_logic(
-            structure_analysis,
-            market_data,
-            current_positions=valid_positions,
-            performance_stats=performance_stats
+            # Technical Consensus Override
+            tech_list = [crt_res['signal'], pem_res['signal'], adv_sig, ml_res['signal'], smc_res['signal'], mtf_res['signal']]
+            buy_votes = sum(1 for s in tech_list if s == 'buy')
+            sell_votes = sum(1 for s in tech_list if s == 'sell')
+            total_tech = len(tech_list)
+            if total_tech > 0:
+                if buy_votes/total_tech >= 0.7: 
+                    final_signal = "buy"
+                    reason = f"[Override] Tech Consensus Buy ({buy_votes}/{total_tech})"
+                elif sell_votes/total_tech >= 0.7:
+                    final_signal = "sell"
+                    reason = f"[Override] Tech Consensus Sell ({sell_votes}/{total_tech})"
+        
+        # Smart Exit
+        if qw_action == 'close' and final_signal != 'close':
+            final_signal = 'close'
+            reason = f"[Smart Exit] Qwen Profit Taking"
+
+        # Strength Calc
+        strength = 60
+        valid_tech_count = sum(1 for s in tech_list if s != 'neutral')
+        matching_count = sum(1 for s in tech_list if s == final_signal)
+        if valid_tech_count > 0:
+            strength += (matching_count / valid_tech_count) * 40
+        if ds_signal == final_signal: strength = min(100, strength + 10)
+        
+        # Save Analysis
+        self.latest_strategy = strategy
+        self.latest_signal = final_signal
+        
+        # --- Telegram Report ---
+        ds_analysis_text = f"• Market State: {self.escape_markdown(structure.get('market_state', 'N/A'))}\n"
+        ds_analysis_text += f"• Signal: {self.escape_markdown(ds_signal.upper())} (Conf: {ds_score}/100)\n"
+        ds_analysis_text += f"• Prediction: {self.escape_markdown(ds_pred)}\n"
+        ds_analysis_text += f"• Reasoning: {self.escape_markdown(structure.get('reasoning', 'N/A'))}\n"
+        
+        qw_reason = strategy.get('reason', strategy.get('rationale', 'Strategy Optimization'))
+        qw_analysis_text = f"• Action: {self.escape_markdown(qw_action.upper())}\n"
+        qw_analysis_text += f"• Logic: _{self.escape_markdown(qw_reason)}_\n"
+        
+        # Calculate Risk/Lot
+        risk_pct = self.calculate_dynamic_lot(strength, {'smc': smc_res}, ai_signals=technical_signals)
+        suggested_lot_display = f"{risk_pct*100:.1f}% Equity"
+        
+        # SL/TP
+        ref_price = latest['close']
+        exit_conds = strategy.get('exit_conditions', {})
+        opt_sl = exit_conds.get('sl_price')
+        opt_tp = exit_conds.get('tp_price')
+        
+        if not opt_sl or not opt_tp:
+             calc_sl, calc_tp = self.calculate_optimized_sl_tp(final_signal, ref_price, latest.get('atr', 0), market_context=adv_res)
+             if not opt_sl: opt_sl = calc_sl
+             if not opt_tp: opt_tp = calc_tp
+             
+        rr_str = "N/A"
+        if opt_sl and opt_tp:
+             risk = abs(ref_price - opt_sl)
+             reward = abs(opt_tp - ref_price)
+             if risk > 0: rr_str = f"1:{reward/risk:.2f}"
+
+        msg = (
+            f"🤖 *AI Crypto Strategy Report*\n"
+            f"Symbol: `{self.symbol}` | TF: `{self.timeframe}`\n"
+            f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
+            
+            f"🕵️ *DeepSeek Analysis*\n"
+            f"{ds_analysis_text}\n"
+            
+            f"🧙‍♂️ *Qwen Analysis*\n"
+            f"{qw_analysis_text}\n"
+            
+            f"🏆 *Final Result*\n"
+            f"• Decision: *{final_signal.upper()}* (Strength: {strength:.0f}%)\n"
+            f"• Size: `{suggested_lot_display}`\n"
+            f"• Reason: _{self.escape_markdown(reason)}_\n\n"
+            
+            f"🎯 *Setup (OKX)*\n"
+            f"• Entry: `{ref_price:.2f}`\n"
+            f"• SL: `{opt_sl:.2f}`\n"
+            f"• TP: `{opt_tp:.2f}`\n"
+            f"• R:R: `{rr_str}`"
         )
+        self.send_telegram_message(msg)
         
-        # Check if Qwen provided SL/TP, if not, use Optimized Calculation
-        exit_cond = decision.get('exit_conditions', {})
-        if not exit_cond.get('sl_price') or not exit_cond.get('tp_price'):
-            logger.info("Qwen did not provide SL/TP, using Optimized Calculation")
-            trade_dir = "buy"
-            action = decision.get('action', 'hold')
-            if action in ['sell', 'limit_sell']: trade_dir = "sell"
-            
-            atr = latest_data.get('atr', 0)
-            price = latest_data.get('close')
-            
-            market_context = structure_analysis.get('technical_signals', {}).get('ifvg_strategy', {})
-            calc_sl, calc_tp = self.calculate_optimized_sl_tp(trade_dir, price, atr, market_context=market_context)
-            
-            if not exit_cond.get('sl_price'): exit_cond['sl_price'] = calc_sl
-            if not exit_cond.get('tp_price'): exit_cond['tp_price'] = calc_tp
-            
-            decision['exit_conditions'] = exit_cond
+        return df, final_signal, strategy, strength, opt_sl, opt_tp, risk_pct
 
-        # Send Telegram
-        try:
-            sl_price = exit_cond.get('sl_price')
-            tp_price = exit_cond.get('tp_price')
-            action = decision.get('action')
-            
-            display_action = action
-            if action == 'hold' and not valid_positions:
-                display_action = "WAITING FOR MARKET DIRECTION ⏳"
-            
-            ds_signal = structure_analysis.get('preliminary_signal', 'N/A')
-            ds_score = structure_analysis.get('structure_score', 0)
-            hybrid_signal = structure_analysis.get('hybrid_signal', 'N/A')
-            hybrid_score = structure_analysis.get('hybrid_score', 0)
-            
-            msg = (
-                f"🤖 *AI Crypto Strategy Insight*\n"
-                f"Symbol: `{self.symbol}` | TF: `{self.timeframe}`\n"
-                f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
-                
-                f"🧠 *AI Consensus*\n"
-                f"• Decision: *{display_action.upper()}*\n"
-                f"• Qwen Action: `{self.escape_markdown(action)}`\n"
-                f"• Hybrid Signal: `{hybrid_signal}` ({hybrid_score:.2f})\n"
-                f"• DeepSeek: `{ds_signal}` ({ds_score}/100)\n\n"
-                
-                f"📝 *Rationale*: _{self.escape_markdown(decision.get('strategy_rationale'))}_\n\n"
-                
-                f"🎯 *Setup*\n"
-                f"• SL: `{sl_price}`\n"
-                f"• TP: `{tp_price}`\n"
-                f"• Lev: {decision.get('leverage')}x | Size: {float(decision.get('position_size', 0))*100:.1f}%\n\n"
-                
-                f"📊 *Market State*: `{structure_analysis.get('market_state')}`"
-            )
-            self.send_telegram_message(msg)
-        except Exception as e:
-            logger.error(f"Failed to construct telegram: {e}")
-        
-        return decision
-
-    def execute_trade(self, decision):
-        """Execute trade based on decision"""
-        action = decision.get('action')
-        rationale = decision.get('strategy_rationale', 'No rationale provided')
-        
-        # Determine current positions status for logic handling
-        target_pos = None
-        try:
-            positions = self.data_processor.exchange.fetch_positions([self.symbol])
-            if positions:
-                for p in positions:
-                    if float(p['contracts']) > 0:
-                        target_pos = p
-                        break
-        except Exception as e:
-            logger.error(f"Failed to fetch positions during execution: {e}")
-
-        # --- CASE 1: Close Logic (close_buy / close_sell) ---
-        if action in ['close_buy', 'close_sell']:
-            if target_pos:
-                logger.info(f"Executing CLOSE position for {self.symbol} based on AI decision")
-                try:
-                    pos_side = target_pos['side'] # 'long' or 'short'
-                    close_side = 'sell' if pos_side == 'long' else 'buy'
-                    close_amount = float(target_pos['contracts'])
-                    self.data_processor.cancel_all_orders(self.symbol)
-                    order = self.data_processor.create_order(self.symbol, close_side, close_amount, type='market')
-                    if order:
-                        self.send_telegram_message(f"🚫 *Position Closed*\nSymbol: `{self.symbol}`\nReason: AI Signal `{action}`")
-                except Exception as e:
-                    logger.error(f"Failed to close position: {e}")
-            return
-
-        # --- CASE 2: Hold / Update SL/TP Logic ---
-        if action == 'hold':
-            if target_pos:
-                # 策略调整: 恢复 AI 驱动的持仓参数更新逻辑
-                # 但不使用机械式的 Trailing Stop，而是依赖 LLM 的 MFE/MAE 分析给出的新点位
-                
-                exit_conditions = decision.get('exit_conditions', {})
-                new_sl = exit_conditions.get('sl_price')
-                new_tp = exit_conditions.get('tp_price')
-                
-                # 仅当 LLM 给出明确的新 SL/TP 时才更新
-                if new_sl or new_tp:
-                    logger.info(f"AI 更新持仓参数: SL={new_sl}, TP={new_tp}")
-                    pos_side = target_pos['side']
-                    sl_tp_side = 'sell' if pos_side == 'long' else 'buy'
-                    pos_amount = float(target_pos['contracts']) 
-                    
-                    try:
-                        # Crypto 交易所通常需要先取消旧的 SL/TP 挂单，再挂新的
-                        # 注意: 这里的 cancel_all_orders 可能会误伤 Limit 挂单，需谨慎
-                        # 建议只取消相关的 Algo 订单，但为简化逻辑，这里假设主要就是 SL/TP
-                        # 更好的做法是检查现有的 algo orders 并对比价格差异
-                        
-                        self.data_processor.cancel_all_orders(self.symbol)
-                        self.data_processor.place_sl_tp_order(self.symbol, sl_tp_side, pos_amount, sl_price=new_sl, tp_price=new_tp)
-                        self.send_telegram_message(f"🔄 *Updated SL/TP*\nSymbol: `{self.symbol}`\nNew SL: `{new_sl}`\nNew TP: `{new_tp}`")
-                    except Exception as e:
-                        logger.error(f"更新 SL/TP 失败: {e}")
-            return
-
-        # --- CASE 3: Open New Position (buy / sell) ---
-        if target_pos:
-            pos_side = target_pos['side']
-            is_reversal = (action == 'buy' and pos_side == 'short') or (action == 'sell' and pos_side == 'long')
-            
-            if is_reversal:
-                logger.info(f"Reversal signal detected. Closing existing {pos_side} position.")
-                try:
-                    close_side = 'sell' if pos_side == 'long' else 'buy'
-                    close_amount = float(target_pos['contracts'])
-                    self.data_processor.cancel_all_orders(self.symbol)
-                    self.data_processor.create_order(self.symbol, close_side, close_amount, type='market')
-                    self.send_telegram_message(f"🔄 *Position Reversal Initiated*")
-                    time.sleep(1)
-                except Exception as e:
-                    logger.error(f"Failed to close position for reversal: {e}")
-                    return
-            else:
-                # Same direction, update SL/TP if AI provides new ones
-                logger.info(f"Signal {action} matches existing {pos_side} position. Checking for SL/TP updates.")
-                exit_conditions = decision.get('exit_conditions', {})
-                new_sl = exit_conditions.get('sl_price')
-                new_tp = exit_conditions.get('tp_price')
-                
-                if new_sl or new_tp:
-                    sl_tp_side = 'sell' if pos_side == 'long' else 'buy'
-                    pos_amount = float(target_pos['contracts'])
-                    try:
-                        self.data_processor.cancel_all_orders(self.symbol)
-                        self.data_processor.place_sl_tp_order(self.symbol, sl_tp_side, pos_amount, sl_price=new_sl, tp_price=new_tp)
-                        logger.info(f"Updated SL/TP on Add/Hold signal: SL={new_sl}, TP={new_tp}")
-                    except Exception as e:
-                        logger.error(f"Failed to update SL/TP on matching signal: {e}")
-                return
-
-        # Execute New Trade
-        leverage = int(decision.get('leverage', 1))
-        volume_percent = float(decision.get('position_size', 0.0))
-        volume_percent = max(0.0, min(1.0, volume_percent))
-        
-        if volume_percent <= 0: return
-
-        balance = self.data_processor.get_account_balance('USDT')
-        available_usdt = balance['free'] if balance else 0.0
-        target_usdt = available_usdt * volume_percent
-        if volume_percent > 0.95: target_usdt *= 0.99
-        
+    def _send_order(self, type_str, price, sl, tp, volume_pct):
+        """Wrapper for OKX Order with Validation"""
+        # 1. Validation (Invalid Stops)
         current_price = self.data_processor.get_current_price(self.symbol)
         if not current_price: return
         
-        target_position_value = target_usdt * leverage
-        amount_eth = target_position_value / current_price
-        contract_size = self.data_processor.get_contract_size(self.symbol) or 0.1
-        num_contracts = int(amount_eth / contract_size)
+        is_buy = 'buy' in type_str
+        is_sell = 'sell' in type_str
         
-        if num_contracts < 1:
-            logger.warning(f"Calculated contracts < 1. Required margin too high.")
+        # Auto-Correct Invalid Stops
+        if is_buy:
+             if sl > 0 and sl >= current_price: 
+                 logger.warning("Invalid SL for BUY. Removing.")
+                 sl = 0.0
+             if tp > 0 and tp <= current_price:
+                 logger.warning("Invalid TP for BUY. Removing.")
+                 tp = 0.0
+        elif is_sell:
+             if sl > 0 and sl <= current_price:
+                 logger.warning("Invalid SL for SELL. Removing.")
+                 sl = 0.0
+             if tp > 0 and tp >= current_price:
+                 logger.warning("Invalid TP for SELL. Removing.")
+                 tp = 0.0
+                 
+        # 2. Calculate Contracts
+        balance = self.data_processor.get_account_balance('USDT')
+        equity = balance['total'] if balance else 1000.0
+        
+        target_val = equity * volume_pct
+        amount = target_val / current_price
+        # Simple contract size logic, adjust per symbol if needed
+        contract_size = 0.1 if 'ETH' in self.symbol else 0.01 if 'BTC' in self.symbol else 1.0
+        contracts = max(1, int(amount / contract_size))
+        
+        # 3. Execute
+        try:
+            side = 'buy' if is_buy else 'sell'
+            self.data_processor.set_leverage(self.symbol, 5) # Default 5x
+            
+            # Attach Algo (SL/TP)
+            # Use separate method or algo params if supported
+            # Here we place market order then SL/TP
+            
+            order = self.data_processor.create_order(self.symbol, side, contracts, type='market')
+            if order:
+                 logger.info(f"Order Executed: {side} {contracts}")
+                 # Place SL/TP
+                 if sl > 0 or tp > 0:
+                     self.data_processor.place_sl_tp_order(self.symbol, 'sell' if is_buy else 'buy', contracts, sl_price=sl, tp_price=tp)
+        except Exception as e:
+            logger.error(f"Execution Failed: {e}")
+
+    def execute_trade(self, signal, strategy, risk_pct, sl, tp):
+        """Execute trade based on analyzed signal"""
+        # Check current positions
+        positions = []
+        try:
+            raw_pos = self.data_processor.exchange.fetch_positions([self.symbol])
+            positions = [p for p in raw_pos if float(p['contracts']) > 0]
+        except: pass
+        
+        has_pos = len(positions) > 0
+        pos_side = positions[0]['side'] if has_pos else None # 'long' or 'short'
+        
+        # Close Logic
+        if signal == 'close':
+            if has_pos:
+                logger.info("Closing position...")
+                close_side = 'sell' if pos_side == 'long' else 'buy'
+                amt = float(positions[0]['contracts'])
+                self.data_processor.cancel_all_orders(self.symbol)
+                self.data_processor.create_order(self.symbol, close_side, amt, type='market')
+                self.send_telegram_message(f"🚫 *Position Closed* (Smart Exit)")
             return
 
-        # Prepare SL/TP
-        exit_conditions = decision.get('exit_conditions', {})
-        sl_price = exit_conditions.get('sl_price')
-        tp_price = exit_conditions.get('tp_price')
+        # Reversal Logic
+        if has_pos:
+             is_reversal = (signal == 'buy' and pos_side == 'short') or (signal == 'sell' and pos_side == 'long')
+             if is_reversal:
+                 logger.info("Reversal detected. Closing first.")
+                 close_side = 'sell' if pos_side == 'long' else 'buy'
+                 amt = float(positions[0]['contracts'])
+                 self.data_processor.cancel_all_orders(self.symbol)
+                 self.data_processor.create_order(self.symbol, close_side, amt, type='market')
+                 has_pos = False # Now we are flat
         
-        order_params = {}
-        if sl_price or tp_price:
-            algo_order = {'tpTriggerPxType': 'last', 'slTriggerPxType': 'last'}
-            if tp_price: algo_order['tpTriggerPx'] = str(tp_price); algo_order['tpOrdPx'] = '-1'
-            if sl_price: algo_order['slTriggerPx'] = str(sl_price); algo_order['slOrdPx'] = '-1'
-            order_params['attachAlgoOrds'] = [algo_order]
-
-        try:
-            self.data_processor.set_leverage(self.symbol, leverage)
-            
-            order = None
-            if action == 'buy':
-                order = self.data_processor.create_order(self.symbol, 'buy', num_contracts, type='market', params=order_params)
-            elif action == 'sell':
-                order = self.data_processor.create_order(self.symbol, 'sell', num_contracts, type='market', params=order_params)
-            elif action in ['buy_limit', 'limit_buy']:
-                # Check existing limit orders
-                try:
-                    current_orders = self.data_processor.get_open_orders(self.symbol)
-                    for o in current_orders:
-                        # o['side'] is 'buy' or 'sell'
-                        # If we are placing Buy Limit, cancel Sell Limit (Opposite)
-                        if o.get('side') == 'sell':
-                            logger.info(f"Cancelling opposite Sell Limit order {o['id']}")
-                            self.data_processor.exchange.cancel_order(o['id'], self.symbol)
-                except Exception as e:
-                    logger.warning(f"Error checking/cancelling existing orders: {e}")
-
-                lp = decision.get('entry_conditions', {}).get('limit_price')
-                
-                # Auto-fallback if limit price is invalid
-                if not lp or float(lp) <= 0:
-                    logger.warning("LLM suggested Limit Buy but no price provided. Using ATR fallback.")
-                    atr = latest_data.get('atr', 0)
-                    if atr > 0:
-                        lp = current_price - (atr * 0.5)
-                        logger.info(f"Auto-set Limit Buy Price: {lp:.2f}")
-                
-                if lp and float(lp) > 0: 
-                    # Determine Limit vs Stop
-                    if float(lp) > current_price:
-                        # Price > Current = Stop Buy (Breakout)
-                        # OKX uses 'trigger' orders for stop, but 'limit' for standard limit.
-                        # Standard Limit Buy must be < Current Price.
-                        # If we want a Stop Buy, we need a trigger order.
-                        # For simplicity in this bot, we might convert Stop Buy to Market if close, or use trigger.
-                        # Let's assume standard limit for now, and if price > current, we might need to use 'market' or skip.
-                        # Actually, placing a limit buy above market price executes immediately as taker (market).
-                        # So we can just place it.
-                        pass
-                    order = self.data_processor.create_order(self.symbol, 'buy', num_contracts, type='limit', price=lp, params=order_params)
-                    
-            elif action in ['sell_limit', 'limit_sell']:
-                # Check existing limit orders
-                try:
-                    current_orders = self.data_processor.get_open_orders(self.symbol)
-                    for o in current_orders:
-                        # If we are placing Sell Limit, cancel Buy Limit (Opposite)
-                        if o.get('side') == 'buy':
-                            logger.info(f"Cancelling opposite Buy Limit order {o['id']}")
-                            self.data_processor.exchange.cancel_order(o['id'], self.symbol)
-                except Exception as e:
-                    logger.warning(f"Error checking/cancelling existing orders: {e}")
-
-                lp = decision.get('entry_conditions', {}).get('limit_price')
-                
-                # Auto-fallback
-                if not lp or float(lp) <= 0:
-                    logger.warning("LLM suggested Limit Sell but no price provided. Using ATR fallback.")
-                    atr = latest_data.get('atr', 0)
-                    if atr > 0:
-                        lp = current_price + (atr * 0.5)
-                        logger.info(f"Auto-set Limit Sell Price: {lp:.2f}")
-                        
-                if lp and float(lp) > 0: 
-                    order = self.data_processor.create_order(self.symbol, 'sell', num_contracts, type='limit', price=lp, params=order_params)
-            
-            if order:
-                trade_record = {
-                    'symbol': self.symbol, 'action': action, 'order_type': 'limit' if 'limit' in action else 'market',
-                    'contracts': num_contracts, 'price': current_price, 'leverage': leverage,
-                    'order_id': order.get('id'), 'strategy_rationale': rationale
-                }
-                self.db_manager.log_trade(trade_record)
-                
-                exec_msg = (
-                    f"✅ *Trade Executed*\nAction: `{action.upper()}`\nSymbol: `{self.symbol}`\n"
-                    f"Contracts: `{num_contracts}`\nPrice: `{trade_record['price']}`\nLeverage: `{leverage}x`"
-                )
-                self.send_telegram_message(exec_msg)
-                
-        except Exception as e:
-            logger.error(f"Failed to execute trade: {e}")
+        # Open/Add Logic
+        if signal in ['buy', 'sell']:
+             if not has_pos:
+                 logger.info(f"Opening New Position: {signal.upper()}")
+                 self._send_order(signal, 0, sl, tp, risk_pct)
+             else:
+                 # Update SL/TP for existing
+                 logger.info("Updating SL/TP for existing position")
+                 if sl > 0 or tp > 0:
+                     amt = float(positions[0]['contracts'])
+                     self.data_processor.cancel_all_orders(self.symbol) # Cancel old SL/TP
+                     sl_side = 'sell' if pos_side == 'long' else 'buy'
+                     self.data_processor.place_sl_tp_order(self.symbol, sl_side, amt, sl_price=sl, tp_price=tp)
 
     def run_once(self):
-        """Run a single trading cycle"""
         try:
-            logger.info("Starting trading cycle...")
-            df, analysis = self.analyze_market()
-            
-            if df is not None and analysis is not None:
-                decision = self.make_decision(df, analysis)
-                if decision:
-                    self.execute_trade(decision)
-            
-            # Perform DB Checkpoint
+            df, signal, strategy, strength, sl, tp, risk = self.analyze_market()
+            if signal:
+                self.execute_trade(signal, strategy, risk, sl, tp)
             self.db_manager.perform_checkpoint()
-            
-            logger.info("Trading cycle completed")
-            
         except Exception as e:
-            logger.error(f"Error in trading cycle: {e}", exc_info=True)
+            logger.error(f"Cycle Error: {e}", exc_info=True)
 
     def start(self):
-        """Start the bot loop"""
         self.is_running = True
-        logger.info(f"Starting bot for {self.symbol} with {self.interval}s interval")
-        
+        self.sync_account_history() # Sync on start
+        logger.info(f"Bot started for {self.symbol}")
         while self.is_running:
             self.run_once()
-            logger.info(f"Waiting {self.interval} seconds before next analysis...")
             time.sleep(self.interval)
 
 if __name__ == "__main__":
