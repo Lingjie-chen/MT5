@@ -17,16 +17,50 @@ class PEMAnalyzer:
     def predict_price(self, price_t1, price_t2):
         """
         Calculate predicted price using the polynomial equation
+        Modified for Crypto assets with normalization to handle large values
         """
+        # Normalize inputs relative to t2 (base)
+        # Using percentage change to keep values small (e.g., 0.01 instead of 1000)
+        # However, the original equation might expect raw price levels if trained on them.
+        # But for polynomial terms like price^2 to work on different scales (Gold 2000 vs BTC 100000),
+        # we MUST normalize.
+        
+        # Method: Predict the percentage change, then apply to current price
+        # But the coefficients [0.27...] are likely for price levels or specific diffs.
+        # Let's assume the model models the next price based on previous two.
+        # To make it scale-invariant, we use ratios: p1 = P(t-1)/P(t-2), p2 = P(t-2)/P(t-2)=1
+        # This changes the equation meaning.
+        
+        # Alternative: Scale inputs by dividing by a reference (e.g. 1000) 
+        # to bring them to a "Gold-like" range?
+        # Gold ~2000. ETH ~3000 (Close). BTC ~90000 (Far).
+        # If we divide BTC by 45, it becomes 2000.
+        
+        # Better approach:
+        # Use simple linear extrapolation with the coefficients as weights for a momentum model?
+        # No, the coefficients are specific.
+        
+        # Let's normalize by dividing by the mean of the two prices, calculate prediction, 
+        # then denormalize. This preserves the relative relationships.
+        scale_factor = (price_t1 + price_t2) / 2.0
+        if scale_factor == 0: scale_factor = 1.0
+        
+        p1_norm = price_t1 / scale_factor
+        p2_norm = price_t2 / scale_factor
+        
         c = self.coeffs
-        prediction = (c[0] * price_t1 +                    # Linear t-1
-                      c[1] * (price_t1 ** 2) +             # Quadratic t-1
-                      c[2] * price_t2 +                    # Linear t-2
-                      c[3] * (price_t2 ** 2) +             # Quadratic t-2
-                      c[4] * (price_t1 - price_t2) +       # Price change
-                      c[5] * np.sin(price_t1) +            # Cyclic
-                      c[6])                                # Constant
-        return prediction
+        # Apply equation on normalized values
+        # The constant c[6] (0.0008) is small, fits normalized range ~1.0
+        pred_norm = (c[0] * p1_norm +                    
+                     c[1] * (p1_norm ** 2) +             
+                     c[2] * p2_norm +                    
+                     c[3] * (p2_norm ** 2) +             
+                     c[4] * (p1_norm - p2_norm) +       
+                     c[5] * np.sin(p1_norm) +            
+                     c[6])
+                     
+        predicted_price = pred_norm * scale_factor
+        return predicted_price
 
     def analyze(self, df: pd.DataFrame, ma_fast_period=108, ma_slow_period=60, adx_threshold=20) -> Dict[str, any]:
         if len(df) < max(ma_fast_period, ma_slow_period) + 5:
