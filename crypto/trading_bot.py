@@ -624,7 +624,8 @@ class CryptoTradingBot:
         # 3. Optimize
         bounds = [(10, 50), (10, 30), (10, 100)]
         # Increased steps/epochs for better convergence
-        best_params, best_score = self.optimizers['WOAm'].optimize(objective, bounds, steps=15, epochs=3)
+        # steps=[1, 1, 1] ensures integer steps for the 3 parameters
+        best_params, best_score = self.optimizers['WOAm'].optimize(objective, bounds, steps=[1, 1, 1], epochs=3)
         
         self.short_term_params['rvgi_sma'] = int(best_params[0])
         self.short_term_params['rvgi_cci'] = int(best_params[1])
@@ -674,7 +675,7 @@ class CryptoTradingBot:
 
         # 3. Optimize
         bounds = [(0.0, 2.0) for _ in range(len(strategy_keys))]
-        best_weights, best_score = self.optimizers['WOAm'].optimize(objective, bounds, steps=15, epochs=3)
+        best_weights, best_score = self.optimizers['WOAm'].optimize(objective, bounds, steps=None, epochs=3)
         
         # 4. Apply
         if best_score > 0.4: # Only update if decent accuracy
