@@ -215,8 +215,12 @@ class DatabaseManager:
             cursor = conn.cursor()
             count = 0
             for t in trades:
+                # CCXT unified trade structure usually has 'id' as order id
+                order_id = t.get('id') or t.get('order_id') or t.get('orderId')
+                if not order_id: continue
+                
                 # Check if exists
-                cursor.execute("SELECT id FROM trades WHERE order_id = ?", (t['order_id'],))
+                cursor.execute("SELECT id FROM trades WHERE order_id = ?", (str(order_id),))
                 if cursor.fetchone():
                     continue
                     
@@ -230,10 +234,10 @@ class DatabaseManager:
                     t.get('amount'),
                     t.get('price'),
                     t.get('timestamp'), # Ensure datetime string or timestamp
-                    t.get('order_id'),
-                    t.get('profit'),
-                    t.get('mfe', 0),
-                    t.get('mae', 0)
+                    str(order_id),
+                    t.get('info', {}).get('profit', 0) if t.get('info') else 0, # CCXT info often has raw exchange data
+                    0, # mfe
+                    0  # mae
                 ))
                 count += 1
             conn.commit()
