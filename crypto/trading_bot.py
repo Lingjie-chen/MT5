@@ -323,6 +323,14 @@ class CryptoTradingBot:
         # --- Advanced Analysis ---
         current_time = latest.name.timestamp() if hasattr(latest.name, 'timestamp') else time.time()
         
+        # Fetch HTF Data for CRT/MTF
+        df_htf1 = self.data_processor.get_historical_data(self.symbol, '1h', limit=200)
+        df_htf2 = self.data_processor.get_historical_data(self.symbol, '4h', limit=200)
+        
+        # Fallback if HTF data unavailable
+        if df_htf1 is None or df_htf1.empty: df_htf1 = df.copy()
+        if df_htf2 is None or df_htf2.empty: df_htf2 = df.copy()
+
         # Run Optimizations (Real-time Param Config)
         if time.time() - self.last_optimization_time > self.optimization_interval:
             self.optimize_short_term_params()
