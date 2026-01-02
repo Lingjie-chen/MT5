@@ -191,6 +191,54 @@ class KalmanGridStrategy:
             
         return self.lot * multiplier
 
+    def update_config(self, params):
+        """
+        Dynamically update strategy parameters from LLM/Optimizer.
+        params: dict containing config keys
+        """
+        if not params:
+            return
+
+        if 'grid_step_points' in params:
+            self.grid_step_points = int(params['grid_step_points'])
+            logger.info(f"Updated Grid Step: {self.grid_step_points}")
+            
+        if 'max_grid_steps' in params:
+            self.max_grid_steps = int(params['max_grid_steps'])
+            
+        if 'lot_type' in params:
+            if params['lot_type'] in ['FIXED', 'ARITHMETIC', 'GEOMETRIC']:
+                self.lot_type = params['lot_type']
+                
+        if 'tp_steps' in params and isinstance(params['tp_steps'], dict):
+            # Convert string keys to int if necessary
+            new_steps = {}
+            for k, v in params['tp_steps'].items():
+                try:
+                    new_steps[int(k)] = float(v)
+                except:
+                    pass
+            if new_steps:
+                self.tp_steps.update(new_steps)
+                logger.info(f"Updated TP Steps: {new_steps}")
+                
+        if 'global_tp' in params:
+            self.global_tp = float(params['global_tp'])
+            
+    def get_config(self):
+        """Return current configuration state for LLM context"""
+        return {
+            "grid_step_points": self.grid_step_points,
+            "max_grid_steps": self.max_grid_steps,
+            "lot_type": self.lot_type,
+            "tp_steps": self.tp_steps,
+            "global_tp": self.global_tp,
+            "kalman_variance": {
+                "measurement": self.kalman_measurement_variance,
+                "process": self.kalman_process_variance
+            }
+        }
+
     def _update_positions_state(self, positions):
         """
         Update internal state about last prices and counts.

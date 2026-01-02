@@ -2478,7 +2478,11 @@ class AI_MT5_Bot:
                             "advanced_tech": adv_signal,
                             "matrix_ml": ml_result['signal'],
                             "smc": smc_result['signal'],
-                            "grid_strategy": grid_signal,
+                            "grid_strategy": {
+                                "signal": grid_signal,
+                                "status": grid_status,
+                                "config": self.grid_strategy.get_config() # 传入当前 Grid 配置供优化
+                            },
                             "mfh": mfh_result['signal'],
                             "mtf": mtf_result['signal'], 
                             "deepseek_analysis": { # 传入完整的 DeepSeek 分析结果
@@ -2533,6 +2537,10 @@ class AI_MT5_Bot:
                                     # 4. Matrix ML 参数 (如需)
                                     if 'matrix_ml_learning_rate' in param_updates:
                                          self.matrix_ml.learning_rate = float(param_updates['matrix_ml_learning_rate'])
+
+                                    # 5. Grid Strategy 参数动态更新 (新增)
+                                    if 'grid_settings' in param_updates:
+                                        self.grid_strategy.update_config(param_updates['grid_settings'])
                                          
                                 except Exception as e:
                                     logger.error(f"参数动态更新失败: {e}")
