@@ -2438,6 +2438,7 @@ class AI_MT5_Bot:
                             "mtf": mtf_result,
                             "ifvg": ifvg_result,
                             "rvgi_cci": rvgi_cci_result,
+                            "grid_strategy": {"signal": grid_signal, "status": grid_status},
                             "optimization_status": optimization_status # 新增: 当前参数状态
                         }
                         
@@ -2477,6 +2478,7 @@ class AI_MT5_Bot:
                             "advanced_tech": adv_signal,
                             "matrix_ml": ml_result['signal'],
                             "smc": smc_result['signal'],
+                            "grid_strategy": grid_signal,
                             "mfh": mfh_result['signal'],
                             "mtf": mtf_result['signal'], 
                             "deepseek_analysis": { # 传入完整的 DeepSeek 分析结果
