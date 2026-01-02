@@ -274,8 +274,10 @@ class QwenClient:
         5. 风险管理建议：针对当前市场状态的风险控制措施。
         6. **参数自适应优化建议 (Parameter Optimization)**: 
            - 请分析当前市场状态 (波动率、趋势强度)，并评估现有算法参数的适用性。
-           - 给出针对 SMC, MFH, MatrixML 或 Optimization Algorithm (GWO/WOAm/etc) 的具体参数调整建议。
+           - 给出针对 SMC, MFH, MatrixML, Grid Strategy 或 Optimization Algorithm (GWO/WOAm/etc) 的具体参数调整建议。
            - 例如: "SMC ATR 阈值过低，建议提高到 0.003 以过滤噪音" 或 "建议切换到 DE 优化器以增加探索能力"。
+           - **Grid Strategy 参数**: 请根据市场波动率调整 `grid_step_points` (例如高波动时增大间距) 和 `max_grid_steps`。如果建议启用网格加仓，请设置 `allow_add` 为 true。
+
         7. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 SMC 信号的解读、MFE/MAE 数据的分析以及为何选择该 SL/TP 点位**。
         
         请以JSON格式返回结果，包含以下字段：
@@ -286,7 +288,8 @@ class QwenClient:
         - position_size: float
         - signal_strength: int
         - risk_management: dict
-        - parameter_updates: dict (包含 "smc_atr_threshold": float, "mfh_learning_rate": float, "active_optimizer": str (GWO/WOAm/DE/COAm/BBO/TETA), "reason": str)
+        - parameter_updates: dict (包含 "smc_atr_threshold": float, "mfh_learning_rate": float, "active_optimizer": str (GWO/WOAm/DE/COAm/BBO/TETA), "grid_settings": dict, "reason": str)
+            - **grid_settings**: dict (包含 "grid_step_points": int, "max_grid_steps": int, "allow_add": bool, "lot_type": str, "tp_steps": dict)
         - strategy_rationale: str (中文)
         """
         

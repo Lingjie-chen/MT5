@@ -1047,9 +1047,17 @@ class AI_MT5_Bot:
                     self.close_position(pos, comment="Grid Basket TP")
             return
 
-        # 2. Check Grid Add
+        # 2. Check Grid Add (Only if allowed by LLM)
+        # 增加 LLM 权限控制: 默认允许，但如果 LLM 明确禁止 (allow_grid=False)，则暂停加仓
+        allow_grid = True
+        if self.latest_strategy and isinstance(self.latest_strategy, dict):
+            # 检查是否有 'grid_settings' 且其中有 'allow_add'
+            grid_settings = self.latest_strategy.get('parameter_updates', {}).get('grid_settings', {})
+            if 'allow_add' in grid_settings:
+                allow_grid = bool(grid_settings['allow_add'])
+        
         tick = mt5.symbol_info_tick(self.symbol)
-        if tick:
+        if tick and allow_grid:
             current_price_check = tick.bid # Use Bid for price check approximation
             action, lot = self.grid_strategy.check_grid_add(positions, current_price_check)
             if action:
