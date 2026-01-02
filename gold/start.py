@@ -1654,6 +1654,8 @@ class AI_MT5_Bot:
             p_rvgi_sma = int(best_params[7])
             p_rvgi_cci = int(best_params[8])
             p_ifvg_gap = int(best_params[9])
+            p_grid_step = int(best_params[10])
+            p_grid_tp = float(best_params[11])
             
             # Apply
             self.smc_analyzer.ma_period = p_smc_ma
@@ -1674,6 +1676,10 @@ class AI_MT5_Bot:
                 'rvgi_cci': p_rvgi_cci,
                 'ifvg_gap': p_ifvg_gap
             }
+
+            # Apply Grid Params
+            self.grid_strategy.grid_step_points = p_grid_step
+            self.grid_strategy.global_tp = p_grid_tp
             
             msg = (
                 f"🧬 *Comprehensive Optimization ({algo_name})*\n"
@@ -1681,7 +1687,8 @@ class AI_MT5_Bot:
                 f"• SMC: MA={p_smc_ma}, ATR={p_smc_atr:.4f}\n"
                 f"• MFH: LR={p_mfh_lr:.3f}, H={p_mfh_horizon}\n"
                 f"• PEM: Fast={p_pem_fast}, Slow={p_pem_slow}, ADX={p_pem_adx:.1f}\n"
-                f"• ST: RVGI({p_rvgi_sma},{p_rvgi_cci}), IFVG({p_ifvg_gap})"
+                f"• ST: RVGI({p_rvgi_sma},{p_rvgi_cci}), IFVG({p_ifvg_gap})\n"
+                f"• Grid: Step={p_grid_step}, GlobalTP={p_grid_tp:.1f}"
             )
             self.send_telegram_message(msg)
             logger.info(f"已更新所有策略参数: {msg}")
