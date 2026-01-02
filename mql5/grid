@@ -1,0 +1,1195 @@
+//+------------------------------------------------------------------+
+//|                                              KalmanGridTrader.mq4 |
+//|                        Copyright 2023, MetaQuotes Software Corp. |
+//|                                             https://www.mql5.com |
+//+------------------------------------------------------------------+
+#define pdxversion "2.11"
+#property copyright "Klymenko Roman (needtome@icloud.com) / Optimized by AI"
+#property link      "https://www.mql5.com/en/users/needtome"
+#property version   pdxversion
+#property strict
+#property description "Advanced EA combining Kalman Filter for trend prediction with grid trading system"
+#property description "Uses Bollinger Bands and Moving Average as additional confirmation signals"
+
+#include <Trade/Trade.mqh>
+CTrade Trade;
+
+enum TypeOfPos
+  {
+   MY_BUY,
+   MY_SELL,
+   MY_BUYSTOP,
+   MY_BUYLIMIT,
+   MY_SELLSTOP,
+   MY_SELLLIMIT,
+   MY_BUYSLTP,
+   MY_SELLSLTP,
+   MY_ALLPOS,
+  }; 
+enum TypeOfLang{
+   MY_ENG, // English
+   MY_RUS, // Русский
+};
+enum TypeOfLots //Lots Mode
+  {
+   MY_FIXED,//Fixed
+   MY_ARIFMET,// Arifmet
+   MY_GEOMET,// Geomet
+  };
+enum TypeOfSeries //Series Mode
+  {
+   MY_SERIES_PLUS,// Following the series
+   MY_SERIES_MINUS,// Against the series
+  };
+enum TypeOfFilling // Filling Mode
+  {
+   FOK,//ORDER_FILLING_FOK
+   RETURN,// ORDER_FILLING_RETURN
+   IOC,//ORDER_FILLING_IOC
+  }; 
+enum TrendFilter
+  {
+   FILTER_NONE,     // No trend filter
+   FILTER_MA,       // Moving Average filter
+   FILTER_KALMAN,   // Kalman filter
+   FILTER_BOTH      // Both MA and Kalman filters
+  };
+enum TradeDirection
+  {
+   TRADE_BOTH,      // Trade in both directions
+   TRADE_LONG_ONLY, // Only long positions
+   TRADE_SHORT_ONLY // Only short positions
+  };
+
+//--- Input parameters
+input int         EA_Magic=345;                      // Magic number
+input string      my_cmt="KalmanGridTrader";         // Comment
+input double      Lot=0.01;                           // Initial Lot size
+input TypeOfLots  typeLot=MY_GEOMET;                  // Increasing a lot in a chain
+input int         gridStep=30;                        // Grid size in points
+input uint        gridStepCount=0;                    // Maximum steps in chain (0 - unlimited)
+input bool        noGLong=false;                      // Do not open Long positions
+input bool        noGShort=false;                     // Do not open Short positions
+
+sinput string     delimeter_02="";                    // --- Closing all positions
+input double      takeProfit=100;                       // Profit to close all positions, $
+input double      takeProfit1step=3;                  // Profit at step 1, $
+input double      takeProfit2step=6;                  // Profit at step 2, $
+input double      takeProfit3step=10;                  // Profit at step 3, $
+input double      takeProfit4step=15;                  // Profit at step 4, $
+input double      takeProfit5step=25;                  // Profit at step 5, $
+input double      takeProfit6step=35;                  // Profit at step 6, $
+input double      takeProfit7step=45;                  // Profit at step 7, $
+input double      takeProfit8step=55;                  // Profit at step 8, $
+input double      takeProfit9step=65;                  // Profit at step 9, $
+input uint        gridStepCountClose=0;               // Close all at trade number
+input bool        useEquityProtection=true;           // Use equity protection
+input double      equityLess=0;                       // Close all if equity decreased by, $
+
+//--- Trend filter parameters
+input TrendFilter trendFilter=FILTER_KALMAN;         // Trend filter type
+input TradeDirection tradeDirection=TRADE_BOTH;      // Trading direction
+input int         MA_PERIOD=200;                     // MA Period
+input    ENUM_TIMEFRAMES   MA_Timeframe=PERIOD_M5;    // MA Timeframe
+
+//--- Kalman filter parameters
+input double      kalmanMeasurementVariance=10.0;    // Kalman measurement variance
+input double      kalmanProcessVariance=1.0;         // Kalman process variance
+
+//--- Bollinger Bands parameters
+input int         bbPeriod=100;                       // Bollinger Bands period
+input double      bbDeviation=2.0;                    // Bollinger Bands deviation
+
+//--- Bar analysis parameters
+sinput string     delimeter_07="";                    // --- In bar direction
+input bool        BARS_enabled=false;                // Use entry by bar only
+input    ENUM_TIMEFRAMES   BARS_Timeframe=PERIOD_D1;  // Timeframe for bar analysis
+
+sinput string     delimeter_08="";                    // --- Bar series
+input int         SERIES_count=0;                    // Enter if N bars in one direction
+input TypeOfSeries SERIES_type=MY_SERIES_PLUS;        // Entry direction
+input    ENUM_TIMEFRAMES   SERIES_Timeframe=PERIOD_M15; // Timeframe for series
+
+//--- Risk management
+sinput string     delimeter_09="";                    // --- Risk management
+input bool        useStopLoss=true;                   // Use stop loss
+input double      stopLossPercent=1.0;               // Stop loss percentage
+input bool        useTrailingStop=true;               // Use trailing stop
+input double      trailingStopPoints=50;             // Trailing stop distance in points
+input int         minStopDistance=10;                // Minimum stop distance from current price (points)
+
+//--- Other settings
+sinput string     delimeter_12="";                    // --- Other
+input TypeOfLang  LANG=MY_ENG;                       // Language
+input TypeOfFilling  orderFillingMode=FOK;           // Order filling mode
+input bool        showPanel=true;                    // Show information panel
+
+//--- Global variables
+MqlTick lastme;
+uint LongPos=0;
+uint ShortPos=0;
+double LongVol=0;
+double ShortVol=0;
+string prefix_graph="KalmanGrid_";
+double curLot;
+int maHandle;
+int bbHandle;
+double prev_state;          // Previous estimated price (Kalman)
+double prev_covariance = 1; // Previous covariance (uncertainty) (Kalman)
+datetime Old_Time=0;
+double LastLong=0;
+double LastShort=0;
+bool noLong=false;
+bool noShort=false;
+double bbUpper[], bbLower[], bbMiddle[]; // Bollinger Bands buffers
+double maBuffer[];           // MA buffer
+double kalmanValue=0;        // Current Kalman filter value
+datetime lastBarTime=0;      // Time of last processed bar
+
+//--- Error messages structure
+struct translate{
+   string err1;
+   string err2;
+   string err3;
+   string err4;
+   string err5;
+   string err6;
+   string err7;
+   string err8;
+   string err9;
+   string err64;
+   string err65;
+   string err128;
+   string err129;
+   string err130;
+   string err131;
+   string err132;
+   string err133;
+   string err134;
+   string err135;
+   string err136;
+   string err137;
+   string err138;
+   string err139;
+   string err140;
+   string err141;
+   string err145;
+   string err146;
+   string err147;
+   string err148;
+   string err0;
+   string retcode;
+   string retcode10004;
+   string retcode10006;
+   string retcode10007;
+   string retcode10010;
+   string retcode10011;
+   string retcode10012;
+   string retcode10013;
+   string retcode10014;
+   string retcode10015;
+   string retcode10016;
+   string retcode10017;
+   string retcode10018;
+   string retcode10019;
+   string retcode10020;
+   string retcode10021;
+   string retcode10022;
+   string retcode10023;
+   string retcode10024;
+   string retcode10025;
+   string retcode10026;
+   string retcode10027;
+   string retcode10028;
+   string retcode10029;
+   string retcode10030;
+   string retcode10031;
+   string retcode10032;
+   string retcode10033;
+   string retcode10034;
+   string retcode10035;
+   string retcode10036;
+   string retcode10038;
+   string retcode10039;
+   string retcode10040;
+   string retcode10041;
+   string retcode10042;
+   string retcode10043;
+   string retcode10044;
+};
+translate langs;
+
+//+------------------------------------------------------------------+
+//| Expert initialization function                                   |
+//+------------------------------------------------------------------+
+int OnInit()
+  {
+   //--- Initialize language
+   init_lang();
+   
+   //--- Set trade parameters
+   Trade.SetExpertMagicNumber(EA_Magic);
+   Trade.SetMarginMode();
+   Trade.SetTypeFilling((ENUM_ORDER_TYPE_FILLING)orderFillingMode);
+   
+   //--- Initialize Kalman filter with current price
+   MqlTick tick;
+   SymbolInfoTick(_Symbol, tick);
+   prev_state = tick.last;
+   
+   //--- Create indicator handles
+   maHandle = iMA(_Symbol, MA_Timeframe, MA_PERIOD, 0, MODE_SMA, PRICE_CLOSE);
+   bbHandle = iBands(_Symbol, PERIOD_CURRENT, bbPeriod, 0, bbDeviation, PRICE_CLOSE);
+   
+   //--- Check if trading is allowed
+   if(!MQLInfoInteger(MQL_TRADE_ALLOWED)){
+      Comment("Expert Advisor not allowed to trade! ("+(string) EA_Magic+")");
+      return(INIT_FAILED);
+   }
+   
+   //--- Check symbol availability
+   if(!SymbolInfoInteger(_Symbol, SYMBOL_TRADE_MODE)){
+      Comment("Symbol ", _Symbol, " is not available for trading!");
+      return(INIT_FAILED);
+   }
+   
+   //--- Print initialization info
+   Print("KalmanGridTrader initialized. Version: ", pdxversion);
+   Print("Magic number: ", EA_Magic);
+   Print("Initial lot size: ", Lot);
+   Print("Grid step: ", gridStep, " points");
+   
+   return(INIT_SUCCEEDED);
+  }
+//+------------------------------------------------------------------+
+//| Expert deinitialization function                                 |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+  {
+   //--- Delete graphical objects
+   ObjectsDeleteAll(0, prefix_graph);
+   
+   //--- Release indicator handles
+   if(maHandle != INVALID_HANDLE) IndicatorRelease(maHandle);
+   if(bbHandle != INVALID_HANDLE) IndicatorRelease(bbHandle);
+   
+   //--- Clear comment
+   Comment("");
+  }
+//+------------------------------------------------------------------+
+//| Expert tick function                                             |
+//+------------------------------------------------------------------+
+void OnTick()
+  {
+   //--- Check for new bar on current timeframe
+   if(!isNewBar()) return;
+   
+   //--- Update price information
+   SymbolInfoTick(_Symbol, lastme);
+   if(lastme.bid == 0) return;
+   
+   //--- Update indicator values
+   updateIndicators();
+   
+   //--- Check equity protection
+   if(useEquityProtection && equityLess > 0 && AccountInfoDouble(ACCOUNT_BALANCE) - AccountInfoDouble(ACCOUNT_EQUITY) >= equityLess)
+      closeAllPos();
+      
+   //--- Check take profit condition
+   if(checkTakeProfit()) closeAllPos();
+   
+   //--- Apply trailing stop if needed
+   if(useTrailingStop) applyTrailingStop();
+   
+   //--- Get position information
+   getPositionsInfo();
+   
+   //--- Check trading direction filters
+   checkTradeDirection();
+   
+   //--- Main trading logic
+   managePositions();
+   
+   //--- Update information panel
+   if(showPanel) updateInfoPanel();
+  }
+//+------------------------------------------------------------------+
+//| Check if new bar appeared                                        |
+//+------------------------------------------------------------------+
+bool isNewBar()
+  {
+   datetime newTime[];
+   if(CopyTime(_Symbol, PERIOD_CURRENT, 0, 1, newTime) != 1)
+      return false;
+      
+   if(lastBarTime != newTime[0])
+     {
+      lastBarTime = newTime[0];
+      return true;
+     }
+   return false;
+  }
+//+------------------------------------------------------------------+
+//| Update indicator values                                          |
+//+------------------------------------------------------------------+
+void updateIndicators()
+  {
+   //--- Update Kalman filter value
+   kalmanValue = KalmanFilter(lastme.bid, kalmanMeasurementVariance, kalmanProcessVariance);
+   
+   //--- Update Bollinger Bands values
+   if(CopyBuffer(bbHandle, UPPER_BAND, 0, 1, bbUpper) != 1) return;
+   if(CopyBuffer(bbHandle, LOWER_BAND, 0, 1, bbLower) != 1) return;
+   if(CopyBuffer(bbHandle, BASE_LINE, 0, 1, bbMiddle) != 1) return;
+   
+   //--- Update Moving Average values
+   if(CopyBuffer(maHandle, 0, 0, 1, maBuffer) != 1) return;
+  }
+//+------------------------------------------------------------------+
+//| Kalman Filter Function                                           |
+//+------------------------------------------------------------------+
+double KalmanFilter(double price, double measurement_variance, double process_variance)
+  {
+   // Prediction step (state does not change)
+   double predicted_state = prev_state;
+   double predicted_covariance = prev_covariance + process_variance;
+   
+   // Kalman gain calculation
+   double kalman_gain = predicted_covariance / (predicted_covariance + measurement_variance);
+   
+   // Update step (incorporate new price observation)
+   double updated_state = predicted_state + kalman_gain * (price - predicted_state);
+   double updated_covariance = (1 - kalman_gain) * predicted_covariance;
+   
+   // Store updated values for next iteration
+   prev_state = updated_state;
+   prev_covariance = updated_covariance;
+   
+   return updated_state;
+  }
+//+------------------------------------------------------------------+
+//| Check trading direction based on filters                        |
+//+------------------------------------------------------------------+
+void checkTradeDirection()
+  {
+   noLong = noGLong;
+   noShort = noGShort;
+   
+   //--- Apply trend filter
+   switch(trendFilter)
+     {
+      case FILTER_MA:
+         if(maBuffer[0] > lastme.bid) noLong = true;
+         if(maBuffer[0] < lastme.bid) noShort = true;
+         break;
+         
+      case FILTER_KALMAN:
+         if(kalmanValue > lastme.bid) noShort = true;
+         if(kalmanValue < lastme.bid) noLong = true;
+         break;
+         
+      case FILTER_BOTH:
+         {
+            bool maBullish = (maBuffer[0] < lastme.bid);
+            bool kalmanBullish = (kalmanValue < lastme.bid);
+            
+            if(maBullish && kalmanBullish) noShort = true;
+            if(!maBullish && !kalmanBullish) noLong = true;
+         }
+         break;
+         
+      case FILTER_NONE:
+         break;
+     }
+   
+   //--- Apply trade direction setting
+   switch(tradeDirection)
+     {
+      case TRADE_LONG_ONLY:
+         noShort = true;
+         break;
+         
+      case TRADE_SHORT_ONLY:
+         noLong = true;
+         break;
+         
+      case TRADE_BOTH:
+         break;
+     }
+   
+   //--- Check bar direction filter
+   if(BARS_enabled)
+      checkBarDirection();
+   
+   //--- Check series direction filter
+   if(SERIES_count > 0)
+      checkSeriesDirection();
+  }
+//+------------------------------------------------------------------+
+//| Check bar direction filter                                       |
+//+------------------------------------------------------------------+
+void checkBarDirection()
+  {
+   MqlRates rates[];
+   ArraySetAsSeries(rates, true);
+   
+   if(CopyRates(_Symbol, BARS_Timeframe, 1, 1, rates) == 1)
+     {
+      bool isBullishBar = (rates[0].close > rates[0].open);
+      
+      if(isBullishBar)
+         noShort = true;
+      else
+         noLong = true;
+     }
+  }
+//+------------------------------------------------------------------+
+//| Check series direction filter                                    |
+//+------------------------------------------------------------------+
+void checkSeriesDirection()
+  {
+   MqlRates rates[];
+   ArraySetAsSeries(rates, true);
+   
+   if(CopyRates(_Symbol, SERIES_Timeframe, 1, SERIES_count, rates) == SERIES_count)
+     {
+      bool validSeries = true;
+      
+      for(int i = 0; i < SERIES_count; i++)
+        {
+         bool isBullish = (rates[i].close > rates[i].open);
+         
+         if(SERIES_type == MY_SERIES_PLUS && !isBullish)
+           {
+            validSeries = false;
+            break;
+           }
+         
+         if(SERIES_type == MY_SERIES_MINUS && isBullish)
+           {
+            validSeries = false;
+            break;
+           }
+        }
+      
+      if(!validSeries)
+        {
+         noLong = true;
+         noShort = true;
+        }
+     }
+  }
+//+------------------------------------------------------------------+
+//| Get current positions information                                |
+//+------------------------------------------------------------------+
+void getPositionsInfo()
+  {
+   LongPos = 0;
+   ShortPos = 0;
+   LongVol = 0;
+   ShortVol = 0;
+   LastLong = 0;
+   LastShort = 0;
+   datetime lastLongTime = 0;
+   datetime lastShortTime = 0;
+   
+   for(int i = PositionsTotal()-1; i >= 0; i--)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(PositionSelectByTicket(ticket))
+        {
+         if(PositionGetInteger(POSITION_MAGIC) != EA_Magic || PositionGetString(POSITION_SYMBOL) != _Symbol)
+            continue;
+            
+         double volume = PositionGetDouble(POSITION_VOLUME);
+         datetime openTime = (datetime)PositionGetInteger(POSITION_TIME);
+         double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+         
+         if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
+           {
+            LongPos++;
+            LongVol += volume;
+            
+            if(openTime > lastLongTime)
+              {
+               lastLongTime = openTime;
+               LastLong = openPrice;
+              }
+           }
+         else if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL)
+           {
+            ShortPos++;
+            ShortVol += volume;
+            
+            if(openTime > lastShortTime)
+              {
+               lastShortTime = openTime;
+               LastShort = openPrice;
+              }
+           }
+        }
+     }
+  }
+//+------------------------------------------------------------------+
+//| Apply trailing stop to positions                                 |
+//+------------------------------------------------------------------+
+void applyTrailingStop()
+  {
+   if(!useTrailingStop || trailingStopPoints <= 0) return;
+   
+   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   double trailingDistance = trailingStopPoints * point;
+   double minStopDistancePoints = minStopDistance * point;
+   
+   for(int i = PositionsTotal()-1; i >= 0; i--)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(PositionSelectByTicket(ticket))
+        {
+         if(PositionGetInteger(POSITION_MAGIC) != EA_Magic || PositionGetString(POSITION_SYMBOL) != _Symbol)
+            continue;
+            
+         double currentStopLoss = PositionGetDouble(POSITION_SL);
+         double currentTakeProfit = PositionGetDouble(POSITION_TP);
+         double currentPrice = PositionGetDouble(POSITION_PRICE_CURRENT);
+         double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+         
+         // For buy positions
+         if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
+           {
+            double newStopLoss = currentPrice - trailingDistance;
+            
+            // Validate new stop loss
+            if(newStopLoss <= 0 || newStopLoss >= currentPrice - minStopDistancePoints)
+              {
+               Print("Invalid stop loss for buy position: ", newStopLoss, " - Skipping modification");
+               continue;
+              }
+            
+            // Only update if new SL is higher than current SL or no SL set
+            if((currentStopLoss == 0 || newStopLoss > currentStopLoss) && newStopLoss > openPrice)
+              {
+               if(Trade.PositionModify(ticket, NormalizeDouble(newStopLoss, digits), currentTakeProfit))
+                 {
+                  Print("Trailing stop updated for buy position: ", ticket, " New SL: ", newStopLoss);
+                 }
+               else
+                 {
+                  Print("Failed to modify buy position: ", ticket, " Error: ", Trade.ResultRetcode());
+                  msgErr(0, Trade.ResultRetcode());
+                 }
+              }
+           }
+         // For sell positions
+         else if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL)
+           {
+            double newStopLoss = currentPrice + trailingDistance;
+            
+            // Validate new stop loss
+            if(newStopLoss <= currentPrice + minStopDistancePoints)
+              {
+               Print("Invalid stop loss for sell position: ", newStopLoss, " - Skipping modification");
+               continue;
+              }
+            
+            // Only update if new SL is lower than current SL or no SL set
+            if((currentStopLoss == 0 || newStopLoss < currentStopLoss) && newStopLoss < openPrice)
+              {
+               if(Trade.PositionModify(ticket, NormalizeDouble(newStopLoss, digits), currentTakeProfit))
+                 {
+                  Print("Trailing stop updated for sell position: ", ticket, " New SL: ", newStopLoss);
+                 }
+               else
+                 {
+                  Print("Failed to modify sell position: ", ticket, " Error: ", Trade.ResultRetcode());
+                  msgErr(0, Trade.ResultRetcode());
+                 }
+              }
+           }
+        }
+     }
+  }
+//+------------------------------------------------------------------+
+//| Main position management function                                |
+//+------------------------------------------------------------------+
+void managePositions()
+  {
+   //--- Check if we reached maximum grid steps
+   if(gridStepCount > 0 && (LongPos >= gridStepCount || ShortPos >= gridStepCount))
+      return;
+   
+   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   int gridOffset = gridStep;
+   
+   //--- Adjust grid offset for 5-digit brokers
+   if(_Digits == 5 || _Digits == 3) gridOffset *= 10;
+   
+   //--- No positions - open initial position based on signals
+   if(LongPos == 0 && ShortPos == 0)
+     {
+      bool shouldOpenBuy = (!noLong && lastme.bid < bbLower[0] && lastme.bid > kalmanValue);
+      bool shouldOpenSell = (!noShort && lastme.bid > bbUpper[0] && lastme.bid < kalmanValue);
+      
+      if(shouldOpenBuy)
+         openPosition(MY_BUY, Lot);
+      else if(shouldOpenSell)
+         openPosition(MY_SELL, Lot);
+      
+      return;
+     }
+   
+   //--- Manage long positions grid
+   if(LongPos > 0 && !noLong)
+     {
+      curLot = calculateNextLot(LongPos);
+      
+      //--- Check if price moved down enough for next grid step
+      if(LastLong - lastme.ask >= gridOffset * point)
+        {
+         //--- Check if we should close all positions instead of opening new one
+         if(gridStepCountClose > 0 && gridStepCountClose == LongPos)
+           {
+            closeAllPos(MY_ALLPOS);
+            return;
+           }
+         
+         openPosition(MY_BUY, curLot);
+        }
+     }
+   
+   //--- Manage short positions grid
+   if(ShortPos > 0 && !noShort)
+     {
+      curLot = calculateNextLot(ShortPos);
+      
+      //--- Check if price moved up enough for next grid step
+      if(lastme.bid - LastShort >= gridOffset * point)
+        {
+         //--- Check if we should close all positions instead of opening new one
+         if(gridStepCountClose > 0 && gridStepCountClose == ShortPos)
+           {
+            closeAllPos(MY_ALLPOS);
+            return;
+           }
+         
+         openPosition(MY_SELL, curLot);
+        }
+     }
+  }
+//+------------------------------------------------------------------+
+//| Calculate lot size for next position in grid                     |
+//+------------------------------------------------------------------+
+double calculateNextLot(uint currentPositions)
+  {
+   double lot = Lot;
+   
+   switch(typeLot)
+     {
+      case MY_ARIFMET:
+         lot = Lot * currentPositions;
+         break;
+         
+      case MY_GEOMET:
+         if(currentPositions > 1) lot = Lot * (MathPow(2, currentPositions-1));
+         break;
+         
+      case MY_FIXED:
+         // Lot remains the same
+         break;
+     }
+   
+   //--- Check maximum lot size allowed
+   double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   if(lot > maxLot) lot = maxLot;
+   
+   //--- Check minimum lot size allowed
+   double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   
+   if(lot < minLot) lot = minLot;
+   else lot = MathFloor(lot / lotStep) * lotStep;
+   
+   return lot;
+  }
+//+------------------------------------------------------------------+
+//| Open position                                                    |
+//+------------------------------------------------------------------+
+bool openPosition(TypeOfPos positionType, double volume)
+  {
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   double sl = 0.0;
+   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   double minStopDistancePoints = minStopDistance * point;
+   
+   //--- Calculate stop loss if needed
+   if(useStopLoss && stopLossPercent > 0)
+     {
+      if(positionType == MY_BUY)
+        {
+         sl = ask * (1 - stopLossPercent/100.0);
+         // Validate stop loss
+         if(sl >= ask - minStopDistancePoints)
+           {
+            sl = ask - minStopDistancePoints;
+            Print("Adjusted stop loss to minimum distance: ", sl);
+           }
+        }
+      else if(positionType == MY_SELL)
+        {
+         sl = bid * (1 + stopLossPercent/100.0);
+         // Validate stop loss
+         if(sl <= bid + minStopDistancePoints)
+           {
+            sl = bid + minStopDistancePoints;
+            Print("Adjusted stop loss to minimum distance: ", sl);
+           }
+        }
+         
+      sl = NormalizeDouble(sl, digits);
+     }
+   
+   //--- Open position
+   if(positionType == MY_BUY)
+     {
+      if(Trade.Buy(volume, _Symbol, ask, sl, 0, my_cmt))
+        {
+         Print("Buy position opened. Volume: ", volume, " SL: ", sl);
+         return true;
+        }
+      else
+        {
+         Print("Failed to open buy position. Error: ", Trade.ResultRetcode());
+         msgErr(0, Trade.ResultRetcode());
+        }
+     }
+   else if(positionType == MY_SELL)
+     {
+      if(Trade.Sell(volume, _Symbol, bid, sl, 0, my_cmt))
+        {
+         Print("Sell position opened. Volume: ", volume, " SL: ", sl);
+         return true;
+        }
+      else
+        {
+         Print("Failed to open sell position. Error: ", Trade.ResultRetcode());
+         msgErr(0, Trade.ResultRetcode());
+        }
+     }
+   
+   return false;
+  }
+//+------------------------------------------------------------------+
+//| Check take profit condition                                      |
+//+------------------------------------------------------------------+
+bool checkTakeProfit(TypeOfPos type = MY_ALLPOS)
+  {
+   if(takeProfit <= 0 && takeProfit1step <= 0 && takeProfit2step <= 0 && takeProfit3step <= 0 &&
+      takeProfit4step <= 0 && takeProfit5step <= 0 && takeProfit6step <= 0 && takeProfit7step <= 0 &&
+      takeProfit8step <= 0 && takeProfit9step <= 0)
+      return false;
+   
+   double totalProfit = 0;
+   double posCount = 0;
+   
+   for(int i = PositionsTotal()-1; i >= 0; i--)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(PositionSelectByTicket(ticket))
+        {
+         if(PositionGetInteger(POSITION_MAGIC) != EA_Magic || PositionGetString(POSITION_SYMBOL) != _Symbol)
+            continue;
+            
+         if(type == MY_BUY && PositionGetInteger(POSITION_TYPE) != POSITION_TYPE_BUY) continue;
+         if(type == MY_SELL && PositionGetInteger(POSITION_TYPE) != POSITION_TYPE_SELL) continue;
+         
+         totalProfit += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+         posCount++;
+        }
+     }
+   
+   //--- Check take profit conditions based on position count
+   uint totalPositions = LongPos + ShortPos;
+   
+   if(totalPositions == 1 && takeProfit1step > 0 && totalProfit >= takeProfit1step)
+      return true;
+   else if(totalPositions == 2 && takeProfit2step > 0 && totalProfit >= takeProfit2step)
+      return true;
+   else if(totalPositions == 3 && takeProfit3step > 0 && totalProfit >= takeProfit3step)
+      return true;
+   else if(totalPositions == 4 && takeProfit4step > 0 && totalProfit >= takeProfit4step)
+      return true;
+   else if(totalPositions == 5 && takeProfit5step > 0 && totalProfit >= takeProfit5step)
+      return true;
+   else if(totalPositions == 6 && takeProfit6step > 0 && totalProfit >= takeProfit6step)
+      return true;
+   else if(totalPositions == 7 && takeProfit7step > 0 && totalProfit >= takeProfit7step)
+      return true;
+   else if(totalPositions == 8 && takeProfit8step > 0 && totalProfit >= takeProfit8step)
+      return true;
+   else if(totalPositions == 9 && takeProfit9step > 0 && totalProfit >= takeProfit9step)
+      return true;
+   else if(takeProfit > 0 && totalProfit >= takeProfit)
+      return true;
+      
+   return false;
+  }
+//+------------------------------------------------------------------+
+//| Close all positions                                              |
+//+------------------------------------------------------------------+
+void closeAllPos(TypeOfPos type = MY_ALLPOS)
+  {
+   for(int i = PositionsTotal()-1; i >= 0; i--)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(PositionSelectByTicket(ticket))
+        {
+         if(PositionGetInteger(POSITION_MAGIC) != EA_Magic || PositionGetString(POSITION_SYMBOL) != _Symbol)
+            continue;
+            
+         if(type == MY_BUY && PositionGetInteger(POSITION_TYPE) != POSITION_TYPE_BUY) continue;
+         if(type == MY_SELL && PositionGetInteger(POSITION_TYPE) != POSITION_TYPE_SELL) continue;
+         
+         if(Trade.PositionClose(ticket))
+            Print("Position closed: ", ticket);
+         else
+           {
+            Print("Failed to close position: ", ticket, " Error: ", Trade.ResultRetcode());
+            msgErr(0, Trade.ResultRetcode());
+           }
+        }
+     }
+  }
+//+------------------------------------------------------------------+
+//| Update information panel                                         |
+//+------------------------------------------------------------------+
+void updateInfoPanel()
+  {
+   string panelText = "";
+   
+   //--- EA information
+   panelText += "KalmanGridTrader v" + pdxversion + "\n";
+   panelText += "Symbol: " + _Symbol + " | Timeframe: " + EnumToString(_Period) + "\n";
+   panelText += "Account: " + (string)AccountInfoInteger(ACCOUNT_LOGIN) + "\n";
+   panelText += "Equity: $" + DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY), 2);
+   panelText += " | Balance: $" + DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2) + "\n";
+   panelText += "Profit: $" + DoubleToString(AccountInfoDouble(ACCOUNT_PROFIT), 2) + "\n\n";
+   
+   //--- Market information
+   panelText += "Current Price: " + DoubleToString(lastme.bid, _Digits) + "\n";
+   panelText += "Kalman Value: " + DoubleToString(kalmanValue, _Digits) + "\n";
+   panelText += "MA(" + (string)MA_PERIOD + "): " + DoubleToString(maBuffer[0], _Digits) + "\n";
+   panelText += "BB Upper: " + DoubleToString(bbUpper[0], _Digits) + "\n";
+   panelText += "BB Lower: " + DoubleToString(bbLower[0], _Digits) + "\n\n";
+   
+   //--- Position information
+   panelText += "Long Positions: " + (string)LongPos + " (Volume: " + DoubleToString(LongVol, 2) + ")\n";
+   panelText += "Short Positions: " + (string)ShortPos + " (Volume: " + DoubleToString(ShortVol, 2) + ")\n";
+   panelText += "Last Long Price: " + DoubleToString(LastLong, _Digits) + "\n";
+   panelText += "Last Short Price: " + DoubleToString(LastShort, _Digits) + "\n";
+   
+   //--- Display panel
+   Comment(panelText);
+  }
+//+------------------------------------------------------------------+
+//| Error message handler                                            |
+//+------------------------------------------------------------------+
+void msgErr(int err, int retcode=0)
+  {
+   string curErr="";
+   
+   switch(err)
+     {
+      case 1:
+         curErr=langs.err1;
+         break;
+      case 2:
+         curErr=langs.err2;
+         break;
+      case 3:
+         curErr=langs.err3;
+         break;
+      case 4:
+         curErr=langs.err4;
+         break;
+      case 5:
+         curErr=langs.err5;
+         break;
+      case 6:
+         curErr=langs.err6;
+         break;
+      case 7:
+         curErr=langs.err7;
+         break;
+      case 8:
+         curErr=langs.err8;
+         break;
+      case 9:
+         curErr=langs.err9;
+         break;
+      case 64:
+         curErr=langs.err64;
+         break;
+      case 65:
+         curErr=langs.err65;
+         break;
+      case 128:
+         curErr=langs.err128;
+         break;
+      case 129:
+         curErr=langs.err129;
+         break;
+      case 130:
+         curErr=langs.err130;
+         break;
+      case 131:
+         curErr=langs.err131;
+         break;
+      case 132:
+         curErr=langs.err132;
+         break;
+      case 133:
+         curErr=langs.err133;
+         break;
+      case 134:
+         curErr=langs.err134;
+         break;
+      case 135:
+         curErr=langs.err135;
+         break;
+      case 136:
+         curErr=langs.err136;
+         break;
+      case 137:
+         curErr=langs.err137;
+         break;
+      case 138:
+         curErr=langs.err138;
+         break;
+      case 139:
+         curErr=langs.err139;
+         break;
+      case 140:
+         curErr=langs.err140;
+         break;
+      case 141:
+         curErr=langs.err141;
+         break;
+      case 145:
+         curErr=langs.err145;
+         break;
+      case 146:
+         curErr=langs.err146;
+         break;
+      case 147:
+         curErr=langs.err147;
+         break;
+      case 148:
+         curErr=langs.err148;
+         break;
+      default:
+         curErr=langs.err0+": "+(string)err;
+     }
+   
+   if(retcode > 0)
+     {
+      curErr += " ";
+      switch(retcode)
+        {
+         case 10004:
+            curErr += langs.retcode10004;
+            break;
+         case 10006:
+            curErr += langs.retcode10006;
+            break;
+         case 10007:
+            curErr += langs.retcode10007;
+            break;
+         case 10010:
+            curErr += langs.retcode10010;
+            break;
+         case 10011:
+            curErr += langs.retcode10011;
+            break;
+         case 10012:
+            curErr += langs.retcode10012;
+            break;
+         case 10013:
+            curErr += langs.retcode10013;
+            break;
+         case 10014:
+            curErr += langs.retcode10014;
+            break;
+         case 10015:
+            curErr += langs.retcode10015;
+            break;
+         case 10016:
+            curErr += langs.retcode10016;
+            break;
+         case 10017:
+            curErr += langs.retcode10017;
+            break;
+         case 10018:
+            curErr += langs.retcode10018;
+            break;
+         case 10019:
+            curErr += langs.retcode10019;
+            break;
+         case 10020:
+            curErr += langs.retcode10020;
+            break;
+         case 10021:
+            curErr += langs.retcode10021;
+            break;
+         case 10022:
+            curErr += langs.retcode10022;
+            break;
+         case 10023:
+            curErr += langs.retcode10023;
+            break;
+         case 10024:
+            curErr += langs.retcode10024;
+            break;
+         case 10025:
+            curErr += langs.retcode10025;
+            break;
+         case 10026:
+            curErr += langs.retcode10026;
+            break;
+         case 10027:
+            curErr += langs.retcode10027;
+            break;
+         case 10028:
+            curErr += langs.retcode10028;
+            break;
+         case 10029:
+            curErr += langs.retcode10029;
+            break;
+         case 10030:
+            curErr += langs.retcode10030;
+            break;
+         case 10031:
+            curErr += langs.retcode10031;
+            break;
+         case 10032:
+            curErr += langs.retcode10032;
+            break;
+         case 10033:
+            curErr += langs.retcode10033;
+            break;
+         case 10034:
+            curErr += langs.retcode10034;
+            break;
+         case 10035:
+            curErr += langs.retcode10035;
+            break;
+         case 10036:
+            curErr += langs.retcode10036;
+            break;
+         case 10038:
+            curErr += langs.retcode10038;
+            break;
+         case 10039:
+            curErr += langs.retcode10039;
+            break;
+         case 10040:
+            curErr += langs.retcode10040;
+            break;
+         case 10041:
+            curErr += langs.retcode10041;
+            break;
+         case 10042:
+            curErr += langs.retcode10042;
+            break;
+         case 10043:
+            curErr += langs.retcode10043;
+            break;
+         case 10044:
+            curErr += langs.retcode10044;
+            break;
+        }
+     }
+   
+   Print(curErr);
+  }
+//+------------------------------------------------------------------+
+//| Initialize language messages                                     |
+//+------------------------------------------------------------------+
+void init_lang()
+  {
+   switch(LANG)
+     {
+      case MY_ENG:
+         langs.err1="No error, but unknown result. (1)";
+         langs.err2="General error (2)";
+         langs.err3="Incorrect parameters (3)";
+         langs.err4="Trade server busy (4)";
+         langs.err5="Old client terminal version (5)";
+         langs.err6="No connection to trade server (6)";
+         langs.err7="Not enough rights (7)";
+         langs.err8="Too frequent requests (8)";
+         langs.err9="Invalid operation disruptive server operation (9)";
+         langs.err64="Account blocked (64)";
+         langs.err65="Invalid account number (65)";
+         langs.err128="Expired waiting period for transaction (128)";
+         langs.err129="Invalid price (129)";
+         langs.err130="Wrong stop loss (130)";
+         langs.err131="Wrong volume (131)";
+         langs.err132="Market closed (132)";
+         langs.err133="Trade prohibited (133)";
+         langs.err134="Not enough money to complete transaction. (134)";
+         langs.err135="Price changed (135)";
+         langs.err136="No prices (136)";
+         langs.err137="Broker busy (137)";
+         langs.err138="New prices (138)";
+         langs.err139="Order blocked and already being processed (139)";
+         langs.err140="Only purchase allowed (140)";
+         langs.err141="Too many requests (141)";
+         langs.err145="Modification prohibited because order too close to market. (145)";
+         langs.err146="Trading subsystem busy (146)";
+         langs.err147="Using order expiration date prohibited by broker (147)";
+         langs.err148="Number of open and pending orders reached limit set by broker (148)";
+         langs.err0="Error occurred while running request";
+         langs.retcode="Reason";
+         langs.retcode10004="Requote";
+         langs.retcode10006="Request rejected";
+         langs.retcode10007="Request canceled by trader";
+         langs.retcode10010="Only part of request completed";
+         langs.retcode10011="Request processing error";
+         langs.retcode10012="Request canceled by timeout";
+         langs.retcode10013="Invalid request";
+         langs.retcode10014="Invalid volume in request";
+         langs.retcode10015="Invalid price in request";
+         langs.retcode10016="Invalid stops in request";
+         langs.retcode10017="Trade disabled";
+         langs.retcode10018="Market closed";
+         langs.retcode10019="Not enough money to complete request";
+         langs.retcode10020="Prices changed";
+         langs.retcode10021="No quotes to process request";
+         langs.retcode10022="Invalid order expiration date in request";
+         langs.retcode10023="Order state changed";
+         langs.retcode10024="Too frequent requests";
+         langs.retcode10025="No changes in request";
+         langs.retcode10026="Autotrading disabled by server";
+         langs.retcode10027="Autotrading disabled by client terminal";
+         langs.retcode10028="Request locked for processing";
+         langs.retcode10029="Order or position frozen";
+         langs.retcode10030="Invalid order filling type";
+         langs.retcode10031="No connection with trade server";
+         langs.retcode10032="Operation allowed only for live accounts";
+         langs.retcode10033="Number of pending orders reached limit";
+         langs.retcode10034="Volume of orders and positions for symbol reached limit";
+         langs.retcode10035="Incorrect or prohibited order type";
+         langs.retcode10036="Position with specified POSITION_IDENTIFIER already closed";
+         langs.retcode10038="Close volume exceeds current position volume";
+         langs.retcode10039="Close order already exists for specified position";
+         langs.retcode10040="Number of open items exceeded";
+         langs.retcode10041="Pending order activation request rejected, order canceled";
+         langs.retcode10042="Only long positions allowed";
+         langs.retcode10043="Only short positions allowed";
+         langs.retcode10044="Only position closing allowed";
+         break;
+         
+  
