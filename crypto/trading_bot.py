@@ -1070,5 +1070,5 @@ class CryptoTradingBot:
             time.sleep(self.interval)
 
 if __name__ == "__main__":
-    bot = CryptoTradingBot(symbol='ETH/USDT:USDT', timeframe='15m', interval=900) 
+    bot = CryptoTradingBot(symbol='ETH/USDT:USDT', timeframe='1h', interval=3600) 
     bot.start()
