@@ -2509,7 +2509,16 @@ class AI_MT5_Bot:
                             "performance_stats": trade_stats # 传入历史绩效
                         }
                         
-                        strategy = self.qwen_client.optimize_strategy_logic(structure, market_snapshot, technical_signals=technical_signals, current_positions=current_positions_list)
+                        if should_run_llm:
+                            strategy = self.qwen_client.optimize_strategy_logic(structure, market_snapshot, technical_signals=technical_signals, current_positions=current_positions_list)
+                            self.latest_strategy = strategy
+                            self.last_llm_time = time.time()
+                        elif self.latest_strategy:
+                            strategy = self.latest_strategy
+                            logger.info("使用缓存的 LLM 策略")
+                        else:
+                            strategy = {"action": "hold", "reason": "Waiting for LLM"}
+                            logger.info("无缓存策略，默认 Hold")
                         
                         # --- 参数自适应优化 (Feedback Loop) ---
                         # 将大模型的参数优化建议应用到当前运行的算法中
