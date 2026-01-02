@@ -312,6 +312,10 @@ class CryptoTradingBot:
             
         # Snapshot
         latest = df.iloc[-1]
+        
+        # Fetch Account Balance for Context
+        account_balance = self.data_processor.get_account_balance('USDT')
+        
         market_snapshot = {
             "symbol": self.symbol,
             "timeframe": self.timeframe,
@@ -324,7 +328,8 @@ class CryptoTradingBot:
                 "atr": float(latest.get('atr', 0)),
                 "ema_fast": float(latest.get('ema_fast', 0)),
                 "volatility": float(latest.get('volatility', 0))
-            }
+            },
+            "account_info": account_balance # Inject account info for LLM
         }
         
         # --- Advanced Analysis ---
