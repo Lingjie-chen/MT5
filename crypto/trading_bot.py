@@ -77,7 +77,7 @@ class HybridOptimizer:
         return final_signal, final_score, self.weights
 
 class CryptoTradingBot:
-    def __init__(self, symbol='ETH/USDT', timeframe='15m', interval=900):
+    def __init__(self, symbol='ETH/USDT', timeframe='1h', interval=3600):
         """
         Initialize the Crypto Trading Bot
         """
@@ -94,10 +94,17 @@ class CryptoTradingBot:
         # Initialize Data Processor
         self.data_processor = OKXDataProcessor()
 
-        # Initialize Advanced Analysis (Gold Strategy Alignment)
-        # 15m Timeframe -> H1 CRT, H1/H4 MTF
-        self.crt_analyzer = CRTAnalyzer(timeframe_htf='1h')
-        self.mtf_analyzer = MTFAnalyzer(htf1='1h', htf2='4h')
+        # Initialize Advanced Analysis
+        # Dynamic HTF Selection based on Timeframe
+        if self.timeframe == '1h':
+            htf1, htf2 = '4h', '1d'
+        elif self.timeframe == '4h':
+            htf1, htf2 = '1d', '1w'
+        else: # Default 15m
+            htf1, htf2 = '1h', '4h'
+            
+        self.crt_analyzer = CRTAnalyzer(timeframe_htf=htf1)
+        self.mtf_analyzer = MTFAnalyzer(htf1=htf1, htf2=htf2)
         self.price_model = PriceEquationModel()
         self.tf_analyzer = TimeframeVisualAnalyzer()
         self.advanced_adapter = AdvancedMarketAnalysisAdapter()
@@ -323,9 +330,17 @@ class CryptoTradingBot:
         # --- Advanced Analysis ---
         current_time = latest.name.timestamp() if hasattr(latest.name, 'timestamp') else time.time()
         
+        # Determine HTF based on current timeframe
+        if self.timeframe == '1h':
+            htf1_tf, htf2_tf = '4h', '1d'
+        elif self.timeframe == '4h':
+            htf1_tf, htf2_tf = '1d', '1w'
+        else: # 15m
+            htf1_tf, htf2_tf = '1h', '4h'
+        
         # Fetch HTF Data for CRT/MTF
-        df_htf1 = self.data_processor.get_historical_data(self.symbol, '1h', limit=200)
-        df_htf2 = self.data_processor.get_historical_data(self.symbol, '4h', limit=200)
+        df_htf1 = self.data_processor.get_historical_data(self.symbol, htf1_tf, limit=200)
+        df_htf2 = self.data_processor.get_historical_data(self.symbol, htf2_tf, limit=200)
         
         # Fallback if HTF data unavailable
         if df_htf1 is None or df_htf1.empty: df_htf1 = df.copy()
