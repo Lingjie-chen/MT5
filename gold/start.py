@@ -1383,6 +1383,10 @@ class AI_MT5_Bot:
             p_rvgi_cci = int(params[8])
             p_ifvg_gap = int(params[9])
             
+            # Extract Grid Params (Indices 10, 11)
+            p_grid_step = int(params[10]) if len(params) > 10 else 300
+            p_grid_tp = float(params[11]) if len(params) > 11 else 100.0
+            
             # 2. Initialize Temporary Analyzers (Fresh State)
             tmp_smc = SMCAnalyzer()
             tmp_smc.ma_period = p_smc_ma
