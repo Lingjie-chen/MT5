@@ -139,6 +139,7 @@ class AI_MT5_Bot:
         
         self.last_bar_time = 0
         self.last_analysis_time = 0
+        self.last_llm_time = 0 # Track LLM call time
         self.signal_history = []
         self.last_optimization_time = 0
         self.last_realtime_save = 0
