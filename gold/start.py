@@ -1747,10 +1747,10 @@ class AI_MT5_Bot:
         except Exception as e:
             logger.error(f"权重优化失败: {e}")
 
-    def calculate_optimized_sl_tp(self, trade_type, price, atr, market_context=None):
+    def calculate_optimized_sl_tp(self, trade_type, price, atr, market_context=None, ai_exit_conds=None):
         """
         计算基于综合因素的优化止损止盈点
-        结合: 14天 ATR, MFE/MAE 统计, 市场分析(Supply/Demand/FVG)
+        结合: 14天 ATR, MFE/MAE 统计, 市场分析(Supply/Demand/FVG), 大模型建议
         """
         # 1. 基础波动率 (14天 ATR)
         # 确保传入的 ATR 是有效的 14周期 ATR
@@ -1885,69 +1885,73 @@ class AI_MT5_Bot:
                     struct_tp_price = max(support_candidates)
 
             # 寻找止损点 (最近的支撑位/结构点)
-            # 这里简化逻辑，通常 SL 放在结构点外侧
-            # 可以使用 recent swing high/low
             pass
 
-        # 4. 综合计算
-        # 逻辑: 
-        # TP: 优先使用结构位 (Struct TP)，如果结构位太远或太近，使用 MFE/ATR 修正
-        # SL: 使用 MAE/ATR 保护，但如果结构位 (如 Swing Low) 在附近，可以参考
-        
+        # 4. 大模型建议 (AI Integration)
+        ai_sl = 0.0
+        ai_tp = 0.0
+        if ai_exit_conds:
+            ai_sl = ai_exit_conds.get('sl_price', 0.0)
+            ai_tp = ai_exit_conds.get('tp_price', 0.0)
+            
+            # Validate AI Suggestion Direction
+            if 'buy' in trade_type:
+                if ai_sl >= price: ai_sl = 0.0 # Invalid SL
+                if ai_tp <= price: ai_tp = 0.0 # Invalid TP
+            else:
+                if ai_sl <= price: ai_sl = 0.0
+                if ai_tp >= price: ai_tp = 0.0
+
+        # 5. 综合计算与融合
         final_sl = 0.0
         final_tp = 0.0
         
-        # 基础计算
         if 'buy' in trade_type:
-            base_tp = price + mfe_tp_dist
+            # --- SL Calculation ---
             base_sl = price - mae_sl_dist
             
-            # Final SL Logic with Buffer Check
-            if struct_sl_price > 0 and struct_sl_price < price:
-                if (price - struct_sl_price) < min_sl_buffer:
-                    final_sl = price - min_sl_buffer
-                else:
-                    final_sl = struct_sl_price
+            # Priority: AI -> Structure -> Statistical
+            if ai_sl > 0:
+                final_sl = ai_sl
+            elif struct_sl_price > 0:
+                final_sl = struct_sl_price if (price - struct_sl_price) >= min_sl_buffer else (price - min_sl_buffer)
             else:
                 final_sl = base_sl
             
-            # Hard Floor Check
             if (price - final_sl) < min_sl_buffer:
                 final_sl = price - min_sl_buffer
-
-            # TP 融合
-            if struct_tp_price > price:
-                # 如果结构位比基础 TP 近，说明上方有阻力，保守起见设在阻力前
-                # 如果结构位比基础 TP 远，可以尝试去拿，但最好分批。这里取加权平均或保守值
-                if struct_tp_price < base_tp:
-                    final_tp = struct_tp_price - (atr * 0.1) # 阻力下方一点点
-                else:
-                    final_tp = base_tp # 保持 MFE 目标，比较稳健
+                
+            # --- TP Calculation ---
+            base_tp = price + mfe_tp_dist
+            
+            if ai_tp > 0:
+                final_tp = ai_tp
+            elif struct_tp_price > 0:
+                final_tp = min(struct_tp_price - (atr * 0.1), base_tp)
             else:
                 final_tp = base_tp
-            
+                
         else: # Sell
-            base_tp = price - mfe_tp_dist
+            # --- SL Calculation ---
             base_sl = price + mae_sl_dist
             
-            # Final SL Logic with Buffer Check
-            if struct_sl_price > 0 and struct_sl_price > price:
-                if (struct_sl_price - price) < min_sl_buffer:
-                    final_sl = price + min_sl_buffer
-                else:
-                    final_sl = struct_sl_price
+            if ai_sl > 0:
+                final_sl = ai_sl
+            elif struct_sl_price > 0:
+                final_sl = struct_sl_price if (struct_sl_price - price) >= min_sl_buffer else (price + min_sl_buffer)
             else:
                 final_sl = base_sl
-
-            # Hard Floor Check
+                
             if (final_sl - price) < min_sl_buffer:
                 final_sl = price + min_sl_buffer
+                
+            # --- TP Calculation ---
+            base_tp = price - mfe_tp_dist
             
-            if struct_tp_price > 0 and struct_tp_price < price:
-                if struct_tp_price > base_tp: # 支撑位在目标上方 (更近)
-                    final_tp = struct_tp_price + (atr * 0.1)
-                else:
-                    final_tp = base_tp
+            if ai_tp > 0:
+                final_tp = ai_tp
+            elif struct_tp_price > 0:
+                final_tp = max(struct_tp_price + (atr * 0.1), base_tp)
             else:
                 final_tp = base_tp
 
