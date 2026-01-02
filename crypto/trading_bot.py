@@ -906,7 +906,7 @@ class CryptoTradingBot:
         else:
             logger.info(f"Weight optimization score too low ({best_score:.2%}), skipping update.")
 
-    def _send_order(self, type_str, price, sl, tp, volume_pct):
+    def _send_order(self, type_str, price, sl, tp, volume_pct, strategy=None):
         """Wrapper for OKX Order with Validation"""
         # 1. Validation (Invalid Stops)
         current_price = self.data_processor.get_current_price(self.symbol)
@@ -940,8 +940,11 @@ class CryptoTradingBot:
         equity = balance.get('total', 0)
         free_balance = balance.get('free', 0)
         
-        # Leverage (Default 5x)
-        leverage = 5 
+        # Leverage (Default 5x, or use LLM suggested if available and higher)
+        # We can extract suggested leverage from strategy if present
+        suggested_leverage = strategy.get('leverage', 5) if strategy else 5
+        leverage = max(5, min(suggested_leverage, 20)) # Cap at 20x for safety, min 5x
+        
         self.data_processor.set_leverage(self.symbol, leverage)
         
         # Calculate target margin
@@ -991,8 +994,17 @@ class CryptoTradingBot:
         actual_margin = actual_notional / leverage
         
         if actual_margin > free_balance * 0.98: # 2% buffer
-             logger.warning(f"Insufficient balance for {contracts} contracts. Required: {actual_margin:.2f}, Free: {free_balance:.2f}")
-             return
+             # Try increasing leverage to fit the trade if safe (up to 50x)
+             required_leverage = actual_notional / (free_balance * 0.95)
+             if required_leverage <= 50:
+                 logger.info(f"Insufficient balance for {leverage}x. Auto-adjusting leverage to {int(required_leverage)+1}x to fit trade.")
+                 leverage = int(required_leverage) + 1
+                 self.data_processor.set_leverage(self.symbol, leverage)
+                 # Recalculate margin with new leverage
+                 actual_margin = actual_notional / leverage
+             else:
+                 logger.warning(f"Insufficient balance for {contracts} contracts even at max leverage. Required: {actual_margin:.2f}, Free: {free_balance:.2f}")
+                 return
         
         # 3. Execute
         try:
@@ -1047,7 +1059,7 @@ class CryptoTradingBot:
         if signal in ['buy', 'sell']:
              if not has_pos:
                  logger.info(f"Opening New Position: {signal.upper()}")
-                 self._send_order(signal, 0, sl, tp, risk_pct)
+                 self._send_order(signal, 0, sl, tp, risk_pct, strategy=strategy)
              else:
                  # Update SL/TP for existing
                  logger.info("Updating SL/TP for existing position")
