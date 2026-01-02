@@ -6,10 +6,10 @@ file_path = r'c:\Users\Administrator\Desktop\MT5\gold\start.py'
 with open(file_path, 'r', encoding='utf-8') as f:
     content = f.read()
 
-# Define the pattern for the function
-# We use a broad pattern that captures the function definition down to the return statement
-pattern = re.compile(r'def calculate_optimized_sl_tp\(self, trade_type, price, atr, market_context=None\):.*?return final_sl, final_tp', re.DOTALL)
+# Match the CURRENT signature (with ai_exit_conds)
+pattern = re.compile(r'def calculate_optimized_sl_tp\(self, trade_type, price, atr, market_context=None, ai_exit_conds=None\):.*?return final_sl, final_tp', re.DOTALL)
 
+# The replacement is the FULL function as desired
 replacement = """def calculate_optimized_sl_tp(self, trade_type, price, atr, market_context=None, ai_exit_conds=None):
         \"\"\"
         计算基于综合因素的优化止损止盈点

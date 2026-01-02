@@ -1734,139 +1734,84 @@ class AI_MT5_Bot:
         结合: 14天 ATR, MFE/MAE 统计, 市场分析(Supply/Demand/FVG), 大模型建议
         """
         # 1. 基础波动率 (14天 ATR)
-        # 确保传入的 ATR 是有效的 14周期 ATR
         if atr <= 0:
             atr = price * 0.005 # Fallback
             
         # 2. 历史绩效 (MFE/MAE)
-        mfe_tp_dist = atr * 2.0 # 默认
-        mae_sl_dist = atr * 1.5 # 默认
+        mfe_tp_dist = atr * 2.0 
+        mae_sl_dist = atr * 1.5 
         
         try:
              stats = self.db_manager.get_trade_performance_stats(limit=100)
-             
              trades = []
-             if isinstance(stats, list):
-                 trades = stats
-             elif isinstance(stats, dict) and 'recent_trades' in stats:
-                 trades = stats['recent_trades']
+             if isinstance(stats, list): trades = stats
+             elif isinstance(stats, dict) and 'recent_trades' in stats: trades = stats['recent_trades']
              
              if trades and len(trades) > 10:
                  mfes = [t.get('mfe', 0) for t in trades if t.get('mfe', 0) > 0]
                  maes = [abs(t.get('mae', 0)) for t in trades if abs(t.get('mae', 0)) > 0]
                  
                  if mfes and maes:
-                     # 使用 ATR 倍数来标准化 MFE/MAE (假设 MFE/MAE 也是以 ATR 为单位存储，或者我们需要转换)
-                     # 如果 DB 存的是百分比，我们需要将其转换为当前 ATR 倍数
-                     # 这里简化处理：直接取百分比的中位数，然后转换为价格距离
-                     
-                     opt_tp_pct = np.percentile(mfes, 60) / 100.0 # 60分位数
-                     # Increase SL distance: Use 95th percentile or max MAE to give more room
+                     opt_tp_pct = np.percentile(mfes, 60) / 100.0 
                      opt_sl_pct = np.percentile(maes, 95) / 100.0 
                      
-                     # Enforce minimum SL distance based on ATR (e.g., at least 2.5 ATR)
                      min_sl_dist = atr * 2.5
                      calc_sl_dist = price * opt_sl_pct
                      
                      mfe_tp_dist = price * opt_tp_pct
-                     mae_sl_dist = max(calc_sl_dist, min_sl_dist) # Use the larger of historical MAE or Min ATR
+                     mae_sl_dist = max(calc_sl_dist, min_sl_dist) 
         except Exception as e:
              logger.warning(f"MFE/MAE 计算失败: {e}")
 
         # 3. 市场结构调整 (Supply/Demand/FVG)
-        # 从 market_context 中获取关键位
         struct_tp_price = 0.0
         struct_sl_price = 0.0
-        
-        # Enforce Minimum SL Distance (Hard Floor)
-        # Even if structure suggests a tight SL, we enforce a minimum volatility-based distance
         min_sl_buffer = atr * 2.0
         
         if market_context:
-            # 获取最近的 Supply/Demand 区间
-            # 假设 market_context 包含 advanced_tech 或 ifvg 结果
-            
             is_buy = 'buy' in trade_type
             
-            # 寻找止盈点 (最近的阻力位/FVG)
-            if is_buy:
-                # 买入 TP: 最近的 Supply Zone 或 Bearish FVG 的下沿
-                resistance_candidates = []
-                if 'supply_zones' in market_context:
-                    # 找出所有高于当前价格的 Supply Zone bottom
-                    # 注意: zones 可能是 [(top, bottom), ...] 或其他结构，需要类型检查
-                    raw_zones = market_context['supply_zones']
-                    if raw_zones and isinstance(raw_zones, list):
-                        try:
-                            # 尝试解析可能的元组/列表结构
-                            valid_zones = []
-                            for z in raw_zones:
-                                if isinstance(z, (list, tuple)) and len(z) >= 2:
-                                    # 假设结构是 (top, bottom, ...)
-                                    if z[1] > price: valid_zones.append(z[1])
-                                elif isinstance(z, dict):
-                                    # 假设结构是 {'top': ..., 'bottom': ...}
-                                    btm = z.get('bottom')
-                                    if btm and btm > price: valid_zones.append(btm)
-                            
-                            if valid_zones: resistance_candidates.append(min(valid_zones))
-                        except Exception as e:
-                            logger.warning(f"解析 Supply Zones 失败: {e}")
-                
-                if 'bearish_fvgs' in market_context:
-                    raw_fvgs = market_context['bearish_fvgs']
-                    if raw_fvgs and isinstance(raw_fvgs, list):
-                        try:
-                            valid_fvgs = []
-                            for f in raw_fvgs:
-                                if isinstance(f, dict):
-                                    btm = f.get('bottom')
-                                    if btm and btm > price: valid_fvgs.append(btm)
-                            if valid_fvgs: resistance_candidates.append(min(valid_fvgs))
-                        except Exception as e:
-                            logger.warning(f"解析 Bearish FVG 失败: {e}")
-                    
-                if resistance_candidates:
-                    struct_tp_price = min(resistance_candidates)
+            # 解析 SMC 关键位
+            resistance_candidates = []
+            support_candidates = []
             
-            else:
-                # 卖出 TP: 最近的 Demand Zone 或 Bullish FVG 的上沿
-                support_candidates = []
+            if is_buy:
+                # Buy TP: Resistance
+                if 'supply_zones' in market_context:
+                    for z in market_context['supply_zones']:
+                        val = z[1] if isinstance(z, (list, tuple)) else z.get('bottom')
+                        if val and val > price: resistance_candidates.append(val)
+                if 'bearish_fvgs' in market_context:
+                    for f in market_context['bearish_fvgs']:
+                        val = f.get('bottom')
+                        if val and val > price: resistance_candidates.append(val)
+                if resistance_candidates: struct_tp_price = min(resistance_candidates)
+                
+                # Buy SL: Support
                 if 'demand_zones' in market_context:
-                    raw_zones = market_context['demand_zones']
-                    if raw_zones and isinstance(raw_zones, list):
-                        try:
-                            valid_zones = []
-                            for z in raw_zones:
-                                if isinstance(z, (list, tuple)) and len(z) >= 2:
-                                    # 假设结构是 (top, bottom, ...)
-                                    if z[0] < price: valid_zones.append(z[0])
-                                elif isinstance(z, dict):
-                                    top = z.get('top')
-                                    if top and top < price: valid_zones.append(top)
-                            
-                            if valid_zones: support_candidates.append(max(valid_zones))
-                        except Exception as e:
-                            logger.warning(f"解析 Demand Zones 失败: {e}")
-                    
+                     for z in market_context['demand_zones']:
+                        val = z[0] if isinstance(z, (list, tuple)) else z.get('top')
+                        if val and val < price: support_candidates.append(val)
+                if support_candidates: struct_sl_price = max(support_candidates)
+                
+            else: # Sell
+                # Sell TP: Support
+                if 'demand_zones' in market_context:
+                    for z in market_context['demand_zones']:
+                        val = z[0] if isinstance(z, (list, tuple)) else z.get('top')
+                        if val and val < price: support_candidates.append(val)
                 if 'bullish_fvgs' in market_context:
-                    raw_fvgs = market_context['bullish_fvgs']
-                    if raw_fvgs and isinstance(raw_fvgs, list):
-                        try:
-                            valid_fvgs = []
-                            for f in raw_fvgs:
-                                if isinstance(f, dict):
-                                    top = f.get('top')
-                                    if top and top < price: valid_fvgs.append(top)
-                            if valid_fvgs: support_candidates.append(max(valid_fvgs))
-                        except Exception as e:
-                            logger.warning(f"解析 Bullish FVG 失败: {e}")
-                    
-                if support_candidates:
-                    struct_tp_price = max(support_candidates)
-
-            # 寻找止损点 (最近的支撑位/结构点)
-            pass
+                    for f in market_context['bullish_fvgs']:
+                        val = f.get('top')
+                        if val and val < price: support_candidates.append(val)
+                if support_candidates: struct_tp_price = max(support_candidates)
+                
+                # Sell SL: Resistance
+                if 'supply_zones' in market_context:
+                    for z in market_context['supply_zones']:
+                        val = z[1] if isinstance(z, (list, tuple)) else z.get('bottom')
+                        if val and val > price: resistance_candidates.append(val)
+                if resistance_candidates: struct_sl_price = min(resistance_candidates)
 
         # 4. 大模型建议 (AI Integration)
         ai_sl = 0.0
