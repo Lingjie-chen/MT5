@@ -44,6 +44,7 @@ try:
         MatrixMLAnalyzer, CRTAnalyzer, PriceEquationModel, 
         TimeframeVisualAnalyzer, MTFAnalyzer
     )
+    from .grid_strategy import KalmanGridStrategy
 except ImportError:
     # Fallback for direct script execution
     try:
@@ -134,6 +135,9 @@ class AI_MT5_Bot:
         self.matrix_ml = MatrixMLAnalyzer()
         self.smc_analyzer = SMCAnalyzer()
         self.mfh_analyzer = MFHAnalyzer()
+        
+        # Grid Strategy Integration
+        self.grid_strategy = KalmanGridStrategy(self.symbol, self.magic_number)
         
         self.optimizer = HybridOptimizer()
         
@@ -1025,13 +1029,37 @@ class AI_MT5_Bot:
     def manage_positions(self, signal=None, strategy_params=None):
         """
         根据最新分析结果管理持仓:
-        1. 更新止损止盈 (覆盖旧设置) - 基于 strategy_params
-        2. 执行移动止损 (Trailing Stop)
-        3. 检查是否需要平仓 (非反转情况，例如信号转弱)
+        1. Grid Strategy Logic (Basket TP, Adding Positions)
+        2. 更新止损止盈 (覆盖旧设置) - 基于 strategy_params
+        3. 执行移动止损 (Trailing Stop)
+        4. 检查是否需要平仓 (非反转情况，例如信号转弱)
         """
         positions = mt5.positions_get(symbol=self.symbol)
         if positions is None or len(positions) == 0:
             return
+
+        # --- Grid Strategy Logic ---
+        # 1. Check Basket TP
+        if self.grid_strategy.check_basket_tp(positions):
+            logger.info("Grid Strategy: Basket TP Reached. Closing ALL positions.")
+            for pos in positions:
+                if pos.magic == self.magic_number:
+                    self.close_position(pos, comment="Grid Basket TP")
+            return
+
+        # 2. Check Grid Add
+        tick = mt5.symbol_info_tick(self.symbol)
+        if tick:
+            current_price_check = tick.bid # Use Bid for price check approximation
+            action, lot = self.grid_strategy.check_grid_add(positions, current_price_check)
+            if action:
+                logger.info(f"Grid Strategy Trigger: {action} Lot={lot}")
+                trade_type = "buy" if action == 'add_buy' else "sell"
+                price = tick.ask if trade_type == 'buy' else tick.bid
+                # Use default Grid SL/TP or 0
+                # We use 0 and let manage_positions update it later or Basket TP handle it
+                self._send_order(trade_type, price, 0.0, 0.0, comment=f"Grid: {action}")
+                # Don't return, allow SL/TP update for existing positions
 
         # 获取 ATR 用于计算移动止损距离 (动态调整)
         rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
@@ -2198,6 +2226,9 @@ class AI_MT5_Bot:
                         # 保存市场数据到DB
                         self.db_manager.save_market_data(df, self.symbol, self.tf_name)
                         
+                        # 更新 Grid Strategy 数据
+                        self.grid_strategy.update_market_data(df)
+                        
                         # 使用 data_processor 计算指标
                         processor = MT5DataProcessor()
                         df_features = processor.generate_features(df)
@@ -2313,6 +2344,17 @@ class AI_MT5_Bot:
                             
                         logger.info(f"RVGI+CCI 分析: {rvgi_cci_result['signal']} (Strength: {rvgi_cci_result['strength']})")
                         
+                        # --- 3.2.9 Grid Strategy Analysis ---
+                        grid_signal = self.grid_strategy.get_entry_signal(float(current_price['close']))
+                        logger.info(f"Grid Kalman Signal: {grid_signal}")
+                        
+                        grid_status = {
+                            "active": self.grid_strategy.long_pos_count > 0 or self.grid_strategy.short_pos_count > 0,
+                            "longs": self.grid_strategy.long_pos_count,
+                            "shorts": self.grid_strategy.short_pos_count,
+                            "kalman_price": self.grid_strategy.kalman_value
+                        }
+
                         # 准备优化器池信息供 AI 参考
                         optimizer_info = {
                             "available_optimizers": list(self.optimizers.keys()),
