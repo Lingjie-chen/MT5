@@ -536,6 +536,7 @@ class AI_MT5_Bot:
         logger.info(f"执行逻辑: Action={llm_action}, Signal={signal}, Explicit SL={explicit_sl}, TP={explicit_tp}")
 
         # --- 2. 持仓管理 (已开仓状态) ---
+        added_this_cycle = False
         if positions and len(positions) > 0:
             for pos in positions:
                 pos_type = pos.type # 0: Buy, 1: Sell
@@ -569,14 +570,12 @@ class AI_MT5_Bot:
                 # B. 加仓逻辑 (Add Position)
                 should_add = False
                 # 用户需求: 如果大模型综合分析结果为同方向，则视为加仓指令
-                if is_buy_pos and llm_action in ['add_buy', 'buy']: 
-                    should_add = True
-                elif not is_buy_pos and llm_action in ['add_sell', 'sell']: 
-                    should_add = True
-                
-                # 如果是单纯的 buy/sell 信号，且已有同向仓位，通常视为 hold，除非明确 add
-                # 但如果用户希望 "完全交给大模型"，那么如果大模型在有仓位时发出了 buy，可能意味着加仓
-                # 为了安全，我们严格限制只有 'add_xxx' 才加仓，或者 signal 极强
+                # 限制: 每个周期只加仓一次，避免重复加仓
+                if not added_this_cycle:
+                    if is_buy_pos and llm_action in ['add_buy', 'buy']: 
+                        should_add = True
+                    elif not is_buy_pos and llm_action in ['add_sell', 'sell']: 
+                        should_add = True
                 
                 if should_add:
                     logger.info(f"执行加仓 #{pos.ticket} 方向 (Action: {llm_action})")
@@ -588,16 +587,7 @@ class AI_MT5_Bot:
                         explicit_tp,
                         comment="AI: Add Position"
                     )
-                    # 标记已执行加仓，避免后续重复处理或误报
-                    # 注意: 这里不 break，因为可能持有多单，都需要加仓? 通常只加一次。
-                    # 为了避免对每个持仓都加仓 (指数级爆炸)，我们需要限制。
-                    # 简单策略: 每个 Signal 周期只加一次。
-                    # 由于 execute_trade 是每个 tick (或 15m) 调用一次? 
-                    # 不，它是 run 循环里调用的。
-                    # 如果 signal 持续 15分钟，会加仓很多次吗？
-                    # run 循环里: if should_trade_analyze -> analyze -> execute_trade.
-                    # analyze 是 900s 一次。所以每 15 分钟只会执行一次 execute_trade。
-                    # 所以这里加仓是安全的 (每 15 分钟最多加一次)。
+                    added_this_cycle = True # 标记本轮已加仓
                     pass
                     
                 # C. 持仓 (Hold) - 默认行为
@@ -628,9 +618,13 @@ class AI_MT5_Bot:
         has_position = len(bot_positions) > 0
         
         # 如果有持仓且不是加仓指令，则不再开新仓
-        if has_position and 'add' not in llm_action:
-            logger.info(f"已有持仓 ({len(bot_positions)}), 且非加仓指令 ({llm_action}), 跳过开仓")
-            return
+        if has_position:
+            if added_this_cycle:
+                logger.info(f"本轮已执行加仓，跳过额外开仓")
+                return
+            elif 'add' not in llm_action:
+                logger.info(f"已有持仓 ({len(bot_positions)}), 且非加仓指令 ({llm_action}), 跳过开仓")
+                return
 
         # 执行开仓/挂单
         trade_type = None
