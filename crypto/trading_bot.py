@@ -966,6 +966,14 @@ class CryptoTradingBot:
         #    return
         if contracts < 1: contracts = 1 # Force at least 1 contract if margin allows but rounding down caused 0
         
+        # 2.1 Re-verify margin for the final contract size (especially if forced to 1)
+        actual_notional = contracts * contract_size * current_price
+        actual_margin = actual_notional / leverage
+        
+        if actual_margin > free_balance * 0.98: # 2% buffer
+             logger.warning(f"Insufficient balance for {contracts} contracts. Required: {actual_margin:.2f}, Free: {free_balance:.2f}")
+             return
+        
         # 3. Execute
         try:
             side = 'buy' if is_buy else 'sell'
