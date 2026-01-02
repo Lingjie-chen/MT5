@@ -1289,7 +1289,9 @@ class AI_MT5_Bot:
                 total_profit = 0.0
                 
                 for deal in deals:
-                    total_profit += deal.profit + deal.swap + deal.commission
+                    # Safely access commission
+                    commission = getattr(deal, 'commission', 0.0)
+                    total_profit += deal.profit + deal.swap + commission
                     
                     if deal.entry == mt5.DEAL_ENTRY_IN:
                         open_time_ts = deal.time
@@ -2030,7 +2032,9 @@ class AI_MT5_Bot:
                     # Use position_id as ticket
                     ticket = deal.position_id
                     symbol = deal.symbol
-                    profit = deal.profit + deal.swap + deal.commission
+                    # Safely access commission
+                    commission = getattr(deal, 'commission', 0.0)
+                    profit = deal.profit + deal.swap + commission
                     
                     # We need to ensure this trade exists in our DB
                     # Since we don't have the full open info easily without searching IN deals,
