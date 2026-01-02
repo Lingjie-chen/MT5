@@ -1154,6 +1154,7 @@ class AI_MT5_Bot:
                 
                 # 如果没有明确价格，但有 ATR 倍数建议 (兼容旧逻辑或备用)，则计算
                 elif new_sl_multiplier > 0 or new_tp_multiplier > 0:
+                    # DEBUG: Replaced logic
                     current_sl_dist = atr * new_sl_multiplier
                     current_tp_dist = atr * new_tp_multiplier
                     
