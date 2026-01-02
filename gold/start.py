@@ -2390,6 +2390,9 @@ class AI_MT5_Bot:
                             }
                         }
 
+                        # --- 3.3 DeepSeek 分析 (Throttle to 1 Hour) ---
+                        should_run_llm = (time.time() - self.last_llm_time >= 3600) or (self.last_llm_time == 0)
+
                         # --- 3.3 DeepSeek 分析 ---
                         logger.info("正在调用 DeepSeek 分析市场结构...")
                         
@@ -2459,12 +2462,16 @@ class AI_MT5_Bot:
                         }
                         
                         # 调用 DeepSeek，传入性能数据和持仓信息
-                        structure = self.deepseek_client.analyze_market_structure(
-                            market_snapshot, 
-                            current_positions=current_positions_list,
-                            extra_analysis=extra_analysis, 
-                            performance_stats=trade_stats
-                        )
+                        if should_run_llm:
+                            structure = self.deepseek_client.analyze_market_structure(
+                                market_snapshot, 
+                                current_positions=current_positions_list,
+                                extra_analysis=extra_analysis, 
+                                performance_stats=trade_stats
+                            )
+                        else:
+                            structure = {}
+                            logger.info("跳过 DeepSeek 分析 (Throttle)")
                         logger.info(f"DeepSeek 分析完成: {structure.get('market_state')}")
                         
                         # DeepSeek 信号转换
