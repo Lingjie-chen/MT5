@@ -1552,12 +1552,21 @@ class AI_MT5_Bot:
                     
                     if final_sig == "buy":
                         trades_count += 1
-                        if next_price > curr_price: wins += 1
-                        balance += (next_price - curr_price)
+                        diff = next_price - curr_price
+                        balance += diff
+                        if diff > 0: wins += 1
+                        
+                        # Grid Penalty (Simplified)
+                        # Penalty for too tight grid (risk of over-trading)
+                        if p_grid_step < 100: balance -= 10 
+                        
                     elif final_sig == "sell":
                         trades_count += 1
-                        if next_price < curr_price: wins += 1
-                        balance += (curr_price - next_price)
+                        diff = curr_price - next_price
+                        balance += diff
+                        if diff > 0: wins += 1
+                        
+                        if p_grid_step < 100: balance -= 10
             
             if trades_count == 0: return -100
             
@@ -1586,8 +1595,8 @@ class AI_MT5_Bot:
             logger.warning("数据不足，跳过优化")
             return
             
-        # 2. Define Search Space (10 Dimensions)
-        # smc_ma, smc_atr, mfh_lr, mfh_horizon, pem_fast, pem_slow, pem_adx, rvgi_sma, rvgi_cci, ifvg_gap
+        # 2. Define Search Space (12 Dimensions)
+        # smc_ma, smc_atr, mfh_lr, mfh_horizon, pem_fast, pem_slow, pem_adx, rvgi_sma, rvgi_cci, ifvg_gap, grid_step, grid_tp
         bounds = [
             (100, 300),     # smc_ma
             (0.001, 0.005), # smc_atr (Adjusted for M15)
@@ -1598,10 +1607,12 @@ class AI_MT5_Bot:
             (15.0, 30.0),   # pem_adx
             (10, 50),       # rvgi_sma
             (10, 30),       # rvgi_cci
-            (10, 100)       # ifvg_gap
+            (10, 100),      # ifvg_gap
+            (200, 600),     # grid_step (points)
+            (50.0, 200.0)   # grid_tp (global TP USD)
         ]
         
-        steps = [10, 0.0005, 0.005, 1, 5, 10, 1.0, 2, 2, 5]
+        steps = [10, 0.0005, 0.005, 1, 5, 10, 1.0, 2, 2, 5, 50, 10.0]
         
         # 3. Objective
         def objective(params):
