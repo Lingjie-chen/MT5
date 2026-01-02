@@ -1779,10 +1779,15 @@ class AI_MT5_Bot:
                      # 这里简化处理：直接取百分比的中位数，然后转换为价格距离
                      
                      opt_tp_pct = np.percentile(mfes, 60) / 100.0 # 60分位数
-                     opt_sl_pct = np.percentile(maes, 90) / 100.0 # 90分位数
+                     # Increase SL distance: Use 95th percentile or max MAE to give more room
+                     opt_sl_pct = np.percentile(maes, 95) / 100.0 
+                     
+                     # Enforce minimum SL distance based on ATR (e.g., at least 2.5 ATR)
+                     min_sl_dist = atr * 2.5
+                     calc_sl_dist = price * opt_sl_pct
                      
                      mfe_tp_dist = price * opt_tp_pct
-                     mae_sl_dist = price * opt_sl_pct
+                     mae_sl_dist = max(calc_sl_dist, min_sl_dist) # Use the larger of historical MAE or Min ATR
         except Exception as e:
              logger.warning(f"MFE/MAE 计算失败: {e}")
 
@@ -1790,6 +1795,10 @@ class AI_MT5_Bot:
         # 从 market_context 中获取关键位
         struct_tp_price = 0.0
         struct_sl_price = 0.0
+        
+        # Enforce Minimum SL Distance (Hard Floor)
+        # Even if structure suggests a tight SL, we enforce a minimum volatility-based distance
+        min_sl_buffer = atr * 2.0
         
         if market_context:
             # 获取最近的 Supply/Demand 区间
@@ -1892,6 +1901,19 @@ class AI_MT5_Bot:
             base_tp = price + mfe_tp_dist
             base_sl = price - mae_sl_dist
             
+            # Final SL Logic with Buffer Check
+            if struct_sl_price > 0 and struct_sl_price < price:
+                if (price - struct_sl_price) < min_sl_buffer:
+                    final_sl = price - min_sl_buffer
+                else:
+                    final_sl = struct_sl_price
+            else:
+                final_sl = base_sl
+            
+            # Hard Floor Check
+            if (price - final_sl) < min_sl_buffer:
+                final_sl = price - min_sl_buffer
+
             # TP 融合
             if struct_tp_price > price:
                 # 如果结构位比基础 TP 近，说明上方有阻力，保守起见设在阻力前
@@ -1902,12 +1924,23 @@ class AI_MT5_Bot:
                     final_tp = base_tp # 保持 MFE 目标，比较稳健
             else:
                 final_tp = base_tp
-                
-            final_sl = base_sl # SL 主要靠统计风控
             
         else: # Sell
             base_tp = price - mfe_tp_dist
             base_sl = price + mae_sl_dist
+            
+            # Final SL Logic with Buffer Check
+            if struct_sl_price > 0 and struct_sl_price > price:
+                if (struct_sl_price - price) < min_sl_buffer:
+                    final_sl = price + min_sl_buffer
+                else:
+                    final_sl = struct_sl_price
+            else:
+                final_sl = base_sl
+
+            # Hard Floor Check
+            if (final_sl - price) < min_sl_buffer:
+                final_sl = price + min_sl_buffer
             
             if struct_tp_price > 0 and struct_tp_price < price:
                 if struct_tp_price > base_tp: # 支撑位在目标上方 (更近)
@@ -1916,8 +1949,6 @@ class AI_MT5_Bot:
                     final_tp = base_tp
             else:
                 final_tp = base_tp
-                
-            final_sl = base_sl
 
         return final_sl, final_tp
 
