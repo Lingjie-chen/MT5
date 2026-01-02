@@ -1097,61 +1097,41 @@ class AI_MT5_Bot:
             # 如果差距很大，说明 AI 发现了新的结构，或者用户设置的很不合理，需要修正
             
             if has_new_params:
-                # 尝试从 exit_conditions 中直接获取明确的 SL/TP 价格
-                exit_conditions = strategy_params.get('exit_conditions', {})
-                explicit_sl = exit_conditions.get('sl_price', 0.0)
-                explicit_tp = exit_conditions.get('tp_price', 0.0)
+                # 使用 calculate_optimized_sl_tp 进行统一计算和验证
+                ai_exits = strategy_params.get('exit_conditions', {})
+                trade_dir = 'buy' if type_pos == mt5.POSITION_TYPE_BUY else 'sell'
                 
-                # Normalize and Validate
-                if explicit_sl > 0:
-                    explicit_sl = self._normalize_price(explicit_sl)
-                    # 验证 Stops Level
-                    is_valid_sl = True
-                    if type_pos == mt5.POSITION_TYPE_BUY:
-                        if current_price - explicit_sl < stop_level_dist: is_valid_sl = False
-                    else:
-                        if explicit_sl - current_price < stop_level_dist: is_valid_sl = False
+                opt_sl, opt_tp = self.calculate_optimized_sl_tp(trade_dir, current_price, atr, market_context=None, ai_exit_conds=ai_exits)
+                
+                opt_sl = self._normalize_price(opt_sl)
+                opt_tp = self._normalize_price(opt_tp)
+                
+                if opt_sl > 0:
+                    diff_sl = abs(opt_sl - sl)
+                    is_better_sl = False
+                    if type_pos == mt5.POSITION_TYPE_BUY and opt_sl > sl: is_better_sl = True
+                    if type_pos == mt5.POSITION_TYPE_SELL and opt_sl < sl: is_better_sl = True
                     
-                    if not is_valid_sl:
-                        # 如果无效，暂不更新，避免报错
-                        explicit_sl = 0.0
-                
-                if explicit_tp > 0:
-                    explicit_tp = self._normalize_price(explicit_tp)
-                    # 验证 Stops Level
-                    is_valid_tp = True
-                    if type_pos == mt5.POSITION_TYPE_BUY:
-                        if explicit_tp - current_price < stop_level_dist: is_valid_tp = False
-                    else:
-                        if current_price - explicit_tp < stop_level_dist: is_valid_tp = False
-                        
-                    if not is_valid_tp:
-                        explicit_tp = 0.0
+                    valid_sl = True
+                    if type_pos == mt5.POSITION_TYPE_BUY and (current_price - opt_sl < stop_level_dist): valid_sl = False
+                    if type_pos == mt5.POSITION_TYPE_SELL and (opt_sl - current_price < stop_level_dist): valid_sl = False
+                    
+                    if valid_sl and (diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5)):
+                        request['sl'] = opt_sl
+                        changed = True
+                        logger.info(f"AI/Stats 更新 SL: {sl:.2f} -> {opt_sl:.2f}")
 
-                # 如果 LLM 给出了明确的新 SL/TP 价格，则优先使用
-                if explicit_sl > 0 or explicit_tp > 0:
-                    if explicit_sl > 0:
-                         # 智能过滤: 仅当差异 > 20 Points 时更新，避免高频刷单干扰手动操作
-                         # 除非是为了保护利润 (移动止损)
-                         diff_sl = abs(explicit_sl - sl)
-                         is_better_sl = False
-                         if type_pos == mt5.POSITION_TYPE_BUY and explicit_sl > sl: is_better_sl = True # 向上移 (保护利润)
-                         if type_pos == mt5.POSITION_TYPE_SELL and explicit_sl < sl: is_better_sl = True # 向下移 (保护利润)
-                         
-                         if diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5):
-                             request['sl'] = explicit_sl
-                             changed = True
-                             logger.info(f"AI 更新 SL (Real-Time): {sl:.2f} -> {explicit_sl:.2f}")
+                if opt_tp > 0:
+                    diff_tp = abs(opt_tp - tp)
+                    valid_tp = True
+                    if type_pos == mt5.POSITION_TYPE_BUY and (opt_tp - current_price < stop_level_dist): valid_tp = False
+                    if type_pos == mt5.POSITION_TYPE_SELL and (current_price - opt_tp < stop_level_dist): valid_tp = False
                     
-                    if explicit_tp > 0:
-                         diff_tp = abs(explicit_tp - tp)
-                         # TP 修改通常比较随意，给用户更多手动空间
-                         # 只有差异较大时才覆盖
-                         if diff_tp > point * 30:
-                             request['tp'] = explicit_tp
-                             changed = True
-                             logger.info(f"AI 更新 TP (Real-Time): {tp:.2f} -> {explicit_tp:.2f}")
-                
+                    if valid_tp and diff_tp > point * 30:
+                        request['tp'] = opt_tp
+                        changed = True
+                        logger.info(f"AI/Stats 更新 TP: {tp:.2f} -> {opt_tp:.2f}")
+
                 # 如果没有明确价格，但有 ATR 倍数建议 (兼容旧逻辑或备用)，则计算
                 elif new_sl_multiplier > 0 or new_tp_multiplier > 0:
                     # DEBUG: Replaced logic
