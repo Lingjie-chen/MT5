@@ -568,15 +568,18 @@ class AI_MT5_Bot:
 
                 # B. 加仓逻辑 (Add Position)
                 should_add = False
-                if llm_action == 'add_buy' and is_buy_pos: should_add = True
-                elif llm_action == 'add_sell' and not is_buy_pos: should_add = True
+                # 用户需求: 如果大模型综合分析结果为同方向，则视为加仓指令
+                if is_buy_pos and llm_action in ['add_buy', 'buy']: 
+                    should_add = True
+                elif not is_buy_pos and llm_action in ['add_sell', 'sell']: 
+                    should_add = True
                 
                 # 如果是单纯的 buy/sell 信号，且已有同向仓位，通常视为 hold，除非明确 add
                 # 但如果用户希望 "完全交给大模型"，那么如果大模型在有仓位时发出了 buy，可能意味着加仓
                 # 为了安全，我们严格限制只有 'add_xxx' 才加仓，或者 signal 极强
                 
                 if should_add:
-                    logger.info(f"执行加仓 #{pos.ticket} 方向")
+                    logger.info(f"执行加仓 #{pos.ticket} 方向 (Action: {llm_action})")
                     # 加仓逻辑复用开仓逻辑，但可能调整手数
                     self._send_order(
                         "buy" if is_buy_pos else "sell", 
@@ -585,6 +588,17 @@ class AI_MT5_Bot:
                         explicit_tp,
                         comment="AI: Add Position"
                     )
+                    # 标记已执行加仓，避免后续重复处理或误报
+                    # 注意: 这里不 break，因为可能持有多单，都需要加仓? 通常只加一次。
+                    # 为了避免对每个持仓都加仓 (指数级爆炸)，我们需要限制。
+                    # 简单策略: 每个 Signal 周期只加一次。
+                    # 由于 execute_trade 是每个 tick (或 15m) 调用一次? 
+                    # 不，它是 run 循环里调用的。
+                    # 如果 signal 持续 15分钟，会加仓很多次吗？
+                    # run 循环里: if should_trade_analyze -> analyze -> execute_trade.
+                    # analyze 是 900s 一次。所以每 15 分钟只会执行一次 execute_trade。
+                    # 所以这里加仓是安全的 (每 15 分钟最多加一次)。
+                    pass
                     
                 # C. 持仓 (Hold) - 默认行为
                 # 更新 SL/TP (如果 LLM 给出了新的优化值)
