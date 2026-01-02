@@ -2404,8 +2404,10 @@ class AI_MT5_Bot:
                             }
                         }
 
-                        # --- 3.3 DeepSeek 分析 (Throttle to 1 Hour) ---
-                        should_run_llm = (time.time() - self.last_llm_time >= 3600) or (self.last_llm_time == 0)
+                        # --- 3.3 DeepSeek 分析 (Disable Throttle) ---
+                        # 用户要求不跳过分析
+                        should_run_llm = True
+                        # should_run_llm = (time.time() - self.last_llm_time >= 3600) or (self.last_llm_time == 0)
 
                         # --- 3.3 DeepSeek 分析 ---
                         logger.info("正在调用 DeepSeek 分析市场结构...")
