@@ -147,7 +147,9 @@ class KalmanGridStrategy:
         count = 0
         for pos in positions:
             if pos.magic == self.magic_number:
-                total_profit += pos.profit + pos.swap + pos.commission
+                # Safely access commission as it might be missing in some MT5 versions/brokers
+                commission = getattr(pos, 'commission', 0.0)
+                total_profit += pos.profit + pos.swap + commission
                 count += 1
         
         if count == 0: return False
