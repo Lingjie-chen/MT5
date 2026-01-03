@@ -1,10 +1,10 @@
 @echo off
-title DB Checkpoint & Auto-Update Service
+title DB Checkpoint ^& Auto-Update Service
 color 0b
 
 cd /d "%~dp0\.."
 
-echo [%DATE% %TIME%] Starting Database Checkpoint & Sync Service (Windows)...
+echo [%DATE% %TIME%] Starting Database Checkpoint ^& Sync Service (Windows)...
 echo Intervals: Every 60 seconds
 echo ---------------------------------------------------
 
