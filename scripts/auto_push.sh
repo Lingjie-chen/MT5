@@ -29,9 +29,28 @@ perform_sync() {
 
     # 2. Pull Remote Changes
     echo "⬇️  Checking for remote updates..."
+    # 使用临时变量捕获 git pull 的输出和退出码，区分网络错误和冲突
     if ! git pull --rebase origin master; then
-        echo "⚠️  Conflict detected during pull. Please resolve manually."
-        return 1
+        EXIT_CODE=$?
+        echo "⚠️  Git pull failed with exit code $EXIT_CODE."
+        
+        # 尝试检测是否为网络相关错误 (LibreSSL, connection refused, time out, etc.)
+        # 注意: 这里的检测比较粗略，主要为了防止网络波动中断自动流程
+        # 如果是 conflict (通常 exit code 1)，则需要人工干预，但如果是网络问题，我们希望重试
+        
+        # 简单策略：在 Loop 模式下，如果是网络错误，我们不应该 return 1 (因为这会中断某些逻辑)，
+        # 而是应该仅仅打印警告并继续尝试提交本地代码（也许下次 push 能成功或再次失败）
+        # 但如果是冲突，必须解决。
+        
+        # 让我们检查是否是冲突状态
+        if git status | grep -q "Unmerged paths"; then
+             echo "❌  MERGE CONFLICT detected! Please resolve manually."
+             # 冲突时必须停止，否则会提交冲突标记文件
+             return 1
+        else
+             echo "⚠️  Likely a network error or no upstream changes. Skipping pull and proceeding to push..."
+             # 网络错误不应阻止尝试推送本地变更 (虽然通常 pull 失败 push 也会失败，但值得一试)
+        fi
     fi
 
     # 3. Check & Commit Local Changes
