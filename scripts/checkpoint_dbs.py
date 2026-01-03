@@ -25,8 +25,20 @@ def checkpoint_db(db_path):
 
 import subprocess
 
+def git_pull_updates(base_dir):
+    """Pull updates from remote repository"""
+    try:
+        print("⬇️ Checking for remote updates...")
+        subprocess.run(["git", "pull", "origin", "master"], cwd=base_dir, check=True)
+    except Exception as e:
+        print(f"⚠️ Git pull failed: {e}")
+
 def git_auto_sync(base_dir):
     """Auto commit and push changes if databases have changed"""
+    
+    # First, pull latest changes from GitHub
+    git_pull_updates(base_dir)
+    
     try:
         # Check if there are changes
         status = subprocess.check_output(["git", "status", "--porcelain"], cwd=base_dir).decode("utf-8")
