@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# 获取当前脚本所在目录的上一级目录（因为脚本在 scripts/ 下）
+# 获取当前脚本所在目录的上一级目录
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # 切换到项目根目录
 cd "$PROJECT_ROOT" || { echo "❌ Failed to change directory to project root: $PROJECT_ROOT"; exit 1; }
 
 echo "========================================================"
-echo "🚀 Starting auto-push process for project: $(basename "$PROJECT_ROOT")"
+echo "🚀 Git Auto-Sync Tool"
 echo "📂 Location: $PROJECT_ROOT"
 echo "========================================================"
 
@@ -17,43 +17,79 @@ if [ ! -d ".git" ]; then
     exit 1
 fi
 
-# 检查 Git 状态
-if [ -z "$(git status --porcelain)" ]; then 
-  echo "✨ No changes to commit. Working tree is clean."
-  exit 0
-fi
+# 帮助函数：单次同步逻辑
+perform_sync() {
+    local COMMIT_MSG="$1"
+    
+    # 1. Checkpoint Database (Mac/Linux only, for Windows called by .bat)
+    if [ -f "scripts/checkpoint_dbs.py" ]; then
+        echo "🛠  Running Database Checkpoint..."
+        python3 scripts/checkpoint_dbs.py
+    fi
 
-# 显示变更文件
-echo "📝 Detected changes in the following files:"
-git status --short
-echo "--------------------------------------------------------"
+    # 2. Pull Remote Changes
+    echo "⬇️  Checking for remote updates..."
+    if ! git pull --rebase origin master; then
+        echo "⚠️  Conflict detected during pull. Please resolve manually."
+        return 1
+    fi
 
-# 询问提交信息
-echo "💡 Enter commit message below."
-read -p "💬 Message (Press Enter for default 'Auto update'): " USER_MSG
-COMMIT_MSG=${USER_MSG:-"Auto update"}
+    # 3. Check & Commit Local Changes
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "📝 Detected changes..."
+        git add .
+        
+        # 如果没有提供 commit message，且处于交互模式，则询问
+        if [ -z "$COMMIT_MSG" ]; then
+            echo "💡 Enter commit message below."
+            read -p "💬 Message (Press Enter for default 'Auto update'): " USER_MSG
+            COMMIT_MSG=${USER_MSG:-"Auto update"}
+        fi
+        
+        # 如果还是空的（自动模式下），生成默认 message
+        if [ -z "$COMMIT_MSG" ]; then
+            COMMIT_MSG="auto: sync updates $(date '+%Y-%m-%d %H:%M:%S')"
+        fi
 
-# 执行 Git 命令序列
-echo "--------------------------------------------------------"
-echo "⏳ Step 1: Adding all files..."
-git add .
+        echo "📦 Committing: $COMMIT_MSG"
+        git commit -m "$COMMIT_MSG"
+    else
+        echo "✨ No local changes to commit."
+    fi
 
-echo "📦 Step 2: Committing..."
-git commit -m "$COMMIT_MSG"
+    # 4. Push to Remote
+    echo "⬆️  Pushing to GitHub..."
+    if git push origin master; then
+        echo "✅ Sync successful."
+        echo "🔗 View at: $(git remote get-url origin)"
+        return 0
+    else
+        echo "❌ Push failed."
+        return 1
+    fi
+}
 
-echo "⬇️  Step 3: Pulling latest changes from remote (rebase)..."
-# 使用 rebase 避免产生不必要的 merge commit，保持提交历史整洁
-if ! git pull --rebase origin master; then
-    echo "⚠️  Conflict detected during pull. Please resolve conflicts manually."
-    exit 1
-fi
+# --- 主逻辑 ---
 
-echo "⬆️  Step 4: Pushing to GitHub..."
-if git push origin master; then
-    echo "--------------------------------------------------------"
-    echo "✅ Success! Code has been pushed to GitHub."
-    echo "🔗 View at: $(git remote get-url origin)"
+# 模式 1: 自动循环模式 (Auto Loop Mode)
+if [ "$1" == "--loop" ] || [ "$1" == "auto" ]; then
+    echo "🔄 Starting Loop Mode (Interval: 60s)..."
+    while true; do
+        echo ""
+        echo "==================================================="
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Sync Cycle..."
+        
+        # 在循环模式下，自动生成 commit message
+        perform_sync "auto: sync updates $(date '+%Y-%m-%d %H:%M:%S')"
+        
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Cycle Complete."
+        echo "==================================================="
+        echo "⏳ Waiting 60 seconds..."
+        sleep 60
+    done
+
+# 模式 2: 单次手动/自动模式 (Single Run)
 else
-    echo "❌ Failed to push code. Please check your network or permissions."
-    exit 1
+    # 如果提供了参数作为 commit message
+    perform_sync "$1"
 fi

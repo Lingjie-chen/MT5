@@ -2,9 +2,18 @@
 title DB Checkpoint & Auto-Update Service
 color 0b
 
+:: 检查是否运行在 macOS (通过检查 uname 命令是否存在)
+where uname >nul 2>nul
+if %errorlevel%==0 (
+    echo Detected Unix-like environment (possibly Mac/Linux under simulation).
+    echo Switching to Shell Script Loop Mode...
+    sh "%~dp0\auto_push.sh" --loop
+    exit /b
+)
+
 cd /d "%~dp0\.."
 
-echo [%DATE% %TIME%] Starting Database Checkpoint & Sync Service...
+echo [%DATE% %TIME%] Starting Database Checkpoint & Sync Service (Windows)...
 echo Intervals: Every 60 seconds
 echo ---------------------------------------------------
 
