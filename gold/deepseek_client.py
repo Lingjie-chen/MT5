@@ -224,6 +224,9 @@ class DeepSeekClient:
         4. RVGI+CCI: 复合动量策略，确认趋势强度。
         5. MFH (Multiple Forecast Horizons): 多周期预测。
         6. MTF (Multi-Timeframe): 多时间周期一致性，大周期制约小周期。
+        7. **流动性猎取 (Liquidity Sweep) - 黄金交易关键**: 
+           - 黄金市场经常出现假突破。请特别留意"扫损"行为（Price Action 先突破结构位扫掉 SL，然后迅速反转）。
+           - **不要在流动性被扫掉之前急于进场。** 等待明确的 MSB (Market Structure Break) 确认。
         8. **基于 MFE/MAE 的结构质量评估**: 结合历史绩效 (Avg MFE/MAE)，评估当前市场结构是否有利于产生高盈亏比的交易。
         {opt_info_str}
 

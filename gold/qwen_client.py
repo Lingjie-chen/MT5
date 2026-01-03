@@ -262,9 +262,10 @@ class QwenClient:
            - 如果无持仓且信号明确，请**开仓 (Open Position)**。
         
         **重要提示**: 为了避免错过行情或在反转时错误成交，**请尽量使用市价单 (Market Execution)**，不要使用限价单 (Limit Orders)。如果看多，直接 Buy；如果看空，直接 Sell。
+        **资金安全第一**: 如果市场趋势不明朗，或 DeepSeek 提示存在"震荡"风险，请毫不犹豫地选择 **Wait (Hold)**。不亏损就是最好的盈利。
 
         请提供以下优化结果，并确保分析全面、逻辑严密，不要使用省略号或简化描述。**请务必使用中文进行输出（Strategy Logic Rationale 部分）**：
-        1. 核心决策：buy/sell/hold/close/add_buy/add_sell (请避免使用 limit 挂单)
+        1. 核心决策：buy/sell/hold/close/add_buy/add_sell (请避免使用 limit 挂单，若市场不明请选择 hold)
         2. 入场/加仓条件：基于情绪得分和技术指标的优化规则。
         3. 出场/减仓条件：**基于 MFE/MAE 分析的合理优化止盈止损点**。请直接给出具体价格（sl_price, tp_price）。
            - **Stop Loss (SL)**: 参考 MAE 分布，设定在能过滤掉大部分"假突破"但又能控制最大亏损的位置。结合市场结构，放在最近的 Swing High/Low 或结构位之外。

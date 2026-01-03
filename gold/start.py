@@ -2,7 +2,7 @@ import time
 import sys
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
@@ -321,6 +321,89 @@ class AI_MT5_Bot:
             profit = getattr(result, 'profit', 0.0)
             self.send_telegram_message(f"🔄 *Position Closed*\nTicket: `{position.ticket}`\nReason: {comment}\nProfit: {profit}")
             return True
+
+    def check_risk_reward_ratio(self, entry_price, sl_price, tp_price):
+        """检查盈亏比是否达标"""
+        if sl_price <= 0 or tp_price <= 0:
+            return False, 0.0
+            
+        risk = abs(entry_price - sl_price)
+        reward = abs(tp_price - entry_price)
+        
+        if risk == 0:
+            return False, 0.0
+            
+        rr_ratio = reward / risk
+        # 硬性要求: 盈亏比必须 >= 1.5
+        if rr_ratio < 1.5:
+            logger.warning(f"盈亏比过低 ({rr_ratio:.2f} < 1.5), 拒绝交易. Risk={risk:.2f}, Reward={reward:.2f}")
+            return False, rr_ratio
+            
+        return True, rr_ratio
+
+    def check_daily_loss_limit(self):
+        """检查当日亏损是否超限"""
+        try:
+            # 获取当日历史交易
+            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            deals = mt5.history_deals_get(today, datetime.now() + timedelta(days=1))
+            
+            if deals is None:
+                return True
+                
+            daily_profit = sum([d.profit + d.swap + d.commission for d in deals])
+            account_info = mt5.account_info()
+            if not account_info:
+                return True
+                
+            balance = account_info.balance
+            # 每日最大亏损: 余额的 10%
+            max_daily_loss = -1 * (balance * 0.10)
+            
+            if daily_profit < max_daily_loss:
+                logger.error(f"今日累计亏损 {daily_profit:.2f} 已超过风控限额 {max_daily_loss:.2f} (10%). 停止今日交易.")
+                return False
+                
+            return True
+        except Exception as e:
+            logger.error(f"检查日内风控失败: {e}")
+            return True # 失败时不阻断，避免死循环，但需注意
+
+    def check_consecutive_losses(self):
+        """检查连续亏损冷却"""
+        # 获取最近 10 笔已平仓交易 (足够覆盖5笔)
+        history = self.db_manager.get_trade_performance_stats(limit=10)
+        if not history:
+            return True
+            
+        losses = 0
+        for trade in history:
+            # 确保 trade 是字典并且有 profit 字段
+            if isinstance(trade, dict) and trade.get('profit', 0) < 0:
+                losses += 1
+            else:
+                break # 遇到盈利就中断
+        
+        # 阈值修改为 5 笔
+        if losses >= 5:
+            # 如果连续亏损 >= 5 笔，检查最后一笔交易的时间
+            # 确保 history[0] 存在且是字典
+            if history and isinstance(history[0], dict):
+                last_trade_time_str = history[0].get('close_time')
+                try:
+                    # 简单解析时间，如果 DB 格式不同需调整
+                    if last_trade_time_str:
+                        last_trade_time = datetime.fromisoformat(str(last_trade_time_str))
+                        time_diff = datetime.now() - last_trade_time
+                        
+                        # 冷却期 2 小时
+                        if time_diff.total_seconds() < 7200:
+                            logger.warning(f"触发连续亏损冷却 ({losses} 连败). 上次平仓于 {last_trade_time}. 需等待 2 小时.")
+                            return False
+                except Exception:
+                    pass
+                
+        return True
 
     def calculate_dynamic_lot(self, strength, market_context=None, mfe_mae_ratio=None, ai_signals=None):
         """
@@ -762,7 +845,14 @@ class AI_MT5_Bot:
                      logger.error("无法计算优化 SL/TP，放弃交易")
                      return 
 
-            comment = f"AI: {llm_action.upper()}"
+            # 再次确认 R:R (针对 Limit 单的最终确认)
+            if 'limit' in trade_type or 'stop' in trade_type:
+                 valid, rr = self.check_risk_reward_ratio(price, explicit_sl, explicit_tp)
+                 if not valid:
+                     logger.warning(f"Limit单最终 R:R 检查未通过: {rr:.2f}")
+                     return
+
+            comment = f"AI-{action}"
             
             # --- 动态仓位计算 ---
             if suggested_lot and suggested_lot > 0:
