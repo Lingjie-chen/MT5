@@ -255,6 +255,20 @@ class KalmanGridStrategy:
         if 'max_grid_steps' in params: self.max_grid_steps = int(params['max_grid_steps'])
         if 'global_tp' in params: self.global_tp = float(params['global_tp'])
 
+    def get_config(self):
+        """
+        Return current configuration state for optimization/reporting
+        """
+        return {
+            'grid_step_points': self.grid_step_points,
+            'max_grid_steps': self.max_grid_steps,
+            'lot_type': self.lot_type,
+            'global_tp': self.global_tp,
+            'tp_steps': self.tp_steps,
+            'kalman_measurement_variance': self.kalman_measurement_variance,
+            'kalman_process_variance': self.kalman_process_variance
+        }
+
     def _update_positions_state(self, positions):
         self.long_pos_count = 0
         self.short_pos_count = 0
