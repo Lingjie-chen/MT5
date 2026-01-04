@@ -403,6 +403,7 @@ class CryptoTradingBot:
             "matrix_ml": ml_res, 
             "smc": smc_res, 
             "mfh": mfh_res,
+            "ifvg": adv_res.get('ifvg', {'active_zones': [], 'reasons': []}), # Extract IFVG explicitly
             "active_params": self.short_term_params,
             "optimized_weights": self.hybrid_optimizer.weights
         }
@@ -415,21 +416,44 @@ class CryptoTradingBot:
         )
 
         # Update Grid Strategy with SMC Levels
-        if 'smc_levels' in structure: # Assuming DeepSeek returns levels
-             self.grid_strategy.update_smc_levels(structure['smc_levels'])
-        elif 'support_levels' in structure or 'resistance_levels' in structure:
-             # Fallback: construct simplified SMC levels
-             simulated_smc = {
-                 'ob': [], 
-                 'fvg': []
-             }
-             if 'support_levels' in structure:
-                 for lvl in structure['support_levels']:
-                     simulated_smc['ob'].append({'top': lvl*1.001, 'bottom': lvl*0.999, 'type': 'bullish'})
-             if 'resistance_levels' in structure:
-                 for lvl in structure['resistance_levels']:
-                     simulated_smc['ob'].append({'top': lvl*1.001, 'bottom': lvl*0.999, 'type': 'bearish'})
-             self.grid_strategy.update_smc_levels(simulated_smc)
+        # Extract SMC and IFVG levels for Grid
+        smc_grid_data = {
+            'ob': [],
+            'fvg': []
+        }
+        
+        # 1. From SMC Analyzer (if available in smc_res)
+        if 'structure' in smc_res:
+             # SMCAnalyzer usually returns structure state, but maybe we can enhance it to return levels
+             # Assuming smc_res might contain 'levels' or we parse them. 
+             # For now, let's rely on IFVG which provides zones.
+             pass
+             
+        # 2. From IFVG (Fair Value Gaps & Order Blocks Proxy)
+        if 'ifvg' in extra_analysis:
+            zones = extra_analysis['ifvg'].get('active_zones', [])
+            # Map zones to grid format
+            # Zone format: {'top': float, 'bottom': float, 'type': 'supply'/'demand'}
+            for z in zones:
+                z_type = 'bearish' if z['type'] == 'supply' else 'bullish'
+                smc_grid_data['ob'].append({
+                    'top': z['top'], 
+                    'bottom': z['bottom'], 
+                    'type': z_type
+                })
+                # Treat strong zones as OBs for grid placement
+        
+        # 3. From DeepSeek (if it returns specific levels)
+        if 'smc_levels' in structure: 
+             # DeepSeek might identify levels not found by algos
+             # Merge them
+             if 'ob' in structure['smc_levels']:
+                 smc_grid_data['ob'].extend(structure['smc_levels']['ob'])
+             if 'fvg' in structure['smc_levels']:
+                 smc_grid_data['fvg'].extend(structure['smc_levels']['fvg'])
+
+        # Update Grid Strategy
+        self.grid_strategy.update_smc_levels(smc_grid_data)
         
         # DeepSeek Signal
         ds_signal = structure.get('preliminary_signal', 'neutral')
