@@ -2450,12 +2450,9 @@ class AI_MT5_Bot:
                         
                         # --- 3.2.7 IFVG 分析 (新增) ---
                         # 在 AdvancedAnalysisAdapter 中已调用，但这里需要单独提取结果供后续使用
-                        # 我们之前在步骤 3.2.1 的 AdvancedAnalysisAdapter.analyze 中已经获取了 ifvg_result
-                        # 但由于 analyze 方法返回的是一个包含多个子结果的字典，我们需要确保 ifvg_result 变量被正确定义
                         if adv_result and 'ifvg' in adv_result:
                             ifvg_result = adv_result['ifvg']
                         else:
-                            # Fallback if advanced analysis failed or ifvg key missing
                             ifvg_result = {"signal": "hold", "strength": 0, "reasons": [], "active_zones": []}
                         
                         logger.info(f"IFVG 分析: {ifvg_result['signal']} (Strength: {ifvg_result['strength']})")
@@ -2468,7 +2465,43 @@ class AI_MT5_Bot:
                             
                         logger.info(f"RVGI+CCI 分析: {rvgi_cci_result['signal']} (Strength: {rvgi_cci_result['strength']})")
                         
-                        # --- 3.2.9 Grid Strategy Analysis ---
+                        # --- 3.2.9 Grid Strategy Analysis (Updated with SMC) ---
+                        # Extract SMC and IFVG levels for Grid
+                        smc_grid_data = {
+                            'ob': [],
+                            'fvg': []
+                        }
+                        
+                        # 1. From IFVG
+                        if 'active_zones' in ifvg_result:
+                            for z in ifvg_result['active_zones']:
+                                z_type = 'bearish' if z['type'] == 'supply' else 'bullish'
+                                smc_grid_data['ob'].append({
+                                    'top': z['top'], 
+                                    'bottom': z['bottom'], 
+                                    'type': z_type
+                                })
+                        
+                        # 2. From SMC Analyzer (Extract Active OBs/FVGs if available)
+                        # We need to ensure SMCAnalyzer returns these lists in 'details'
+                        if 'details' in smc_result:
+                            if 'ob' in smc_result['details'] and 'active_obs' in smc_result['details']['ob']:
+                                for ob in smc_result['details']['ob']['active_obs']:
+                                    smc_grid_data['ob'].append({
+                                        'top': ob['top'],
+                                        'bottom': ob['bottom'],
+                                        'type': ob['type']
+                                    })
+                            if 'fvg' in smc_result['details'] and 'active_fvgs' in smc_result['details']['fvg']:
+                                for fvg in smc_result['details']['fvg']['active_fvgs']:
+                                    smc_grid_data['fvg'].append({
+                                        'top': fvg['top'],
+                                        'bottom': fvg['bottom'],
+                                        'type': fvg['type']
+                                    })
+
+                        self.grid_strategy.update_smc_levels(smc_grid_data)
+                        
                         grid_signal = self.grid_strategy.get_entry_signal(float(current_price['close']))
                         logger.info(f"Grid Kalman Signal: {grid_signal}")
                         

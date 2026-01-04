@@ -542,25 +542,50 @@ class SMCAnalyzer:
 
     def detect_order_blocks(self, df):
         closes = df['close'].values; opens = df['open'].values; highs = df['high'].values; lows = df['low'].values; current_ask = closes[-1]
+        active_obs = []
         for i in range(len(df)-2, len(df)-30, -1):
             if (opens[i-1] > closes[i-1] and opens[i] < closes[i] and (closes[i] - opens[i]) > (opens[i-1] - closes[i-1]) * 1.5):
                 ob_high = highs[i-1]; ob_low = lows[i-1]
-                if current_ask >= ob_low and current_ask <= ob_high: return {"signal": "buy", "reason": "Bullish OB Retest", "price": ob_high}
+                active_obs.append({'type': 'bullish', 'top': ob_high, 'bottom': ob_low, 'index': i})
             if (opens[i-1] < closes[i-1] and opens[i] > closes[i] and (opens[i] - closes[i]) > (closes[i-1] - opens[i-1]) * 1.5):
                 ob_high = highs[i-1]; ob_low = lows[i-1]
-                if current_ask <= ob_high and current_ask >= ob_low: return {"signal": "sell", "reason": "Bearish OB Retest", "price": ob_low}
-        return {"signal": "neutral", "reason": ""}
+                active_obs.append({'type': 'bearish', 'top': ob_high, 'bottom': ob_low, 'index': i})
+        
+        # Determine signal based on active OBs
+        signal = "neutral"; reason = ""; price = 0
+        for ob in active_obs:
+            if ob['type'] == 'bullish' and current_ask >= ob['bottom'] and current_ask <= ob['top']:
+                signal = "buy"; reason = "Bullish OB Retest"; price = ob['top']
+                break
+            if ob['type'] == 'bearish' and current_ask <= ob['top'] and current_ask >= ob['bottom']:
+                signal = "sell"; reason = "Bearish OB Retest"; price = ob['bottom']
+                break
+                
+        return {"signal": signal, "reason": reason, "price": price, "active_obs": active_obs}
 
     def detect_fvg(self, df):
         highs = df['high'].values; lows = df['low'].values; closes = df['close'].values; point = 0.00001
+        active_fvgs = []
         for i in range(len(df)-1, 2, -1):
             if lows[i-2] > highs[i] + (3*point):
-                gap_top = lows[i-2]; gap_bot = highs[i]; curr = closes[-1]
-                if curr <= gap_top and curr >= gap_bot: return {"signal": "buy", "reason": "Bullish FVG (Gap Fill)", "top": gap_top, "bottom": gap_bot}
+                gap_top = lows[i-2]; gap_bot = highs[i]
+                active_fvgs.append({'type': 'bullish', 'top': gap_top, 'bottom': gap_bot, 'index': i})
             if highs[i-2] < lows[i] - (3*point):
-                gap_top = lows[i]; gap_bot = highs[i-2]; curr = closes[-1]
-                if curr <= gap_top and curr >= gap_bot: return {"signal": "sell", "reason": "Bearish FVG (Gap Fill)", "top": gap_top, "bottom": gap_bot}
-        return {"signal": "neutral", "reason": ""}
+                gap_top = lows[i]; gap_bot = highs[i-2]
+                active_fvgs.append({'type': 'bearish', 'top': gap_top, 'bottom': gap_bot, 'index': i})
+        
+        # Determine signal based on active FVGs
+        signal = "neutral"; reason = ""; top = 0; bottom = 0
+        for fvg in active_fvgs:
+            curr = closes[-1]
+            if fvg['type'] == 'bullish' and curr <= fvg['top'] and curr >= fvg['bottom']:
+                signal = "buy"; reason = "Bullish FVG (Gap Fill)"; top = fvg['top']; bottom = fvg['bottom']
+                break
+            if fvg['type'] == 'bearish' and curr <= fvg['top'] and curr >= fvg['bottom']:
+                signal = "sell"; reason = "Bearish FVG (Gap Fill)"; top = fvg['top']; bottom = fvg['bottom']
+                break
+                
+        return {"signal": signal, "reason": reason, "top": top, "bottom": bottom, "active_fvgs": active_fvgs}
 
     def detect_bos(self, df):
         highs = df['high'].values; lows = df['low'].values; closes = df['close'].values
