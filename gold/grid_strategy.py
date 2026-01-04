@@ -12,15 +12,17 @@ class KalmanGridStrategy:
         self.lot = initial_lot
         
         # Grid Parameters (Default from MQL)
-        self.grid_step = 300 # Points (30 pips for 5 digit broker) -> user input 30, assuming 4 digit? 
-        # Usually gold 30 points = 0.3 USD? Or 3.0 USD?
-        # MQL: input int gridStep=30; 
-        # In Gold (XAUUSD), 1 point = 0.01. 30 points = 0.30.
-        # If user meant pips, it might be 300 points.
-        # Let's use a safe default and allow config.
         self.grid_step_points = 300 
-        self.max_grid_steps = 10 # 0 in MQL means unlimited, let's set a safe limit
-        self.lot_type = 'GEOMETRIC' # 'FIXED', 'ARITHMETIC', 'GEOMETRIC'
+        self.max_grid_steps = 10 
+        self.lot_type = 'GEOMETRIC' 
+        
+        # SMC Parameters
+        self.smc_levels = {
+            'ob_bullish': [], # Order Blocks
+            'ob_bearish': [],
+            'fvg_bullish': [], # Fair Value Gaps
+            'fvg_bearish': []
+        }
         
         # Kalman Parameters
         self.kalman_measurement_variance = 10.0
@@ -58,6 +60,35 @@ class KalmanGridStrategy:
         self.bb_lower = 0.0
         self.ma_value = 0.0
 
+    def update_smc_levels(self, smc_data):
+        """
+        Update SMC levels from DeepSeek/SMC Analyzer for intelligent grid placement
+        """
+        if not smc_data: return
+
+        # Expected format: {'ob': [{'top': x, 'bottom': y, 'type': 'bullish'}], ...}
+        
+        if 'ob' in smc_data:
+            self.smc_levels['ob_bullish'] = [
+                (zone['top'] + zone['bottom'])/2 
+                for zone in smc_data['ob'] if zone.get('type') == 'bullish'
+            ]
+            self.smc_levels['ob_bearish'] = [
+                (zone['top'] + zone['bottom'])/2 
+                for zone in smc_data['ob'] if zone.get('type') == 'bearish'
+            ]
+            
+        if 'fvg' in smc_data:
+            self.smc_levels['fvg_bullish'] = [
+                (zone['top'] + zone['bottom'])/2 
+                for zone in smc_data['fvg'] if zone.get('type') == 'bullish'
+            ]
+            self.smc_levels['fvg_bearish'] = [
+                (zone['top'] + zone['bottom'])/2 
+                for zone in smc_data['fvg'] if zone.get('type') == 'bearish'
+            ]
+        logger.info(f"Updated SMC Levels: {len(self.smc_levels['ob_bullish'])} Bullish OBs")
+
     def update_market_data(self, df):
         """
         Update indicators based on latest dataframe.
@@ -85,17 +116,12 @@ class KalmanGridStrategy:
         self.kalman_value = updated_state
         
         # 2. Update Bollinger Bands
-        # Using pandas rolling
         rolling_mean = df['close'].rolling(window=self.bb_period).mean()
         rolling_std = df['close'].rolling(window=self.bb_period).std()
         
         self.bb_upper = rolling_mean.iloc[-1] + (rolling_std.iloc[-1] * self.bb_deviation)
         self.bb_lower = rolling_mean.iloc[-1] - (rolling_std.iloc[-1] * self.bb_deviation)
-        self.ma_value = rolling_mean.iloc[-1] # Use BB middle band as MA or calculate separate? MQL uses separate MA_PERIOD=200
-        
-        # 3. Separate MA (if needed, MQL uses 200)
-        ma_200 = df['close'].rolling(window=200).mean().iloc[-1]
-        # self.ma_value = ma_200 # Optional
+        self.ma_value = rolling_mean.iloc[-1]
 
     def get_entry_signal(self, current_price):
         """
@@ -122,22 +148,81 @@ class KalmanGridStrategy:
         """
         self._update_positions_state(positions)
         
+        # Default Grid Distance
         grid_dist = self.grid_step_points * point
+        
+        # SMC-Aware Grid Spacing (Optional Dynamic Adjustment)
+        # If price is near an OB, we might want to add sooner or later
         
         # Check Buy Grid
         if self.long_pos_count > 0 and self.long_pos_count < self.max_grid_steps:
-            if (self.last_long_price - current_price) >= grid_dist:
+            dist = self.last_long_price - current_price
+            if dist >= grid_dist:
+                # SMC Check: Is there a support level nearby?
+                # If yes, align with it? For simplicity, we stick to distance but scale lot
                 next_lot = self.calculate_next_lot(self.long_pos_count)
                 return 'add_buy', next_lot
                 
         # Check Sell Grid
         if self.short_pos_count > 0 and self.short_pos_count < self.max_grid_steps:
-            if (current_price - self.last_short_price) >= grid_dist:
+            dist = current_price - self.last_short_price
+            if dist >= grid_dist:
                 next_lot = self.calculate_next_lot(self.short_pos_count)
                 return 'add_sell', next_lot
                 
         return None, 0.0
 
+    def calculate_next_lot(self, current_count):
+        """
+        Calculate next lot size based on strategy.
+        Uses Martingale or Pyramid logic.
+        """
+        multiplier = 1.0
+        if self.lot_type == 'GEOMETRIC':
+            # Aggressive scaling for capital utilization
+            multiplier = 1.5 ** current_count 
+        elif self.lot_type == 'ARITHMETIC':
+            multiplier = current_count + 1
+            
+        return float(f"{self.lot * multiplier:.2f}")
+
+    def generate_grid_plan(self, current_price, trend_direction, atr):
+        """
+        Generate a plan for grid deployment (for limit orders)
+        """
+        orders = []
+        
+        # Range
+        upper_bound = current_price + (atr * 5)
+        lower_bound = current_price - (atr * 5)
+        
+        # Find SMC Levels
+        resistances = [p for p in self.smc_levels['ob_bearish'] if p > current_price]
+        supports = [p for p in self.smc_levels['ob_bullish'] if p < current_price]
+        
+        if trend_direction == 'bullish':
+            # Buy Grid
+            levels = sorted([p for p in supports if p > lower_bound], reverse=True)
+            if not levels: # Fallback to arithmetic
+                step = atr * 0.5
+                levels = [current_price - step*i for i in range(1, 6)]
+            
+            for lvl in levels:
+                orders.append({'type': 'buy_limit', 'price': lvl})
+                
+        elif trend_direction == 'bearish':
+            # Sell Grid
+            levels = sorted([p for p in resistances if p < upper_bound])
+            if not levels:
+                step = atr * 0.5
+                levels = [current_price + step*i for i in range(1, 6)]
+                
+            for lvl in levels:
+                orders.append({'type': 'sell_limit', 'price': lvl})
+                
+        return orders
+
+    # ... (Rest of existing methods: check_basket_tp, update_config, _update_positions_state) ...
     def check_basket_tp(self, positions):
         """
         Check if total profit exceeds threshold.
@@ -147,9 +232,9 @@ class KalmanGridStrategy:
         count = 0
         for pos in positions:
             if pos.magic == self.magic_number:
-                # Safely access commission as it might be missing in some MT5 versions/brokers
                 commission = getattr(pos, 'commission', 0.0)
-                total_profit += pos.profit + pos.swap + commission
+                swap = getattr(pos, 'swap', 0.0)
+                total_profit += pos.profit + swap + commission
                 count += 1
         
         if count == 0: return False
@@ -164,102 +249,25 @@ class KalmanGridStrategy:
             
         return False
 
-    def calculate_next_lot(self, current_count):
-        """
-        Calculate next lot size based on strategy.
-        current_count: Number of existing positions (so next is current_count + 1)
-        """
-        # MQL: if(currentPositions > 1) lot = Lot * (MathPow(2, currentPositions-1));
-        # Note: MQL passed 'LongPos' which is count. 
-        # If LongPos=1 (1 trade exists), next is 2nd trade.
-        # MQL: calculateNextLot(1) -> returns Lot (since 1 > 1 is false) -> Wait?
-        # MQL code: if(currentPositions > 1) lot = Lot * pow(2, currentPositions-1)
-        # If I have 1 pos, I call calculateNextLot(1). Result: Lot.
-        # So 2nd trade is same size?
-        # If I have 2 pos, call calculateNextLot(2). Result: Lot * 2^(1) = 2*Lot.
-        # So sequence: 1, 1, 2, 4, 8... ?
-        # Or maybe MQL loop implies currentPositions is the index?
-        # Let's stick to standard Martingale: 1, 2, 4, 8 or 1, 1.5, ...
-        
-        multiplier = 1.0
-        if self.lot_type == 'GEOMETRIC':
-            # 1st Add (2nd trade total): Double?
-            # Let's use 2^(count) -> 1, 2, 4...
-            multiplier = 2.0 ** current_count 
-            # If count=1, mult=2. Next lot = 2*Lot.
-            # Sequence: Initial, 2x, 4x...
-        elif self.lot_type == 'ARITHMETIC':
-            multiplier = current_count + 1
-            
-        return self.lot * multiplier
-
     def update_config(self, params):
-        """
-        Dynamically update strategy parameters from LLM/Optimizer.
-        params: dict containing config keys
-        """
-        if not params:
-            return
-
-        if 'grid_step_points' in params:
-            self.grid_step_points = int(params['grid_step_points'])
-            logger.info(f"Updated Grid Step: {self.grid_step_points}")
-            
-        if 'max_grid_steps' in params:
-            self.max_grid_steps = int(params['max_grid_steps'])
-            
-        if 'lot_type' in params:
-            if params['lot_type'] in ['FIXED', 'ARITHMETIC', 'GEOMETRIC']:
-                self.lot_type = params['lot_type']
-                
-        if 'tp_steps' in params and isinstance(params['tp_steps'], dict):
-            # Convert string keys to int if necessary
-            new_steps = {}
-            for k, v in params['tp_steps'].items():
-                try:
-                    new_steps[int(k)] = float(v)
-                except:
-                    pass
-            if new_steps:
-                self.tp_steps.update(new_steps)
-                logger.info(f"Updated TP Steps: {new_steps}")
-                
-        if 'global_tp' in params:
-            self.global_tp = float(params['global_tp'])
-            
-    def get_config(self):
-        """Return current configuration state for LLM context"""
-        return {
-            "grid_step_points": self.grid_step_points,
-            "max_grid_steps": self.max_grid_steps,
-            "lot_type": self.lot_type,
-            "tp_steps": self.tp_steps,
-            "global_tp": self.global_tp,
-            "kalman_variance": {
-                "measurement": self.kalman_measurement_variance,
-                "process": self.kalman_process_variance
-            }
-        }
+        if not params: return
+        if 'grid_step_points' in params: self.grid_step_points = int(params['grid_step_points'])
+        if 'max_grid_steps' in params: self.max_grid_steps = int(params['max_grid_steps'])
+        if 'global_tp' in params: self.global_tp = float(params['global_tp'])
 
     def _update_positions_state(self, positions):
-        """
-        Update internal state about last prices and counts.
-        """
         self.long_pos_count = 0
         self.short_pos_count = 0
         self.last_long_price = 0.0
         self.last_short_price = 0.0
-        
         last_long_time = 0
         last_short_time = 0
         
         for pos in positions:
-            if pos.magic != self.magic_number:
-                continue
-                
+            if pos.magic != self.magic_number: continue
             if pos.type == mt5.POSITION_TYPE_BUY:
                 self.long_pos_count += 1
-                if pos.time_msc > last_long_time: # Use time_msc for precision
+                if pos.time_msc > last_long_time:
                     last_long_time = pos.time_msc
                     self.last_long_price = pos.price_open
             elif pos.type == mt5.POSITION_TYPE_SELL:
