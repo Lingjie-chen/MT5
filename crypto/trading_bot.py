@@ -497,7 +497,10 @@ class CryptoTradingBot:
             
             reason = "SMC Grid Deployment"
             
-        # ... (Rest of logic) ...
+        # Consensus Override
+        reason = strategy.get('reason', 'LLM Decision')
+        
+        # Prepare Technical Consensus List
         tech_list = [crt_res['signal'], pem_res['signal'], adv_sig, ml_res['signal'], smc_res['signal'], mtf_res['signal']]
         
         if final_signal in ['hold', 'neutral']:
