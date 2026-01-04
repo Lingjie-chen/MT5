@@ -262,6 +262,9 @@ class QwenClient:
            - 如果已有持仓且方向正确：考虑是否加仓 (Add) 或持有 (Hold)。
            - 如果已有持仓但方向错误或动能减弱：考虑平仓 (Close)。
            - 如果无持仓且信号明确：考虑开仓 (Open)。
+           - **SMC 网格部署 (Grid Trading)**:
+             - 如果 DeepSeek 识别出明确的 SMC 区域 (OB/FVG) 且市场处于震荡或强趋势的回调阶段，请考虑部署网格策略 (Action: grid_start)。
+             - **逻辑**: 利用 OB 作为支撑/阻力位，在这些关键位置挂单，而不是简单的等距网格。这能最大化资金效率。
            - **资金利用率**: 用户反馈之前的下单量过小（仅 0.2 USDT 保证金）。请务必根据 `account_info.available_usdt` 计算合理的开仓比例。
            - **合约张数**: 注意 OKX ETH/USDT 永续合约每张价值 0.1 ETH。模型建议的资金比例将转换为具体的张数进行下单。
            - **杠杆使用**: 如果市场趋势明确且信号强度高，请充分利用杠杆 (1-100x)。例如，如果建议使用 50% 资金和 20x 杠杆，则实际下单名义价值 = 可用余额 * 0.5 * 20。请确保在 `leverage` 字段返回合适的杠杆倍数。
@@ -269,7 +272,7 @@ class QwenClient:
            - **杠杆比例 (Leverage)**: 请在 `leverage` 字段中返回建议使用的杠杆倍数（1-100）。
         
         请提供以下优化结果，并确保分析全面、逻辑严密，不要使用省略号或简化描述。**请务必使用中文进行输出（Strategy Logic Rationale 部分）**：
-        1. 核心决策：买入/卖出/持有/平仓/加仓/挂单(Limit)
+        1. 核心决策：买入/卖出/持有/平仓/加仓/挂单(Limit)/开启网格(Grid Start)
         2. 入场/加仓条件：基于情绪得分和技术指标的优化规则。**如果是挂单(Limit/Stop)，必须明确给出具体的挂单价格(limit_price)，这非常重要！** 
            - 对于 Buy Limit，价格应低于当前市价（回调买入）。
            - 对于 Sell Limit，价格应高于当前市价（反弹卖出）。
@@ -287,7 +290,7 @@ class QwenClient:
         7. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 SMC 信号的解读、MFE/MAE 数据的分析以及为何选择该 SL/TP 点位**。
         
         请以JSON格式返回结果，包含以下字段：
-        - action: str ("buy", "sell", "hold", "close_buy", "close_sell", "add_buy", "add_sell", "buy_limit", "sell_limit")
+        - action: str ("buy", "sell", "hold", "close_buy", "close_sell", "add_buy", "add_sell", "buy_limit", "sell_limit", "grid_start")
         - entry_conditions: dict (包含 "trigger_type", "limit_price", "confirmation") **确保 limit_price 是一个具体的数字**
         - exit_conditions: dict (包含 "sl_price", "tp_price", "close_rationale") **确保 sl_price 和 tp_price 是具体的数字**
         - position_management: dict (包含 "action", "volume_percent", "reason")

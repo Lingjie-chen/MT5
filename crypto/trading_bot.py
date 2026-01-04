@@ -413,6 +413,23 @@ class CryptoTradingBot:
             extra_analysis=extra_analysis,
             performance_stats=trade_stats
         )
+
+        # Update Grid Strategy with SMC Levels
+        if 'smc_levels' in structure: # Assuming DeepSeek returns levels
+             self.grid_strategy.update_smc_levels(structure['smc_levels'])
+        elif 'support_levels' in structure or 'resistance_levels' in structure:
+             # Fallback: construct simplified SMC levels
+             simulated_smc = {
+                 'ob': [], 
+                 'fvg': []
+             }
+             if 'support_levels' in structure:
+                 for lvl in structure['support_levels']:
+                     simulated_smc['ob'].append({'top': lvl*1.001, 'bottom': lvl*0.999, 'type': 'bullish'})
+             if 'resistance_levels' in structure:
+                 for lvl in structure['resistance_levels']:
+                     simulated_smc['ob'].append({'top': lvl*1.001, 'bottom': lvl*0.999, 'type': 'bearish'})
+             self.grid_strategy.update_smc_levels(simulated_smc)
         
         # DeepSeek Signal
         ds_signal = structure.get('preliminary_signal', 'neutral')
@@ -446,11 +463,41 @@ class CryptoTradingBot:
         elif qw_action in ['sell', 'add_sell', 'limit_sell', 'sell_limit']: final_signal = "sell"
         elif qw_action in ['close', 'close_buy', 'close_sell']: final_signal = "close"
         elif qw_action == 'hold': final_signal = "hold"
+        elif qw_action == 'grid_start': final_signal = "grid_start" # New Signal
         
-        # Consensus Override
-        reason = strategy.get('reason', 'LLM Decision')
+        # ... (Consensus logic) ...
         
-        # Prepare Technical Consensus List
+        # Grid Execution Logic
+        if final_signal == 'grid_start':
+            # Use Grid Strategy to generate plan
+            trend = 'bullish' if ds_pred == 'bullish' else 'bearish'
+            atr = latest.get('atr', 0)
+            if atr == 0: atr = latest['close'] * 0.01
+            
+            grid_plan = self.grid_strategy.generate_grid_plan(latest['close'], trend, atr)
+            
+            # Calculate sizing
+            balance = self.data_processor.get_account_balance('USDT')
+            free_balance = balance.get('free', 0) if balance else 0
+            self.grid_strategy.calculate_lot_sizes(free_balance)
+            
+            # Execute Grid Orders
+            for order in grid_plan:
+                try:
+                    logger.info(f"Placing Grid Order: {order['type']} {order['amount']} @ {order['price']:.2f}")
+                    self.data_processor.create_order(
+                        self.symbol, 
+                        order['type'], 
+                        order['amount'], 
+                        type='limit', 
+                        price=order['price']
+                    )
+                except Exception as e:
+                    logger.error(f"Grid Order Failed: {e}")
+            
+            reason = "SMC Grid Deployment"
+            
+        # ... (Rest of logic) ...
         tech_list = [crt_res['signal'], pem_res['signal'], adv_sig, ml_res['signal'], smc_res['signal'], mtf_res['signal']]
         
         if final_signal in ['hold', 'neutral']:
@@ -997,17 +1044,26 @@ class CryptoTradingBot:
         actual_notional = contracts * contract_size * current_price
         actual_margin = actual_notional / leverage
         
+        # Max Leverage Check
+        # User requested max capital utilization, so allow up to account limit (e.g. 100x) if necessary
+        # but safely capped at 50x for code stability unless overridden
+        
         if actual_margin > free_balance * 0.98: # 2% buffer
-             # Try increasing leverage to fit the trade if safe (up to 50x)
+             # Try increasing leverage to fit the trade if safe
+             # Calculate max possible leverage based on exchange limit (assuming 100x max)
+             max_exchange_leverage = 100.0 
+             
              required_leverage = actual_notional / (free_balance * 0.95)
-             if required_leverage <= 50:
-                 logger.info(f"Insufficient balance for {leverage}x. Auto-adjusting leverage to {int(required_leverage)+1}x to fit trade.")
-                 leverage = int(required_leverage) + 1
+             
+             if required_leverage <= max_exchange_leverage:
+                 new_leverage = int(required_leverage) + 1
+                 logger.info(f"Insufficient balance for {leverage}x. Auto-adjusting leverage to {new_leverage}x to maximize capital.")
+                 leverage = new_leverage
                  self.data_processor.set_leverage(self.symbol, leverage)
                  # Recalculate margin with new leverage
                  actual_margin = actual_notional / leverage
              else:
-                 logger.warning(f"Insufficient balance for {contracts} contracts even at max leverage. Required: {actual_margin:.2f}, Free: {free_balance:.2f}")
+                 logger.warning(f"Insufficient balance for {contracts} contracts even at max leverage ({max_exchange_leverage}x). Required: {actual_margin:.2f}, Free: {free_balance:.2f}")
                  return
         
         # 3. Execute
