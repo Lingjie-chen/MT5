@@ -18,6 +18,7 @@ from .advanced_analysis import (
     TimeframeVisualAnalyzer, MTFAnalyzer
 )
 from .optimization import GWO, WOAm, DE, COAm, BBO, TETA
+from .grid_strategy import CryptoGridStrategy
 
 # Load environment variables
 load_dotenv()
@@ -148,6 +149,9 @@ class CryptoTradingBot:
         self.latest_strategy = None
         self.latest_signal = "neutral"
         self.signal_history = []
+        
+        # Initialize Grid Strategy
+        self.grid_strategy = CryptoGridStrategy(self.symbol)
         
         if not self.deepseek_client or not self.qwen_client:
             logger.warning("AI Clients not fully initialized.")
