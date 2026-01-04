@@ -253,6 +253,10 @@ class QwenClient:
              - 观察亏损交易的 MAE 分布，将 SL 设定在能过滤掉"第一象限 (低MFE 高MAE)"交易的位置。
              - **动态调整**: 如果近期 MAE 普遍变大且盈利困难，说明市场波动剧烈或策略失效，请收紧 SL 或暂停交易。
         6. **持仓管理**: 
+           - **SMC 网格部署 (Grid Trading)**:
+             - 如果 DeepSeek 识别出明确的 SMC 区域 (OB/FVG) 且市场处于震荡或强趋势的回调阶段，请考虑部署网格策略 (Action: grid_start)。
+             - **逻辑**: 利用 OB 作为支撑/阻力位，在这些关键位置挂单，而不是简单的等距网格。这能最大化资金效率。
+           - **资金利用率**: 用户要求最大化资金利用。对于高确定性信号，请建议使用更大的 Position Size 或启用 Grid 加仓 (Allow Add)。
            - 如果有持仓且趋势延续，请考虑**加仓 (Add Position)**。
            - 如果有持仓但趋势反转或动能减弱，请考虑**平仓 (Close Position)** 或 **减仓 (Reduce Position)**。
            - **智能平仓逻辑 (Smart Exit)**: 如果当前持仓已有盈利，且满足以下任一条件，请果断建议平仓 (action: 'close')：
@@ -265,7 +269,7 @@ class QwenClient:
         **资金安全第一**: 如果市场趋势不明朗，或 DeepSeek 提示存在"震荡"风险，请毫不犹豫地选择 **Wait (Hold)**。不亏损就是最好的盈利。
 
         请提供以下优化结果，并确保分析全面、逻辑严密，不要使用省略号或简化描述。**请务必使用中文进行输出（Strategy Logic Rationale 部分）**：
-        1. 核心决策：buy/sell/hold/close/add_buy/add_sell (请避免使用 limit 挂单，若市场不明请选择 hold)
+        1. 核心决策：buy/sell/hold/close/add_buy/add_sell/grid_start (请避免使用 limit 挂单，若市场不明请选择 hold，若震荡且有结构请选择 grid_start)
         2. 入场/加仓条件：基于情绪得分和技术指标的优化规则。
         3. 出场/减仓条件：**基于 MFE/MAE 分析的合理优化止盈止损点**。请直接给出具体价格（sl_price, tp_price）。
            - **Stop Loss (SL)**: 参考 MAE 分布，设定在能过滤掉大部分"假突破"但又能控制最大亏损的位置。结合市场结构，放在最近的 Swing High/Low 或结构位之外。
@@ -282,7 +286,7 @@ class QwenClient:
         7. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 SMC 信号的解读、MFE/MAE 数据的分析以及为何选择该 SL/TP 点位**。
         
         请以JSON格式返回结果，包含以下字段：
-        - action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell")
+        - action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell", "grid_start")
         - entry_conditions: dict (包含 "trigger_type": "market", "confirmation")
         - exit_conditions: dict (包含 "sl_price", "tp_price", "close_rationale") **确保 sl_price 和 tp_price 是具体的数字**
         - position_management: dict (包含 "action", "volume_percent", "reason")
