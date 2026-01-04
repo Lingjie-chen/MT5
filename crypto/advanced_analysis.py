@@ -530,43 +530,73 @@ class SMCAnalyzer:
 
     def _detect_order_blocks(self, df):
         closes = df['close'].values; opens = df['open'].values; highs = df['high'].values; lows = df['low'].values; current_price = closes[-1]
+        active_obs = []
         for i in range(len(df)-3, len(df)-50, -1):
             if opens[i-1] > closes[i-1]:
                 if closes[i] > opens[i] and (closes[i] - opens[i]) > (opens[i-1] - closes[i-1]):
                     ob_high = highs[i-1]; ob_low = lows[i-1]; violated = False
                     for k in range(i+1, len(df)):
                         if closes[k] < ob_low: violated = True; break
-                    if not violated and ob_low <= current_price <= ob_high * 1.01: return {"signal": "buy", "reason": f"Retesting Bullish OB from index {i-1}", "level": [ob_low, ob_high]}
+                    if not violated: active_obs.append({'type': 'bullish', 'top': ob_high, 'bottom': ob_low, 'index': i-1})
             if opens[i-1] < closes[i-1]:
                 if closes[i] < opens[i] and (opens[i] - closes[i]) > (closes[i-1] - opens[i-1]):
                     ob_high = highs[i-1]; ob_low = lows[i-1]; violated = False
                     for k in range(i+1, len(df)):
                         if closes[k] > ob_high: violated = True; break
-                    if not violated and ob_low * 0.99 <= current_price <= ob_high: return {"signal": "sell", "reason": f"Retesting Bearish OB from index {i-1}", "level": [ob_low, ob_high]}
-        return {"signal": "neutral", "reason": "", "level": []}
+                    if not violated: active_obs.append({'type': 'bearish', 'top': ob_high, 'bottom': ob_low, 'index': i-1})
+        
+        # Check retest for signal
+        signal = "neutral"; reason = ""; level = []
+        for ob in active_obs:
+            if ob['type'] == 'bullish' and ob['bottom'] <= current_price <= ob['top'] * 1.01:
+                signal = 'buy'; reason = f"Retesting Bullish OB from index {ob['index']}"; level = [ob['bottom'], ob['top']]
+                break
+            if ob['type'] == 'bearish' and ob['bottom'] * 0.99 <= current_price <= ob['top']:
+                signal = 'sell'; reason = f"Retesting Bearish OB from index {ob['index']}"; level = [ob['bottom'], ob['top']]
+                break
+                
+        return {"signal": signal, "reason": reason, "level": level, "active_obs": active_obs}
 
     def _detect_fvg(self, df):
         highs = df['high'].values; lows = df['low'].values; closes = df['close'].values; current_price = closes[-1]; point = 0.00001
+        active_fvgs = []
         for i in range(len(df)-1, len(df)-20, -1):
             if lows[i] > highs[i-2]:
                 gap_top = lows[i]; gap_bot = highs[i-2]; mitigated = False
                 for k in range(i+1, len(df)):
                     if lows[k] < gap_top: mitigated = True
-                if (not mitigated or (mitigated and current_price >= gap_bot)) and gap_bot <= current_price <= gap_top: return {"signal": "buy", "reason": f"In Bullish FVG {i}", "zone": [gap_bot, gap_top]}
+                if not mitigated or (mitigated and current_price >= gap_bot): 
+                    active_fvgs.append({'type': 'bullish', 'top': gap_top, 'bottom': gap_bot, 'index': i})
             if highs[i] < lows[i-2]:
                 gap_top = lows[i-2]; gap_bot = highs[i]; mitigated = False
                 for k in range(i+1, len(df)):
                     if highs[k] > gap_bot: mitigated = True
-                if (not mitigated or (mitigated and current_price <= gap_top)) and gap_bot <= current_price <= gap_top: return {"signal": "sell", "reason": f"In Bearish FVG {i}", "zone": [gap_bot, gap_top]}
-        return {"signal": "neutral", "reason": "", "zone": []}
+                if not mitigated or (mitigated and current_price <= gap_top):
+                    active_fvgs.append({'type': 'bearish', 'top': gap_top, 'bottom': gap_bot, 'index': i})
+        
+        # Check for signal
+        signal = "neutral"; reason = ""; zone = []
+        for fvg in active_fvgs:
+            if fvg['type'] == 'bullish' and fvg['bottom'] <= current_price <= fvg['top']:
+                signal = "buy"; reason = f"In Bullish FVG {fvg['index']}"; zone = [fvg['bottom'], fvg['top']]
+                break
+            if fvg['type'] == 'bearish' and fvg['bottom'] <= current_price <= fvg['top']:
+                signal = "sell"; reason = f"In Bearish FVG {fvg['index']}"; zone = [fvg['bottom'], fvg['top']]
+                break
+                
+        return {"signal": signal, "reason": reason, "zone": zone, "active_fvgs": active_fvgs}
 
     def _detect_liquidity_sweeps(self, df, swings):
-        if not swings['highs'] or not swings['lows']: return {"signal": "neutral"}
+        if not swings['highs'] or not swings['lows']: return {"signal": "neutral", "levels": {"high": 0, "low": 0}}
         current_high = df['high'].iloc[-1]; current_low = df['low'].iloc[-1]; current_close = df['close'].iloc[-1]
         last_swing_high = swings['highs'][-1][1]; last_swing_low = swings['lows'][-1][1]
-        if current_high > last_swing_high and current_close < last_swing_high: return {"signal": "sell", "reason": "Buy-side Liquidity Sweep"}
-        if current_low < last_swing_low and current_close > last_swing_low: return {"signal": "buy", "reason": "Sell-side Liquidity Sweep"}
-        return {"signal": "neutral", "reason": ""}
+        
+        # Return liquidity levels
+        levels = {"high": last_swing_high, "low": last_swing_low}
+        
+        if current_high > last_swing_high and current_close < last_swing_high: return {"signal": "sell", "reason": "Buy-side Liquidity Sweep", "levels": levels}
+        if current_low < last_swing_low and current_close > last_swing_low: return {"signal": "buy", "reason": "Sell-side Liquidity Sweep", "levels": levels}
+        return {"signal": "neutral", "reason": "", "levels": levels}
 
     def _analyze_premium_discount(self, df, swings):
         if not swings['highs'] or not swings['lows']: return {"zone": "equilibrium"}
