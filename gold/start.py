@@ -2692,6 +2692,8 @@ class AI_MT5_Bot:
                             final_signal = "close" # 特殊信号: 平仓
                         elif qw_action == 'hold':
                             final_signal = "hold"
+                        elif qw_action == 'grid_start':
+                            final_signal = "grid_start" # 特殊信号: 开启网格
                             
                         # --- 增强: 多模型与技术共振修正 (Consensus Override) ---
                         # 如果 Qwen 偏向保守 (Hold/Neutral)，但 DeepSeek 或 技术指标极强，则进行覆盖
