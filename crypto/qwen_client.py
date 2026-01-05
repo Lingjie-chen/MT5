@@ -74,7 +74,7 @@ class QwenClient:
                     url, 
                     headers=self.headers, 
                     json=payload, 
-                    timeout=300
+                    timeout=3000
                 )
                 
                 # 详细记录响应状态
@@ -127,7 +127,7 @@ class QwenClient:
             
             if retry < max_retries - 1:
                 # 线性延迟重试，提高网络不稳定情况下的成功率
-                retry_delay = min(5 * (retry + 1), 30)  # 每次增加5秒，最大30秒
+                retry_delay = min(5 * (retry + 1), 300)  # 每次增加5秒，最大30秒
                 logger.info(f"等待 {retry_delay} 秒后重试...")
                 time.sleep(retry_delay)
             else:
