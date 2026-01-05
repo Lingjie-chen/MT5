@@ -126,9 +126,9 @@ class AI_MT5_Bot:
         self.deepseek_client = self.ai_factory.create_client("deepseek")
         self.qwen_client = self.ai_factory.create_client("qwen")
         
-        # Adjusted for M15 Timeframe with H1/H4 MTF Analysis
+        # Adjusted for M15 Timeframe with H1/H4 MTF Analysis (Updated per user request)
         self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_H1)
-        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_H1, htf2=mt5.TIMEFRAME_H4)
+        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_H1, htf2=mt5.TIMEFRAME_H4) # H1 and H4 for trend analysis
         self.price_model = PriceEquationModel()
         self.tf_analyzer = TimeframeVisualAnalyzer()
         self.advanced_adapter = AdvancedMarketAnalysisAdapter()
