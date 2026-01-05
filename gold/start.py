@@ -57,6 +57,7 @@ except ImportError:
             MatrixMLAnalyzer, CRTAnalyzer, PriceEquationModel, 
             TimeframeVisualAnalyzer, MTFAnalyzer
         )
+        from grid_strategy import KalmanGridStrategy
     except ImportError as e:
         logger.error(f"Failed to import modules: {e}")
         sys.exit(1)

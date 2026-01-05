@@ -10,6 +10,7 @@ class KalmanGridStrategy:
         self.symbol = symbol
         self.magic_number = magic_number
         self.lot = initial_lot
+        logger.info(f"KalmanGridStrategy Initialized for {symbol} (v2026.01.05.2)")
         
         # Grid Parameters (Default from MQL)
         self.grid_step_points = 300 
