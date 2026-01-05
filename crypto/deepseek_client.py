@@ -204,7 +204,9 @@ class DeepSeekClient:
         4. RVGI+CCI: 复合动量策略，确认趋势强度。
         5. MFH (Multiple Forecast Horizons): 多周期预测。
         6. MTF (Multi-Timeframe): 多时间周期一致性，大周期制约小周期。
-        8. **基于 MFE/MAE 的结构质量评估**: 结合历史绩效 (Avg MFE/MAE)，评估当前市场结构是否有利于产生高盈亏比的交易。
+        8. **基于 MFE/MAE 的结构质量评估与自我反思**: 
+           - 结合历史绩效 (Avg MFE/MAE)，评估当前市场结构是否有利于产生高盈亏比的交易。
+           - **重要**: 如果 Avg MAE 较高或近期频繁亏损，请反思当前的市场结构判断是否过于激进。可能市场正处于复杂的震荡清洗阶段，建议降低结构评分，提示观望。
         {opt_info_str}
 
         {pos_context}

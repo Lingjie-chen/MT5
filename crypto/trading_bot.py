@@ -478,7 +478,12 @@ class CryptoTradingBot:
             "param_config": self.short_term_params
         }
         
-        strategy = self.qwen_client.optimize_strategy_logic(structure, market_snapshot, technical_signals=technical_signals)
+        strategy = self.qwen_client.optimize_strategy_logic(
+            structure, 
+            market_snapshot, 
+            technical_signals=technical_signals,
+            previous_analysis=self.latest_strategy # 传入上一次分析
+        )
         
         # --- Final Decision Logic (Gold Style) ---
         qw_action = strategy.get('action', 'neutral').lower()
