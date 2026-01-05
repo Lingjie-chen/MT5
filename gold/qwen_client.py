@@ -128,7 +128,7 @@ class QwenClient:
                 logger.error(f"API调用失败，已达到最大重试次数 {max_retries}")
                 return None
     
-    def optimize_strategy_logic(self, deepseek_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    def optimize_strategy_logic(self, deepseek_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         优化策略逻辑，基于DeepSeek的情绪得分调整入场条件
         基于ValueCell的实现，支持JSON模式输出
@@ -139,6 +139,7 @@ class QwenClient:
             technical_signals (Optional[Dict[str, Any]]): 其他技术模型的信号（CRT, Price Equation等）
             current_positions (Optional[List[Dict[str, Any]]]): 当前持仓信息 (用于决定加仓或平仓)
             performance_stats (Optional[List[Dict[str, Any]]]): 历史交易绩效统计 (用于自学习)
+            previous_analysis (Optional[Dict[str, Any]]): 上一次的分析结果 (用于连续性分析)
         
         Returns:
             Dict[str, Any]: 优化后的策略参数
@@ -146,6 +147,15 @@ class QwenClient:
         tech_context = ""
         perf_context = ""
         pos_context = ""
+        prev_context = ""
+        
+        if previous_analysis:
+            # 提取上一次的关键信息
+            prev_action = previous_analysis.get('action', 'unknown')
+            prev_rationale = previous_analysis.get('strategy_rationale', 'none')
+            prev_context = f"\n上一次分析结果 (Previous Analysis):\n- Action: {prev_action}\n- Rationale: {prev_rationale[:200]}...\n"
+        else:
+            prev_context = "\n上一次分析结果: 无 (首次运行)\n"
         
         if current_positions:
             pos_context = f"\n当前持仓状态 (包含实时 MFE/MAE 和 R-Multiple):\n{json.dumps(current_positions, indent=2, cls=CustomJSONEncoder)}\n"
