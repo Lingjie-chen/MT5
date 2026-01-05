@@ -915,6 +915,8 @@ class AI_MT5_Bot:
                      logger.warning(f"Limit单最终 R:R 检查未通过: {rr:.2f}")
                      return
 
+            # FIX: Ensure 'action' is defined for the comment
+            action = llm_action.upper() if llm_action else "UNKNOWN"
             comment = f"AI-{action}"
             
             # --- 动态仓位计算 ---
