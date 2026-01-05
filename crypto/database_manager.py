@@ -230,10 +230,10 @@ class DatabaseManager:
                 ''', (
                     t.get('symbol'),
                     t.get('side'),
-                    t.get('type'),
+                    t.get('type') or 'market', # Default to market if type is missing
                     t.get('amount'),
                     t.get('price'),
-                    t.get('timestamp'), # Ensure datetime string or timestamp
+                    t.get('datetime') or datetime.fromtimestamp(t.get('timestamp')/1000).isoformat(), # Use datetime field if available
                     str(order_id),
                     t.get('info', {}).get('profit', 0) if t.get('info') else 0, # CCXT info often has raw exchange data
                     0, # mfe

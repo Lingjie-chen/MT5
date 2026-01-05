@@ -791,8 +791,8 @@ class CryptoTradingBot:
         
         # 1. 获取历史数据
         df = self.data_processor.get_historical_data(self.symbol, self.timeframe, limit=1000)
-        if df is None or len(df) < 500:
-            logger.warning("数据不足，跳过优化")
+        if df is None or len(df) < 50: # Reduced threshold for testing
+            logger.warning(f"数据不足 (Count: {len(df) if df is not None else 0}), 跳过优化")
             return
             
         # 2. Define Search Space (10 Dimensions)
@@ -939,7 +939,9 @@ class CryptoTradingBot:
 
     def optimize_weights(self):
         """Optimize Hybrid Weights based on history (Full Implementation)"""
-        if len(self.signal_history) < 20: return
+        if len(self.signal_history) < 20: 
+            logger.warning("Data insufficient for optimization (need 20+ samples), skipping.")
+            return
         
         logger.info(f"Running Weight Optimization... Samples: {len(self.signal_history)}")
         
@@ -1173,6 +1175,10 @@ class CryptoTradingBot:
     def start(self):
         self.is_running = True
         self.sync_account_history() # Sync on start
+        
+        # Initial Optimization Check
+        self.optimize_strategy_parameters()
+        
         logger.info(f"Bot started for {self.symbol}")
         while self.is_running:
             self.run_once()
