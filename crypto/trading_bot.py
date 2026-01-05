@@ -863,9 +863,9 @@ class CryptoTradingBot:
         """
         logger.info("Running Short-Term Parameter Optimization (WOAm)...")
         
-        # 1. Get Data (Last 500 candles)
-        df = self.data_processor.get_historical_data(self.symbol, self.timeframe, limit=500)
-        if df is None or len(df) < 200:
+        # 1. Get Data (Last 500 candles)        df = self.data_processor.get_historical_data(self.symbol, self.timeframe, limit=500)
+        # Reduced threshold from 200 to 50 for testing
+        if df is None or len(df) < 50:
             return
             
         # 2. Define Objective Function
@@ -939,8 +939,9 @@ class CryptoTradingBot:
 
     def optimize_weights(self):
         """Optimize Hybrid Weights based on history (Full Implementation)"""
-        if len(self.signal_history) < 20: 
-            logger.warning("Data insufficient for optimization (need 20+ samples), skipping.")
+        # Reduced threshold from 20 to 5 to allow optimization with fewer samples
+        if len(self.signal_history) < 5: 
+            logger.warning("Data insufficient for optimization (need 5+ samples), skipping.")
             return
         
         logger.info(f"Running Weight Optimization... Samples: {len(self.signal_history)}")
