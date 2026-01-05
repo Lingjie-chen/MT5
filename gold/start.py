@@ -2720,6 +2720,16 @@ class AI_MT5_Bot:
                             "performance_stats": trade_stats # 传入历史绩效
                         }
                         
+                        # Qwen Sentiment Analysis (New)
+                        qwen_sent_score = 0
+                        qwen_sent_label = 'neutral'
+                        try:
+                            qwen_sentiment = self.qwen_client.analyze_market_sentiment(market_snapshot)
+                            qwen_sent_score = qwen_sentiment.get('sentiment_score', 0)
+                            qwen_sent_label = qwen_sentiment.get('sentiment', 'neutral')
+                        except Exception as e:
+                            logger.error(f"Sentiment Analysis Failed: {e}")
+
                         if should_run_llm:
                             strategy = self.qwen_client.optimize_strategy_logic(
                                 structure, 

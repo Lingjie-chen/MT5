@@ -478,6 +478,11 @@ class CryptoTradingBot:
             "param_config": self.short_term_params
         }
         
+        # Qwen Sentiment Analysis (New)
+        qwen_sentiment = self.qwen_client.analyze_market_sentiment(market_snapshot)
+        qwen_sent_score = qwen_sentiment.get('sentiment_score', 0)
+        qwen_sent_label = qwen_sentiment.get('sentiment', 'neutral')
+
         strategy = self.qwen_client.optimize_strategy_logic(
             structure, 
             market_snapshot, 
