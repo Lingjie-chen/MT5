@@ -68,8 +68,8 @@ class QwenClient:
         for retry in range(max_retries):
             response = None
             try:
-                # 增加超时时间到60秒，提高在网络不稳定情况下的成功率
-                response = requests.post(url, headers=self.headers, json=payload, timeout=60)
+                # 增加超时时间到120秒，提高在网络不稳定情况下的成功率
+                response = requests.post(url, headers=self.headers, json=payload, timeout=120)
                 
                 # 详细记录响应状态
                 logger.debug(f"API响应状态码: {response.status_code}, 模型: {self.model}, 重试: {retry+1}/{max_retries}")
@@ -94,20 +94,21 @@ class QwenClient:
                 return response_json
             except requests.exceptions.ConnectionError as e:
                 logger.error(f"API连接失败 (重试 {retry+1}/{max_retries}): {e}")
-                logger.error(f"请求URL: {url}")
+                logger.error(f"请求URL: {repr(url)}")
                 logger.error("请检查网络连接和API服务可用性")
             except requests.exceptions.Timeout as e:
                 logger.error(f"API请求超时 (重试 {retry+1}/{max_retries}): {e}")
-                logger.error(f"请求URL: {url}")
+                logger.error(f"请求URL: {repr(url)}")
                 logger.error("请检查网络连接和API服务响应时间")
             except requests.exceptions.HTTPError as e:
                 logger.error(f"API HTTP错误 (重试 {retry+1}/{max_retries}): {e}")
-                logger.error(f"请求URL: {url}")
+                logger.error(f"请求URL: {repr(url)}")
                 if response:
                     logger.error(f"响应内容: {response.text[:200]}...")
             except requests.exceptions.RequestException as e:
                 logger.error(f"API请求异常 (重试 {retry+1}/{max_retries}): {e}")
-                logger.error(f"请求URL: {url}")
+                logger.error(f"请求URL: {repr(url)}")
+
             except json.JSONDecodeError as e:
                 logger.error(f"JSON解析失败: {e}")
                 if response:
