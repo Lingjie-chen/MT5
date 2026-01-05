@@ -620,6 +620,7 @@ class CryptoTradingBot:
             f"{ds_analysis_text}\n"
             
             f"🧙‍♂️ *Qwen Analysis*\n"
+            f"• Sentiment: {self.escape_markdown(qwen_sent_label.upper())} (Score: {qwen_sent_score})\n"
             f"{qw_analysis_text}\n"
             
             f"🏆 *Final Result*\n"

@@ -128,6 +128,57 @@ class QwenClient:
                 logger.error(f"API调用失败，已达到最大重试次数 {max_retries}")
                 return None
     
+    def analyze_market_sentiment(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        [New] Qwen 独立市场结构与情绪分析 (黄金版)
+        用于与 DeepSeek 的分析进行交叉验证 (Double Check)
+        
+        Args:
+            market_data (Dict[str, Any]): 市场数据
+            
+        Returns:
+            Dict[str, Any]: 情绪分析结果
+        """
+        prompt = f"""
+        作为专业的黄金(XAUUSD)交易员，请根据以下市场数据进行独立的市场结构与情绪分析：
+        
+        市场数据:
+        {json.dumps(market_data, indent=2, cls=CustomJSONEncoder)}
+        
+        请重点分析：
+        1. **黄金特有结构**: 关注亚盘/欧盘/美盘的盘口特征。
+        2. **情绪得分 (Sentiment Score)**: -1 (极度看空) 到 1 (极度看多)。
+        3. **避险与通胀**: 结合当前波动率判断市场属性（单边趋势还是震荡洗盘）。
+        
+        请以JSON格式返回：
+        - sentiment: str ("bullish", "bearish", "neutral")
+        - sentiment_score: float (-1.0 to 1.0)
+        - structure_bias: str (e.g., "Range Bound", "Bullish Breakout", "Bearish Correction")
+        - key_observation: str (简短的中文分析)
+        """
+        
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "你是一位拥有20年经验的华尔街黄金交易员。"},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.3,
+            "max_tokens": 500,
+            "stream": False,
+            "response_format": {"type": "json_object"}
+        }
+        
+        response = self._call_api("chat/completions", payload)
+        if response and "choices" in response:
+            try:
+                content = response["choices"][0]["message"]["content"]
+                return json.loads(content)
+            except json.JSONDecodeError:
+                logger.error("解析 Qwen 情绪分析失败")
+        
+        return {"sentiment": "neutral", "sentiment_score": 0.0, "structure_bias": "Unknown", "key_observation": "分析失败"}
+
     def optimize_strategy_logic(self, deepseek_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         优化策略逻辑，基于DeepSeek的情绪得分调整入场条件
@@ -280,7 +331,11 @@ class QwenClient:
            - **杠杆比例 (Leverage)**: 请在 `leverage` 字段中返回建议使用的杠杆倍数（1-100）。
         
         7. **自我反思与连续性分析 (Self-Reflection & Continuity)**:
-           - **历史反思 (Reflection on Losses)**: 请仔细检查 `performance_stats` 中的最近亏损交易 (Profit < 0)。分析亏损原因（是方向判断错误、止损过窄还是市场突变？）。如果是策略性错误，请在本次决策中予以修正（例如：加宽 SL、收紧入场条件）。
+           - **历史反思 (Learning from History)**: 请仔细检查 `performance_stats` 中的最近亏损交易 (Profit < 0)。
+             - 分析亏损原因（是方向判断错误、止损过窄还是市场突变？）。
+             - **重要**: 如果当前市场结构与之前的**亏损交易**场景高度相似，请务必**拒绝开仓**或**收紧止损**。
+             - 如果与之前的**盈利交易**场景相似，可适当提高信心得分。
+             - **在 strategy_rationale 中明确指出：“本次决策参考了历史交易 ID xxx 的教训...”**
            - **连续性检查 (Continuity Check)**: 对比本次分析与 `previous_analysis`。如果观点发生重大转变（如从 Bullish 变为 Bearish），请给出充分的理由（如：关键支撑位被跌破、SMC 结构破坏）。如果观点一致，请确认趋势是否增强或减弱。
            - **避免过度谨慎**: 
              - 如果 DeepSeek 分析结果为 "neutral" 但技术指标 (如 CRT, RVGI) 显示有明确的短线机会，**请果断行动**，不要仅仅因为宏观中性就一直 Hold。
