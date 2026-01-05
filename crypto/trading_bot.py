@@ -786,6 +786,56 @@ class CryptoTradingBot:
             # logger.error(f"Eval Error: {e}")
             return -9999
 
+    def warmup_signal_history(self):
+        """Pre-fill signal history using historical data for immediate optimization"""
+        logger.info("正在预热信号历史数据 (Warming up)...")
+        try:
+            df = self.data_processor.get_historical_data(self.symbol, self.timeframe, limit=200)
+            if df is None or len(df) < 60: 
+                logger.warning("预热失败：历史数据不足")
+                return
+
+            # Simulate last 15 bars
+            lookback = 15
+            for i in range(len(df) - lookback, len(df)):
+                sub_df = df.iloc[:i+1].copy()
+                current_close = float(sub_df['close'].iloc[-1])
+                # Use current timestamp minus offset as approximation if index is not time
+                # But signal_history timestamp is mainly for ordering, so integer or rough time is ok.
+                # Let's try to get time from df if available
+                ts = i 
+                if 'time' in sub_df.columns:
+                    ts = sub_df['time'].iloc[-1]
+                elif isinstance(sub_df.index, pd.DatetimeIndex):
+                    ts = sub_df.index[-1].timestamp()
+                
+                # Run Technical Analyzers
+                # Note: We catch errors to prevent warmup from crashing bot
+                try:
+                    smc_res = self.smc_analyzer.analyze(sub_df)
+                    pem_res = self.price_model.analyze(sub_df)
+                    adv_res = self.advanced_adapter.analyze(sub_df)
+                    ml_res = self.matrix_ml.predict(sub_df)
+                    mfh_res = self.mfh_analyzer.forecast(sub_df)
+                    
+                    signals_dict = {
+                        "crt": 'neutral', 
+                        "pem": pem_res.get('signal', 'neutral'), 
+                        "adv": adv_res.get('signal', 'neutral'), 
+                        "ml": ml_res.get('signal', 'neutral'), 
+                        "smc": smc_res.get('signal', 'neutral'), 
+                        "mtf": 'neutral',
+                        "ds": 'neutral'
+                    }
+                    self.signal_history.append((ts, signals_dict, current_close))
+                except Exception:
+                    continue
+                    
+            logger.info(f"预热完成，已生成 {len(self.signal_history)} 条历史信号")
+            
+        except Exception as e:
+            logger.error(f"预热过程发生错误: {e}")
+
     def optimize_strategy_parameters(self):
         """
         Comprehensive Optimization: Tunes ALL strategy parameters using Auto-AO.
