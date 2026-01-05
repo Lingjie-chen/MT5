@@ -166,9 +166,9 @@ class QwenClient:
         open_orders = current_market_data.get('open_orders', [])
         orders_context = ""
         if open_orders:
-             orders_context = f"\n当前挂单状态 (Limit/SL/TP):\n{json.dumps(open_orders, indent=2, cls=CustomJSONEncoder)}\n"
+            orders_context = f"\n当前挂单状态 (Limit/SL/TP):\n{json.dumps(open_orders, indent=2, cls=CustomJSONEncoder)}\n"
         else:
-             orders_context = "\n当前无挂单。\n"
+            orders_context = "\n当前无挂单。\n"
 
         # 处理性能统计 (优先使用 explicit argument)
         stats_to_use = performance_stats
