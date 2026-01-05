@@ -280,7 +280,11 @@ class QwenClient:
            - **杠杆比例 (Leverage)**: 请在 `leverage` 字段中返回建议使用的杠杆倍数（1-100）。
         
         7. **自我反思与连续性分析 (Self-Reflection & Continuity)**:
-           - **历史反思 (Reflection on Losses)**: 请仔细检查 `performance_stats` 中的最近亏损交易 (Profit < 0)。分析亏损原因（是方向判断错误、止损过窄还是市场突变？）。如果是策略性错误，请在本次决策中予以修正（例如：加宽 SL、收紧入场条件）。
+           - **历史反思 (Learning from History)**: 请仔细检查 `performance_stats` 中的最近亏损交易 (Profit < 0)。
+             - 分析亏损原因（是方向判断错误、止损过窄还是市场突变？）。
+             - **重要**: 如果当前市场结构与之前的**亏损交易**场景高度相似，请务必**拒绝开仓**或**收紧止损**。
+             - 如果与之前的**盈利交易**场景相似，可适当提高信心得分。
+             - **在 strategy_rationale 中明确指出：“本次决策参考了历史交易 ID xxx 的教训...”**
            - **连续性检查 (Continuity Check)**: 对比本次分析与 `previous_analysis`。如果观点发生重大转变（如从 Bullish 变为 Bearish），请给出充分的理由（如：关键支撑位被跌破、SMC 结构破坏）。如果观点一致，请确认趋势是否增强或减弱。
            - **避免过度谨慎**: 
              - 如果 DeepSeek 分析结果为 "neutral" 但技术指标 (如 CRT, RVGI) 显示有明确的短线机会，**请果断行动**，不要仅仅因为宏观中性就一直 Hold。

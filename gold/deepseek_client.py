@@ -230,6 +230,10 @@ class DeepSeekClient:
         8. **基于 MFE/MAE 的结构质量评估与自我反思**: 
            - 结合历史绩效 (Avg MFE/MAE)，评估当前市场结构是否有利于产生高盈亏比的交易。
            - **重要**: 如果 Avg MAE 较高或近期频繁亏损，请反思当前的市场结构判断是否过于激进。可能市场正处于复杂的震荡清洗阶段，建议降低结构评分，提示观望。
+        9. **历史教训自我反思 (Self-Reflection on History)**:
+           - 参考 `performance_stats` (历史交易 MFE/MAE)。
+           - 如果当前市场结构 (Structure Score, Volatility, S/R levels) 与之前的**亏损交易**发生时的结构高度相似，请在分析中**发出警告**。
+           - 例如："当前高波动震荡结构与 ID:123 的亏损交易类似，建议降低结构评分。"
         {opt_info_str}
 
         {pos_context}
