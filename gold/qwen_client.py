@@ -282,6 +282,13 @@ class QwenClient:
         7. **自我反思与连续性分析 (Self-Reflection & Continuity)**:
            - **历史反思 (Reflection on Losses)**: 请仔细检查 `performance_stats` 中的最近亏损交易 (Profit < 0)。分析亏损原因（是方向判断错误、止损过窄还是市场突变？）。如果是策略性错误，请在本次决策中予以修正（例如：加宽 SL、收紧入场条件）。
            - **连续性检查 (Continuity Check)**: 对比本次分析与 `previous_analysis`。如果观点发生重大转变（如从 Bullish 变为 Bearish），请给出充分的理由（如：关键支撑位被跌破、SMC 结构破坏）。如果观点一致，请确认趋势是否增强或减弱。
+           - **避免过度谨慎**: 
+             - 如果 DeepSeek 分析结果为 "neutral" 但技术指标 (如 CRT, RVGI) 显示有明确的短线机会，**请果断行动**，不要仅仅因为宏观中性就一直 Hold。
+             - **"Hold" 只有在以下情况才是合理的**: 
+               1. 市场处于极度混乱的无序震荡中。
+               2. 重大新闻发布前夕 (如 NFP/CPI)。
+               3. 已经持有盈利仓位且未达到 TP 或反转信号。
+             - **如果仅仅是因为信号不完美，请考虑 "Limit" 挂单而不是直接 "Hold"。**
 
         请提供以下优化结果，并确保分析全面、逻辑严密，不要使用省略号或简化描述。**请务必使用中文进行输出（Strategy Logic Rationale 部分）**：
         1. 核心决策：买入/卖出/持有/平仓/加仓/挂单(Limit)/开启网格(Grid Start)
@@ -299,7 +306,7 @@ class QwenClient:
            - 请分析当前市场状态 (波动率、趋势强度)，并评估现有算法参数的适用性。
            - 给出针对 SMC, MFH, MatrixML 或 Optimization Algorithm (GWO/WOAm/etc) 的具体参数调整建议。
            - 例如: "SMC ATR 阈值过低，建议提高到 0.003 以过滤噪音" 或 "建议切换到 DE 优化器以增加探索能力"。
-        7. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 SMC 信号的解读、MFE/MAE 数据的分析以及为何选择该 SL/TP 点位**。同时，**必须包含一段关于"自我反思与连续性"的描述**，解释如何吸取了历史教训以及与上一次分析的对比。
+        7. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 SMC 信号的解读、MFE/MAE 数据的分析以及为何选择该 SL/TP 点位**。同时，**必须包含一段关于"自我反思与连续性"的描述**，解释如何吸取了历史教训以及与上一次分析的对比。如果决定 Hold，必须解释具体在等待什么条件（例如："等待价格回踩 2050 FVG"）。
         
         请以JSON格式返回结果，包含以下字段：
         - action: str ("buy", "sell", "hold", "close_buy", "close_sell", "add_buy", "add_sell", "buy_limit", "sell_limit", "grid_start")
