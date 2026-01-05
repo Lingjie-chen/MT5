@@ -1181,15 +1181,23 @@ class CryptoTradingBot:
 
     def start(self):
         self.is_running = True
-        self.sync_account_history() # Sync on start
-        
-        # Initial Optimization Check
-        self.optimize_strategy_parameters()
-        
-        logger.info(f"Bot started for {self.symbol}")
-        while self.is_running:
-            self.run_once()
-            time.sleep(self.interval)
+        try:
+            self.sync_account_history() # Sync on start
+            
+            # Initial Optimization Check
+            self.optimize_strategy_parameters()
+            
+            logger.info(f"Bot started for {self.symbol}")
+            while self.is_running:
+                self.run_once()
+                logger.info(f"Cycle completed. Sleeping for {self.interval}s...")
+                time.sleep(self.interval)
+        except KeyboardInterrupt:
+            logger.info("Bot stopped by user.")
+        except Exception as e:
+            logger.critical(f"Fatal Bot Error: {e}", exc_info=True)
+        finally:
+            self.is_running = False
 
 if __name__ == "__main__":
     bot = CryptoTradingBot(symbol='ETH/USDT:USDT', timeframe='1h', interval=3600) 
