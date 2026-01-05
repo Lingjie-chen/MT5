@@ -134,6 +134,57 @@ class QwenClient:
                 logger.error(f"API调用失败，已达到最大重试次数 {max_retries}")
                 return None
     
+    def analyze_market_sentiment(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        [New] Qwen 独立市场结构与情绪分析
+        用于与 DeepSeek 的分析进行交叉验证 (Double Check)
+        
+        Args:
+            market_data (Dict[str, Any]): 市场数据
+            
+        Returns:
+            Dict[str, Any]: 情绪分析结果
+        """
+        prompt = f"""
+        作为专业的加密货币市场分析师，请根据以下市场数据进行独立的市场结构与情绪分析：
+        
+        市场数据:
+        {json.dumps(market_data, indent=2, cls=CustomJSONEncoder)}
+        
+        请重点分析：
+        1. **价格行为 (Price Action)**: 识别当前的高点/低点结构 (HH/HL or LH/LL)。
+        2. **情绪得分 (Sentiment Score)**: -1 (极度看空) 到 1 (极度看多)。
+        3. **潜在流动性区域**: 识别上方和下方的流动性池。
+        
+        请以JSON格式返回：
+        - sentiment: str ("bullish", "bearish", "neutral")
+        - sentiment_score: float (-1.0 to 1.0)
+        - structure_bias: str (e.g., "Accumulation", "Distribution", "Trending")
+        - key_observation: str (简短的中文分析)
+        """
+        
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "你是一位精通价格行为学的加密货币交易专家。"},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.3,
+            "max_tokens": 500,
+            "stream": False,
+            "response_format": {"type": "json_object"}
+        }
+        
+        response = self._call_api("chat/completions", payload)
+        if response and "choices" in response:
+            try:
+                content = response["choices"][0]["message"]["content"]
+                return json.loads(content)
+            except json.JSONDecodeError:
+                logger.error("解析 Qwen 情绪分析失败")
+        
+        return {"sentiment": "neutral", "sentiment_score": 0.0, "structure_bias": "Unknown", "key_observation": "分析失败"}
+
     def optimize_strategy_logic(self, deepseek_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         优化策略逻辑，基于DeepSeek的情绪得分调整入场条件
