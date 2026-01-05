@@ -68,13 +68,13 @@ class QwenClient:
         for retry in range(max_retries):
             response = None
             try:
-                # 增加超时时间到120秒，提高在网络不稳定情况下的成功率
+                # 增加超时时间到300秒，应对 SiliconFlow/DeepSeek 响应慢的问题
                 # 显式禁用代理，防止因系统代理配置不当导致连接国内API失败
                 response = requests.post(
                     url, 
                     headers=self.headers, 
                     json=payload, 
-                    timeout=120
+                    timeout=300
                 )
                 
                 # 详细记录响应状态

@@ -120,8 +120,8 @@ class QwenClient:
                 return None
             
             if retry < max_retries - 1:
-                # 线性延迟重试，提高网络不稳定情况下的成功率
-                retry_delay = min(5 * (retry + 1), 30)  # 每次增加5秒，最大30秒
+                # 延长重试等待时间，应对服务器过载
+                retry_delay = min(15 * (retry + 1), 60)  # 每次增加15秒，最大60秒
                 logger.info(f"等待 {retry_delay} 秒后重试...")
                 time.sleep(retry_delay)
             else:
