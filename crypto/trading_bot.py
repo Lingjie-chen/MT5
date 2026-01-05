@@ -1236,6 +1236,7 @@ class CryptoTradingBot:
             
             # Initial Optimization Check
             self.optimize_strategy_parameters()
+            self.last_optimization_time = time.time() # Prevent double run in analyze_market
             
             logger.info(f"Bot started for {self.symbol}")
             while self.is_running:
