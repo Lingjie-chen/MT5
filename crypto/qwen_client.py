@@ -134,7 +134,7 @@ class QwenClient:
                 logger.error(f"API调用失败，已达到最大重试次数 {max_retries}")
                 return None
     
-    def optimize_strategy_logic(self, deepseek_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    def optimize_strategy_logic(self, deepseek_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         优化策略逻辑，基于DeepSeek的情绪得分调整入场条件
         基于ValueCell的实现，支持JSON模式输出
@@ -145,6 +145,7 @@ class QwenClient:
             technical_signals (Optional[Dict[str, Any]]): 其他技术模型的信号（CRT, Price Equation等）
             current_positions (Optional[List[Dict[str, Any]]]): 当前持仓信息 (用于决定加仓或平仓)
             performance_stats (Optional[List[Dict[str, Any]]]): 历史交易绩效统计 (用于自学习)
+            previous_analysis (Optional[Dict[str, Any]]): 上一次的分析结果 (用于连续性分析)
         
         Returns:
             Dict[str, Any]: 优化后的策略参数
@@ -152,6 +153,15 @@ class QwenClient:
         tech_context = ""
         perf_context = ""
         pos_context = ""
+        prev_context = ""
+        
+        if previous_analysis:
+            # 提取上一次的关键信息
+            prev_action = previous_analysis.get('action', 'unknown')
+            prev_rationale = previous_analysis.get('strategy_rationale', 'none')
+            prev_context = f"\n上一次分析结果 (Previous Analysis):\n- Action: {prev_action}\n- Rationale: {prev_rationale[:200]}...\n"
+        else:
+            prev_context = "\n上一次分析结果: 无 (首次运行)\n"
         
         if current_positions:
             pos_context = f"\n当前持仓状态 (包含实时 MFE/MAE):\n{json.dumps(current_positions, indent=2, cls=CustomJSONEncoder)}\n"
@@ -246,6 +256,7 @@ class QwenClient:
         {orders_context}
         {tech_context}
         {perf_context}
+        {prev_context}
         
         请综合考虑所有信号，并输出最终的交易决策 (Action):
         1. DeepSeek 提供宏观结构和趋势判断。
@@ -272,6 +283,10 @@ class QwenClient:
            - **资金比例 (Position Size)**: 请在 `position_size` 字段中返回建议使用的资金比例（0.0-1.0）。例如 0.5 代表使用当前可用 USDT 的 50% 作为**保证金**。
            - **杠杆比例 (Leverage)**: 请在 `leverage` 字段中返回建议使用的杠杆倍数（1-100）。
         
+        7. **自我反思与连续性分析 (Self-Reflection & Continuity)**:
+           - **历史反思 (Reflection on Losses)**: 请仔细检查 `performance_stats` 中的最近亏损交易 (Profit < 0)。分析亏损原因（是方向判断错误、止损过窄还是市场突变？）。如果是策略性错误，请在本次决策中予以修正（例如：加宽 SL、收紧入场条件）。
+           - **连续性检查 (Continuity Check)**: 对比本次分析与 `previous_analysis`。如果观点发生重大转变（如从 Bullish 变为 Bearish），请给出充分的理由（如：关键支撑位被跌破、SMC 结构破坏）。如果观点一致，请确认趋势是否增强或减弱。
+
         请提供以下优化结果，并确保分析全面、逻辑严密，不要使用省略号或简化描述。**请务必使用中文进行输出（Strategy Logic Rationale 部分）**：
         1. 核心决策：买入/卖出/持有/平仓/加仓/挂单(Limit)/开启网格(Grid Start)
         2. 入场/加仓条件：基于情绪得分和技术指标的优化规则。**如果是挂单(Limit/Stop)，必须明确给出具体的挂单价格(limit_price)，这非常重要！** 
@@ -288,7 +303,7 @@ class QwenClient:
            - 请分析当前市场状态 (波动率、趋势强度)，并评估现有算法参数的适用性。
            - 给出针对 SMC, MFH, MatrixML 或 Optimization Algorithm (GWO/WOAm/etc) 的具体参数调整建议。
            - 例如: "SMC ATR 阈值过低，建议提高到 0.003 以过滤噪音" 或 "建议切换到 DE 优化器以增加探索能力"。
-        7. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 SMC 信号的解读、MFE/MAE 数据的分析以及为何选择该 SL/TP 点位**。
+        7. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 SMC 信号的解读、MFE/MAE 数据的分析以及为何选择该 SL/TP 点位**。同时，**必须包含一段关于"自我反思与连续性"的描述**，解释如何吸取了历史教训以及与上一次分析的对比。
         
         请以JSON格式返回结果，包含以下字段：
         - action: str ("buy", "sell", "hold", "close_buy", "close_sell", "add_buy", "add_sell", "buy_limit", "sell_limit", "grid_start")
@@ -300,7 +315,7 @@ class QwenClient:
         - signal_strength: int
         - risk_management: dict
         - parameter_updates: dict (包含 "smc_atr_threshold": float, "mfh_learning_rate": float, "active_optimizer": str (GWO/WOAm/DE/COAm/BBO/TETA), "reason": str)
-        - strategy_rationale: str (中文)
+        - strategy_rationale: str (中文，包含自我反思部分)
         """
         
         # 构建payload，遵循ValueCell的实现

@@ -2718,7 +2718,14 @@ class AI_MT5_Bot:
                         }
                         
                         if should_run_llm:
-                            strategy = self.qwen_client.optimize_strategy_logic(structure, market_snapshot, technical_signals=technical_signals, current_positions=current_positions_list)
+                            strategy = self.qwen_client.optimize_strategy_logic(
+                                structure, 
+                                market_snapshot, 
+                                technical_signals=technical_signals, 
+                                current_positions=current_positions_list,
+                                performance_stats=trade_stats, # 显式传入绩效
+                                previous_analysis=self.latest_strategy # 传入上一次分析
+                            )
                             self.latest_strategy = strategy
                             self.last_llm_time = time.time()
                         elif self.latest_strategy:

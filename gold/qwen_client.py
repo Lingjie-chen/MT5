@@ -249,8 +249,10 @@ class QwenClient:
         当前市场数据：
         {json.dumps(current_market_data, indent=2, cls=CustomJSONEncoder)}
         {pos_context}
+        {orders_context}
         {tech_context}
         {perf_context}
+        {prev_context}
         
         请综合考虑所有信号，并输出最终的交易决策 (Action):
         1. DeepSeek 提供宏观结构和趋势判断。
@@ -263,25 +265,30 @@ class QwenClient:
              - 观察高盈利交易的 MFE 分布，将 TP 设定在能捕获大部分 MFE 的位置 (如 80% 分位)。
              - 观察亏损交易的 MAE 分布，将 SL 设定在能过滤掉"第一象限 (低MFE 高MAE)"交易的位置。
              - **动态调整**: 如果近期 MAE 普遍变大且盈利困难，说明市场波动剧烈或策略失效，请收紧 SL 或暂停交易。
-        6. **持仓管理**: 
+        6. **持仓管理 (Position Management)**: 
+           - **重要**: 请首先检查 `current_market_data` 中的 `account_info` 和 `pos_context` 中的当前持仓。
+           - 如果已有持仓且方向正确：考虑是否加仓 (Add) 或持有 (Hold)。
+           - 如果已有持仓但方向错误或动能减弱：考虑平仓 (Close)。
+           - 如果无持仓且信号明确：考虑开仓 (Open)。
            - **SMC 网格部署 (Grid Trading)**:
              - 如果 DeepSeek 识别出明确的 SMC 区域 (OB/FVG) 且市场处于震荡或强趋势的回调阶段，请考虑部署网格策略 (Action: grid_start)。
              - **逻辑**: 利用 OB 作为支撑/阻力位，在这些关键位置挂单，而不是简单的等距网格。这能最大化资金效率。
-           - **资金利用率**: 用户要求最大化资金利用。对于高确定性信号，请建议使用更大的 Position Size 或启用 Grid 加仓 (Allow Add)。
-           - 如果有持仓且趋势延续，请考虑**加仓 (Add Position)**。
-           - 如果有持仓但趋势反转或动能减弱，请考虑**平仓 (Close Position)** 或 **减仓 (Reduce Position)**。
-           - **智能平仓逻辑 (Smart Exit)**: 如果当前持仓已有盈利，且满足以下任一条件，请果断建议平仓 (action: 'close')：
-             1. **盈利达标**: 当前盈利已经达到合理的风险回报比 (例如 R-Multiple >= 1.5)，且市场情绪转弱 (Sentiment Score 下降)。
-             2. **结构阻力**: 价格到达强阻力位/支撑位 (SMC OB/Liquidity)，且出现反转信号。
-             3. **情绪满足**: 即使未到 TP，但 DeepSeek 认为当前市场情绪已充分释放 (Overextended)，且获利已足够安全。
-           - 如果无持仓且信号明确，请**开仓 (Open Position)**。
+           - **资金利用率**: 用户反馈之前的下单量过小（仅 0.2 USDT 保证金）。请务必根据 `account_info.available_usdt` 计算合理的开仓比例。
+           - **合约张数**: 注意 OKX ETH/USDT 永续合约每张价值 0.1 ETH。模型建议的资金比例将转换为具体的张数进行下单。
+           - **杠杆使用**: 如果市场趋势明确且信号强度高，请充分利用杠杆 (1-100x)。例如，如果建议使用 50% 资金和 20x 杠杆，则实际下单名义价值 = 可用余额 * 0.5 * 20。请确保在 `leverage` 字段返回合适的杠杆倍数。
+           - **资金比例 (Position Size)**: 请在 `position_size` 字段中返回建议使用的资金比例（0.0-1.0）。例如 0.5 代表使用当前可用 USDT 的 50% 作为**保证金**。
+           - **杠杆比例 (Leverage)**: 请在 `leverage` 字段中返回建议使用的杠杆倍数（1-100）。
         
-        **重要提示**: 为了避免错过行情或在反转时错误成交，**请尽量使用市价单 (Market Execution)**，不要使用限价单 (Limit Orders)。如果看多，直接 Buy；如果看空，直接 Sell。
-        **资金安全第一**: 如果市场趋势不明朗，或 DeepSeek 提示存在"震荡"风险，请毫不犹豫地选择 **Wait (Hold)**。不亏损就是最好的盈利。
+        7. **自我反思与连续性分析 (Self-Reflection & Continuity)**:
+           - **历史反思 (Reflection on Losses)**: 请仔细检查 `performance_stats` 中的最近亏损交易 (Profit < 0)。分析亏损原因（是方向判断错误、止损过窄还是市场突变？）。如果是策略性错误，请在本次决策中予以修正（例如：加宽 SL、收紧入场条件）。
+           - **连续性检查 (Continuity Check)**: 对比本次分析与 `previous_analysis`。如果观点发生重大转变（如从 Bullish 变为 Bearish），请给出充分的理由（如：关键支撑位被跌破、SMC 结构破坏）。如果观点一致，请确认趋势是否增强或减弱。
 
         请提供以下优化结果，并确保分析全面、逻辑严密，不要使用省略号或简化描述。**请务必使用中文进行输出（Strategy Logic Rationale 部分）**：
-        1. 核心决策：buy/sell/hold/close/add_buy/add_sell/grid_start (请避免使用 limit 挂单，若市场不明请选择 hold，若震荡且有结构请选择 grid_start)
-        2. 入场/加仓条件：基于情绪得分和技术指标的优化规则。
+        1. 核心决策：买入/卖出/持有/平仓/加仓/挂单(Limit)/开启网格(Grid Start)
+        2. 入场/加仓条件：基于情绪得分和技术指标的优化规则。**如果是挂单(Limit/Stop)，必须明确给出具体的挂单价格(limit_price)，这非常重要！** 
+           - 对于 Buy Limit，价格应低于当前市价（回调买入）。
+           - 对于 Sell Limit，价格应高于当前市价（反弹卖出）。
+           - 请结合 SMC 的 FVG 或 OB 区域来设定精确的挂单点位。
         3. 出场/减仓条件：**基于 MFE/MAE 分析的合理优化止盈止损点**。请直接给出具体价格（sl_price, tp_price）。
            - **Stop Loss (SL)**: 参考 MAE 分布，设定在能过滤掉大部分"假突破"但又能控制最大亏损的位置。结合市场结构，放在最近的 Swing High/Low 或结构位之外。
            - **Take Profit (TP)**: 参考 MFE 分布，设定在能捕获 80% 潜在收益的位置。结合市场结构，放在下一个 Liquidity Pool (流动性池) 或 OB 之前。
@@ -290,23 +297,21 @@ class QwenClient:
         5. 风险管理建议：针对当前市场状态的风险控制措施。
         6. **参数自适应优化建议 (Parameter Optimization)**: 
            - 请分析当前市场状态 (波动率、趋势强度)，并评估现有算法参数的适用性。
-           - 给出针对 SMC, MFH, MatrixML, Grid Strategy 或 Optimization Algorithm (GWO/WOAm/etc) 的具体参数调整建议。
+           - 给出针对 SMC, MFH, MatrixML 或 Optimization Algorithm (GWO/WOAm/etc) 的具体参数调整建议。
            - 例如: "SMC ATR 阈值过低，建议提高到 0.003 以过滤噪音" 或 "建议切换到 DE 优化器以增加探索能力"。
-           - **Grid Strategy 参数**: 请根据市场波动率调整 `grid_step_points` (例如高波动时增大间距) 和 `max_grid_steps`。如果建议启用网格加仓，请设置 `allow_add` 为 true。
-
-        7. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 SMC 信号的解读、MFE/MAE 数据的分析以及为何选择该 SL/TP 点位**。
+        7. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 SMC 信号的解读、MFE/MAE 数据的分析以及为何选择该 SL/TP 点位**。同时，**必须包含一段关于"自我反思与连续性"的描述**，解释如何吸取了历史教训以及与上一次分析的对比。
         
         请以JSON格式返回结果，包含以下字段：
-        - action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell", "grid_start")
-        - entry_conditions: dict (包含 "trigger_type": "market", "confirmation")
+        - action: str ("buy", "sell", "hold", "close_buy", "close_sell", "add_buy", "add_sell", "buy_limit", "sell_limit", "grid_start")
+        - entry_conditions: dict (包含 "trigger_type", "limit_price", "confirmation") **确保 limit_price 是一个具体的数字**
         - exit_conditions: dict (包含 "sl_price", "tp_price", "close_rationale") **确保 sl_price 和 tp_price 是具体的数字**
         - position_management: dict (包含 "action", "volume_percent", "reason")
-        - position_size: float
+        - position_size: float (0.0 - 1.0, representing percentage of available USDT to use)
+        - leverage: int (1-100)
         - signal_strength: int
         - risk_management: dict
-        - parameter_updates: dict (包含 "smc_atr_threshold": float, "mfh_learning_rate": float, "active_optimizer": str (GWO/WOAm/DE/COAm/BBO/TETA), "grid_settings": dict, "reason": str)
-            - **grid_settings**: dict (包含 "grid_step_points": int, "max_grid_steps": int, "allow_add": bool, "lot_type": str, "tp_steps": dict)
-        - strategy_rationale: str (中文)
+        - parameter_updates: dict (包含 "smc_atr_threshold": float, "mfh_learning_rate": float, "active_optimizer": str (GWO/WOAm/DE/COAm/BBO/TETA), "reason": str)
+        - strategy_rationale: str (中文，包含自我反思部分)
         """
         
         # 构建payload，遵循ValueCell的实现
