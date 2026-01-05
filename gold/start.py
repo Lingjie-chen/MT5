@@ -916,8 +916,9 @@ class AI_MT5_Bot:
                      return
 
             # FIX: Ensure 'action' is defined for the comment
-            action = llm_action.upper() if llm_action else "UNKNOWN"
-            comment = f"AI-{action}"
+            # action variable was used in _send_order's comment but was coming from llm_action
+            action_str = llm_action.upper() if llm_action else "UNKNOWN"
+            comment = f"AI-{action_str}"
             
             # --- 动态仓位计算 ---
             if suggested_lot and suggested_lot > 0:
