@@ -1234,6 +1234,9 @@ class CryptoTradingBot:
         try:
             self.sync_account_history() # Sync on start
             
+            # Warmup Signal History (New)
+            self.warmup_signal_history()
+            
             # Initial Optimization Check
             self.optimize_strategy_parameters()
             self.last_optimization_time = time.time() # Prevent double run in analyze_market
