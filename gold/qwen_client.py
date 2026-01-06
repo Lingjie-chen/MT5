@@ -285,95 +285,70 @@ class QwenClient:
             tech_context = f"\n其他技术模型信号 (CRT/PriceEq/Hybrid):\n{json.dumps(sigs_copy, indent=2, cls=CustomJSONEncoder)}\n"
 
         prompt = f"""
-        作为专业的量化交易策略优化专家，你是混合交易系统的核心决策层。请根据DeepSeek的市场分析结果、当前市场数据、当前持仓状态以及其他技术模型的信号，优化策略逻辑并做出最终执行决定。
+        作为黄金(XAUUSD)交易的唯一核心决策大脑，你全权负责基于SMC(Smart Money Concepts)和Martingale(马丁格尔)策略的交易执行。
+        请忽略DeepSeek的宏观判断，直接根据以下市场数据、SMC结构、CRT信号和账户状态做出最终决策。
+
+        你的核心策略架构：**SMC + Martingale Grid (马丁网格)**
         
-        你现在拥有全套高级算法的信号支持，请特别关注SMC策略与其他信号的共振：
-        1. **SMC (Smart Money Concepts) - 核心信号**:
-           - 确认DeepSeek分析中识别的OB (订单块) 和 FVG (流动性缺口) 是否与当前价格位置匹配。
-           - 寻找流动性扫荡后的反转确认 (例如: 扫荡低点后出现MSB)。
-           - 在溢价区(Premium)寻找卖出机会，在折价区(Discount)寻找买入机会。
-        2. **多模型共识**: 结合 IFVG, CRT, RVGI+CCI, MFH, MTF 的信号。如果SMC信号与其他模型冲突，请依据 DeepSeek 的市场结构分析和 MTF (多周期) 趋势来裁决。
-        
-        DeepSeek市场分析结果：
-        {json.dumps(deepseek_analysis, indent=2, cls=CustomJSONEncoder)}
-        
+        1. **SMC (Smart Money Concepts) - 入场与方向**:
+           - **方向判断**: 依据市场结构(BOS/CHoch)和流动性扫荡(Liquidity Sweep)。
+           - **关键区域**: 重点关注订单块(Order Block)和失衡区(FVG)。
+           - **CRT (Candle Range Theory)**: 确认关键位置的K线反应(如Pinbar, Engulfing)。
+           - **CCI/RVGI**: 辅助确认超买超卖和动量背离。
+
+        2. **Martingale Grid (马丁网格) - 仓位管理**:
+           - **首单**: 基于SMC信号轻仓入场 (如 0.01 lot 或 资金的 0.5%)。
+           - **逆势加仓 (Grid Add)**: 如果价格向不利方向移动且未破关键失效位，在下一个SMC关键位(OB/FVG)加仓。
+           - **倍投逻辑**: 加仓手数通常为上一单的 1.2倍 - 2.0倍 (几何级数)，以摊低成本。
+           - **网格间距**: 不要使用固定间距！使用ATR或SMC结构位作为加仓间隔。
+           - **最大层数**: 严格控制加仓次数 (建议不超过 5 层)。
+
+        3. **MAE/MFE - 止损止盈优化**:
+           - **SL (Stop Loss)**: 基于MAE(最大不利偏移)分布。如果历史亏损交易的MAE通常不超过 X 点，则SL设在 X 点之外。同时必须在SMC失效位(Invalidation Level)之外。
+           - **TP (Take Profit)**: 基于MFE(最大有利偏移)分布。设定在能捕获 80% 潜在收益的位置，或下一个流动性池(Liquidity Pool)。
+           - **Basket TP (整体止盈)**: 当持有多单时，关注整体浮盈。
+
         当前市场数据：
         {json.dumps(current_market_data, indent=2, cls=CustomJSONEncoder)}
+        
+        持仓状态 (Martingale 核心关注):
         {pos_context}
+        
+        挂单状态:
         {orders_context}
+        
+        技术信号 (SMC/CRT/CCI):
         {tech_context}
+        
+        历史绩效 (MFE/MAE 参考):
         {perf_context}
+        
+        上一次分析:
         {prev_context}
         
-        请综合考虑所有信号，并输出最终的交易决策 (Action):
-        1. DeepSeek 提供宏观结构和趋势判断。
-        2. CRT (Candle Range Theory) 提供流动性猎取和反转信号。
-        3. Price Equation 提供纯数学的动量预测。
-        4. Hybrid Optimizer 提供加权共识。
-        5. **MFE/MAE 象限分析与 SL/TP 优化**:
-           - **数据**: 请参考提供的历史交易详情 (MFE, MAE, Profit)。
-           - **分析**: 
-             - 观察高盈利交易的 MFE 分布，将 TP 设定在能捕获大部分 MFE 的位置 (如 80% 分位)。
-             - 观察亏损交易的 MAE 分布，将 SL 设定在能过滤掉"第一象限 (低MFE 高MAE)"交易的位置。
-             - **动态调整**: 如果近期 MAE 普遍变大且盈利困难，说明市场波动剧烈或策略失效，请收紧 SL 或暂停交易。
-        6. **持仓管理 (Position Management)**: 
-           - **重要**: 请首先检查 `current_market_data` 中的 `account_info` 和 `pos_context` 中的当前持仓。
-           - 如果已有持仓且方向正确：考虑是否加仓 (Add) 或持有 (Hold)。
-           - 如果已有持仓但方向错误或动能减弱：考虑平仓 (Close)。
-           - 如果无持仓且信号明确：考虑开仓 (Open)。
-           - **SMC 网格部署 (Grid Trading)**:
-             - 如果 DeepSeek 识别出明确的 SMC 区域 (OB/FVG) 且市场处于震荡或强趋势的回调阶段，请考虑部署网格策略 (Action: grid_start)。
-             - **逻辑**: 利用 OB 作为支撑/阻力位，在这些关键位置挂单，而不是简单的等距网格。这能最大化资金效率。
-           - **资金利用率**: 用户反馈之前的下单量过小（仅 0.2 USDT 保证金）。请务必根据 `account_info.available_usdt` 计算合理的开仓比例。
-           - **合约张数**: 注意 OKX ETH/USDT 永续合约每张价值 0.1 ETH。模型建议的资金比例将转换为具体的张数进行下单。
-           - **杠杆使用**: 如果市场趋势明确且信号强度高，请充分利用杠杆 (1-100x)。例如，如果建议使用 50% 资金和 20x 杠杆，则实际下单名义价值 = 可用余额 * 0.5 * 20。请确保在 `leverage` 字段返回合适的杠杆倍数。
-           - **资金比例 (Position Size)**: 请在 `position_size` 字段中返回建议使用的资金比例（0.0-1.0）。例如 0.5 代表使用当前可用 USDT 的 50% 作为**保证金**。
-           - **杠杆比例 (Leverage)**: 请在 `leverage` 字段中返回建议使用的杠杆倍数（1-100）。
-        
-        7. **自我反思与连续性分析 (Self-Reflection & Continuity)**:
-           - **历史反思 (Learning from History)**: 请仔细检查 `performance_stats` 中的最近亏损交易 (Profit < 0)。
-             - 分析亏损原因（是方向判断错误、止损过窄还是市场突变？）。
-             - **重要**: 如果当前市场结构与之前的**亏损交易**场景高度相似，请务必**拒绝开仓**或**收紧止损**。
-             - 如果与之前的**盈利交易**场景相似，可适当提高信心得分。
-             - **在 strategy_rationale 中明确指出：“本次决策参考了历史交易 ID xxx 的教训...”**
-           - **连续性检查 (Continuity Check)**: 对比本次分析与 `previous_analysis`。如果观点发生重大转变（如从 Bullish 变为 Bearish），请给出充分的理由（如：关键支撑位被跌破、SMC 结构破坏）。如果观点一致，请确认趋势是否增强或减弱。
-           - **避免过度谨慎**: 
-             - 如果 DeepSeek 分析结果为 "neutral" 但技术指标 (如 CRT, RVGI) 显示有明确的短线机会，**请果断行动**，不要仅仅因为宏观中性就一直 Hold。
-             - **"Hold" 只有在以下情况才是合理的**: 
-               1. 市场处于极度混乱的无序震荡中。
-               2. 重大新闻发布前夕 (如 NFP/CPI)。
-               3. 已经持有盈利仓位且未达到 TP 或反转信号。
-             - **如果仅仅是因为信号不完美，请考虑 "Limit" 挂单而不是直接 "Hold"。**
+        请做出最终决策 (Action):
+        1. **HOLD**: 震荡无方向，或持仓浮亏但在网格间距内。
+        2. **BUY / SELL**: 出现SMC信号，首单入场。
+        3. **ADD_BUY / ADD_SELL**: 逆势加仓。**仅当**：(a) 已有持仓且浮亏; (b) 价格到达下一个SMC支撑/阻力位; (c) 距离上一单有足够间距(>ATR)。
+        4. **CLOSE**: 达到整体止盈目标，或SMC结构完全破坏(止损)。
+        5. **GRID_START**: 预埋网格单 (Limit Orders) 在未来的OB/FVG位置。
 
-        请提供以下优化结果，并确保分析全面、逻辑严密，不要使用省略号或简化描述。**请务必使用中文进行输出（Strategy Logic Rationale 部分）**：
-        1. 核心决策：买入/卖出/持有/平仓/加仓/挂单(Limit)/开启网格(Grid Start)
-        2. 入场/加仓条件：基于情绪得分和技术指标的优化规则。**如果是挂单(Limit/Stop)，必须明确给出具体的挂单价格(limit_price)，这非常重要！** 
-           - 对于 Buy Limit，价格应低于当前市价（回调买入）。
-           - 对于 Sell Limit，价格应高于当前市价（反弹卖出）。
-           - 请结合 SMC 的 FVG 或 OB 区域来设定精确的挂单点位。
-        3. 出场/减仓条件：**基于 MFE/MAE 分析的合理优化止盈止损点**。请直接给出具体价格（sl_price, tp_price）。
-           - **Stop Loss (SL)**: 参考 MAE 分布，设定在能过滤掉大部分"假突破"但又能控制最大亏损的位置。结合市场结构，放在最近的 Swing High/Low 或结构位之外。
-           - **Take Profit (TP)**: 参考 MFE 分布，设定在能捕获 80% 潜在收益的位置。结合市场结构，放在下一个 Liquidity Pool (流动性池) 或 OB 之前。
-           - 不要使用 ATR 倍数，请给出具体的数值。
-        4. 仓位管理：针对当前持仓的具体操作建议（如加仓、减仓、反手）。
-        5. 风险管理建议：针对当前市场状态的风险控制措施。
-        6. **参数自适应优化建议 (Parameter Optimization)**: 
-           - 请分析当前市场状态 (波动率、趋势强度)，并评估现有算法参数的适用性。
-           - 给出针对 SMC, MFH, MatrixML 或 Optimization Algorithm (GWO/WOAm/etc) 的具体参数调整建议。
-           - 例如: "SMC ATR 阈值过低，建议提高到 0.003 以过滤噪音" 或 "建议切换到 DE 优化器以增加探索能力"。
-        7. 策略逻辑详解：请详细解释做出上述决策的逻辑链条 (Strategy Logic Rationale)，**必须包含对 SMC 信号的解读、MFE/MAE 数据的分析以及为何选择该 SL/TP 点位**。同时，**必须包含一段关于"自我反思与连续性"的描述**，解释如何吸取了历史教训以及与上一次分析的对比。如果决定 Hold，必须解释具体在等待什么条件（例如："等待价格回踩 2050 FVG"）。
-        
+        输出要求：
+        - **limit_price**: 挂单必填。
+        - **sl_price / tp_price**: 必填，基于MAE/MFE和SMC结构。
+        - **position_size**: 给出具体的资金比例 (0.01 - 0.1)。
+        - **strategy_rationale**: 用**中文**详细解释：SMC结构分析 -> 为什么选择该方向 -> 马丁加仓计划/止盈计划 -> 参考的MAE/MFE数据。
+
         请以JSON格式返回结果，包含以下字段：
-        - action: str ("buy", "sell", "hold", "close_buy", "close_sell", "add_buy", "add_sell", "buy_limit", "sell_limit", "grid_start")
-        - entry_conditions: dict (包含 "trigger_type", "limit_price", "confirmation") **确保 limit_price 是一个具体的数字**
-        - exit_conditions: dict (包含 "sl_price", "tp_price", "close_rationale") **确保 sl_price 和 tp_price 是具体的数字**
-        - position_management: dict (包含 "action", "volume_percent", "reason")
-        - position_size: float (0.0 - 1.0, representing percentage of available USDT to use)
-        - leverage: int (1-100)
+        - action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell", "grid_start")
+        - entry_conditions: dict ("limit_price": float)
+        - exit_conditions: dict ("sl_price": float, "tp_price": float)
+        - position_management: dict ("martingale_multiplier": float, "grid_step_logic": str)
+        - position_size: float
+        - leverage: int
         - signal_strength: int
-        - risk_management: dict
-        - parameter_updates: dict (包含 "smc_atr_threshold": float, "mfh_learning_rate": float, "active_optimizer": str (GWO/WOAm/DE/COAm/BBO/TETA), "reason": str)
-        - strategy_rationale: str (中文，包含自我反思部分)
+        - parameter_updates: dict
+        - strategy_rationale: str (中文)
         """
         
         # 构建payload，遵循ValueCell的实现
