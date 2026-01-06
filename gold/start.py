@@ -2566,23 +2566,40 @@ class AI_MT5_Bot:
                             if not opt_tp: opt_tp = calc_tp
 
                         # 构建消息
-                        analysis_msg = (
-                            f"🤖 *AI Gold Strategy Report (Qwen)*\n"
-                            f"Symbol: `{self.symbol}` | TF: `{self.tf_name}`\n"
-                            f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
-                            
-                            f"🧙‍♂️ *Qwen Analysis*\n"
-                            f"• Action: *{qw_action.upper()}*\n"
-                            f"• Sentiment: {qwen_sent_label.upper()} ({qwen_sent_score})\n"
-                            f"• Logic: _{self.escape_markdown(reason)}_\n\n"
-                            
-                            f"🏆 *Decision: {final_signal.upper()}*\n"
-                            f"• Strength: {strength:.0f}%\n"
-                            f"• SL: `{opt_sl:.2f}` | TP: `{opt_tp:.2f}`\n\n"
-                            
-                            f"💼 *Positions*\n"
-                            f"{self.escape_markdown(pos_summary)}"
-                        )
+                        telegram_report = strategy.get('telegram_report', '')
+                        
+                        if telegram_report and len(telegram_report) > 50:
+                            # 使用 Qwen 生成的专用 Telegram 报告
+                            analysis_msg = (
+                                f"🤖 *AI Gold Strategy (Qwen)*\n"
+                                f"Symbol: `{self.symbol}` | TF: `{self.tf_name}`\n"
+                                f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
+                                f"{telegram_report}\n\n"
+                                f"📊 *Live Status*\n"
+                                f"• Strength: {strength:.0f}%\n"
+                                f"• Sentiment: {qwen_sent_label.upper()} ({qwen_sent_score:.2f})\n\n"
+                                f"💼 *Positions*\n"
+                                f"{self.escape_markdown(pos_summary)}"
+                            )
+                        else:
+                            # 备用：手动构建结构化消息
+                            analysis_msg = (
+                                f"🤖 *AI Gold Strategy Report (Qwen)*\n"
+                                f"Symbol: `{self.symbol}` | TF: `{self.tf_name}`\n"
+                                f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
+                                
+                                f"🧙‍♂️ *Qwen Analysis*\n"
+                                f"• Action: *{qw_action.upper()}*\n"
+                                f"• Sentiment: {qwen_sent_label.upper()} ({qwen_sent_score})\n"
+                                f"• Logic: _{self.escape_markdown(reason)}_\n\n"
+                                
+                                f"🏆 *Decision: {final_signal.upper()}*\n"
+                                f"• Strength: {strength:.0f}%\n"
+                                f"• SL: `{opt_sl:.2f}` | TP: `{opt_tp:.2f}`\n\n"
+                                
+                                f"💼 *Positions*\n"
+                                f"{self.escape_markdown(pos_summary)}"
+                            )
                         self.send_telegram_message(analysis_msg)
 
                         # 4. 执行交易
