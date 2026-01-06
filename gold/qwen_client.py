@@ -285,43 +285,33 @@ class QwenClient:
             tech_context = f"\n其他技术模型信号 (CRT/PriceEq/Hybrid):\n{json.dumps(sigs_copy, indent=2, cls=CustomJSONEncoder)}\n"
 
         prompt = f"""
-        作为黄金(XAUUSD)交易的**首席策略官与执行总监**，你现在身兼两职：既要像DeepSeek一样进行宏观趋势与情绪分析，又要负责具体的SMC+Martingale交易执行。
+        作为黄金(XAUUSD)交易的唯一核心决策大脑，你全权负责基于SMC(Smart Money Concepts)和Martingale(马丁格尔)策略的交易执行。
+        请忽略DeepSeek的宏观判断，直接根据以下市场数据、SMC结构、CRT信号和账户状态做出最终决策。
+
+        你的核心策略架构：**SMC + Martingale Grid (马丁网格)**
         
-        请按照以下逻辑流进行深度分析与决策：
+        1. **SMC (Smart Money Concepts) - 入场与方向**:
+           - **方向判断**: 依据市场结构(BOS/CHoch)和流动性扫荡(Liquidity Sweep)。
+           - **关键区域**: 重点关注订单块(Order Block)和失衡区(FVG)。
+           - **CRT (Candle Range Theory)**: 确认关键位置的K线反应(如Pinbar, Engulfing)。
+           - **CCI/RVGI**: 辅助确认超买超卖和动量背离。
 
-        ### 第一阶段：宏观格局与趋势分析 (The Strategist)
-        1. **市场结构 (Market Structure)**: 
-           - 分析当前处于什么阶段？(吸筹 Accumulation / 操纵 Manipulation / 派发 Distribution / 趋势 Trend)。
-           - 识别大周期 (H1/H4) 的主要流动性池 (Liquidity Pools) 和 订单块 (OB)。
-           - **趋势定性**: 当前是大牛市、大熊市、还是宽幅震荡？
-        2. **市场情绪 (Sentiment)**:
-           - 结合价格行为判断当前市场情绪是 Risk-On (激进) 还是 Risk-Off (避险)。
-           - 黄金特有属性：关注亚盘/欧盘/美盘的盘口特征（如美盘前的诱多/诱空）。
-        
-        ### 第二阶段：SMC 精细化入场 (The Sniper)
-        1. **SMC 核心信号**:
-           - 寻找 **BOS (结构破坏)** 或 **CHoch (角色转变)** 确认趋势延续或反转。
-           - 识别 **FVG (价值缺口)** 作为回调入场的关键位。
-           - 确认 **Liquidity Sweep (流动性扫荡)**，特别是对前高/前低的假突破。
-        2. **CRT 与共振**:
-           - 结合 CRT (K线理论) 确认关键位置的 K线形态 (如 Pinbar, Engulfing)。
-           - 检查 CCI/RVGI 是否支持当前方向。
+        2. **Martingale Grid (马丁网格) - 仓位管理**:
+           - **首单**: 基于SMC信号轻仓入场 (如 0.01 lot 或 资金的 0.5%)。
+           - **逆势加仓 (Grid Add)**: 如果价格向不利方向移动且未破关键失效位，在下一个SMC关键位(OB/FVG)加仓。
+           - **倍投逻辑**: 加仓手数通常为上一单的 1.2倍 - 2.0倍 (几何级数)，以摊低成本。
+           - **网格间距**: 不要使用固定间距！使用ATR或SMC结构位作为加仓间隔。
+           - **最大层数**: 严格控制加仓次数 (建议不超过 5 层)。
 
-        ### 第三阶段：Martingale Grid 资金管理 (The Risk Manager)
-        - **首单策略**: 基于上述分析，在最佳 SMC 位置轻仓试错。
-        - **逆势加仓 (Grid Add)**: 如果判断大趋势未变但短线被套，制定马丁加仓计划。
-           - **加仓位**: 必须是下一个强支撑/阻力 (OB/FVG)，绝非固定点数。
-           - **倍投**: 1.2x - 2.0x 几何递增。
-        - **止损止盈 (MAE/MFE)**: 
-           - 利用 MAE 数据设定"安全"止损（过滤假突破）。
-           - 利用 MFE 数据设定"贪婪"止盈（吃满波段）。
+        3. **MAE/MFE - 止损止盈优化**:
+           - **SL (Stop Loss)**: 基于MAE(最大不利偏移)分布。如果历史亏损交易的MAE通常不超过 X 点，则SL设在 X 点之外。同时必须在SMC失效位(Invalidation Level)之外。
+           - **TP (Take Profit)**: 基于MFE(最大有利偏移)分布。设定在能捕获 80% 潜在收益的位置，或下一个流动性池(Liquidity Pool)。
+           - **Basket TP (整体止盈)**: 当持有多单时，关注整体浮盈。
 
-        ---
-        **输入数据**:
         当前市场数据：
         {json.dumps(current_market_data, indent=2, cls=CustomJSONEncoder)}
         
-        持仓状态 (关注浮亏与加仓机会):
+        持仓状态 (Martingale 核心关注):
         {pos_context}
         
         挂单状态:
@@ -333,30 +323,24 @@ class QwenClient:
         历史绩效 (MFE/MAE 参考):
         {perf_context}
         
-        上一次分析 (连续性参考):
+        上一次分析:
         {prev_context}
         
-        ---
-        **决策输出 (Action)**:
-        请给出明确的交易指令。
-        1. **STRONG_BUY / BUY**: 宏观趋势向上 + SMC 回调到位 + 情绪看多。
-        2. **STRONG_SELL / SELL**: 宏观趋势向下 + SMC 反弹受阻 + 情绪看空。
-        3. **ADD_BUY / ADD_SELL**: 逆势加仓，摊低成本 (需满足马丁加仓条件)。
-        4. **GRID_START**: 震荡市，在上下方关键位预埋网格单。
-        5. **CLOSE**: 趋势反转或达到止盈目标。
-        6. **HOLD**: 方向不明或未到关键位。
+        请做出最终决策 (Action):
+        1. **HOLD**: 震荡无方向，或持仓浮亏但在网格间距内。
+        2. **BUY / SELL**: 出现SMC信号，首单入场。
+        3. **ADD_BUY / ADD_SELL**: 逆势加仓。**仅当**：(a) 已有持仓且浮亏; (b) 价格到达下一个SMC支撑/阻力位; (c) 距离上一单有足够间距(>ATR)。
+        4. **CLOSE**: 达到整体止盈目标，或SMC结构完全破坏(止损)。
+        5. **GRID_START**: 预埋网格单 (Limit Orders) 在未来的OB/FVG位置。
 
-        **输出要求**:
-        - **limit_price**: 挂单必填，精确到 0.01。
-        - **sl_price / tp_price**: 必填，基于结构位和 MAE/MFE。
-        - **position_size**: 资金比例 (0.01 - 0.1)。
-        - **strategy_rationale**: **(中文)** 必须包含三部分：
-           1. **宏观分析**: "当前黄金处于H4级别的...阶段，情绪偏向..."
-           2. **SMC逻辑**: "价格回踩了2030的H1 FVG，且出现M15 BOS..."
-           3. **执行计划**: "因此执行买入，若跌破2025则在2020加仓(马丁)..."
+        输出要求：
+        - **limit_price**: 挂单必填。
+        - **sl_price / tp_price**: 必填，基于MAE/MFE和SMC结构。
+        - **position_size**: 给出具体的资金比例 (0.01 - 0.1)。
+        - **strategy_rationale**: 用**中文**详细解释：SMC结构分析 -> 为什么选择该方向 -> 马丁加仓计划/止盈计划 -> 参考的MAE/MFE数据。
 
         请以JSON格式返回结果，包含以下字段：
-        - action: str
+        - action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell", "grid_start")
         - entry_conditions: dict ("limit_price": float)
         - exit_conditions: dict ("sl_price": float, "tp_price": float)
         - position_management: dict ("martingale_multiplier": float, "grid_step_logic": str)
