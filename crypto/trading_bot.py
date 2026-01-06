@@ -1253,5 +1253,5 @@ class CryptoTradingBot:
             self.is_running = False
 
 if __name__ == "__main__":
-    bot = CryptoTradingBot(symbol='ETH/USDT:USDT', timeframe='1h', interval=3600) 
+    bot = CryptoTradingBot(symbol='ETH/USDT:USDT', timeframe='1h', interval=360) 
     bot.start()
