@@ -865,7 +865,7 @@ class AI_MT5_Bot:
                     o_price = self._normalize_price(order['price'])
                     
                     # 发送订单
-                    self._send_order(o_type, o_price, explicit_sl=0.0, explicit_tp=0.0, comment=f"AI-Grid-{i+1}")
+                    self._send_order(o_type, o_price, sl=0.0, tp=0.0, comment=f"AI-Grid-{i+1}")
                     
                 # 恢复 lot_size
                 self.lot_size = original_lot
