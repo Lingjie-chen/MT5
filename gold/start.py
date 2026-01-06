@@ -2246,16 +2246,9 @@ class AI_MT5_Bot:
                     self.last_analysis_time = time.time()
                     
                     # 2. 获取数据并分析
-                    # ... 这里的代码保持不变 ...
                     # PEM 需要至少 108 根 K 线 (ma_fast_period)，MTF 更新 Zones 需要 500 根
                     # 为了确保所有模块都有足够数据，我们获取 600 根 (150 hours of M15)
                     df = self.get_market_data(600) 
-                    
-                    # 获取最近的 Tick 数据用于 Matrix ML
-                    # 尝试获取最近 20 个 tick
-                    ticks = mt5.copy_ticks_from(self.symbol, current_bar_time, 20, mt5.COPY_TICKS_ALL)
-                    if ticks is None:
-                        ticks = []
                     
                     if df is not None:
                         # 保存市场数据到DB
@@ -2296,120 +2289,54 @@ class AI_MT5_Bot:
                         crt_result = self.crt_analyzer.analyze(self.symbol, current_price, current_bar_time)
                         logger.info(f"CRT 分析: {crt_result['signal']} ({crt_result['reason']})")
                         
-                        # --- 3.2 价格方程模型 (PEM) ---
-                        self.price_model.update(float(current_price['close']))
-                        price_eq_result = self.price_model.predict(df) # 传入 df 进行分析
-                        logger.info(f"PEM 预测: {price_eq_result['signal']} (目标: {price_eq_result['predicted_price']:.2f})")
+                        # --- 3.2.1 多时间周期分析 (MTF) ---
+                        mtf_result = self.mtf_analyzer.analyze(self.symbol, current_price, current_bar_time)
+                        logger.info(f"MTF 分析: {mtf_result['signal']} ({mtf_result['reason']})")
                         
-                        # --- 3.2.1 多时间周期分析 (新增) ---
-                        tf_result = self.tf_analyzer.analyze(self.symbol, current_bar_time)
-                        logger.info(f"TF 分析: {tf_result['signal']} ({tf_result['reason']})")
-                        
-                        # --- 3.2.2 高级技术分析 (新增) ---
-                        # Use optimized parameters if available
+                        # --- 3.2.2 高级技术分析 (CCI/RVGI/IFVG) ---
                         st_params = getattr(self, 'short_term_params', {})
                         adv_result = self.advanced_adapter.analyze_full(df, params=st_params)
                         adv_signal = "neutral"
                         if adv_result:
                             adv_signal = adv_result['signal_info']['signal']
                             logger.info(f"高级技术分析: {adv_signal} (强度: {adv_result['signal_info']['strength']})")
-                            logger.info(f"市场状态: {adv_result['regime']['description']}")
                             
-                        # --- 3.2.3 Matrix ML 分析 (新增) ---
-                        # 首先进行训练 (基于上一次预测和当前价格变动)
-                        price_change = float(current_price['close']) - float(df.iloc[-2]['close']) if len(df) > 1 else 0
-                        loss = self.matrix_ml.train(price_change)
-                        if loss:
-                            logger.info(f"Matrix ML 训练 Loss: {loss:.4f}")
-                            
-                        # 进行预测
-                        ml_result = self.matrix_ml.predict(ticks)
-                        logger.info(f"Matrix ML 预测: {ml_result['signal']} (Raw: {ml_result.get('raw_output', 0.0):.2f})")
-                        
-                        # --- 3.2.4 SMC 分析 (新增) ---
+                        # --- 3.2.3 SMC 分析 ---
                         smc_result = self.smc_analyzer.analyze(df, self.symbol)
                         logger.info(f"SMC 结构: {smc_result['structure']} (信号: {smc_result['signal']})")
                         
-                        # --- 3.2.5 MFH 分析 (新增) ---
-                        # 计算真实收益率用于训练 (t - t_horizon)
-                        # 我们需要足够的数据来计算 Horizon 收益
-                        horizon = 5
-                        mfh_slope = 0.0
-                        mfh_signal = "neutral"
-                        
-                        if len(df) > horizon + 10:
-                            # 1. 训练 (Delayed Training)
-                            # 实际发生的 Horizon 收益: (Close[t] - Close[t-5]) / Close[t-5]
-                            current_close = float(current_price['close'])
-                            past_close = float(df.iloc[-1 - horizon]['close'])
-                            
-                            if past_close > 0:
-                                actual_return = (current_close - past_close) / past_close
-                                self.mfh_analyzer.train(actual_return)
-                            
-                            # 2. 预测
-                            mfh_result = self.mfh_analyzer.predict(df)
-                            mfh_slope = mfh_result['slope']
-                            mfh_signal = mfh_result['signal']
-                            logger.info(f"MFH 斜率: {mfh_slope:.4f} (信号: {mfh_signal})")
-                        else:
-                            mfh_result = {"signal": "neutral", "slope": 0.0}
-                        
-                        # --- 3.2.6 MTF 分析 (新增) ---
-                        mtf_result = self.mtf_analyzer.analyze(self.symbol, current_price, current_bar_time)
-                        logger.info(f"MTF 分析: {mtf_result['signal']} ({mtf_result['reason']})")
-                        
-                        # --- 3.2.7 IFVG 分析 (新增) ---
-                        # 在 AdvancedAnalysisAdapter 中已调用，但这里需要单独提取结果供后续使用
+                        # --- 3.2.4 IFVG 分析 ---
                         if adv_result and 'ifvg' in adv_result:
                             ifvg_result = adv_result['ifvg']
                         else:
                             ifvg_result = {"signal": "hold", "strength": 0, "reasons": [], "active_zones": []}
-                        
                         logger.info(f"IFVG 分析: {ifvg_result['signal']} (Strength: {ifvg_result['strength']})")
 
-                        # --- 3.2.8 RVGI+CCI 分析 (新增) ---
+                        # --- 3.2.5 RVGI+CCI 分析 ---
                         if adv_result and 'rvgi_cci' in adv_result:
                             rvgi_cci_result = adv_result['rvgi_cci']
                         else:
                             rvgi_cci_result = {"signal": "hold", "strength": 0, "reasons": []}
-                            
                         logger.info(f"RVGI+CCI 分析: {rvgi_cci_result['signal']} (Strength: {rvgi_cci_result['strength']})")
                         
-                        # --- 3.2.9 Grid Strategy Analysis (Updated with SMC) ---
+                        # --- 3.2.6 Grid Strategy Analysis ---
                         # Extract SMC and IFVG levels for Grid
-                        smc_grid_data = {
-                            'ob': [],
-                            'fvg': []
-                        }
+                        smc_grid_data = {'ob': [], 'fvg': []}
                         
-                        # 1. From IFVG
+                        # From IFVG
                         if 'active_zones' in ifvg_result:
                             for z in ifvg_result['active_zones']:
                                 z_type = 'bearish' if z['type'] == 'supply' else 'bullish'
-                                smc_grid_data['ob'].append({
-                                    'top': z['top'], 
-                                    'bottom': z['bottom'], 
-                                    'type': z_type
-                                })
+                                smc_grid_data['ob'].append({'top': z['top'], 'bottom': z['bottom'], 'type': z_type})
                         
-                        # 2. From SMC Analyzer (Extract Active OBs/FVGs if available)
-                        # We need to ensure SMCAnalyzer returns these lists in 'details'
+                        # From SMC Analyzer
                         if 'details' in smc_result:
                             if 'ob' in smc_result['details'] and 'active_obs' in smc_result['details']['ob']:
                                 for ob in smc_result['details']['ob']['active_obs']:
-                                    smc_grid_data['ob'].append({
-                                        'top': ob['top'],
-                                        'bottom': ob['bottom'],
-                                        'type': ob['type']
-                                    })
+                                    smc_grid_data['ob'].append({'top': ob['top'], 'bottom': ob['bottom'], 'type': ob['type']})
                             if 'fvg' in smc_result['details'] and 'active_fvgs' in smc_result['details']['fvg']:
                                 for fvg in smc_result['details']['fvg']['active_fvgs']:
-                                    smc_grid_data['fvg'].append({
-                                        'top': fvg['top'],
-                                        'bottom': fvg['bottom'],
-                                        'type': fvg['type']
-                                    })
+                                    smc_grid_data['fvg'].append({'top': fvg['top'], 'bottom': fvg['bottom'], 'type': fvg['type']})
 
                         self.grid_strategy.update_smc_levels(smc_grid_data)
                         
@@ -2423,50 +2350,34 @@ class AI_MT5_Bot:
                             "kalman_price": self.grid_strategy.kalman_value
                         }
 
-                        # 准备优化器池信息供 AI 参考
+                        # 准备优化器池信息
                         optimizer_info = {
                             "available_optimizers": list(self.optimizers.keys()),
                             "active_optimizer": self.active_optimizer_name,
                             "last_optimization_score": self.optimizers[self.active_optimizer_name].best_score if self.optimizers[self.active_optimizer_name].best_score > -90000 else None,
                             "descriptions": {
-                                "GWO": "Grey Wolf Optimizer - 模拟灰狼捕猎行为",
-                                "WOAm": "Whale Optimization Algorithm (Modified) - 模拟座头鲸气泡网捕猎",
-                                "DE": "Differential Evolution - 差分进化算法",
-                                "COAm": "Cuckoo Optimization Algorithm (Modified) - 模拟布谷鸟寄生繁殖",
-                                "BBO": "Biogeography-Based Optimization - 生物地理学优化",
-                                "TETA": "Time Evolution Travel Algorithm - 时间演化旅行算法 (无参)"
+                                "WOAm": "Whale Optimization Algorithm (Modified)",
+                                "TETA": "Time Evolution Travel Algorithm"
                             }
                         }
 
-                        # --- 3.3 DeepSeek 分析 (Disable Throttle) ---
-                        # 用户要求不跳过分析
-                        should_run_llm = True
-                        # should_run_llm = (time.time() - self.last_llm_time >= 3600) or (self.last_llm_time == 0)
-
-                        # --- 3.3 DeepSeek 分析 ---
-                        logger.info("正在调用 DeepSeek 分析市场结构...")
+                        # --- 3.3 Qwen 策略分析 (Sole Decision Maker) ---
+                        logger.info("正在调用 Qwen 生成策略...")
                         
-                        # 获取历史交易绩效 (MFE/MAE) - 提前获取供 DeepSeek 使用
+                        # 获取历史交易绩效 (MFE/MAE)
                         trade_stats = self.db_manager.get_trade_performance_stats(limit=50)
                         
-                        # 获取当前持仓状态 (供 DeepSeek 和 Qwen 决策) - 提前获取
+                        # 获取当前持仓状态
                         positions = mt5.positions_get(symbol=self.symbol)
                         current_positions_list = []
                         if positions:
                             for pos in positions:
                                 cur_mfe, cur_mae = self.get_position_stats(pos)
-                                # Calculate R-Multiple (Current Profit / Initial Risk)
-                                # Assuming Risk = SL Distance * Volume * TickValue, but simpler:
-                                # R = (Current Price - Open Price) / (Open Price - SL)
                                 r_multiple = 0.0
                                 if pos.sl > 0:
                                     risk_dist = abs(pos.price_open - pos.sl)
                                     if risk_dist > 0:
-                                        profit_dist = 0.0
-                                        if pos.type == mt5.POSITION_TYPE_BUY:
-                                            profit_dist = pos.price_current - pos.price_open
-                                        else:
-                                            profit_dist = pos.price_open - pos.price_current
+                                        profit_dist = (pos.price_current - pos.price_open) if pos.type == mt5.POSITION_TYPE_BUY else (pos.price_open - pos.price_current)
                                         r_multiple = profit_dist / risk_dist
                                 
                                 current_positions_list.append({
@@ -2483,89 +2394,22 @@ class AI_MT5_Bot:
                                     "r_multiple": r_multiple
                                 })
                         
-                        # 准备当前优化状态上下文
-                        optimization_status = {
-                            "active_optimizer": self.active_optimizer_name,
-                            "optimizer_details": optimizer_info, # 注入详细优化器信息
-                            "smc_params": {
-                                "ma_period": self.smc_analyzer.ma_period,
-                                "atr_threshold": self.smc_analyzer.atr_threshold
-                            },
-                            "mfh_params": {
-                                "learning_rate": self.mfh_analyzer.learning_rate
-                            }
-                        }
-
-                        # 传入 CRT, PriceEq, TF 和 高级分析 的结果作为额外上下文
-                        extra_analysis = {
-                            "crt": crt_result,
-                            "price_equation": price_eq_result,
-                            "timeframe_analysis": tf_result,
-                            "advanced_tech": adv_result['summary'] if adv_result else None,
-                            "matrix_ml": ml_result,
-                            "smc": smc_result,
-                            "mfh": mfh_result,
-                            "mtf": mtf_result,
-                            "ifvg": ifvg_result,
-                            "rvgi_cci": rvgi_cci_result,
-                            "grid_strategy": {"signal": grid_signal, "status": grid_status},
-                            "optimization_status": optimization_status # 新增: 当前参数状态
-                        }
-                        
-                        # 调用 DeepSeek，传入性能数据和持仓信息
-                        if should_run_llm:
-                            structure = self.deepseek_client.analyze_market_structure(
-                                market_snapshot, 
-                                current_positions=current_positions_list,
-                                extra_analysis=extra_analysis, 
-                                performance_stats=trade_stats
-                            )
-                        else:
-                            structure = {}
-                            logger.info("跳过 DeepSeek 分析 (Throttle)")
-                        logger.info(f"DeepSeek 分析完成: {structure.get('market_state')}")
-                        
-                        # DeepSeek 信号转换
-                        ds_signal = structure.get('preliminary_signal', 'neutral')
-                        ds_pred = structure.get('short_term_prediction', 'neutral')
-                        ds_score = structure.get('structure_score', 50)
-                        
-                        # 如果 DeepSeek 没有返回 preliminary_signal (旧版本兼容)，使用简单的规则
-                        if ds_signal == 'neutral':
-                             if ds_pred == 'bullish' and ds_score > 60:
-                                 ds_signal = "buy"
-                             elif ds_pred == 'bearish' and ds_score > 60:
-                                 ds_signal = "sell"
-                        
-                        # --- 3.4 Qwen 策略 ---
-                        logger.info("正在调用 Qwen 生成策略...")
-                        
-                        # 准备混合信号供 Qwen 参考
+                        # 准备技术信号摘要
                         technical_signals = {
                             "crt": crt_result,
-                            "price_equation": price_eq_result,
-                            "timeframe_analysis": tf_result,
                             "advanced_tech": adv_signal,
-                            "matrix_ml": ml_result['signal'],
                             "smc": smc_result['signal'],
                             "grid_strategy": {
                                 "signal": grid_signal,
                                 "status": grid_status,
-                                "config": self.grid_strategy.get_config() # 传入当前 Grid 配置供优化
+                                "config": self.grid_strategy.get_config()
                             },
-                            "mfh": mfh_result['signal'],
                             "mtf": mtf_result['signal'], 
-                            "deepseek_analysis": { # 传入完整的 DeepSeek 分析结果
-                                "market_state": structure.get('market_state'),
-                                "preliminary_signal": ds_signal,
-                                "confidence": structure.get('signal_confidence'),
-                                "consistency": structure.get('consistency_analysis'),
-                                "prediction": ds_pred
-                            },
-                            "performance_stats": trade_stats # 传入历史绩效
+                            "ifvg": ifvg_result['signal'],
+                            "performance_stats": trade_stats
                         }
                         
-                        # Qwen Sentiment Analysis (New)
+                        # Qwen Sentiment Analysis
                         qwen_sent_score = 0
                         qwen_sent_label = 'neutral'
                         try:
@@ -2575,132 +2419,70 @@ class AI_MT5_Bot:
                         except Exception as e:
                             logger.error(f"Sentiment Analysis Failed: {e}")
 
-                        if should_run_llm:
-                            strategy = self.qwen_client.optimize_strategy_logic(
-                                structure, 
-                                market_snapshot, 
-                                technical_signals=technical_signals, 
-                                current_positions=current_positions_list,
-                                performance_stats=trade_stats, # 显式传入绩效
-                                previous_analysis=self.latest_strategy # 传入上一次分析
-                            )
-                            self.latest_strategy = strategy
-                            self.last_llm_time = time.time()
-                        elif self.latest_strategy:
-                            strategy = self.latest_strategy
-                            logger.info("使用缓存的 LLM 策略")
-                        else:
-                            strategy = {"action": "hold", "reason": "Waiting for LLM"}
-                            logger.info("无缓存策略，默认 Hold")
+                        # Call Qwen
+                        # Note: We removed 'structure' from DeepSeek, so we pass None or simplified dict
+                        dummy_structure = {"market_state": "Analyzed by Qwen", "preliminary_signal": "neutral"}
+                        
+                        strategy = self.qwen_client.optimize_strategy_logic(
+                            dummy_structure, # Qwen will ignore this or treat as base
+                            market_snapshot, 
+                            technical_signals=technical_signals, 
+                            current_positions=current_positions_list,
+                            performance_stats=trade_stats,
+                            previous_analysis=self.latest_strategy
+                        )
+                        self.latest_strategy = strategy
+                        self.last_llm_time = time.time()
                         
                         # --- 参数自适应优化 (Feedback Loop) ---
-                        # 将大模型的参数优化建议应用到当前运行的算法中
-                        if should_run_llm:
-                            param_updates = strategy.get('parameter_updates', {})
-                            if param_updates:
-                                try:
-                                    update_reason = param_updates.get('reason', 'AI Optimized')
-                                    logger.info(f"应用参数优化 ({update_reason}): {param_updates}")
+                        param_updates = strategy.get('parameter_updates', {})
+                        if param_updates:
+                            try:
+                                update_reason = param_updates.get('reason', 'AI Optimized')
+                                logger.info(f"应用参数优化 ({update_reason}): {param_updates}")
+                                
+                                # 1. SMC 参数
+                                if 'smc_atr_threshold' in param_updates:
+                                    self.smc_analyzer.atr_threshold = float(param_updates['smc_atr_threshold'])
                                     
-                                    # 1. SMC 参数
-                                    if 'smc_atr_threshold' in param_updates:
-                                        new_val = float(param_updates['smc_atr_threshold'])
-                                        self.smc_analyzer.atr_threshold = new_val
-                                        logger.info(f"Updated SMC ATR Threshold -> {new_val}")
-                                        
-                                    # 2. MFH 参数
-                                    if 'mfh_learning_rate' in param_updates:
-                                        new_val = float(param_updates['mfh_learning_rate'])
-                                        self.mfh_analyzer.learning_rate = new_val
-                                        logger.info(f"Updated MFH Learning Rate -> {new_val}")
-                                        
-                                    # 3. 切换优化器
-                                    if 'active_optimizer' in param_updates:
-                                        new_opt = str(param_updates['active_optimizer'])
-                                        if new_opt in self.optimizers and new_opt != self.active_optimizer_name:
-                                            self.active_optimizer_name = new_opt
-                                            logger.info(f"Switched Optimizer -> {new_opt}")
-                                            
-                                    # 4. Matrix ML 参数 (如需)
-                                    if 'matrix_ml_learning_rate' in param_updates:
-                                         self.matrix_ml.learning_rate = float(param_updates['matrix_ml_learning_rate'])
-
-                                    # 5. Grid Strategy 参数动态更新 (新增)
-                                    if 'grid_settings' in param_updates:
-                                        self.grid_strategy.update_config(param_updates['grid_settings'])
-                                         
-                                except Exception as e:
-                                    logger.error(f"参数动态更新失败: {e}")
+                                # 2. Grid Strategy 参数
+                                if 'grid_settings' in param_updates:
+                                    self.grid_strategy.update_config(param_updates['grid_settings'])
+                                     
+                            except Exception as e:
+                                logger.error(f"参数动态更新失败: {e}")
                         
                         # Qwen 信号转换
-                        # 如果没有明确 action 字段，我们假设它作为 DeepSeek 的确认层
-                        # 现在我们优先使用 Qwen 返回的 action
                         qw_action = strategy.get('action', 'neutral').lower()
                         
-                        # 扩展 Action 解析，支持加仓/减仓/平仓/挂单指令
                         final_signal = "neutral"
                         if qw_action in ['buy', 'add_buy']:
                             final_signal = "buy"
                         elif qw_action in ['sell', 'add_sell']:
                             final_signal = "sell"
-                        elif qw_action in ['buy_limit', 'limit_buy']:
-                            final_signal = "buy" # 强制转换为市价单
-                            logger.info("[Override] Converting Limit Buy -> Market Buy per user preference")
-                        elif qw_action in ['sell_limit', 'limit_sell']:
-                            final_signal = "sell" # 强制转换为市价单
-                            logger.info("[Override] Converting Limit Sell -> Market Sell per user preference")
                         elif qw_action in ['close_buy', 'close_sell', 'close']:
-                            final_signal = "close" # 特殊信号: 平仓
+                            final_signal = "close"
                         elif qw_action == 'hold':
                             final_signal = "hold"
                         elif qw_action == 'grid_start':
-                            final_signal = "grid_start" # 特殊信号: 开启网格
+                            final_signal = "grid_start"
                             
-                        # --- 增强: 多模型共振修正 (Consensus Override) ---
-                        # 仅允许两个大模型 (Qwen/DeepSeek) 相互确认或覆盖，不再被纯技术指标强制覆盖
-                        reason = strategy.get('reason', 'LLM Decision')
+                        # Reason
+                        reason = strategy.get('reason', 'Qwen Decision')
                         
-                        if final_signal in ['hold', 'neutral']:
-                            # 1. Qwen 情绪强信号覆盖 (Sentiment Override)
-                            if qwen_sent_score >= 0.8:
-                                final_signal = 'buy'
-                                reason = f"[Override] Qwen Sentiment Extreme Bullish ({qwen_sent_score})"
-                                logger.info(f"策略修正: Qwen 情绪极强 ({qwen_sent_score}) -> Buy")
-                            elif qwen_sent_score <= -0.8:
-                                final_signal = 'sell'
-                                reason = f"[Override] Qwen Sentiment Extreme Bearish ({qwen_sent_score})"
-                                logger.info(f"策略修正: Qwen 情绪极弱 ({qwen_sent_score}) -> Sell")
-
-                            # 2. DeepSeek 强信号覆盖 (Only if available)
-                            elif ds_signal in ['buy', 'sell'] and ds_score >= 75:
-                                final_signal = ds_signal
-                                reason = f"[Override] DeepSeek High Confidence ({ds_score}): {structure.get('market_state')}"
-                                logger.info(f"策略修正: DeepSeek 强信号 ({ds_score}) 覆盖 Qwen Hold -> {final_signal}")
-                            
-                            # 3. (Deleted) Technical Consensus Override
-                            # 用户指令：最终下单决策全权交给两个大模型
-                        
-                        # 3. 智能平仓信号处理 (High Priority)
+                        # 3. 智能平仓信号处理
                         if qw_action == 'close' and final_signal != 'close':
                             final_signal = 'close'
-                            reason = f"[Smart Exit] Qwen Profit Taking: {qw_reason}"
-                            logger.info(f"策略修正: Qwen 触发智能平仓 -> CLOSE")
+                            reason = f"[Smart Exit] Qwen Profit Taking: {reason}"
 
                         qw_signal = final_signal if final_signal not in ['hold', 'close'] else 'neutral'
                         
-                        # --- 3.5 最终决策 (LLM Centric + Consensus) ---
-                        
-                        # 计算置信度/强度 (Strength)
-                        # 我们使用技术指标的一致性作为置信度评分
-                        tech_consensus_score = 0
+                        # 计算置信度 (简化版，仅参考 Qwen 和 Tech 一致性)
                         matching_count = 0
                         valid_tech_count = 0
-                        
                         tech_signals_list = [
-                            crt_result['signal'], price_eq_result['signal'], tf_result['signal'],
-                            adv_signal, ml_result['signal'], smc_result['signal'],
-                            mfh_result['signal'], mtf_result['signal'], ifvg_result['signal'],
-                            rvgi_cci_result['signal']
+                            crt_result['signal'], adv_signal, smc_result['signal'],
+                            mtf_result['signal'], ifvg_result['signal'], rvgi_cci_result['signal']
                         ]
                         
                         for sig in tech_signals_list:
@@ -2709,268 +2491,121 @@ class AI_MT5_Bot:
                                 if sig == final_signal:
                                     matching_count += 1
                         
-                        if final_signal in ['buy', 'sell']:
-                            # 基础分 60 (既然 LLM 敢喊单)
-                            base_strength = 60
-                            # 技术面加成
-                            if valid_tech_count > 0:
-                                tech_boost = (matching_count / valid_tech_count) * 40 # 最高 +40
-                                strength = base_strength + tech_boost
-                            else:
-                                strength = base_strength
-                                
-                            # DeepSeek 加成
-                            if ds_signal == final_signal:
-                                strength = min(100, strength + 10)
-                        else:
-                            strength = 0
-
+                        strength = 70 # Base for Qwen
+                        if valid_tech_count > 0:
+                            strength += (matching_count / valid_tech_count) * 30
+                            
+                        # 构建所有信号字典
                         all_signals = {
-                            "deepseek": ds_signal,
                             "qwen": qw_signal,
                             "crt": crt_result['signal'],
-                            "price_equation": price_eq_result['signal'],
-                            "tf_visual": tf_result['signal'],
                             "advanced_tech": adv_signal,
-                            "matrix_ml": ml_result['signal'],
                             "smc": smc_result['signal'],
-                            "mfh": mfh_result['signal'],
                             "mtf": mtf_result['signal'],
                             "ifvg": ifvg_result['signal'],
                             "rvgi_cci": rvgi_cci_result['signal']
                         }
                         
-                        # 仅保留 weights 用于记录，不再用于计算信号
+                        # Combine Signals (Using HybridOptimizer just for weighting record)
                         _, _, weights = self.optimizer.combine_signals(all_signals)
 
-                        # --- 3.6 记录信号历史用于实时优化 ---
-                        # 解决优化算法未运行的问题：收集数据并定期调用 optimize_weights
-                        self.signal_history.append((current_bar_time, all_signals, float(current_price['close'])))
-                        if len(self.signal_history) > 1000:
-                            self.signal_history.pop(0)
-                            
-                        # 每 15 分钟尝试优化一次权重
-                        if time.time() - self.last_optimization_time > 900:
-                             self.optimize_weights()
-
-                        logger.info(f"AI 最终决定 (LLM-Driven): {final_signal.upper()} (强度: {strength:.1f})")
-                        logger.info(f"LLM Reason: {reason}")
-                        logger.info(f"技术面支持: {matching_count}/{valid_tech_count}")
+                        logger.info(f"AI 最终决定 (Qwen): {final_signal.upper()} (强度: {strength:.1f})")
+                        logger.info(f"Reason: {reason}")
                         
                         # 保存分析结果到DB
                         self.db_manager.save_signal(self.symbol, self.tf_name, {
                             "final_signal": final_signal,
                             "strength": strength,
                             "details": {
-                                "source": "LLM_Centric",
-                                "reason": reason, # Add reason field for dashboard/visualization
+                                "source": "Qwen_Solo",
+                                "reason": reason,
                                 "weights": weights,
                                 "signals": all_signals,
-                                "market_state": structure.get('market_state'),
-                                "prediction": structure.get('short_term_prediction'),
+                                "market_state": strategy.get('market_state', 'N/A'),
                                 "crt_reason": crt_result['reason'],
                                 "mtf_reason": mtf_result['reason'],
-                                "adv_summary": adv_result['summary'] if adv_result else None,
-                                "matrix_ml_raw": ml_result['raw_output'],
                                 "smc_structure": smc_result['structure'],
-                                "smc_reason": smc_result['reason'],
-                                "mfh_slope": mfh_result['slope'],
                                 "ifvg_reason": ", ".join(ifvg_result['reasons']) if ifvg_result['reasons'] else "N/A"
                             }
                         })
                         
-                        # 更新全局缓存，供 manage_positions 使用
                         self.latest_strategy = strategy
                         self.latest_signal = final_signal
                         
                         # --- 发送分析报告到 Telegram ---
-                        # 构建更详细的报告
-                        regime_info = adv_result['regime']['description'] if adv_result else "N/A"
-                        volatility_info = f"{adv_result['risk']['volatility']:.2%}" if adv_result else "N/A"
+                        # (保持原有的 Telegram 逻辑，简化 DeepSeek 部分)
                         
                         # 获取当前持仓概览
                         pos_summary = "No Open Positions"
-                        positions = mt5.positions_get(symbol=self.symbol)
-                        if positions:
+                        if current_positions_list:
                             pos_details = []
-                            for p in positions:
-                                type_str = "BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL"
-                                pnl = p.profit
-                                pos_details.append(f"{type_str} {p.volume} (PnL: {pnl:.2f})")
+                            for p in current_positions_list:
+                                type_str = "BUY" if p['type'] == 'buy' else "SELL"
+                                pnl = p['profit']
+                                pos_details.append(f"{type_str} {p['volume']} (PnL: {pnl:.2f})")
                             pos_summary = "\n".join(pos_details)
 
-                        # 获取建议的 SL/TP (用于展示最优 SL/TP)
-                        # 逻辑: 优先展示 Qwen 策略中明确的 SL/TP，如果没有，则展示基于 MFE/MAE 优化的计算值
-                        current_bid = mt5.symbol_info_tick(self.symbol).bid
-                        current_ask = mt5.symbol_info_tick(self.symbol).ask
-                        ref_price = current_ask # 默认参考价
-                        
-                        trade_dir_for_calc = "buy"
-                        if final_signal == 'sell':
-                            trade_dir_for_calc = "sell"
-                            ref_price = current_bid
-                        
-                        # 1. 尝试从 Qwen 策略获取
+                        # SL/TP
                         exit_conds = strategy.get('exit_conditions', {})
                         opt_sl = exit_conds.get('sl_price')
                         opt_tp = exit_conds.get('tp_price')
                         
-                        # 2. 如果 Qwen 未提供，使用内部优化算法计算
+                        # Fallback calc
                         if not opt_sl or not opt_tp:
-                            # 准备市场上下文
-                            sl_tp_context = {
-                                "supply_zones": adv_result.get('ifvg', {}).get('active_zones', []),
-                                "demand_zones": [],
-                                "bearish_fvgs": [], 
-                                "bullish_fvgs": []
-                            }
-                            # 计算 ATR (复用)
-                            atr_val = float(latest_features.get('atr', 0))
-                            if atr_val == 0: atr_val = ref_price * 0.005
-                            
-                            calc_sl, calc_tp = self.calculate_optimized_sl_tp(trade_dir_for_calc, ref_price, atr_val, market_context=sl_tp_context)
-                            
+                            current_bid = mt5.symbol_info_tick(self.symbol).bid
+                            current_ask = mt5.symbol_info_tick(self.symbol).ask
+                            ref_price = current_ask if final_signal == 'buy' else current_bid
+                            atr_val = float(latest_features.get('atr', ref_price * 0.005))
+                            calc_sl, calc_tp = self.calculate_optimized_sl_tp(
+                                final_signal if final_signal in ['buy', 'sell'] else 'buy', 
+                                ref_price, atr_val
+                            )
                             if not opt_sl: opt_sl = calc_sl
                             if not opt_tp: opt_tp = calc_tp
 
-                        # 计算盈亏比 (R:R)
-                        rr_str = "N/A"
-                        if opt_sl and opt_tp and ref_price:
-                            risk = abs(ref_price - opt_sl)
-                            reward = abs(opt_tp - ref_price)
-                            if risk > 0:
-                                rr = reward / risk
-                                rr_str = f"1:{rr:.2f}"
-
-                        # 优化显示逻辑: 如果是 Hold 且无持仓，显示为 "Waiting for Market Direction"
-                        display_decision = final_signal.upper()
-                        if final_signal == 'hold' and (not positions or len(positions) == 0):
-                            display_decision = "WAITING FOR MARKET DIRECTION ⏳"
-
-                        # --- 准备资金管理与自我学习数据 ---
-                        # 获取自我学习状态
-                        metrics = self.db_manager.get_performance_metrics(limit=20)
-                        win_rate = metrics.get('win_rate', 0.0)
-                        profit_factor = metrics.get('profit_factor', 0.0)
-                        
-                        # 预计算建议手数 (用于展示)
-                        # 准备完整的市场上下文 (与 execute_trade 一致，移除简化)
-                        full_market_ctx = {}
-                        if 'smc' in extra_analysis: full_market_ctx['smc'] = extra_analysis['smc']
-                        if 'atr' in latest_features: full_market_ctx['atr'] = float(latest_features['atr'])
-                        if adv_result and 'risk' in adv_result:
-                             full_market_ctx['volatility_regime'] = adv_result['risk'].get('level', 'Normal')
-                        
-                        # 添加更多详细上下文，确保资金管理模块能获取完整信息
-                        full_market_ctx['supply_zones'] = ifvg_result.get('active_zones', [])
-                        if adv_result and 'demand_zones' in adv_result: full_market_ctx['demand_zones'] = adv_result['demand_zones']
-                        if smc_result and 'bearish_fvgs' in smc_result: full_market_ctx['bearish_fvgs'] = smc_result['bearish_fvgs']
-                        if smc_result and 'bullish_fvgs' in smc_result: full_market_ctx['bullish_fvgs'] = smc_result['bullish_fvgs']
-
-                        # 计算真实的 MFE/MAE Ratio
-                        real_mfe_mae_ratio = 1.0
-                        if trade_stats and 'avg_mfe' in trade_stats and 'avg_mae' in trade_stats:
-                             if abs(trade_stats['avg_mae']) > 0:
-                                 real_mfe_mae_ratio = trade_stats['avg_mfe'] / abs(trade_stats['avg_mae'])
-                        
-                        # 计算
-                        suggested_lot = self.calculate_dynamic_lot(
-                            strength, 
-                            market_context=full_market_ctx, 
-                            mfe_mae_ratio=real_mfe_mae_ratio, # 使用真实计算值
-                            ai_signals=all_signals
-                        )
-                        
-                        # 估算风险百分比
-                        account_equity = mt5.account_info().equity if mt5.account_info() else 0
-                        risk_pct_display = "N/A"
-                        if account_equity > 0 and opt_sl and ref_price:
-                            risk_usd = abs(ref_price - opt_sl) * suggested_lot * (mt5.symbol_info(self.symbol).trade_tick_value or 1.0)
-                            risk_pct_val = (risk_usd / account_equity) * 100
-                            risk_pct_display = f"{risk_pct_val:.2f}%"
-
-                        # 格式化 DeepSeek 和 Qwen 的详细分析
-                        # DeepSeek Report
-                        ds_analysis_text = f"• Market State: {self.escape_markdown(structure.get('market_state', 'N/A'))}\n"
-                        ds_analysis_text += f"• Signal: {self.escape_markdown(ds_signal.upper())} (Conf: {ds_score}/100)\n"
-                        ds_analysis_text += f"• Prediction: {self.escape_markdown(ds_pred)}\n"
-                        ds_analysis_text += f"• Reasoning: {self.escape_markdown(structure.get('reasoning', 'N/A'))}\n" 
-                        
-                        # Qwen Report
-                        qw_reason = strategy.get('reason', strategy.get('rationale', 'Strategy Optimization'))
-                        qw_analysis_text = f"• Action: {self.escape_markdown(qw_action.upper())}\n"
-                        qw_analysis_text += f"• Logic: _{self.escape_markdown(qw_reason)}_\n"
-                        if param_updates:
-                            qw_analysis_text += f"• Params Updated: {len(param_updates)} items"
-
-                        safe_reason = self.escape_markdown(reason)
-                        safe_volatility = self.escape_markdown(volatility_info)
-                        safe_pos_summary = self.escape_markdown(pos_summary)
-                        
-                        # 构建单一整合消息
+                        # 构建消息
                         analysis_msg = (
-                            f"🤖 *AI Gold Strategy Comprehensive Report*\n"
+                            f"🤖 *AI Gold Strategy Report (Qwen)*\n"
                             f"Symbol: `{self.symbol}` | TF: `{self.tf_name}`\n"
                             f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
                             
-                            f"🧠 *Self-Learning Status*\n"
-                            f"• Win Rate (20): `{win_rate:.1%}`\n"
-                            f"• Profit Factor: `{profit_factor:.2f}`\n"
-                            f"• Adaptive Risk: `{risk_pct_display}`\n\n"
+                            f"🧙‍♂️ *Qwen Analysis*\n"
+                            f"• Action: *{qw_action.upper()}*\n"
+                            f"• Sentiment: {qwen_sent_label.upper()} ({qwen_sent_score})\n"
+                            f"• Logic: _{self.escape_markdown(reason)}_\n\n"
                             
-                            f"🕵️ *DeepSeek Analysis (Structure)*\n"
-                            f"{ds_analysis_text}\n"
+                            f"🏆 *Decision: {final_signal.upper()}*\n"
+                            f"• Strength: {strength:.0f}%\n"
+                            f"• SL: `{opt_sl:.2f}` | TP: `{opt_tp:.2f}`\n\n"
                             
-                            f"🧙‍♂️ *Qwen Analysis (Strategy)*\n"
-                            f"• Sentiment: {self.escape_markdown(qwen_sent_label.upper())} (Score: {qwen_sent_score})\n"
-                            f"{qw_analysis_text}\n"
-                            
-                            f"🏆 *Final Consolidated Result*\n"
-                            f"• Decision: *{display_decision}* (Strength: {strength:.0f}%)\n"
-                            f"• Direction: `{trade_dir_for_calc.upper()}`\n"
-                            f"• Recommended Lot: `{suggested_lot}`\n"
-                            f"• Reason: _{safe_reason}_\n\n"
-                            
-                            f"🎯 *Optimal Trade Setup (Best SL/TP)*\n"
-                            f"• Ref Entry: `{ref_price:.2f}`\n"
-                            f"• 🛑 Stop Loss: `{opt_sl:.2f}`\n"
-                            f"• 🏆 Take Profit: `{opt_tp:.2f}`\n"
-                            f"• R:R Ratio: `{rr_str}`\n\n"
-                            
-                            f"💼 *Account Status*\n"
-                            f"{safe_pos_summary}"
+                            f"💼 *Positions*\n"
+                            f"{self.escape_markdown(pos_summary)}"
                         )
                         self.send_telegram_message(analysis_msg)
 
-                        
                         # 4. 执行交易
-                        # 修正逻辑: 优先尊重 Qwen 的信号和参数 (大模型集合最终结果)
-                        # 如果 Qwen 明确说 "hold" 或 "neutral"，即使 final_signal 是 buy/sell，也应该谨慎
-                        # 但如果 final_signal 极强 (如 100.0)，我们可能还是想交易
-                        # 现在的逻辑是: 交易方向以 final_signal 为准 (因为它是混合投票的结果，Qwen 也是其中一票)
-                        # 但 参数 (Entry/Exit) 必须优先使用 Qwen 的建议
-                        
                         if final_signal != 'hold':
-                            logger.info(f">>> 准备执行 AI 集合决策: {final_signal.upper()} <<<")
+                            logger.info(f">>> 执行 Qwen 决策: {final_signal.upper()} <<<")
+                            
+                            # 传入 Qwen 参数
                             entry_params = strategy.get('entry_conditions')
                             exit_params = strategy.get('exit_conditions')
                             
-                            # 强制使用 Qwen 的参数，不再进行一致性回退检查
-                            # 除非 Qwen 建议的参数明显不可用 (如 None)
+                            # Calculate Lot (Martingale aware if needed, or handled in execute_trade)
+                            # Here we use calculate_dynamic_lot for initial lot
+                            suggested_lot = self.calculate_dynamic_lot(
+                                strength, 
+                                market_context={'smc': smc_result}, 
+                                ai_signals=all_signals
+                            )
                             
-                            # 日志记录差异，但不阻止使用参数
-                            if qw_signal != final_signal and qw_signal not in ['neutral', 'hold']:
-                                logger.warning(f"Qwen 信号 ({qw_signal}) 与最终决策 ({final_signal}) 不一致，但仍优先使用 Qwen 参数")
-                            
-                            trade_res = self.execute_trade(
+                            self.execute_trade(
                                 final_signal, 
                                 strength, 
                                 exit_params,
                                 entry_params,
                                 suggested_lot=suggested_lot
                             )
-                            
-                time.sleep(1) # 避免 CPU 占用过高
                 
         except KeyboardInterrupt:
             logger.info("用户停止机器人")
