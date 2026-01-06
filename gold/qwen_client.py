@@ -249,6 +249,7 @@ class QwenClient:
     - smc_signals_identified: list (识别的SMC信号)
     - risk_metrics: dict (风险指标)
     - next_observations: list (后续观察要点)
+    - telegram_report: str (专为Telegram优化的Markdown简报，包含关键分析结论、入场参数、SMC结构摘要。请使用emoji图标增强可读性，例如 ⚡️ 🛑 🎯 📉 📈 等)
     """
     
     def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "Qwen/Qwen3-VL-235B-A22B-Thinking"):
@@ -594,7 +595,8 @@ class QwenClient:
             "market_structure_analysis": {"trend": "neutral", "phase": "waiting"},
             "smc_signals_identified": [],
             "risk_metrics": {"max_risk": 0.02, "current_risk": 0},
-            "next_observations": ["等待明确信号"]
+            "next_observations": ["等待明确信号"],
+            "telegram_report": "⚠️ *System Error*\nUsing default decision due to API failure."
         }
     
     def _get_default_value(self, field: str) -> Any:
@@ -612,7 +614,8 @@ class QwenClient:
             'market_structure_analysis': {"trend": "neutral", "phase": "waiting"},
             'smc_signals_identified': [],
             'risk_metrics': {"max_risk": 0.02, "current_risk": 0},
-            'next_observations': ["等待明确信号"]
+            'next_observations': ["等待明确信号"],
+            'telegram_report': "⚠️ *Default Decision*"
         }
         return defaults.get(field, None)
     
