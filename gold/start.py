@@ -38,11 +38,10 @@ try:
     from .ai_client_factory import AIClientFactory
     from .mt5_data_processor import MT5DataProcessor
     from .database_manager import DatabaseManager
-    from .optimization import GWO, WOAm, DE, COAm, BBO, TETA
+    from .optimization import WOAm, TETA
     from .advanced_analysis import (
-        AdvancedMarketAnalysis, AdvancedMarketAnalysisAdapter, MFHAnalyzer, SMCAnalyzer, 
-        MatrixMLAnalyzer, CRTAnalyzer, PriceEquationModel, 
-        TimeframeVisualAnalyzer, MTFAnalyzer
+        AdvancedMarketAnalysis, AdvancedMarketAnalysisAdapter, SMCAnalyzer, 
+        CRTAnalyzer, MTFAnalyzer
     )
     from .grid_strategy import KalmanGridStrategy
 except ImportError:
@@ -51,11 +50,10 @@ except ImportError:
         from ai_client_factory import AIClientFactory
         from mt5_data_processor import MT5DataProcessor
         from database_manager import DatabaseManager
-        from optimization import GWO, WOAm, DE, COAm, BBO, TETA
+        from optimization import WOAm, TETA
         from advanced_analysis import (
-            AdvancedMarketAnalysis, AdvancedMarketAnalysisAdapter, MFHAnalyzer, SMCAnalyzer, 
-            MatrixMLAnalyzer, CRTAnalyzer, PriceEquationModel, 
-            TimeframeVisualAnalyzer, MTFAnalyzer
+            AdvancedMarketAnalysis, AdvancedMarketAnalysisAdapter, SMCAnalyzer, 
+            CRTAnalyzer, MTFAnalyzer
         )
         from grid_strategy import KalmanGridStrategy
     except ImportError as e:
