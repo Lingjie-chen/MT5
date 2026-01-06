@@ -86,9 +86,24 @@ perform_sync() {
 
 # --- 主逻辑 ---
 
+# 解析参数
+MODE="loop"
+COMMIT_MSG=""
+
+if [ "$1" == "--once" ]; then
+    MODE="once"
+    COMMIT_MSG="$2"
+elif [ -n "$1" ] && [ "$1" != "auto" ] && [ "$1" != "--loop" ]; then
+    # 如果提供了参数且不是 auto/--loop，则视为 commit message 并执行单次同步
+    MODE="once"
+    COMMIT_MSG="$1"
+fi
+
 # 模式 1: 自动循环模式 (Auto Loop Mode)
-if [ "$1" == "--loop" ] || [ "$1" == "auto" ]; then
+if [ "$MODE" == "loop" ]; then
     echo "🔄 Starting Loop Mode (Interval: 60s)..."
+    echo "💡 Tip: Use './auto_push.sh \"message\"' for single run."
+    
     while true; do
         echo ""
         echo "==================================================="
@@ -99,12 +114,12 @@ if [ "$1" == "--loop" ] || [ "$1" == "auto" ]; then
         
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Cycle Complete."
         echo "==================================================="
-        echo "⏳ Waiting 60 seconds..."
+        echo "⏳ Waiting 60 seconds... (Press Ctrl+C to stop)"
         sleep 60
     done
 
-# 模式 2: 单次手动/自动模式 (Single Run)
+# 模式 2: 单次手动模式 (Single Run)
 else
-    # 如果提供了参数作为 commit message
-    perform_sync "$1"
+    echo "▶️  Starting Single Run..."
+    perform_sync "$COMMIT_MSG"
 fi
