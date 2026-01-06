@@ -20,6 +20,11 @@ python scripts/checkpoint_dbs.py
 :: 2. Pull Remote Changes (Auto-Update Code)
 echo [%DATE% %TIME%] Checking for remote updates...
 git pull origin master
+if %ERRORLEVEL% NEQ 0 (
+    echo [WARNING] Pull failed or conflict detected.
+    echo [INFO] Attempting auto-resolve using 'ours' strategy...
+    git pull -s recursive -X ours origin master
+)
 
 :: 3. Push Any Pending Commits (Retry push if python script failed or after merge)
 echo [%DATE% %TIME%] Pushing local changes...
