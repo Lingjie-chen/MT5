@@ -582,18 +582,6 @@ class CryptoTradingBot:
              self.signal_history.append((current_time, signals_dict, float(latest['close'])))
              if len(self.signal_history) > 1000: self.signal_history.pop(0)
 
-        # --- Telegram Report ---
-        ds_analysis_text = f"• Market State: {self.escape_markdown(structure.get('market_state', 'N/A'))}\n"
-        ds_analysis_text += f"• Signal: {self.escape_markdown(ds_signal.upper())} (Conf: {ds_score}/100)\n"
-        ds_analysis_text += f"• Prediction: {self.escape_markdown(ds_pred)}\n"
-        ds_analysis_text += f"• Reasoning: {self.escape_markdown(structure.get('reasoning', 'N/A'))}\n"
-        
-        qw_reason = strategy.get('reason', strategy.get('rationale', 'Strategy Optimization'))
-        qw_analysis_text = f"• Action: {self.escape_markdown(qw_action.upper())}\n"
-        qw_analysis_text += f"• Logic: _{self.escape_markdown(qw_reason)}_\n"
-        if 'param_config' in strategy:
-             qw_analysis_text += f"• Params: Updated by LLM\n"
-        
         # Calculate Risk/Lot
         risk_pct = self.calculate_dynamic_lot(strength, {'smc': smc_res}, ai_signals=technical_signals)
         suggested_lot_display = f"{risk_pct*100:.1f}% Equity"
@@ -615,29 +603,63 @@ class CryptoTradingBot:
              reward = abs(opt_tp - ref_price)
              if risk > 0: rr_str = f"1:{reward/risk:.2f}"
 
-        msg = (
-            f"🤖 *AI Crypto Strategy Report*\n"
-            f"Symbol: `{self.symbol}` | TF: `{self.timeframe}`\n"
-            f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
+        # --- Message Construction ---
+        telegram_report = strategy.get('telegram_report', '')
+        
+        if telegram_report and len(telegram_report) > 50:
+            # Use Qwen generated report
+            msg = (
+                f"🤖 *AI Crypto Strategy (Qwen)*\n"
+                f"Symbol: `{self.symbol}` | TF: `{self.timeframe}`\n"
+                f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
+                f"{telegram_report}\n\n"
+                f"📊 *Live Status*\n"
+                f"• Decision: *{final_signal.upper()}* (Strength: {strength:.0f}%)\n"
+                f"• Sentiment: {self.escape_markdown(qwen_sent_label.upper())} ({qwen_sent_score:.2f})\n"
+                f"• Size: `{suggested_lot_display}`\n\n"
+                f"🎯 *Setup (OKX)*\n"
+                f"• Entry: `{ref_price:.2f}`\n"
+                f"• SL: `{opt_sl:.2f}`\n"
+                f"• TP: `{opt_tp:.2f}`\n"
+                f"• R:R: `{rr_str}`"
+            )
+        else:
+            # Fallback to manual construction
+            ds_analysis_text = f"• Market State: {self.escape_markdown(structure.get('market_state', 'N/A'))}\n"
+            ds_analysis_text += f"• Signal: {self.escape_markdown(ds_signal.upper())} (Conf: {ds_score}/100)\n"
+            ds_analysis_text += f"• Prediction: {self.escape_markdown(ds_pred)}\n"
+            ds_analysis_text += f"• Reasoning: {self.escape_markdown(structure.get('reasoning', 'N/A'))}\n"
             
-            f"🕵️ *DeepSeek Analysis*\n"
-            f"{ds_analysis_text}\n"
+            qw_reason = strategy.get('reason', strategy.get('rationale', 'Strategy Optimization'))
+            qw_analysis_text = f"• Action: {self.escape_markdown(qw_action.upper())}\n"
+            qw_analysis_text += f"• Logic: _{self.escape_markdown(qw_reason)}_\n"
+            if 'param_config' in strategy:
+                 qw_analysis_text += f"• Params: Updated by LLM\n"
             
-            f"🧙‍♂️ *Qwen Analysis*\n"
-            f"• Sentiment: {self.escape_markdown(qwen_sent_label.upper())} (Score: {qwen_sent_score})\n"
-            f"{qw_analysis_text}\n"
-            
-            f"🏆 *Final Result*\n"
-            f"• Decision: *{final_signal.upper()}* (Strength: {strength:.0f}%)\n"
-            f"• Size: `{suggested_lot_display}`\n"
-            f"• Reason: _{self.escape_markdown(reason)}_\n\n"
-            
-            f"🎯 *Setup (OKX)*\n"
-            f"• Entry: `{ref_price:.2f}`\n"
-            f"• SL: `{opt_sl:.2f}`\n"
-            f"• TP: `{opt_tp:.2f}`\n"
-            f"• R:R: `{rr_str}`"
-        )
+            msg = (
+                f"🤖 *AI Crypto Strategy Report*\n"
+                f"Symbol: `{self.symbol}` | TF: `{self.timeframe}`\n"
+                f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
+                
+                f"🕵️ *DeepSeek Analysis*\n"
+                f"{ds_analysis_text}\n"
+                
+                f"🧙‍♂️ *Qwen Analysis*\n"
+                f"• Sentiment: {self.escape_markdown(qwen_sent_label.upper())} (Score: {qwen_sent_score})\n"
+                f"{qw_analysis_text}\n"
+                
+                f"🏆 *Final Result*\n"
+                f"• Decision: *{final_signal.upper()}* (Strength: {strength:.0f}%)\n"
+                f"• Size: `{suggested_lot_display}`\n"
+                f"• Reason: _{self.escape_markdown(reason)}_\n\n"
+                
+                f"🎯 *Setup (OKX)*\n"
+                f"• Entry: `{ref_price:.2f}`\n"
+                f"• SL: `{opt_sl:.2f}`\n"
+                f"• TP: `{opt_tp:.2f}`\n"
+                f"• R:R: `{rr_str}`"
+            )
+        
         self.send_telegram_message(msg)
         
         return df, final_signal, strategy, strength, opt_sl, opt_tp, risk_pct
