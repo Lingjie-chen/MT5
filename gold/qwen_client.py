@@ -35,8 +35,7 @@ class QwenClient:
     # 黄金交易系统核心Prompt
     GOLD_TRADING_SYSTEM_PROMPT = """
     作为黄金(XAUUSD)交易的唯一核心决策大脑，你全权负责基于SMC(Smart Money Concepts)和Martingale(马丁格尔)策略的交易执行。
-    请忽略DeepSeek的宏观判断，直接根据以下市场数据、SMC结构、CRT信号和账户状态做出最终决策。
-
+    
     你的核心策略架构：**SMC + Martingale Grid (马丁网格)**
     
     1. **SMC (Smart Money Concepts) - 入场与方向**:
@@ -56,6 +55,24 @@ class QwenClient:
        - **SL (Stop Loss)**: 基于MAE(最大不利偏移)分布。如果历史亏损交易的MAE通常不超过 X 点，则SL设在 X 点之外。同时必须在SMC失效位(Invalidation Level)之外。
        - **TP (Take Profit)**: 基于MFE(最大有利偏移)分布。设定在能捕获 80% 潜在收益的位置，或下一个流动性池(Liquidity Pool)。
        - **Basket TP (整体止盈)**: 当持有多单时，关注整体浮盈。
+    
+    ## 黄金市场特性
+    1. **交易时段特点**:
+       - 亚洲时段（00:00-08:00 UTC）：流动性较低，区间震荡
+       - 欧洲时段（08:00-16:00 UTC）：波动增加，趋势开始形成
+       - 美国时段（16:00-00:00 UTC）：波动最大，趋势延续或反转
+       - 伦敦定盘价（10:30/15:00 UTC）：重要参考价位
+    
+    2. **黄金特有驱动因素**:
+       - 美元指数反向关系
+       - 实际利率（实际收益率）
+       - 避险情绪（地缘政治）
+       - 央行黄金储备变化
+    
+    3. **关键心理关口**:
+       - 50美元整数位：重要支撑阻力
+       - 00结尾价位：心理关口
+       - 历史高低点：重要参考
     
     ## 市场分析要求
     
@@ -215,10 +232,6 @@ class QwenClient:
     - 如果波动率异常放大：等待ATR回归正常水平
     - 只交易明确的SMC信号，忽略模糊信号
     
-    3. **信号质量要求**
-       - 必须至少3个独立信号确认：结构+CRT+动量
-       - 关键水平必须有多时间框架共振
-       - 流动性分析必须基于近期价格行为
     
     ## 最终决策输出
     
@@ -249,6 +262,7 @@ class QwenClient:
     - smc_signals_identified: list (识别的SMC信号)
     - risk_metrics: dict (风险指标)
     - next_observations: list (后续观察要点)
+    - telegram_report: str (专为Telegram优化的Markdown简报，包含关键分析结论、入场参数、SMC结构摘要。请使用emoji图标增强可读性，例如 ⚡️ 🛑 🎯 📉 📈 等)
     """
     
     def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "Qwen/Qwen3-VL-235B-A22B-Thinking"):
@@ -349,43 +363,98 @@ class QwenClient:
                 logger.error(f"API调用失败，已达到最大重试次数 {max_retries}")
                 return None
     
-    def analyze_market_sentiment(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+    def analyze_market_structure(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        [New] Qwen 独立市场结构与情绪分析 (黄金版)
-        用于与 DeepSeek 的分析进行交叉验证 (Double Check)
+        Qwen 独立市场结构与情绪分析 (黄金版)
+        完全自主进行市场结构、情绪和SMC信号分析
         
         Args:
             market_data (Dict[str, Any]): 市场数据
             
         Returns:
-            Dict[str, Any]: 情绪分析结果
+            Dict[str, Any]: 市场结构分析结果
         """
         prompt = f"""
-        作为专业的黄金(XAUUSD)交易员，请根据以下市场数据进行独立的市场结构与情绪分析：
+        作为专业的黄金(XAUUSD)交易员，请根据以下市场数据进行全面的市场结构与情绪分析：
         
         市场数据:
         {json.dumps(market_data, indent=2, cls=CustomJSONEncoder)}
         
-        请重点分析：
-        1. **黄金特有结构**: 关注亚盘/欧盘/美盘的盘口特征。
-        2. **情绪得分 (Sentiment Score)**: -1 (极度看空) 到 1 (极度看多)。
-        3. **避险与通胀**: 结合当前波动率判断市场属性（单边趋势还是震荡洗盘）。
+        请完成以下分析：
         
-        请以JSON格式返回：
-        - sentiment: str ("bullish", "bearish", "neutral")
-        - sentiment_score: float (-1.0 to 1.0)
-        - structure_bias: str (e.g., "Range Bound", "Bullish Breakout", "Bearish Correction")
-        - key_observation: str (简短的中文分析)
+        1. **黄金市场特性分析**
+           - 当前交易时段特征（亚盘/欧盘/美盘）
+           - 美元指数和实际利率影响评估
+           - 避险情绪状态
+        
+        2. **多时间框架市场结构分析**
+           - 识别当前主要趋势方向（牛市/熊市/盘整）
+           - 找出关键的市场结构点（BOS/CHoch）
+           - 评估市场当前处于哪个阶段（积累/扩张/分配）
+        
+        3. **SMC信号识别**
+           - 识别活跃的订单块(Order Blocks)
+           - 识别重要的失衡区(FVGs)
+           - 评估流动性池位置
+        
+        4. **情绪分析**
+           - 情绪得分 (Sentiment Score): -1.0 (极度看空) 到 1.0 (极度看多)
+           - 市场情绪状态: bullish/bearish/neutral
+        
+        5. **关键水平识别**
+           - 列出3-5个最重要的支撑位
+           - 列出3-5个最重要的阻力位
+           - 特别关注50美元整数位和00结尾价位
+        
+        请以JSON格式返回以下内容：
+        {{
+            "market_structure": {{
+                "trend": "bullish/bearish/neutral",
+                "phase": "accumulation/expansion/distribution",
+                "timeframe_analysis": {{
+                    "monthly": str,
+                    "weekly": str,
+                    "daily": str,
+                    "h4": str
+                }},
+                "key_levels": {{
+                    "support": [list of support levels],
+                    "resistance": [list of resistance levels]
+                }},
+                "bos_points": [list of BOS levels],
+                "choch_points": [list of CHOCH levels]
+            }},
+            "smc_signals": {{
+                "order_blocks": [list of identified order blocks],
+                "fvgs": [list of identified fair value gaps],
+                "liquidity_pools": {{
+                    "above": price,
+                    "below": price
+                }}
+            }},
+            "sentiment_analysis": {{
+                "sentiment": "bullish/bearish/neutral",
+                "sentiment_score": float (-1.0 to 1.0),
+                "confidence": float (0.0 to 1.0),
+                "market_context": str (当前市场背景描述)
+            }},
+            "gold_specific_analysis": {{
+                "trading_session": "asia/europe/us",
+                "dollar_influence": "positive/negative/neutral",
+                "safe_haven_status": "active/inactive"
+            }},
+            "key_observations": str (简短的中文分析)
+        }}
         """
         
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "你是一位拥有20年经验的华尔街黄金交易员。"},
+                {"role": "system", "content": "你是一位拥有20年经验的华尔街黄金交易员，精通SMC(Smart Money Concepts)和价格行为学。"},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.3,
-            "max_tokens": 500,
+            "max_tokens": 1500,
             "stream": False,
             "response_format": {"type": "json_object"}
         }
@@ -395,18 +464,49 @@ class QwenClient:
             try:
                 content = response["choices"][0]["message"]["content"]
                 return json.loads(content)
-            except json.JSONDecodeError:
-                logger.error("解析 Qwen 情绪分析失败")
+            except json.JSONDecodeError as e:
+                logger.error(f"解析市场结构分析失败: {e}")
         
-        return {"sentiment": "neutral", "sentiment_score": 0.0, "structure_bias": "Unknown", "key_observation": "分析失败"}
+        return {
+            "market_structure": {
+                "trend": "neutral",
+                "phase": "unknown",
+                "timeframe_analysis": {
+                    "monthly": "unknown",
+                    "weekly": "unknown",
+                    "daily": "unknown",
+                    "h4": "unknown"
+                },
+                "key_levels": {"support": [], "resistance": []},
+                "bos_points": [],
+                "choch_points": []
+            },
+            "smc_signals": {
+                "order_blocks": [],
+                "fvgs": [],
+                "liquidity_pools": {"above": None, "below": None}
+            },
+            "sentiment_analysis": {
+                "sentiment": "neutral",
+                "sentiment_score": 0.0,
+                "confidence": 0.0,
+                "market_context": "分析失败"
+            },
+            "gold_specific_analysis": {
+                "trading_session": "unknown",
+                "dollar_influence": "neutral",
+                "safe_haven_status": "inactive"
+            },
+            "key_observations": "分析失败"
+        }
 
-    def optimize_strategy_logic(self, deepseek_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def optimize_strategy_logic(self, market_structure_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         黄金(XAUUSD)交易决策系统 - 基于SMC+Martingale策略
-        整合完整的交易决策框架
+        整合完整的交易决策框架，完全自主进行市场分析和交易决策
         
         Args:
-            deepseek_analysis (Dict[str, Any]): DeepSeek的市场分析结果
+            market_structure_analysis (Dict[str, Any]): 市场结构分析结果 (或占位符)
             current_market_data (Dict[str, Any]): 当前市场数据
             technical_signals (Optional[Dict[str, Any]]): 技术信号（SMC/CRT/CCI等）
             current_positions (Optional[List[Dict[str, Any]]]): 当前持仓信息
@@ -416,13 +516,22 @@ class QwenClient:
         Returns:
             Dict[str, Any]: 完整的交易决策
         """
+        # 首先进行市场结构分析 (如果传入的分析为空或只是占位符，则重新分析)
+        market_analysis = market_structure_analysis
+        if not market_analysis or len(market_analysis) < 3: # 简单的检查
+             market_analysis = self.analyze_market_structure(current_market_data)
+        
         # 构建上下文信息
         tech_context = ""
         perf_context = ""
         pos_context = ""
         prev_context = ""
+        market_context = ""
         
-        # 1. 上一次分析结果上下文
+        # 1. 市场分析结果上下文
+        market_context = f"\n市场结构分析结果:\n{json.dumps(market_analysis, indent=2, cls=CustomJSONEncoder)}\n"
+        
+        # 2. 上一次分析结果上下文
         if previous_analysis:
             prev_action = previous_analysis.get('action', 'unknown')
             prev_rationale = previous_analysis.get('strategy_rationale', 'none')
@@ -430,13 +539,13 @@ class QwenClient:
         else:
             prev_context = "\n上一次分析结果: 无 (首次运行)\n"
         
-        # 2. 当前持仓状态上下文
+        # 3. 当前持仓状态上下文
         if current_positions:
             pos_context = f"\n当前持仓状态 (包含实时 MFE/MAE 和 R-Multiple):\n{json.dumps(current_positions, indent=2, cls=CustomJSONEncoder)}\n"
         else:
             pos_context = "\n当前无持仓。\n"
 
-        # 3. 挂单状态上下文
+        # 4. 挂单状态上下文
         open_orders = current_market_data.get('open_orders', [])
         orders_context = ""
         if open_orders:
@@ -444,13 +553,9 @@ class QwenClient:
         else:
             orders_context = "\n当前无挂单。\n"
 
-        # 4. 性能统计上下文
+        # 5. 性能统计上下文
         stats_to_use = performance_stats
         
-        # 兼容旧逻辑：如果 explicit 为空，尝试从 technical_signals 中提取
-        if not stats_to_use and technical_signals and isinstance(technical_signals.get('performance_stats'), list):
-             stats_to_use = technical_signals.get('performance_stats')
-
         if stats_to_use:
             recent_trades = []
             summary_stats = {}
@@ -497,7 +602,7 @@ class QwenClient:
                 logger.error(f"Error processing stats_to_use: {e}")
                 perf_context = "\n历史交易绩效: 数据解析错误\n"
 
-        # 5. 技术信号上下文
+        # 6. 技术信号上下文
         if technical_signals:
             sigs_copy = technical_signals.copy()
             if 'performance_stats' in sigs_copy:
@@ -512,6 +617,9 @@ class QwenClient:
         
         当前市场数据：
         {json.dumps(current_market_data, indent=2, cls=CustomJSONEncoder)}
+        
+        市场结构分析结果：
+        {market_context}
         
         持仓状态 (Martingale 核心关注):
         {pos_context}
@@ -528,18 +636,32 @@ class QwenClient:
         上一次分析:
         {prev_context}
         
+        ## 黄金特定注意事项
+        - 当前交易时段: {market_analysis.get('gold_specific_analysis', {}).get('trading_session', 'unknown')}
+        - 美元影响: {market_analysis.get('gold_specific_analysis', {}).get('dollar_influence', 'neutral')}
+        - 避险状态: {market_analysis.get('gold_specific_analysis', {}).get('safe_haven_status', 'inactive')}
+        
         ## 现在，基于以上所有信息，请输出完整的交易决策
+        特别注意：请计算具体的仓位大小，并给出合理的止损止盈点位。
+        
+        决策要求：
+        1. 基于市场结构分析结果进行方向判断
+        2. 结合SMC信号寻找最佳入场点
+        3. 参考MAE/MFE数据优化止损止盈
+        4. 制定Martingale网格加仓计划
+        5. 严格遵循风险管理规则
+        6. 生成Telegram简报（使用emoji图标增强可读性）
         """
         
         # 构建payload
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "你是一名专注于黄金(XAUUSD)交易的职业交易员，采用SMC(Smart Money Concepts)结合Martingale网格策略的复合交易系统。你的决策必须完全基于技术分析和价格行为。"},
+                {"role": "system", "content": "你是一名专注于黄金(XAUUSD)交易的职业交易员，采用SMC(Smart Money Concepts)结合Martingale网格策略的复合交易系统。你完全自主进行市场分析和交易决策。"},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.3,
-            "max_tokens": 2500,
+            "max_tokens": 3000,
             "stream": False
         }
         
@@ -565,10 +687,13 @@ class QwenClient:
                 trading_decision["position_size"] = 0.01
                 
                 # 确保必要的字段存在
-                required_fields = ['action', 'entry_conditions', 'exit_conditions', 'strategy_rationale']
+                required_fields = ['action', 'entry_conditions', 'exit_conditions', 'strategy_rationale', 'telegram_report']
                 for field in required_fields:
                     if field not in trading_decision:
                         trading_decision[field] = self._get_default_value(field)
+                
+                # 添加市场分析结果到决策中
+                trading_decision['market_analysis'] = market_analysis
                 
                 return trading_decision
                 
@@ -594,7 +719,12 @@ class QwenClient:
             "market_structure_analysis": {"trend": "neutral", "phase": "waiting"},
             "smc_signals_identified": [],
             "risk_metrics": {"max_risk": 0.02, "current_risk": 0},
-            "next_observations": ["等待明确信号"]
+            "next_observations": ["等待明确信号"],
+            "telegram_report": f"⚠️ *System Error*\n{reason}",
+            "market_analysis": {
+                "market_structure": {"trend": "neutral", "phase": "unknown"},
+                "sentiment_analysis": {"sentiment": "neutral", "sentiment_score": 0.0}
+            }
         }
     
     def _get_default_value(self, field: str) -> Any:
@@ -612,45 +742,43 @@ class QwenClient:
             'market_structure_analysis': {"trend": "neutral", "phase": "waiting"},
             'smc_signals_identified': [],
             'risk_metrics': {"max_risk": 0.02, "current_risk": 0},
-            'next_observations': ["等待明确信号"]
+            'next_observations': ["等待明确信号"],
+            'telegram_report': "⚠️ *Default Decision*",
+            'market_analysis': {
+                "market_structure": {"trend": "neutral", "phase": "unknown"},
+                "sentiment_analysis": {"sentiment": "neutral", "sentiment_score": 0.0}
+            }
         }
         return defaults.get(field, None)
     
-    def generate_dynamic_stoploss_takeprofit(self, volatility: float, market_state: str, signal_strength: int) -> Dict[str, float]:
+    def judge_signal_strength(self, market_data: Dict[str, Any], technical_indicators: Dict[str, Any]) -> int:
         """
-        [DEPRECATED] 该方法已弃用。
-        现在 SL/TP 完全由 optimize_strategy_logic 中的 MFE/MAE/SMC 逻辑决定，不再使用基于 ATR 倍数的动态生成。
-        保留此方法仅为了接口兼容性，返回默认占位值。
-        """
-        logger.warning("generate_dynamic_stoploss_takeprofit 被调用，但策略已切换为固定 SL/TP 模式。")
-        return {"take_profit": 0.0, "stop_loss": 0.0}
-    
-    def judge_signal_strength(self, deepseek_signal: Dict[str, Any], technical_indicators: Dict[str, Any]) -> int:
-        """
-        对DeepSeek生成的初步信号进行二次验证，判断信号强度
+        判断交易信号强度
+        基于市场数据和技术指标评估信号强度
         
         Args:
-            deepseek_signal (Dict[str, Any]): DeepSeek生成的信号
+            market_data (Dict[str, Any]): 市场数据
             technical_indicators (Dict[str, Any]): 技术指标数据
         
         Returns:
             int: 信号强度，0-100，越高表示信号越可靠
         """
         prompt = f"""
-        作为专业的交易信号分析师，请评估以下交易信号的强度：
+        作为专业的黄金交易信号分析师，请评估以下交易信号的强度：
         
-        DeepSeek信号：
-        {json.dumps(deepseek_signal, indent=2)}
+        市场数据：
+        {json.dumps(market_data, indent=2)}
         
         技术指标：
         {json.dumps(technical_indicators, indent=2)}
         
         请基于以下因素评估信号强度(0-100)：
-        1. 多指标共振：技术指标是否一致支持该信号
-        2. 市场结构：当前市场状态是否有利于该信号
-        3. 成交量：成交量是否支持价格走势
-        4. 波动率：当前波动率是否适合该信号
-        5. 历史表现：类似情况下信号的历史成功率
+        1. 市场结构：当前黄金市场状态是否有利于交易
+        2. SMC信号：订单块、失衡区的质量
+        3. 多指标共振：技术指标是否一致支持该信号
+        4. 成交量：成交量是否支持价格走势
+        5. 波动率：当前波动率是否适合交易
+        6. 黄金特性：美元走势和避险情绪影响
         
         请只返回一个数字，不要包含任何其他文字或解释。
         """
@@ -658,7 +786,7 @@ class QwenClient:
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "你是一位专业的交易信号分析师，擅长评估交易信号的强度和可靠性。"},
+                {"role": "system", "content": "你是一位专业的黄金交易信号分析师，擅长评估交易信号的强度和可靠性。"},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.2,
@@ -723,16 +851,6 @@ def main():
     api_key = "your_qwen_api_key"
     client = QwenClient(api_key)
     
-    # 示例DeepSeek分析结果
-    deepseek_analysis = {
-        "market_state": "trend_up",
-        "support_levels": [2340, 2325],
-        "resistance_levels": [2380, 2400],
-        "structure_score": 85,
-        "short_term_prediction": "bullish",
-        "indicator_analysis": "EMA黄金交叉，RSI处于中性区域"
-    }
-    
     # 示例黄金市场数据
     current_market_data = {
         "symbol": "XAUUSD",
@@ -763,12 +881,22 @@ def main():
             "higher_tf_trend": "bullish",
             "bos_levels": [2375.0, 2320.0],
             "choch_levels": [2360.0, 2335.0]
+        },
+        "account_info": {
+            "available_balance": 10000.0,
+            "total_balance": 12000.0,
+            "used_margin": 2000.0
         }
     }
     
-    # 测试策略优化
-    optimized_strategy = client.optimize_strategy_logic(
-        deepseek_analysis=deepseek_analysis,
+    # 测试市场结构分析
+    market_analysis = client.analyze_market_structure(current_market_data)
+    print("黄金市场结构分析结果:")
+    print(json.dumps(market_analysis, indent=2, ensure_ascii=False))
+    
+    # 测试交易决策
+    trading_decision = client.optimize_strategy_logic(
+        market_structure_analysis=market_analysis,
         current_market_data=current_market_data,
         technical_signals={
             "crt_signal": "pinbar",
@@ -782,22 +910,21 @@ def main():
         ]
     )
     
-    print("黄金交易决策系统输出:")
-    print(json.dumps(optimized_strategy, indent=2, ensure_ascii=False))
-    
-    # 测试市场情绪分析
-    sentiment = client.analyze_market_sentiment(current_market_data)
-    print(f"\n市场情绪分析: {sentiment}")
+    print("\n黄金交易决策系统输出:")
+    print(json.dumps(trading_decision, indent=2, ensure_ascii=False))
     
     # 测试信号强度判断
-    deepseek_signal = {"signal": "buy", "confidence": 0.8}
     technical_indicators = {"ema_crossover": 1, "rsi": 62.5, "volume_increase": True}
-    signal_strength = client.judge_signal_strength(deepseek_signal, technical_indicators)
+    signal_strength = client.judge_signal_strength(current_market_data, technical_indicators)
     print(f"\n信号强度: {signal_strength}")
     
     # 测试凯利准则计算
     kelly = client.calculate_kelly_criterion(0.6, 1.5)
     print(f"\n凯利准则: {kelly:.2f}")
+    
+    # 打印Telegram报告
+    print("\nTelegram报告:")
+    print(trading_decision.get('telegram_report', 'No report available'))
 
 if __name__ == "__main__":
     main()
