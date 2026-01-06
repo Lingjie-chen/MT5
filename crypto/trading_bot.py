@@ -538,22 +538,21 @@ class CryptoTradingBot:
         tech_list = [crt_res['signal'], pem_res['signal'], adv_sig, ml_res['signal'], smc_res['signal'], mtf_res['signal']]
         
         if final_signal in ['hold', 'neutral']:
-            # DeepSeek Override
-            if ds_signal in ['buy', 'sell'] and ds_score >= 80:
+            # 1. Qwen Sentiment Override (New)
+            if qwen_sent_score >= 0.8:
+                final_signal = 'buy'
+                reason = f"[Override] Qwen Sentiment Extreme Bullish ({qwen_sent_score})"
+            elif qwen_sent_score <= -0.8:
+                final_signal = 'sell'
+                reason = f"[Override] Qwen Sentiment Extreme Bearish ({qwen_sent_score})"
+
+            # 2. DeepSeek Override
+            elif ds_signal in ['buy', 'sell'] and ds_score >= 80:
                 final_signal = ds_signal
                 reason = f"[Override] DeepSeek High Confidence ({ds_score})"
             
-            # Technical Consensus Override
-            buy_votes = sum(1 for s in tech_list if s == 'buy')
-            sell_votes = sum(1 for s in tech_list if s == 'sell')
-            total_tech = len(tech_list)
-            if total_tech > 0:
-                if buy_votes/total_tech >= 0.7: 
-                    final_signal = "buy"
-                    reason = f"[Override] Tech Consensus Buy ({buy_votes}/{total_tech})"
-                elif sell_votes/total_tech >= 0.7:
-                    final_signal = "sell"
-                    reason = f"[Override] Tech Consensus Sell ({sell_votes}/{total_tech})"
+            # 3. (Deleted) Technical Consensus Override
+            # Users request: Decision fully driven by LLMs
         
         # Smart Exit
         if qw_action == 'close' and final_signal != 'close':

@@ -2811,41 +2811,29 @@ class AI_MT5_Bot:
                         elif qw_action == 'grid_start':
                             final_signal = "grid_start" # 特殊信号: 开启网格
                             
-                        # --- 增强: 多模型与技术共振修正 (Consensus Override) ---
-                        # 如果 Qwen 偏向保守 (Hold/Neutral)，但 DeepSeek 或 技术指标极强，则进行覆盖
+                        # --- 增强: 多模型共振修正 (Consensus Override) ---
+                        # 仅允许两个大模型 (Qwen/DeepSeek) 相互确认或覆盖，不再被纯技术指标强制覆盖
                         reason = strategy.get('reason', 'LLM Decision')
                         
                         if final_signal in ['hold', 'neutral']:
-                            # 1. DeepSeek 强信号覆盖 (Only if available)
-                            if ds_signal in ['buy', 'sell'] and ds_score >= 80:
+                            # 1. Qwen 情绪强信号覆盖 (Sentiment Override)
+                            if qwen_sent_score >= 0.8:
+                                final_signal = 'buy'
+                                reason = f"[Override] Qwen Sentiment Extreme Bullish ({qwen_sent_score})"
+                                logger.info(f"策略修正: Qwen 情绪极强 ({qwen_sent_score}) -> Buy")
+                            elif qwen_sent_score <= -0.8:
+                                final_signal = 'sell'
+                                reason = f"[Override] Qwen Sentiment Extreme Bearish ({qwen_sent_score})"
+                                logger.info(f"策略修正: Qwen 情绪极弱 ({qwen_sent_score}) -> Sell")
+
+                            # 2. DeepSeek 强信号覆盖 (Only if available)
+                            elif ds_signal in ['buy', 'sell'] and ds_score >= 75:
                                 final_signal = ds_signal
                                 reason = f"[Override] DeepSeek High Confidence ({ds_score}): {structure.get('market_state')}"
                                 logger.info(f"策略修正: DeepSeek 强信号 ({ds_score}) 覆盖 Qwen Hold -> {final_signal}")
                             
-                            # 2. 技术指标共振覆盖 (如果 DeepSeek 也没信号)
-                            elif final_signal in ['hold', 'neutral']:
-                                tech_signals_list = [
-                                    crt_result['signal'], price_eq_result['signal'], tf_result['signal'],
-                                    adv_signal, ml_result['signal'], smc_result['signal'],
-                                    mfh_result['signal'], mtf_result['signal'], ifvg_result['signal'],
-                                    rvgi_cci_result['signal']
-                                ]
-                                buy_votes = sum(1 for s in tech_signals_list if s == 'buy')
-                                sell_votes = sum(1 for s in tech_signals_list if s == 'sell')
-                                total_tech = len(tech_signals_list)
-                                
-                                if total_tech > 0:
-                                    buy_ratio = buy_votes / total_tech
-                                    sell_ratio = sell_votes / total_tech
-                                    
-                                    if buy_ratio >= 0.7: # 70% 指标看多
-                                        final_signal = "buy"
-                                        reason = f"[Override] Technical Consensus Buy ({buy_votes}/{total_tech})"
-                                        logger.info(f"策略修正: 技术指标共振 ({buy_ratio:.1%}) 覆盖 Hold -> Buy")
-                                    elif sell_ratio >= 0.7: # 70% 指标看空
-                                        final_signal = "sell"
-                                        reason = f"[Override] Technical Consensus Sell ({sell_votes}/{total_tech})"
-                                        logger.info(f"策略修正: 技术指标共振 ({sell_ratio:.1%}) 覆盖 Hold -> Sell")
+                            # 3. (Deleted) Technical Consensus Override
+                            # 用户指令：最终下单决策全权交给两个大模型
                         
                         # 3. 智能平仓信号处理 (High Priority)
                         if qw_action == 'close' and final_signal != 'close':
