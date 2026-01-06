@@ -1517,6 +1517,7 @@ class AI_MT5_Bot:
 
         # 1. Decode Parameters
         try:
+            # Revised for SMC, CCI/RVGI, Grid
             p_smc_ma = int(params[0])
             p_smc_atr = params[1]
             p_rvgi_sma = int(params[2])
