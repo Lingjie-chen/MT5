@@ -114,12 +114,13 @@ class AI_MT5_Bot:
         self.db_manager = DatabaseManager()
         self.ai_factory = AIClientFactory()
         
-        # Only Qwen
+        # Only Qwen as Sole Decision Maker
         self.qwen_client = self.ai_factory.create_client("qwen")
         
-        # Adjusted for M15 Timeframe with H1/H4 MTF Analysis (Updated per user request)
+        # Advanced Models: SMC, CRT, CCI (via Adapter)
+        # MTF kept for context structure
         self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_H1)
-        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_H1, htf2=mt5.TIMEFRAME_H4) # H1 and H4 for trend analysis
+        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_H1, htf2=mt5.TIMEFRAME_H4) 
         self.advanced_adapter = AdvancedMarketAnalysisAdapter()
         self.smc_analyzer = SMCAnalyzer()
         
@@ -130,7 +131,7 @@ class AI_MT5_Bot:
         
         self.last_bar_time = 0
         self.last_analysis_time = 0
-        self.last_llm_time = 0 # Track LLM call time
+        self.last_llm_time = 0 
         self.signal_history = []
         self.last_optimization_time = 0
         self.last_realtime_save = 0
@@ -138,6 +139,7 @@ class AI_MT5_Bot:
         self.latest_strategy = None
         self.latest_signal = "neutral"
         
+        # Optimizers: WOAm and TETA only
         self.optimizers = {
             "WOAm": WOAm(),
             "TETA": TETA()
