@@ -1504,7 +1504,7 @@ class AI_MT5_Bot:
 
     def evaluate_comprehensive_params(self, params, df):
         """
-        Comprehensive Objective Function: Evaluates ALL dataframe-based strategy parameters together.
+        Comprehensive Objective Function: Evaluates strategy parameters together.
         params: Vector of parameter values corresponding to the defined structure.
         """
         # Global counter for progress logging
@@ -1517,36 +1517,23 @@ class AI_MT5_Bot:
         try:
             p_smc_ma = int(params[0])
             p_smc_atr = params[1]
-            p_mfh_lr = params[2]
-            p_mfh_horizon = int(params[3])
-            p_pem_fast = int(params[4])
-            p_pem_slow = int(params[5])
-            p_pem_adx = params[6]
-            p_rvgi_sma = int(params[7])
-            p_rvgi_cci = int(params[8])
-            p_ifvg_gap = int(params[9])
+            p_rvgi_sma = int(params[2])
+            p_rvgi_cci = int(params[3])
+            p_ifvg_gap = int(params[4])
             
-            # Extract Grid Params (Indices 10, 11)
-            p_grid_step = int(params[10]) if len(params) > 10 else 300
-            p_grid_tp = float(params[11]) if len(params) > 11 else 100.0
+            # Extract Grid Params
+            p_grid_step = int(params[5]) if len(params) > 5 else 300
+            p_grid_tp = float(params[6]) if len(params) > 6 else 100.0
             
             # 2. Initialize Temporary Analyzers (Fresh State)
             tmp_smc = SMCAnalyzer()
             tmp_smc.ma_period = p_smc_ma
             tmp_smc.atr_threshold = p_smc_atr
             
-            tmp_mfh = MFHAnalyzer(learning_rate=p_mfh_lr)
-            tmp_mfh.horizon = p_mfh_horizon
-            
-            tmp_pem = PriceEquationModel()
-            tmp_pem.ma_fast_period = p_pem_fast
-            tmp_pem.ma_slow_period = p_pem_slow
-            tmp_pem.adx_threshold = p_pem_adx
-            
             tmp_adapter = AdvancedMarketAnalysisAdapter()
             
             # 3. Run Simulation
-            start_idx = max(p_smc_ma, p_pem_slow, 50) + 10
+            start_idx = max(p_smc_ma, 50) + 10
             if len(df) < start_idx + 50: return -9999
             
             balance = 10000.0
@@ -1559,139 +1546,38 @@ class AI_MT5_Bot:
             # 1. RVGI Series (Vectorized)
             rvgi_series = tmp_adapter.calculate_rvgi_cci_series(df, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci)
             
-            # 2. MFH Features (Vectorized Batch)
-            mfh_features = tmp_mfh.prepare_features_batch(df)
-            
             # 3. Step Skipping
-            # Evaluate trade signals every 4 candles (1 hour) to speed up SMC/PEM/IFVG
+            # Evaluate trade signals every 4 candles (1 hour) to speed up
             eval_step = 4 
             
             for i in range(start_idx, len(df)-1):
                 curr_price = closes[i]
                 next_price = closes[i+1]
                 
-                # MFH Train (Must happen every step for consistency)
-                if mfh_features is not None:
-                    # Get features for current step i
-                    feats = mfh_features[i]
-                    
-                    # Predict first (using current weights)
-                    pred = np.dot(tmp_mfh.weights, feats) + tmp_mfh.bias
-                    
-                    # Determine signal from prediction
-                    mfh_sig = "buy" if pred > 0.001 else "sell" if pred < -0.001 else "neutral"
-                    
-                    # Train (using PAST return)
-                    # The return we are predicting at 'i' is (price[i] - price[i-h])/price[i-h]
-                    # Wait, MFH predicts FUTURE return? No, usually it predicts next step or horizon.
-                    # The `train` method in MFHAnalyzer uses `current_price_change`.
-                    # In `evaluate_comprehensive_params` original:
-                    # if i > p_mfh_horizon:
-                    #   past_ret = (closes[i] - closes[i-p_mfh_horizon]) / closes[i-p_mfh_horizon]
-                    #   tmp_mfh.train(past_ret)
-                    
-                    if i > p_mfh_horizon:
-                        past_ret = (closes[i] - closes[i-p_mfh_horizon]) / closes[i-p_mfh_horizon]
-                        error = past_ret - tmp_mfh.last_prediction # Use cached prediction from previous steps? 
-                        # Actually we need to emulate `train` logic:
-                        # train(target) -> error = target - last_prediction -> weights += ... * last_features
-                        # Here we have `pred` calculated above. But `train` uses `last_prediction` which corresponds to `last_features`.
-                        # If we predict at `i`, we are predicting return at `i`. 
-                        # Wait, `predict(df)` uses `df` ending at `i`.
-                        # It predicts return? 
-                        # `train` takes `current_price_change`.
-                        # This implies we predict at T, and train at T+1 (or T+H) when result is known.
-                        
-                        # Simplified Batch Training:
-                        # We just update weights using the error of the *current* prediction against *future*?
-                        # No, standard online learning: Predict x_t -> y_hat. Observe y_t. Update.
-                        # Here `past_ret` is the return realized *now* (from t-H to t).
-                        # So we should have predicted this `H` steps ago.
-                        # This complexity suggests we should stick to the original `train` method if possible, 
-                        # but `train` relies on `self.last_features` stored in object.
-                        # So we must manually update:
-                        
-                        # Correct Logic:
-                        # 1. We have stored `last_features` and `last_prediction` from step `i-1` (or `i-H`?)
-                        # 2. `train` uses `past_ret` (target) and `self.last_prediction`.
-                        # 3. Then `predict` sets new `self.last_features`.
-                        
-                        # But `past_ret` is `(close[i] - close[i-H])`.
-                        # This corresponds to prediction made at `i-H`.
-                        # The original code called `train(past_ret)` then `predict(sub_df)`.
-                        # `predict` stores `last_features` (features at `i`).
-                        # `train` uses `last_features`? No, `train` uses `last_features` which was set by PREVIOUS `predict`.
-                        # So if we call `predict` at `i`, `last_features` becomes features at `i`.
-                        # Next loop `i+1`, `train` is called. It updates weights based on `last_features` (from `i`).
-                        # But `past_ret` passed to train is `(closes[i+1] - closes[i+1-H])`.
-                        # This seems mismatched if H > 1.
-                        # But let's replicate original flow:
-                        
-                        target = past_ret
-                        # We need `last_prediction` and `last_features` from the *previous* predict call (which was at i-1? No, original loop called predict at i).
-                        # Original:
-                        # Loop i:
-                        #   train(past_ret_at_i) -> updates using self.last_features (from i-1)
-                        #   predict(sub_df_i) -> sets self.last_features (to i)
-                        
-                        # So we need to maintain state.
-                        
-                        if tmp_mfh.last_features is not None:
-                            err = target - tmp_mfh.last_prediction
-                            tmp_mfh.weights += tmp_mfh.learning_rate * err * tmp_mfh.last_features
-                            tmp_mfh.bias += tmp_mfh.learning_rate * err
-                        
-                        # Now Predict for *next*
-                        tmp_mfh.last_features = feats
-                        tmp_mfh.last_prediction = pred
-                
                 # Check Trade Condition (Skipping steps for speed)
                 if i % eval_step == 0:
                     sub_df = df.iloc[:i+1] # Still slicing, but 4x less often
                     
-                    # Update PEM (Fast update)
-                    tmp_pem.update(curr_price)
-                    
                     # Signals
-                    # 1. SMC (Heavy)
+                    # 1. SMC
                     smc_sig = tmp_smc.analyze(sub_df)['signal']
                     
-                    # 2. PEM (Medium - has rolling)
-                    pem_sig = tmp_pem.predict(sub_df)['signal']
-                    
-                    # 3. IFVG (Medium)
+                    # 2. IFVG
                     ifvg_sig = tmp_adapter.analyze_ifvg(sub_df, min_gap_points=p_ifvg_gap)['signal']
                     
-                    # 4. RVGI (Fast Lookup)
+                    # 3. RVGI (Fast Lookup)
                     rvgi_sig_val = rvgi_series.iloc[i]
                     rvgi_sig = 'buy' if rvgi_sig_val == 1 else 'sell' if rvgi_sig_val == -1 else 'neutral'
                     
-                    # 5. MFH (Already calc)
-                    # mfh_sig determined above
-                    
                     # Combine
                     votes = 0
-                    for s in [smc_sig, mfh_sig, pem_sig, ifvg_sig, rvgi_sig]:
+                    for s in [smc_sig, ifvg_sig, rvgi_sig]:
                         if s == 'buy': votes += 1
                         elif s == 'sell': votes -= 1
                     
                     final_sig = "neutral"
                     if votes >= 2: final_sig = "buy"
                     elif votes <= -2: final_sig = "sell"
-                    
-                    # Evaluate Trade
-                    # We assume we hold for `eval_step` candles or until next signal?
-                    # Original logic checked every candle.
-                    # Simplification: We check result `eval_step` candles later?
-                    # Or we just take the PnL of the next candle (i to i+1) and assume we hold if signal persists?
-                    # Original:
-                    # if final_sig == 'buy': balance += (next - curr)
-                    # This implies 1-bar holding period (Scalping).
-                    
-                    # If we only check every 4 bars, we miss trades in between.
-                    # But for optimization, we just want to know if parameters are good generally.
-                    # We will accumulate return for the *next* candle only (i to i+1), effectively trading 25% of time.
-                    # This is a valid proxy for parameter quality.
                     
                     if final_sig == "buy":
                         trades_count += 1
@@ -1700,7 +1586,6 @@ class AI_MT5_Bot:
                         if diff > 0: wins += 1
                         
                         # Grid Penalty (Simplified)
-                        # Penalty for too tight grid (risk of over-trading)
                         if p_grid_step < 100: balance -= 10 
                         
                     elif final_sig == "sell":
@@ -1718,7 +1603,6 @@ class AI_MT5_Bot:
             return score
             
         except Exception as e:
-            # logger.error(f"Eval Error: {e}")
             return -9999
 
     def optimize_strategy_parameters(self):
@@ -1731,23 +1615,16 @@ class AI_MT5_Bot:
         self._opt_counter = 0
         
         # 1. 获取历史数据
-        # For M15, we fetch 1000 candles to cover enough time for valid optimization
-        # 1000 candles = ~250 hours (10 days) of M15 data
         df = self.get_market_data(1000) 
         if df is None or len(df) < 500:
             logger.warning("数据不足，跳过优化")
             return
             
-        # 2. Define Search Space (12 Dimensions)
-        # smc_ma, smc_atr, mfh_lr, mfh_horizon, pem_fast, pem_slow, pem_adx, rvgi_sma, rvgi_cci, ifvg_gap, grid_step, grid_tp
+        # 2. Define Search Space
+        # smc_ma, smc_atr, rvgi_sma, rvgi_cci, ifvg_gap, grid_step, grid_tp
         bounds = [
             (100, 300),     # smc_ma
-            (0.001, 0.005), # smc_atr (Adjusted for M15)
-            (0.001, 0.1),   # mfh_lr
-            (3, 10),        # mfh_horizon
-            (10, 50),       # pem_fast
-            (100, 300),     # pem_slow
-            (15.0, 30.0),   # pem_adx
+            (0.001, 0.005), # smc_atr
             (10, 50),       # rvgi_sma
             (10, 30),       # rvgi_cci
             (10, 100),      # ifvg_gap
@@ -1755,7 +1632,7 @@ class AI_MT5_Bot:
             (50.0, 200.0)   # grid_tp (global TP USD)
         ]
         
-        steps = [10, 0.0005, 0.005, 1, 5, 10, 1.0, 2, 2, 5, 50, 10.0]
+        steps = [10, 0.0005, 2, 2, 5, 50, 10.0]
         
         # 3. Objective
         def objective(params):
@@ -1767,19 +1644,17 @@ class AI_MT5_Bot:
         optimizer = self.optimizers[algo_name]
         
         # Adjust population size for realtime performance
-        # Default is 50, which is too slow for 10-dim complex sim
         if hasattr(optimizer, 'pop_size'):
             optimizer.pop_size = 20
             
         logger.info(f"本次选择的优化算法: {algo_name} (Pop: {optimizer.pop_size})")
         
         # 5. Run
-        # Increase epochs slightly as space is larger, but keep low for realtime
         best_params, best_score = optimizer.optimize(
             objective, 
             bounds, 
             steps=steps, 
-            epochs=4  # Reduced from 8 to 4 for speed
+            epochs=4
         )
         
         # 6. Apply Results
@@ -1789,30 +1664,15 @@ class AI_MT5_Bot:
             # Extract
             p_smc_ma = int(best_params[0])
             p_smc_atr = best_params[1]
-            p_mfh_lr = best_params[2]
-            p_mfh_horizon = int(best_params[3])
-            p_pem_fast = int(best_params[4])
-            p_pem_slow = int(best_params[5])
-            p_pem_adx = best_params[6]
-            p_rvgi_sma = int(best_params[7])
-            p_rvgi_cci = int(best_params[8])
-            p_ifvg_gap = int(best_params[9])
-            p_grid_step = int(best_params[10])
-            p_grid_tp = float(best_params[11])
+            p_rvgi_sma = int(best_params[2])
+            p_rvgi_cci = int(best_params[3])
+            p_ifvg_gap = int(best_params[4])
+            p_grid_step = int(best_params[5])
+            p_grid_tp = float(best_params[6])
             
             # Apply
             self.smc_analyzer.ma_period = p_smc_ma
             self.smc_analyzer.atr_threshold = p_smc_atr
-            
-            self.mfh_analyzer.learning_rate = p_mfh_lr
-            self.mfh_analyzer.horizon = p_mfh_horizon
-            # Re-init MFH buffers if horizon changed? 
-            # MFHAnalyzer uses horizon in calculate_features. 
-            # Ideally we should re-init but learning rate update is fine.
-            
-            self.price_model.ma_fast_period = p_pem_fast
-            self.price_model.ma_slow_period = p_pem_slow
-            self.price_model.adx_threshold = p_pem_adx
             
             self.short_term_params = {
                 'rvgi_sma': p_rvgi_sma,
@@ -1828,8 +1688,6 @@ class AI_MT5_Bot:
                 f"🧬 *Comprehensive Optimization ({algo_name})*\n"
                 f"Score: {best_score:.2f}\n"
                 f"• SMC: MA={p_smc_ma}, ATR={p_smc_atr:.4f}\n"
-                f"• MFH: LR={p_mfh_lr:.3f}, H={p_mfh_horizon}\n"
-                f"• PEM: Fast={p_pem_fast}, Slow={p_pem_slow}, ADX={p_pem_adx:.1f}\n"
                 f"• ST: RVGI({p_rvgi_sma},{p_rvgi_cci}), IFVG({p_ifvg_gap})\n"
                 f"• Grid: Step={p_grid_step}, GlobalTP={p_grid_tp:.1f}"
             )
