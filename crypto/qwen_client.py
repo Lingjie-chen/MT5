@@ -496,13 +496,14 @@ class QwenClient:
             "key_observations": "分析失败"
         }
 
-    def optimize_strategy_logic(self, current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def optimize_strategy_logic(self, market_structure_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         ETHUSDT加密货币交易决策系统 - 基于SMC+Martingale策略
         适用于OKX交易所，整合完整的交易决策框架
         完全自主进行市场分析和交易决策
         
         Args:
+            market_structure_analysis (Dict[str, Any]): 市场结构分析结果 (或占位符)
             current_market_data (Dict[str, Any]): 当前市场数据
             technical_signals (Optional[Dict[str, Any]]): 技术信号（SMC/CRT/CCI等）
             current_positions (Optional[List[Dict[str, Any]]]): 当前持仓信息
@@ -512,8 +513,10 @@ class QwenClient:
         Returns:
             Dict[str, Any]: 完整的交易决策
         """
-        # 首先进行市场结构分析
-        market_analysis = self.analyze_market_structure(current_market_data)
+        # 首先进行市场结构分析 (如果传入的分析为空或只是占位符，则重新分析)
+        market_analysis = market_structure_analysis
+        if not market_analysis or len(market_analysis) < 3: # 简单的检查
+             market_analysis = self.analyze_market_structure(current_market_data)
         
         # 构建上下文信息
         tech_context = ""
@@ -902,6 +905,7 @@ def main():
     
     # 测试交易决策
     trading_decision = client.optimize_strategy_logic(
+        market_structure_analysis=market_analysis,
         current_market_data=current_market_data,
         technical_signals={
             "crt_signal": "pinbar",

@@ -895,7 +895,8 @@ def main():
     print(json.dumps(market_analysis, indent=2, ensure_ascii=False))
     
     # 测试交易决策
-    trading_decision = client.execute_trading_decision(
+    trading_decision = client.optimize_strategy_logic(
+        market_structure_analysis=market_analysis,
         current_market_data=current_market_data,
         technical_signals={
             "crt_signal": "pinbar",
