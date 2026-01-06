@@ -63,17 +63,11 @@ except ImportError:
 class HybridOptimizer:
     def __init__(self):
         self.weights = {
-            "deepseek": 1.0,
             "qwen": 1.2, 
             "crt": 0.8,
-            "price_equation": 0.6,
-            "tf_visual": 0.5,
             "advanced_tech": 0.7,
-            "matrix_ml": 0.9,
             "smc": 1.1,
-            "mfh": 0.8,
             "mtf": 0.8,
-            "ifvg": 0.7,
             "rvgi_cci": 0.6
         }
         self.history = []
@@ -90,9 +84,6 @@ class HybridOptimizer:
             if signal == 'buy': val = 1
             elif signal == 'sell': val = -1
             
-            # DeepSeek/Qwen 信号包含强度，可以进一步加权?
-            # 这里简化处理，只看方向
-            
             weighted_sum += val * weight
             total_weight += weight
             details[source] = val * weight
@@ -106,6 +97,7 @@ class HybridOptimizer:
         elif final_score < -0.15: final_signal = "sell"
         
         return final_signal, final_score, self.weights
+
 class AI_MT5_Bot:
     def __init__(self, symbol="XAUUSD", timeframe=mt5.TIMEFRAME_M15):
         self.symbol = symbol
@@ -122,18 +114,14 @@ class AI_MT5_Bot:
         self.db_manager = DatabaseManager()
         self.ai_factory = AIClientFactory()
         
-        self.deepseek_client = self.ai_factory.create_client("deepseek")
+        # Only Qwen
         self.qwen_client = self.ai_factory.create_client("qwen")
         
         # Adjusted for M15 Timeframe with H1/H4 MTF Analysis (Updated per user request)
         self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_H1)
         self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_H1, htf2=mt5.TIMEFRAME_H4) # H1 and H4 for trend analysis
-        self.price_model = PriceEquationModel()
-        self.tf_analyzer = TimeframeVisualAnalyzer()
         self.advanced_adapter = AdvancedMarketAnalysisAdapter()
-        self.matrix_ml = MatrixMLAnalyzer()
         self.smc_analyzer = SMCAnalyzer()
-        self.mfh_analyzer = MFHAnalyzer()
         
         # Grid Strategy Integration
         self.grid_strategy = KalmanGridStrategy(self.symbol, self.magic_number)
@@ -151,11 +139,7 @@ class AI_MT5_Bot:
         self.latest_signal = "neutral"
         
         self.optimizers = {
-            "GWO": GWO(),
             "WOAm": WOAm(),
-            "DE": DE(),
-            "COAm": COAm(),
-            "BBO": BBO(),
             "TETA": TETA()
         }
         self.active_optimizer_name = "WOAm"
