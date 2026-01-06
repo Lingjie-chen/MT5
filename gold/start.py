@@ -63,11 +63,9 @@ except ImportError:
 class HybridOptimizer:
     def __init__(self):
         self.weights = {
-            "qwen": 1.2, 
+            "qwen": 1.5, 
             "crt": 0.8,
-            "advanced_tech": 0.7,
             "smc": 1.1,
-            "mtf": 0.8,
             "rvgi_cci": 0.6
         }
         self.history = []
@@ -79,6 +77,8 @@ class HybridOptimizer:
         details = {}
         
         for source, signal in signals.items():
+            if source not in self.weights: continue
+            
             weight = self.weights.get(source, 0.5)
             val = 0
             if signal == 'buy': val = 1
@@ -428,19 +428,18 @@ class AI_MT5_Bot:
             consensus_multiplier = 1.0
             
             if ai_signals:
-                # A. 大模型一致性
-                ds_sig = ai_signals.get('deepseek', 'neutral')
+                # A. 大模型一致性 (Only Qwen now)
                 qw_sig = ai_signals.get('qwen', 'neutral')
                 target_sig = self.latest_signal # 最终决策方向
                 
-                if ds_sig == target_sig and qw_sig == target_sig:
-                    consensus_multiplier += 0.3 # 双模型共振
+                if qw_sig == target_sig:
+                    consensus_multiplier += 0.2 
                 
                 # B. 高级算法共振 (Voting)
                 tech_signals = [
-                    ai_signals.get('crt'), ai_signals.get('price_equation'),
-                    ai_signals.get('matrix_ml'), ai_signals.get('smc'),
-                    ai_signals.get('mfh'), ai_signals.get('mtf')
+                    ai_signals.get('crt'), 
+                    ai_signals.get('smc'),
+                    ai_signals.get('rvgi_cci')
                 ]
                 # 计算同向比例
                 same_dir_count = sum(1 for s in tech_signals if s == target_sig)
@@ -834,7 +833,7 @@ class AI_MT5_Bot:
             if self.latest_strategy:
                 market_state = str(self.latest_strategy.get('market_state', '')).lower()
                 pred = str(self.latest_strategy.get('short_term_prediction', '')).lower()
-                # 结合 DeepSeek 分析判断方向
+                # 结合 Qwen 分析判断方向
                 if 'down' in market_state or 'bear' in pred or 'sell' in str(self.latest_strategy.get('action', '')).lower():
                     direction = 'bearish'
                 elif 'up' in market_state or 'bull' in pred or 'buy' in str(self.latest_strategy.get('action', '')).lower():
@@ -2400,7 +2399,6 @@ class AI_MT5_Bot:
                         # 准备技术信号摘要
                         technical_signals = {
                             "crt": crt_result,
-                            "advanced_tech": adv_signal,
                             "smc": smc_result['signal'],
                             "grid_strategy": {
                                 "signal": grid_signal,
@@ -2409,6 +2407,7 @@ class AI_MT5_Bot:
                             },
                             "mtf": mtf_result['signal'], 
                             "ifvg": ifvg_result['signal'],
+                            "rvgi_cci": rvgi_cci_result['signal'],
                             "performance_stats": trade_stats
                         }
                         
@@ -2423,7 +2422,7 @@ class AI_MT5_Bot:
                             logger.error(f"Sentiment Analysis Failed: {e}")
 
                         # Call Qwen
-                        # Note: We removed 'structure' from DeepSeek, so we pass None or simplified dict
+                        # Removed DeepSeek structure, pass simplified structure
                         dummy_structure = {"market_state": "Analyzed by Qwen", "preliminary_signal": "neutral"}
                         
                         strategy = self.qwen_client.optimize_strategy_logic(
