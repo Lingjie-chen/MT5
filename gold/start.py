@@ -605,6 +605,11 @@ class AI_MT5_Bot:
         else:
              llm_action = signal if signal in valid_actions else 'hold'
 
+        # Force Override: 如果 final_signal (signal) 已经被修正为 buy/sell，但 llm_action 仍为 hold，则强制同步
+        if signal in ['buy', 'sell'] and llm_action in ['hold', 'neutral']:
+             logger.info(f"Applying Signal Override: {llm_action} -> {signal}")
+             llm_action = signal
+
         # 显式 MFE/MAE 止损止盈
         # LLM 应该返回具体的 sl_price 和 tp_price，或者 MFE/MAE 的百分比建议
         # 如果 LLM 提供了具体的 SL/TP 价格，优先使用
