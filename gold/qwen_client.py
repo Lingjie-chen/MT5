@@ -500,6 +500,43 @@ class QwenClient:
             "key_observations": "分析失败"
         }
 
+    def analyze_market_sentiment(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        独立的情绪分析模块
+        """
+        prompt = f"""
+        Analyze the market sentiment for XAUUSD (Gold) based on the following data.
+        Data: {json.dumps(market_data, cls=CustomJSONEncoder)}
+        
+        Return ONLY valid JSON:
+        {{
+            "sentiment": "bullish" | "bearish" | "neutral",
+            "sentiment_score": -1.0 to 1.0,
+            "reason": "short explanation"
+        }}
+        """
+        
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "You are a Gold (XAUUSD) market sentiment analyst."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.3,
+            "max_tokens": 500,
+            "response_format": {"type": "json_object"}
+        }
+        
+        try:
+            response = self._call_api("chat/completions", payload)
+            if response and "choices" in response:
+                content = response["choices"][0]["message"]["content"]
+                return json.loads(content)
+        except Exception as e:
+            logger.error(f"Sentiment analysis failed: {e}")
+        
+        return {"sentiment": "neutral", "sentiment_score": 0.0, "reason": "Error"}
+
     def optimize_strategy_logic(self, market_structure_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         黄金(XAUUSD)交易决策系统 - 基于SMC+Martingale策略
