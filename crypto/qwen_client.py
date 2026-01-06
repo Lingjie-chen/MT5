@@ -283,6 +283,7 @@ class QwenClient:
     - market_structure_analysis: dict
     - smc_signals_identified: list
     - next_observations: list
+    - telegram_report: str (专为Telegram优化的Markdown简报，包含关键分析结论、入场参数、SMC结构摘要。请使用emoji图标增强可读性，例如 ⚡️ 🛑 🎯 📉 📈 等)
     """
     
     def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "Qwen/Qwen3-VL-235B-A22B-Thinking"):
@@ -495,7 +496,7 @@ class QwenClient:
             "key_observations": "分析失败"
         }
 
-    def execute_trading_decision(self, current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def optimize_strategy_logic(self, current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         ETHUSDT加密货币交易决策系统 - 基于SMC+Martingale策略
         适用于OKX交易所，整合完整的交易决策框架
@@ -676,7 +677,7 @@ class QwenClient:
                     return self._get_default_decision("响应格式错误")
                 
                 # 确保必要的字段存在
-                required_fields = ['action', 'entry_conditions', 'exit_conditions', 'strategy_rationale']
+                required_fields = ['action', 'entry_conditions', 'exit_conditions', 'strategy_rationale', 'telegram_report']
                 for field in required_fields:
                     if field not in trading_decision:
                         trading_decision[field] = self._get_default_value(field)
@@ -726,6 +727,7 @@ class QwenClient:
             "market_structure_analysis": {"trend": "neutral", "phase": "waiting"},
             "smc_signals_identified": [],
             "next_observations": ["等待明确信号"],
+            "telegram_report": f"⚠️ *System Error*\n{reason}",
             "market_analysis": {
                 "market_structure": {"trend": "neutral", "phase": "unknown"},
                 "sentiment_analysis": {"sentiment": "neutral", "sentiment_score": 0.0}
@@ -747,7 +749,12 @@ class QwenClient:
             'strategy_rationale': "默认决策",
             'market_structure_analysis': {"trend": "neutral", "phase": "waiting"},
             'smc_signals_identified': [],
-            'next_observations': ["等待明确信号"]
+            'next_observations': ["等待明确信号"],
+            'telegram_report': "⚠️ *Default Decision*",
+            'market_analysis': {
+                "market_structure": {"trend": "neutral", "phase": "unknown"},
+                "sentiment_analysis": {"sentiment": "neutral", "sentiment_score": 0.0}
+            }
         }
         return defaults.get(field, None)
     
@@ -894,7 +901,7 @@ def main():
     print(json.dumps(market_analysis, indent=2, ensure_ascii=False))
     
     # 测试交易决策
-    trading_decision = client.execute_trading_decision(
+    trading_decision = client.optimize_strategy_logic(
         current_market_data=current_market_data,
         technical_signals={
             "crt_signal": "pinbar",
