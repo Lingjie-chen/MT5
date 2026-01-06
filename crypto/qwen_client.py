@@ -498,28 +498,42 @@ class QwenClient:
 
     def analyze_market_sentiment(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        独立的情绪分析模块
+        独立的情绪分析模块 - 全方位评估
         """
         prompt = f"""
-        Analyze the market sentiment for the following data.
-        Data: {json.dumps(market_data, cls=CustomJSONEncoder)}
+        作为加密货币交易专家，请依据提供的市场数据，对 ETHUSDT 的市场情绪和趋势进行深度、全面的评估。
         
-        Return ONLY valid JSON:
+        输入数据:
+        {json.dumps(market_data, cls=CustomJSONEncoder)}
+        
+        请从以下核心维度进行分析：
+        1. **市场结构 (Market Structure)**: 识别 BOS (Break of Structure) 和 CHoCH (Change of Character)，判断当前是趋势延续还是潜在反转。
+        2. **流动性分析 (Liquidity)**: 评估价格是否刚刚完成了流动性猎杀 (Liquidity Grab/Sweep)，以及上方/下方的流动性目标。
+        3. **量价与动能**: 评估成交量配合情况及价格动能 (Momentum)。
+        4. **盘面状态**: 识别当前是处于扩张 (Expansion)、回撤 (Retracement) 还是盘整 (Consolidation) 阶段。
+        
+        请严格返回以下 JSON 格式:
         {{
             "sentiment": "bullish" | "bearish" | "neutral",
-            "sentiment_score": -1.0 to 1.0,
-            "reason": "short explanation"
+            "sentiment_score": float, // 范围 -1.0 (极度看空) 到 1.0 (极度看多)
+            "trend_assessment": {{
+                "structure": "bullish" | "bearish" | "ranging",
+                "phase": "expansion" | "retracement" | "consolidation",
+                "strength": "strong" | "moderate" | "weak"
+            }},
+            "key_factors": ["因素1", "因素2", "因素3"],
+            "reason": "综合分析结论 (100字以内)"
         }}
         """
         
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "You are a crypto market sentiment analyst."},
+                {"role": "system", "content": "你是一位精通SMC和价格行为学的加密货币分析师。"},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.3,
-            "max_tokens": 500,
+            "max_tokens": 800,
             "response_format": {"type": "json_object"}
         }
         
@@ -531,7 +545,7 @@ class QwenClient:
         except Exception as e:
             logger.error(f"Sentiment analysis failed: {e}")
         
-        return {"sentiment": "neutral", "sentiment_score": 0.0, "reason": "Error"}
+        return {"sentiment": "neutral", "sentiment_score": 0.0, "reason": "Error", "trend_assessment": {"structure": "ranging", "strength": "weak"}}
 
     def optimize_strategy_logic(self, market_structure_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
