@@ -438,25 +438,30 @@ class CryptoTradingBot:
                 })
                 # Treat strong zones as OBs for grid placement
         
-        # 3. From DeepSeek (if it returns specific levels)
-        if 'smc_levels' in structure: 
-             # DeepSeek might identify levels not found by algos
-             # Merge them
-             if 'ob' in structure['smc_levels']:
-                 smc_grid_data['ob'].extend(structure['smc_levels']['ob'])
-             if 'fvg' in structure['smc_levels']:
-                 smc_grid_data['fvg'].extend(structure['smc_levels']['fvg'])
-
-        # Update Grid Strategy
-        self.grid_strategy.update_smc_levels(smc_grid_data)
+        # 3. From Qwen (if it returns specific levels)
+        if 'smc_signals' in structure: 
+             # Qwen returns 'smc_signals' with 'order_blocks' and 'fvgs'
+             if 'order_blocks' in structure['smc_signals']:
+                 # Map Qwen OBs to Grid format if needed, or they might be strings/dicts
+                 # Qwen returns list of dicts or strings. Let's assume list of dicts based on prompt.
+                 # We need to ensure they have 'top', 'bottom', 'type'.
+                 # If Qwen returns text, we might skip. If structured, we use.
+                 pass
+             
+        # DeepSeek Signal -> Qwen Signal Mapping
+        # Qwen returns 'market_structure' -> 'trend'
+        # And 'sentiment_analysis' -> 'sentiment'
         
-        # DeepSeek Signal
-        ds_signal = structure.get('preliminary_signal', 'neutral')
-        ds_score = structure.get('structure_score', 50)
-        ds_pred = structure.get('short_term_prediction', 'neutral')
-        if ds_signal == 'neutral':
-             if ds_pred == 'bullish' and ds_score > 60: ds_signal = "buy"
-             elif ds_pred == 'bearish' and ds_score > 60: ds_signal = "sell"
+        qwen_trend = structure.get('market_structure', {}).get('trend', 'neutral')
+        qwen_sentiment = structure.get('sentiment_analysis', {}).get('sentiment', 'neutral')
+        
+        ds_signal = 'neutral'
+        if qwen_trend == 'bullish': ds_signal = 'buy'
+        elif qwen_trend == 'bearish': ds_signal = 'sell'
+        
+        ds_score = int(structure.get('sentiment_analysis', {}).get('confidence', 0.0) * 100)
+        ds_pred = qwen_trend # Use trend as prediction
+
              
         # --- Qwen Strategy ---
         technical_signals = {
@@ -718,6 +723,7 @@ class CryptoTradingBot:
                 next_price = closes[i+1]
                 
                 # MFH Train (Must happen every step for consistency)
+                mfh_sig = "neutral"
                 if mfh_features is not None:
                     # Get features for current step i
                     feats = mfh_features[i]

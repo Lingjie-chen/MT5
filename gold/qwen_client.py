@@ -504,6 +504,7 @@ class QwenClient:
         """
         独立的情绪分析模块 - 全方位评估
         """
+        logger.info("Executing Sentiment Analysis...")
         prompt = f"""
         作为资深黄金(XAUUSD)市场分析师，请依据提供的市场数据，对当前市场情绪和趋势进行深度、全面的评估。
         
