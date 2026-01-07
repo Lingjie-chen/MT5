@@ -564,7 +564,7 @@ class AI_MT5_Bot:
         :param suggested_lot: 预计算的建议手数 (可选)
         """
         # 允许所有相关指令进入
-        valid_actions = ['buy', 'sell', 'limit_buy', 'limit_sell', 'close', 'add_buy', 'add_sell', 'hold']
+        valid_actions = ['buy', 'sell', 'limit_buy', 'limit_sell', 'close', 'add_buy', 'add_sell', 'hold', 'close_buy_open_sell', 'close_sell_open_buy']
         # 注意: signal 参数这里传入的是 final_signal，已经被归一化为 buy/sell/close/hold
         # 但我们更关心 entry_params 中的具体 action
         
@@ -588,6 +588,14 @@ class AI_MT5_Bot:
              llm_action = entry_params.get('action', 'hold').lower()
         else:
              llm_action = signal if signal in valid_actions else 'hold'
+
+        # Normalize Compound Actions (Reverse)
+        if llm_action == 'close_buy_open_sell':
+            logger.info("Action Normalized: close_buy_open_sell -> sell")
+            llm_action = 'sell'
+        elif llm_action == 'close_sell_open_buy':
+            logger.info("Action Normalized: close_sell_open_buy -> buy")
+            llm_action = 'buy'
 
         # Force Override: 如果 final_signal (signal) 已经被修正为 buy/sell，但 llm_action 仍为 hold，则强制同步
         if signal in ['buy', 'sell'] and llm_action in ['hold', 'neutral']:
