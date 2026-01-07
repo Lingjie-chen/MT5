@@ -187,9 +187,10 @@ class KalmanGridStrategy:
             
         return float(f"{self.lot * multiplier:.2f}")
 
-    def generate_grid_plan(self, current_price, trend_direction, atr, point=0.01, dynamic_step_pips=None):
+    def generate_grid_plan(self, current_price, trend_direction, atr, point=0.01, dynamic_step_pips=None, grid_level_tps=None):
         """
         Generate a plan for grid deployment (for limit orders)
+        grid_level_tps: List of TP pips for each level [tp1, tp2, ...]
         """
         orders = []
         
@@ -215,8 +216,18 @@ class KalmanGridStrategy:
                 step = fixed_step if fixed_step > 0 else (atr * 0.5)
                 levels = [current_price - step*i for i in range(1, 6)]
             
-            for lvl in levels:
-                orders.append({'type': 'limit_buy', 'price': lvl})
+            for i, lvl in enumerate(levels):
+                # Calculate TP for this level
+                tp_price = 0.0
+                if grid_level_tps and len(grid_level_tps) > 0:
+                    # Use specific TP if available, else last available
+                    tp_pips = grid_level_tps[i] if i < len(grid_level_tps) else grid_level_tps[-1]
+                    tp_price = lvl + (tp_pips * 10 * point)
+                else:
+                    # Default: ATR * 2 or global config
+                    tp_price = lvl + (atr * 2.0)
+                    
+                orders.append({'type': 'limit_buy', 'price': lvl, 'tp': tp_price})
                 
         elif trend_direction == 'bearish':
             # Sell Grid
@@ -225,8 +236,16 @@ class KalmanGridStrategy:
                 step = fixed_step if fixed_step > 0 else (atr * 0.5)
                 levels = [current_price + step*i for i in range(1, 6)]
                 
-            for lvl in levels:
-                orders.append({'type': 'limit_sell', 'price': lvl})
+            for i, lvl in enumerate(levels):
+                # Calculate TP for this level
+                tp_price = 0.0
+                if grid_level_tps and len(grid_level_tps) > 0:
+                    tp_pips = grid_level_tps[i] if i < len(grid_level_tps) else grid_level_tps[-1]
+                    tp_price = lvl - (tp_pips * 10 * point)
+                else:
+                    tp_price = lvl - (atr * 2.0)
+                    
+                orders.append({'type': 'limit_sell', 'price': lvl, 'tp': tp_price})
                 
         return orders
 
