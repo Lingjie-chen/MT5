@@ -726,10 +726,13 @@ class AI_MT5_Bot:
         trade_type = None
         price = 0.0
         
-        if llm_action == 'buy':
+        # Mapping 'add_buy'/'add_sell' to normal buy/sell if no position exists
+        # This handles cases where LLM says "add" but position was closed or didn't exist
+        
+        if llm_action in ['buy', 'add_buy']:
             trade_type = "buy"
             price = tick.ask
-        elif llm_action == 'sell':
+        elif llm_action in ['sell', 'add_sell']:
             trade_type = "sell"
             price = tick.bid
         elif llm_action in ['limit_buy', 'buy_limit']:
