@@ -661,9 +661,6 @@ class CryptoTradingBot:
                     adv_res = self.advanced_adapter.analyze_full(sub_df, params=self.short_term_params)
                     adv_sig = adv_res['signal_info']['signal'] if adv_res else 'neutral'
                     
-                    # CRT requires df_htf, skipping for warmup simplicity or using same df
-                    # crt_res = self.crt_analyzer.analyze(...) 
-                    
                     signals_dict = {
                         "crt": 'neutral', 
                         "adv": adv_sig, 
