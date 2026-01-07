@@ -36,8 +36,7 @@ logger = logging.getLogger(__name__)
 class HybridOptimizer:
     def __init__(self):
         self.weights = {
-            "deepseek": 1.0,
-            "qwen": 1.2, 
+            "qwen": 1.5, # Increased weight
             "crt": 0.8,
             "price_equation": 0.6,
             "tf_visual": 0.5,
@@ -138,8 +137,8 @@ class CryptoTradingBot:
         
         # Initialize AI Clients
         self.ai_factory = AIClientFactory()
-        self.deepseek_client = self.ai_factory.get_client('deepseek')
         self.qwen_client = self.ai_factory.get_client('qwen')
+        # DeepSeek client removed as requested
         
         # Telegram Configuration
         self.telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -153,7 +152,7 @@ class CryptoTradingBot:
         # Initialize Grid Strategy
         self.grid_strategy = CryptoGridStrategy(self.symbol)
         
-        if not self.deepseek_client or not self.qwen_client:
+        if not self.qwen_client:
             logger.warning("AI Clients not fully initialized.")
 
     def sync_account_history(self):
