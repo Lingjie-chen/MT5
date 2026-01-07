@@ -240,6 +240,10 @@ class QwenClient:
     2. **BUY / SELL**: 出现SMC信号，首单入场。
     3. **ADD_BUY / ADD_SELL**: 逆势加仓。**仅当**：(a) 已有持仓且浮亏; (b) 价格到达下一个SMC支撑/阻力位; (c) 距离上一单有足够间距(>ATR)。
     4. **CLOSE**: 达到整体止盈目标，或SMC结构完全破坏(止损)。
+       - **注意**: 如果决定CLOSE，请同时分析是否需要立即反手开仓(Reverse)。
+       - 如果SMC结构发生了明确的反转(如CHOCH)，你应该在CLOSE的同时给出反向开仓信号(如 CLOSE_BUY -> SELL)。
+       - 如果只是单纯离场观望，则仅输出CLOSE。
+       - 如果需要反手，请在 action 中输出 "close_buy_open_sell" 或 "close_sell_open_buy" (或者直接给出反向信号，并在理由中说明)。
     5. **GRID_START**: 预埋网格单 (Limit Orders) 在未来的OB/FVG位置。
     
     输出要求：
