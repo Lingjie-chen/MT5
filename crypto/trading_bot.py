@@ -419,7 +419,14 @@ class CryptoTradingBot:
             atr = latest.get('atr', 0)
             if atr == 0: atr = latest['close'] * 0.01
             
-            grid_plan = self.grid_strategy.generate_grid_plan(latest['close'], trend, atr)
+            # Extract recommended step
+            pos_mgmt = strategy.get('position_management', {})
+            rec_step = pos_mgmt.get('recommended_grid_step_pips')
+            try:
+                if rec_step: rec_step = float(rec_step)
+            except: rec_step = None
+
+            grid_plan = self.grid_strategy.generate_grid_plan(latest['close'], trend, atr, custom_step=rec_step)
             
             # Calculate sizing
             balance = self.data_processor.get_account_balance('USDT')
