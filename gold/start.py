@@ -2435,9 +2435,15 @@ class AI_MT5_Bot:
                         qwen_sent_score = 0
                         qwen_sent_label = 'neutral'
                         try:
+                            # DEBUG: Verify method existence
+                            if not hasattr(self.qwen_client, 'analyze_market_sentiment'):
+                                logger.error(f"Method analyze_market_sentiment missing in {type(self.qwen_client)}")
+                                logger.error(f"Available methods: {[m for m in dir(self.qwen_client) if not m.startswith('__')]}")
+                            
                             qwen_sentiment = self.qwen_client.analyze_market_sentiment(market_snapshot)
-                            qwen_sent_score = qwen_sentiment.get('sentiment_score', 0)
-                            qwen_sent_label = qwen_sentiment.get('sentiment', 'neutral')
+                            if qwen_sentiment:
+                                qwen_sent_score = qwen_sentiment.get('sentiment_score', 0)
+                                qwen_sent_label = qwen_sentiment.get('sentiment', 'neutral')
                         except Exception as e:
                             logger.error(f"Sentiment Analysis Failed: {e}")
 
