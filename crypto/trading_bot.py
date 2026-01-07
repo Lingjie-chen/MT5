@@ -393,7 +393,7 @@ class CryptoTradingBot:
         # Performance Stats
         trade_stats = self.db_manager.get_trade_performance_stats(limit=50)
         
-        # Combine all advanced strategies for DeepSeek
+        # Combine all advanced strategies for DeepSeek (now Qwen)
         extra_analysis = {
             "crt": crt_res, 
             "pem": pem_res, 
@@ -407,13 +407,9 @@ class CryptoTradingBot:
             "optimized_weights": self.hybrid_optimizer.weights
         }
         
-        structure = self.deepseek_client.analyze_market_structure(
-            market_snapshot, 
-            current_positions=current_positions,
-            extra_analysis=extra_analysis,
-            performance_stats=trade_stats
-        )
-
+        # Replaced DeepSeek with Qwen for structure analysis
+        structure = self.qwen_client.analyze_market_structure(market_snapshot)
+        
         # Update Grid Strategy with SMC Levels
         # Extract SMC and IFVG levels for Grid
         smc_grid_data = {
