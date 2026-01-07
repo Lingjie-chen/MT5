@@ -940,7 +940,8 @@ class CryptoTradingBot:
         """
         logger.info("Running Short-Term Parameter Optimization (WOAm)...")
         
-        # 1. Get Data (Last 500 candles)        df = self.data_processor.get_historical_data(self.symbol, self.timeframe, limit=500)
+        # 1. Get Data (Last 500 candles)
+        df = self.data_processor.get_historical_data(self.symbol, self.timeframe, limit=500)
         # Reduced threshold from 200 to 50 for testing
         if df is None or len(df) < 50:
             return
@@ -1233,13 +1234,35 @@ class CryptoTradingBot:
                  logger.info(f"Opening New Position: {signal.upper()}")
                  self._send_order(signal, 0, sl, tp, risk_pct, strategy=strategy)
              else:
-                 # Update SL/TP for existing
-                 logger.info("Updating SL/TP for existing position")
-                 if sl > 0 or tp > 0:
-                     amt = float(positions[0]['contracts'])
-                     self.data_processor.cancel_all_orders(self.symbol) # Cancel old SL/TP
-                     sl_side = 'sell' if pos_side == 'long' else 'buy'
-                     self.data_processor.place_sl_tp_order(self.symbol, sl_side, amt, sl_price=sl, tp_price=tp)
+                 # Check Add Position Logic
+                 raw_action = strategy.get('action', '').lower()
+                 should_add = False
+                 if signal == 'buy' and pos_side == 'long' and raw_action in ['add_buy', 'buy']:
+                     should_add = True
+                 elif signal == 'sell' and pos_side == 'short' and raw_action in ['add_sell', 'sell']:
+                     should_add = True
+                 
+                 # Distance Protection
+                 if should_add:
+                     entry_price = float(positions[0].get('entryPrice', positions[0].get('avgPx', 0)))
+                     current_price = self.data_processor.get_current_price(self.symbol)
+                     if entry_price > 0 and current_price > 0:
+                         dist_pct = abs(current_price - entry_price) / entry_price
+                         if dist_pct < 0.005: # 0.5% min distance
+                             logger.warning(f"Add Position skipped: Too close ({dist_pct:.2%})")
+                             should_add = False
+                 
+                 if should_add:
+                     logger.info(f"Adding to Position: {signal.upper()}")
+                     self._send_order(signal, 0, sl, tp, risk_pct, strategy=strategy)
+                 else:
+                     # Update SL/TP for existing
+                     logger.info("Updating SL/TP for existing position")
+                     if sl > 0 or tp > 0:
+                         amt = float(positions[0]['contracts'])
+                         self.data_processor.cancel_all_orders(self.symbol) # Cancel old SL/TP
+                         sl_side = 'sell' if pos_side == 'long' else 'buy'
+                         self.data_processor.place_sl_tp_order(self.symbol, sl_side, amt, sl_price=sl, tp_price=tp)
 
     def run_once(self):
         try:
