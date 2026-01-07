@@ -251,12 +251,13 @@ class QwenClient:
     - **sl_price / tp_price**: 必填，基于MAE/MFE和SMC结构。
     - **position_size**: 给出具体的资金比例 (0.01 - 0.1)。
     - **strategy_rationale**: 用**中文**详细解释：SMC结构分析 -> 为什么选择该方向 -> 马丁加仓计划/止盈计划 -> 参考的MAE/MFE数据。
+    - **grid_level_tp_pips**: 针对马丁网格，请给出**每一层**网格单的最优止盈距离(Pips)。例如 [30, 25, 20, 15, 10]。越深层的单子通常TP越小以求快速离场。
     
     請以JSON格式返回结果，包含以下字段：
-    - action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell", "grid_start")
+    - action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell", "grid_start", "close_buy_open_sell", "close_sell_open_buy")
     - entry_conditions: dict ("limit_price": float)
     - exit_conditions: dict ("sl_price": float, "tp_price": float)
-    - position_management: dict ("martingale_multiplier": float, "grid_step_logic": str, "recommended_grid_step_pips": float)
+    - position_management: dict ("martingale_multiplier": float, "grid_step_logic": str, "recommended_grid_step_pips": float, "grid_level_tp_pips": list[float])
     - position_size: float
     - leverage: int
     - signal_strength: int

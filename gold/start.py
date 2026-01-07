@@ -880,14 +880,19 @@ class AI_MT5_Bot:
             symbol_info = mt5.symbol_info(self.symbol)
             point = symbol_info.point if symbol_info else 0.01
             
-            # 提取 LLM 建议的动态网格间距 (Pips)
+            # 提取 LLM 建议的动态网格间距 (Pips) 和 动态TP配置
             dynamic_step = None
+            grid_level_tps = None
+            
             if self.latest_strategy:
                 pos_mgmt = self.latest_strategy.get('position_management', {})
                 if pos_mgmt:
                     dynamic_step = pos_mgmt.get('recommended_grid_step_pips')
+                    grid_level_tps = pos_mgmt.get('grid_level_tp_pips')
+                    if grid_level_tps:
+                         logger.info(f"Using Dynamic Grid Level TPs: {grid_level_tps}")
             
-            grid_orders = self.grid_strategy.generate_grid_plan(current_price, direction, atr, point=point, dynamic_step_pips=dynamic_step)
+            grid_orders = self.grid_strategy.generate_grid_plan(current_price, direction, atr, point=point, dynamic_step_pips=dynamic_step, grid_level_tps=grid_level_tps)
             
             # 4. 执行挂单
             if grid_orders:
@@ -906,9 +911,10 @@ class AI_MT5_Bot:
                 for i, order in enumerate(grid_orders):
                     o_type = order['type']
                     o_price = self._normalize_price(order['price'])
+                    o_tp = self._normalize_price(order.get('tp', 0.0))
                     
                     # 发送订单
-                    self._send_order(o_type, o_price, sl=0.0, tp=0.0, comment=f"AI-Grid-{i+1}")
+                    self._send_order(o_type, o_price, sl=0.0, tp=o_tp, comment=f"AI-Grid-{i+1}")
                     
                 # 恢复 lot_size
                 self.lot_size = original_lot
@@ -1284,9 +1290,27 @@ class AI_MT5_Bot:
                 logger.info(f"Grid Strategy Trigger: {action} Lot={lot}")
                 trade_type = "buy" if action == 'add_buy' else "sell"
                 price = tick.ask if trade_type == 'buy' else tick.bid
-                # Use default Grid SL/TP or 0
-                # We use 0 and let manage_positions update it later or Basket TP handle it
-                self._send_order(trade_type, price, 0.0, 0.0, comment=f"Grid: {action}")
+                
+                # Dynamic Add TP Logic
+                add_tp = 0.0
+                if self.latest_strategy:
+                     pos_mgmt = self.latest_strategy.get('position_management', {})
+                     grid_tps = pos_mgmt.get('grid_level_tp_pips')
+                     if grid_tps:
+                         # Determine level index
+                         current_count = self.grid_strategy.long_pos_count if trade_type == 'buy' else self.grid_strategy.short_pos_count
+                         # Use specific TP if available
+                         tp_pips = grid_tps[current_count] if current_count < len(grid_tps) else grid_tps[-1]
+                         
+                         point = mt5.symbol_info(self.symbol).point
+                         if trade_type == 'buy':
+                             add_tp = price + (tp_pips * 10 * point)
+                         else:
+                             add_tp = price - (tp_pips * 10 * point)
+                         
+                         logger.info(f"Dynamic Add TP: {add_tp} ({tp_pips} pips)")
+
+                self._send_order(trade_type, price, 0.0, add_tp, comment=f"Grid: {action}")
                 # Don't return, allow SL/TP update for existing positions
 
         # 获取 ATR 用于计算移动止损距离 (动态调整)
