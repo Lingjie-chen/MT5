@@ -420,13 +420,32 @@ class CryptoTradingBot:
             self.grid_strategy.calculate_lot_sizes(free_balance)
             
             # Execute Grid Orders
+            # Get contract size for conversion
+            try:
+                contract_size = self.data_processor.get_contract_size(self.symbol)
+            except:
+                contract_size = 1.0
+                if 'ETH' in self.symbol: contract_size = 0.1
+                elif 'BTC' in self.symbol: contract_size = 0.01
+            
             for order in grid_plan:
                 try:
-                    logger.info(f"Placing Grid Order: {order['type']} {order['amount']} @ {order['price']:.2f}")
+                    # Convert raw coin amount to contracts
+                    # Grid strategy returns 'amount' in coins (e.g. 0.5 ETH)
+                    # OKX Swap requires number of contracts (e.g. 5 contracts if size is 0.1)
+                    raw_amount_coin = order['amount']
+                    num_contracts = int(raw_amount_coin / contract_size)
+                    
+                    if num_contracts < 1:
+                        # Try to force at least 1 contract if allocation is small but valid
+                        num_contracts = 1
+                        
+                    logger.info(f"Placing Grid Order: {order['type']} {num_contracts} contracts ({raw_amount_coin:.4f} coins) @ {order['price']:.2f}")
+                    
                     self.data_processor.create_order(
                         self.symbol, 
                         order['type'], 
-                        order['amount'], 
+                        num_contracts, 
                         type='limit', 
                         price=order['price']
                     )
