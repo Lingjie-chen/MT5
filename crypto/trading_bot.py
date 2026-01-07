@@ -36,8 +36,7 @@ logger = logging.getLogger(__name__)
 class HybridOptimizer:
     def __init__(self):
         self.weights = {
-            "deepseek": 1.0,
-            "qwen": 1.2, 
+            "qwen": 1.5, # Increased weight
             "crt": 0.8,
             "price_equation": 0.6,
             "tf_visual": 0.5,
@@ -138,8 +137,8 @@ class CryptoTradingBot:
         
         # Initialize AI Clients
         self.ai_factory = AIClientFactory()
-        self.deepseek_client = self.ai_factory.get_client('deepseek')
         self.qwen_client = self.ai_factory.get_client('qwen')
+        # DeepSeek client removed as requested
         
         # Telegram Configuration
         self.telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -153,7 +152,7 @@ class CryptoTradingBot:
         # Initialize Grid Strategy
         self.grid_strategy = CryptoGridStrategy(self.symbol)
         
-        if not self.deepseek_client or not self.qwen_client:
+        if not self.qwen_client:
             logger.warning("AI Clients not fully initialized.")
 
     def sync_account_history(self):
@@ -394,7 +393,7 @@ class CryptoTradingBot:
         # Performance Stats
         trade_stats = self.db_manager.get_trade_performance_stats(limit=50)
         
-        # Combine all advanced strategies for DeepSeek
+        # Combine all advanced strategies for DeepSeek (now Qwen)
         extra_analysis = {
             "crt": crt_res, 
             "pem": pem_res, 
@@ -408,13 +407,9 @@ class CryptoTradingBot:
             "optimized_weights": self.hybrid_optimizer.weights
         }
         
-        structure = self.deepseek_client.analyze_market_structure(
-            market_snapshot, 
-            current_positions=current_positions,
-            extra_analysis=extra_analysis,
-            performance_stats=trade_stats
-        )
-
+        # Replaced DeepSeek with Qwen for structure analysis
+        structure = self.qwen_client.analyze_market_structure(market_snapshot)
+        
         # Update Grid Strategy with SMC Levels
         # Extract SMC and IFVG levels for Grid
         smc_grid_data = {
@@ -546,13 +541,7 @@ class CryptoTradingBot:
                 final_signal = 'sell'
                 reason = f"[Override] Qwen Sentiment Extreme Bearish ({qwen_sent_score})"
 
-            # 2. DeepSeek Override
-            elif ds_signal in ['buy', 'sell'] and ds_score >= 80:
-                final_signal = ds_signal
-                reason = f"[Override] DeepSeek High Confidence ({ds_score})"
-            
-            # 3. (Deleted) Technical Consensus Override
-            # Users request: Decision fully driven by LLMs
+            # DeepSeek Override removed
         
         # Smart Exit
         if qw_action == 'close' and final_signal != 'close':
@@ -940,7 +929,8 @@ class CryptoTradingBot:
         """
         logger.info("Running Short-Term Parameter Optimization (WOAm)...")
         
-        # 1. Get Data (Last 500 candles)        df = self.data_processor.get_historical_data(self.symbol, self.timeframe, limit=500)
+        # 1. Get Data (Last 500 candles)
+        df = self.data_processor.get_historical_data(self.symbol, self.timeframe, limit=500)
         # Reduced threshold from 200 to 50 for testing
         if df is None or len(df) < 50:
             return
@@ -1233,13 +1223,35 @@ class CryptoTradingBot:
                  logger.info(f"Opening New Position: {signal.upper()}")
                  self._send_order(signal, 0, sl, tp, risk_pct, strategy=strategy)
              else:
-                 # Update SL/TP for existing
-                 logger.info("Updating SL/TP for existing position")
-                 if sl > 0 or tp > 0:
-                     amt = float(positions[0]['contracts'])
-                     self.data_processor.cancel_all_orders(self.symbol) # Cancel old SL/TP
-                     sl_side = 'sell' if pos_side == 'long' else 'buy'
-                     self.data_processor.place_sl_tp_order(self.symbol, sl_side, amt, sl_price=sl, tp_price=tp)
+                 # Check Add Position Logic
+                 raw_action = strategy.get('action', '').lower()
+                 should_add = False
+                 if signal == 'buy' and pos_side == 'long' and raw_action in ['add_buy', 'buy']:
+                     should_add = True
+                 elif signal == 'sell' and pos_side == 'short' and raw_action in ['add_sell', 'sell']:
+                     should_add = True
+                 
+                 # Distance Protection
+                 if should_add:
+                     entry_price = float(positions[0].get('entryPrice', positions[0].get('avgPx', 0)))
+                     current_price = self.data_processor.get_current_price(self.symbol)
+                     if entry_price > 0 and current_price > 0:
+                         dist_pct = abs(current_price - entry_price) / entry_price
+                         if dist_pct < 0.005: # 0.5% min distance
+                             logger.warning(f"Add Position skipped: Too close ({dist_pct:.2%})")
+                             should_add = False
+                 
+                 if should_add:
+                     logger.info(f"Adding to Position: {signal.upper()}")
+                     self._send_order(signal, 0, sl, tp, risk_pct, strategy=strategy)
+                 else:
+                     # Update SL/TP for existing
+                     logger.info("Updating SL/TP for existing position")
+                     if sl > 0 or tp > 0:
+                         amt = float(positions[0]['contracts'])
+                         self.data_processor.cancel_all_orders(self.symbol) # Cancel old SL/TP
+                         sl_side = 'sell' if pos_side == 'long' else 'buy'
+                         self.data_processor.place_sl_tp_order(self.symbol, sl_side, amt, sl_price=sl, tp_price=tp)
 
     def run_once(self):
         try:

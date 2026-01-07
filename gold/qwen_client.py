@@ -83,7 +83,7 @@ class QwenClient:
        - 月图/周图：识别长期趋势方向和市场相位
        - 日图：确定中期市场结构和关键水平
        - H4/H1：寻找交易机会和入场时机
-       - 15分钟：精确定位入场点
+       - 6分钟：精确定位入场点
     
     2. **市场结构识别**
        - 明确标注当前更高级别时间框架的趋势方向（牛市、熊市、盘整）
@@ -502,28 +502,44 @@ class QwenClient:
 
     def analyze_market_sentiment(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        独立的情绪分析模块
+        独立的情绪分析模块 - 全方位评估
         """
         prompt = f"""
-        Analyze the market sentiment for XAUUSD (Gold) based on the following data.
-        Data: {json.dumps(market_data, cls=CustomJSONEncoder)}
+        作为资深黄金(XAUUSD)市场分析师，请依据提供的市场数据，对当前市场情绪和趋势进行深度、全面的评估。
         
-        Return ONLY valid JSON:
+        输入数据:
+        {json.dumps(market_data, cls=CustomJSONEncoder)}
+        
+        请从以下核心维度进行分析：
+        1. **价格行为与趋势结构 (Price Action)**: 识别当前的高低点排列 (HH/HL 或 LH/LL)，判断市场是处于上升、下降还是震荡整理阶段。
+        2. **SMC 视角 (Smart Money Concepts)**: 
+           - 关注是否有流动性扫荡 (Liquidity Sweep) 行为。
+           - 价格对关键区域 (如 FVG, Order Block) 的反应。
+        3. **动能与力度 (Momentum)**: 评估当前走势的强度，是否存在衰竭迹象。
+        4. **关键位置**: 当前价格相对于近期支撑/阻力的位置关系。
+        
+        请严格返回以下 JSON 格式:
         {{
             "sentiment": "bullish" | "bearish" | "neutral",
-            "sentiment_score": -1.0 to 1.0,
-            "reason": "short explanation"
+            "sentiment_score": float, // 范围 -1.0 (极度看空) 到 1.0 (极度看多)
+            "trend_assessment": {{
+                "direction": "uptrend" | "downtrend" | "sideways",
+                "strength": "strong" | "moderate" | "weak"
+            }},
+            "key_drivers": ["因素1", "因素2", "因素3"],
+            "potential_risks": "主要风险点",
+            "reason": "综合分析结论 (100字以内)"
         }}
         """
         
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "You are a Gold (XAUUSD) market sentiment analyst."},
+                {"role": "system", "content": "你是一位专注于价格行为和SMC策略的黄金交易专家。"},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.3,
-            "max_tokens": 500,
+            "max_tokens": 800,
             "response_format": {"type": "json_object"}
         }
         
@@ -535,7 +551,7 @@ class QwenClient:
         except Exception as e:
             logger.error(f"Sentiment analysis failed: {e}")
         
-        return {"sentiment": "neutral", "sentiment_score": 0.0, "reason": "Error"}
+        return {"sentiment": "neutral", "sentiment_score": 0.0, "reason": "Error", "trend_assessment": {"direction": "unknown", "strength": "weak"}}
 
     def optimize_strategy_logic(self, market_structure_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
