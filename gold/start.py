@@ -99,10 +99,10 @@ class HybridOptimizer:
         return final_signal, final_score, self.weights
 
 class AI_MT5_Bot:
-    def __init__(self, symbol="XAUUSD", timeframe=mt5.TIMEFRAME_M6):
+    def __init__(self, symbol="XAUUSD", timeframe=mt5.TIMEFRAME_M15):
         self.symbol = symbol
         self.timeframe = timeframe
-        self.tf_name = "M6"
+        self.tf_name = "M15"
         if timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
         elif timeframe == mt5.TIMEFRAME_H1: self.tf_name = "H1"
         elif timeframe == mt5.TIMEFRAME_H4: self.tf_name = "H4"
@@ -2360,6 +2360,20 @@ class AI_MT5_Bot:
                     df = self.get_market_data(600) 
                     
                     if df is not None:
+                        # Fetch Multi-Timeframe Data (H1, H4)
+                        rates_h1 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_H1, 0, 200)
+                        rates_h4 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_H4, 0, 100)
+                        
+                        df_h1 = pd.DataFrame(rates_h1) if rates_h1 is not None else pd.DataFrame()
+                        df_h4 = pd.DataFrame(rates_h4) if rates_h4 is not None else pd.DataFrame()
+
+                        if not df_h1.empty: 
+                            df_h1['time'] = pd.to_datetime(df_h1['time'], unit='s')
+                            if 'tick_volume' in df_h1: df_h1.rename(columns={'tick_volume': 'volume'}, inplace=True)
+                        if not df_h4.empty: 
+                            df_h4['time'] = pd.to_datetime(df_h4['time'], unit='s')
+                            if 'tick_volume' in df_h4: df_h4.rename(columns={'tick_volume': 'volume'}, inplace=True)
+
                         # 保存市场数据到DB
                         self.db_manager.save_market_data(df, self.symbol, self.tf_name)
                         
@@ -2370,6 +2384,18 @@ class AI_MT5_Bot:
                         processor = MT5DataProcessor()
                         df_features = processor.generate_features(df)
                         
+                        # Calculate features for H1/H4
+                        df_features_h1 = processor.generate_features(df_h1) if not df_h1.empty else pd.DataFrame()
+                        df_features_h4 = processor.generate_features(df_h4) if not df_h4.empty else pd.DataFrame()
+                        
+                        # Helper to safely get latest dict
+                        def get_latest_safe(dframe):
+                            if dframe.empty: return {}
+                            return dframe.iloc[-1].to_dict()
+
+                        feat_h1 = get_latest_safe(df_features_h1)
+                        feat_h4 = get_latest_safe(df_features_h4)
+
                         # 3. 调用 AI 与高级分析
                         # 构建市场快照
                         current_price = df.iloc[-1]
@@ -2391,6 +2417,22 @@ class AI_MT5_Bot:
                                 "ema_fast": float(latest_features.get('ema_fast', 0)),
                                 "ema_slow": float(latest_features.get('ema_slow', 0)),
                                 "volatility": float(latest_features.get('volatility', 0))
+                            },
+                            "multi_tf_data": {
+                                "H1": {
+                                    "close": float(feat_h1.get('close', 0)),
+                                    "rsi": float(feat_h1.get('rsi', 50)),
+                                    "ema_fast": float(feat_h1.get('ema_fast', 0)),
+                                    "ema_slow": float(feat_h1.get('ema_slow', 0)),
+                                    "trend": "bullish" if feat_h1.get('ema_fast', 0) > feat_h1.get('ema_slow', 0) else "bearish"
+                                },
+                                "H4": {
+                                    "close": float(feat_h4.get('close', 0)),
+                                    "rsi": float(feat_h4.get('rsi', 50)),
+                                    "ema_fast": float(feat_h4.get('ema_fast', 0)),
+                                    "ema_slow": float(feat_h4.get('ema_slow', 0)),
+                                    "trend": "bullish" if feat_h4.get('ema_fast', 0) > feat_h4.get('ema_slow', 0) else "bearish"
+                                }
                             }
                         }
                         

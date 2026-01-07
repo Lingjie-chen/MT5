@@ -266,6 +266,12 @@ class QwenClient:
     - 请务必参考 `Previous Analysis` (上一次分析结果)。
     - 如果当前市场结构、SMC信号和趋势与上一次相比**没有显著变化**，请保持决策一致 (Maintain Consistency)。
     - 如果决定保持一致，请在 `strategy_rationale` 中明确说明："市场结构未变，维持上一次 [Action] 决策"。
+
+    **自我反思 (Self-Reflection)**:
+    - 请仔细检查 `performance_stats` (历史交易绩效)。
+    - 重点关注最近的亏损交易 (Profit < 0)。
+    - 如果发现当前的市场结构/信号与之前的亏损交易非常相似，请**拒绝开仓**或**降低风险**。
+    - 在 `strategy_rationale` 中注明："检测到类似历史亏损模式，执行风险规避"。
     
     输出要求：
     - **limit_price**: 挂单必填。
