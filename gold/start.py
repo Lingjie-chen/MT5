@@ -1332,12 +1332,9 @@ class AI_MT5_Bot:
             # 如果差异很大且不是 0，说明用户手动干预了
             # 为了简化，我们设定规则: 只有当 AI 建议的新 SL/TP 明显优于当前设置，或者当前设置明显偏离风险控制时才强制更新
             
-            allow_update = True
-            # if abs(sl - some_last_known_sl) > point * 10: ... (Requires state tracking)
-            # 替代方案: 如果当前 SL 与 建议 SL 差距小于 20 point，视为"差不多"，不频繁修改干扰用户
-            # 如果差距很大，说明 AI 发现了新的结构，或者用户设置的很不合理，需要修正
+            allow_update = False # 强制禁用动态更新 (User Request: Stop dynamic SL/TP movement)
             
-            if has_new_params:
+            if allow_update and has_new_params:
                 # 使用 calculate_optimized_sl_tp 进行统一计算和验证
                 ai_exits = strategy_params.get('exit_conditions', {})
                 

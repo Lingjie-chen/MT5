@@ -1064,7 +1064,8 @@ class CryptoTradingBot:
                      self._send_order(signal, 0, sl, tp, risk_pct, strategy=strategy)
                  else:
                      # Update SL/TP for existing
-                     if sl_tp_source == 'qwen':
+                     # DISABLED per User Request: Do not move SL/TP dynamically
+                     if False and sl_tp_source == 'qwen':
                          logger.info("Updating SL/TP for existing position (Source: Qwen)")
                          if sl > 0 or tp > 0:
                              amt = float(positions[0]['contracts'])
