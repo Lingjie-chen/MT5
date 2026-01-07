@@ -864,7 +864,12 @@ class AI_MT5_Bot:
             # 3. 生成网格计划
             # 使用当前价格作为基准
             current_price = tick.ask if direction == 'bullish' else tick.bid
-            grid_orders = self.grid_strategy.generate_grid_plan(current_price, direction, atr)
+            
+            # 获取 Point
+            symbol_info = mt5.symbol_info(self.symbol)
+            point = symbol_info.point if symbol_info else 0.01
+            
+            grid_orders = self.grid_strategy.generate_grid_plan(current_price, direction, atr, point=point)
             
             # 4. 执行挂单
             if grid_orders:

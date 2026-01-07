@@ -187,7 +187,7 @@ class KalmanGridStrategy:
             
         return float(f"{self.lot * multiplier:.2f}")
 
-    def generate_grid_plan(self, current_price, trend_direction, atr):
+    def generate_grid_plan(self, current_price, trend_direction, atr, point=0.01):
         """
         Generate a plan for grid deployment (for limit orders)
         """
@@ -201,25 +201,28 @@ class KalmanGridStrategy:
         resistances = [p for p in self.smc_levels['ob_bearish'] if p > current_price]
         supports = [p for p in self.smc_levels['ob_bullish'] if p < current_price]
         
+        # Calculate fixed step based on config
+        fixed_step = self.grid_step_points * point
+        
         if trend_direction == 'bullish':
             # Buy Grid
             levels = sorted([p for p in supports if p > lower_bound], reverse=True)
             if not levels: # Fallback to arithmetic
-                step = atr * 0.5
+                step = fixed_step if fixed_step > 0 else (atr * 0.5)
                 levels = [current_price - step*i for i in range(1, 6)]
             
             for lvl in levels:
-                orders.append({'type': 'buy_limit', 'price': lvl})
+                orders.append({'type': 'limit_buy', 'price': lvl})
                 
         elif trend_direction == 'bearish':
             # Sell Grid
             levels = sorted([p for p in resistances if p < upper_bound])
             if not levels:
-                step = atr * 0.5
+                step = fixed_step if fixed_step > 0 else (atr * 0.5)
                 levels = [current_price + step*i for i in range(1, 6)]
                 
             for lvl in levels:
-                orders.append({'type': 'sell_limit', 'price': lvl})
+                orders.append({'type': 'limit_sell', 'price': lvl})
                 
         return orders
 
