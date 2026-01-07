@@ -939,7 +939,7 @@ class AI_MT5_Bot:
                      high_low = df_temp['high'] - df_temp['low']
                      atr = high_low.rolling(14).mean().iloc[-1]
                 
-                explicit_sl, explicit_tp = self.calculate_optimized_sl_tp(trade_type, price, atr)
+                explicit_sl, explicit_tp = self.calculate_optimized_sl_tp(trade_type, price, atr, ai_exit_conds=sl_tp_params)
                 
                 if explicit_sl == 0 or explicit_tp == 0:
                      logger.error("无法计算优化 SL/TP，放弃交易")
@@ -2673,7 +2673,9 @@ class AI_MT5_Bot:
                             atr_val = float(latest_features.get('atr', ref_price * 0.005))
                             calc_sl, calc_tp = self.calculate_optimized_sl_tp(
                                 final_signal if final_signal in ['buy', 'sell'] else 'buy', 
-                                ref_price, atr_val
+                                ref_price, 
+                                atr_val,
+                                ai_exit_conds=exit_conds
                             )
                             if not opt_sl: opt_sl = calc_sl
                             if not opt_tp: opt_tp = calc_tp
