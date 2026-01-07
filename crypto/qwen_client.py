@@ -434,32 +434,32 @@ class QwenClient:
            - 列出3-5个最重要的阻力位
         
         请以JSON格式返回以下内容：
-        {
-            "market_structure": {
+        {{
+            "market_structure": {{
                 "trend": "bullish/bearish/neutral",
                 "phase": "accumulation/expansion/distribution",
-                "key_levels": {
-                    "support": [list of support levels],
-                    "resistance": [list of resistance levels]
-                },
-                "bos_points": [list of BOS levels],
-                "choch_points": [list of CHOCH levels]
-            },
-            "smc_signals": {
-                "order_blocks": [list of identified order blocks],
-                "fvgs": [list of identified fair value gaps],
-                "liquidity_pools": {
-                    "above": price,
-                    "below": price
-                }
-            },
-            "sentiment_analysis": {
+                "key_levels": {{
+                    "support": ["level1", "level2"],
+                    "resistance": ["level1", "level2"]
+                }},
+                "bos_points": ["price1", "price2"],
+                "choch_points": ["price1", "price2"]
+            }},
+            "smc_signals": {{
+                "order_blocks": ["ob1", "ob2"],
+                "fvgs": ["fvg1", "fvg2"],
+                "liquidity_pools": {{
+                    "above": "price",
+                    "below": "price"
+                }}
+            }},
+            "sentiment_analysis": {{
                 "sentiment": "bullish/bearish/neutral",
-                "sentiment_score": float (-1.0 to 1.0),
-                "confidence": float (0.0 to 1.0)
-            },
-            "key_observations": str (简短的中文分析)
-        }
+                "sentiment_score": 0.0,
+                "confidence": 0.0
+            }},
+            "key_observations": "简短的中文分析"
+        }}
         """
         
         payload = {
