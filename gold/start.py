@@ -1122,23 +1122,56 @@ class AI_MT5_Bot:
             "type_filling": self._get_filling_mode(),
         }
         
-        # 挂单需要不同的 filling type? 通常 Pending 订单不用 FOK，用 RETURN 或默认
-        if "limit" in type_str or "stop" in type_str:
-             if 'type_filling' in request:
-                 del request['type_filling']
-             request['type_filling'] = mt5.ORDER_FILLING_RETURN
+        # --- 增强的订单发送逻辑 (自动重试不同的 Filling Mode) ---
+        # 针对 Error 10030 (Unsupported filling mode) 进行自动故障转移
         
-        logger.info(f"发送订单请求: Action={action}, Type={order_type}, Price={price:.2f}, SL={sl:.2f}, TP={tp:.2f}")
-        result = mt5.order_send(request)
-        if result is None:
-             logger.error("order_send 返回 None")
-             return
-
-        if result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(f"下单失败 ({type_str}): {result.comment}, retcode={result.retcode}")
+        filling_modes = []
+        
+        # 确定尝试顺序
+        if "limit" in type_str or "stop" in type_str:
+            # 挂单通常优先尝试 RETURN
+            filling_modes = [mt5.ORDER_FILLING_RETURN, mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_FOK]
         else:
-            logger.info(f"下单成功 ({type_str}) #{result.order}")
-            self.send_telegram_message(f"✅ *Order Executed*\nType: `{type_str.upper()}`\nPrice: `{price}`\nSL: `{sl}`\nTP: `{tp}`")
+            # 市价单优先使用 _get_filling_mode 检测到的模式
+            preferred = self._get_filling_mode()
+            filling_modes = [preferred, mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_RETURN]
+            
+        # 去重并保持顺序
+        filling_modes = list(dict.fromkeys(filling_modes))
+        
+        result = None
+        success = False
+        
+        for mode in filling_modes:
+            request['type_filling'] = mode
+            
+            # 仅记录第一次尝试或重试信息，避免刷屏
+            if mode == filling_modes[0]:
+                logger.info(f"发送订单请求: Action={action}, Type={order_type}, Price={price:.2f}, SL={sl:.2f}, TP={tp:.2f}, Filling={mode}")
+            else:
+                logger.info(f"重试订单 (Filling Mode: {mode})...")
+                
+            result = mt5.order_send(request)
+            
+            if result is None:
+                logger.error("order_send 返回 None")
+                break
+                
+            if result.retcode == mt5.TRADE_RETCODE_DONE:
+                success = True
+                logger.info(f"下单成功 ({type_str}) #{result.order} (Mode: {mode})")
+                self.send_telegram_message(f"✅ *Order Executed*\nType: `{type_str.upper()}`\nPrice: `{price}`\nSL: `{sl}`\nTP: `{tp}`")
+                break
+            elif result.retcode == 10030: # Unsupported filling mode
+                logger.warning(f"Filling mode {mode} 不支持 (10030), 尝试下一个模式...")
+                continue
+            else:
+                # 其他错误，不重试
+                logger.error(f"下单失败 ({type_str}): {result.comment}, retcode={result.retcode}")
+                break
+                
+        if not success and result and result.retcode == 10030:
+             logger.error(f"下单失败 ({type_str}): 所有 Filling Mode 均被拒绝 (10030)")
 
 
 
