@@ -187,7 +187,7 @@ class KalmanGridStrategy:
             
         return float(f"{self.lot * multiplier:.2f}")
 
-    def generate_grid_plan(self, current_price, trend_direction, atr, point=0.01):
+    def generate_grid_plan(self, current_price, trend_direction, atr, point=0.01, dynamic_step_pips=None):
         """
         Generate a plan for grid deployment (for limit orders)
         """
@@ -201,8 +201,12 @@ class KalmanGridStrategy:
         resistances = [p for p in self.smc_levels['ob_bearish'] if p > current_price]
         supports = [p for p in self.smc_levels['ob_bullish'] if p < current_price]
         
-        # Calculate fixed step based on config
-        fixed_step = self.grid_step_points * point
+        # Calculate fixed step based on config or dynamic override
+        if dynamic_step_pips and dynamic_step_pips > 0:
+            fixed_step = dynamic_step_pips * 10 * point # Pip to Point (1 pip = 10 points)
+            logger.info(f"Using Dynamic Grid Step: {dynamic_step_pips} pips ({fixed_step} points)")
+        else:
+            fixed_step = self.grid_step_points * point
         
         if trend_direction == 'bullish':
             # Buy Grid
