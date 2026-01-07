@@ -458,7 +458,7 @@ class QwenClient:
                 "sentiment_score": 0.0,
                 "confidence": 0.0
             }},
-            "key_observations": "简短的中文分析"
+            "key_observations": "完整的中文分析"
         }}
         """
         
