@@ -1,10 +1,10 @@
 @echo off
-title DB Checkpoint ^& Auto-Update Service
+title DB Checkpoint & Auto-Update Service
 color 0b
 
 cd /d "%~dp0\.."
 
-echo [%DATE% %TIME%] Starting Database Checkpoint ^& Sync Service (Windows)...
+echo [%DATE% %TIME%] Starting Database Checkpoint & Sync Service (Windows)...
 echo Intervals: Every 60 seconds
 echo ---------------------------------------------------
 
@@ -19,13 +19,22 @@ python scripts/checkpoint_dbs.py
 
 :: 2. Pull Remote Changes (Auto-Update Code)
 echo [%DATE% %TIME%] Checking for remote updates...
-git pull origin master
-if %ERRORLEVEL% NEQ 0 (
-    echo [WARNING] Pull failed or conflict detected.
-    echo [INFO] Attempting auto-resolve using 'ours' strategy...
-    git pull -s recursive -X ours origin master
+git pull --no-edit origin master
+if %ERRORLEVEL% EQU 0 goto push_step
+
+echo [WARNING] Pull failed or conflict detected.
+echo [INFO] Attempting auto-resolve using 'ours' strategy...
+git pull --no-edit -s recursive -X ours origin master
+
+if %ERRORLEVEL% EQU 0 (
+    echo [INFO] Conflict resolved automatically.
+    goto push_step
 )
 
+echo [ERROR] Auto-resolve failed. Aborting merge...
+git merge --abort
+
+:push_step
 :: 3. Push Any Pending Commits (Retry push if python script failed or after merge)
 echo [%DATE% %TIME%] Pushing local changes...
 git push origin master

@@ -438,25 +438,30 @@ class CryptoTradingBot:
                 })
                 # Treat strong zones as OBs for grid placement
         
-        # 3. From DeepSeek (if it returns specific levels)
-        if 'smc_levels' in structure: 
-             # DeepSeek might identify levels not found by algos
-             # Merge them
-             if 'ob' in structure['smc_levels']:
-                 smc_grid_data['ob'].extend(structure['smc_levels']['ob'])
-             if 'fvg' in structure['smc_levels']:
-                 smc_grid_data['fvg'].extend(structure['smc_levels']['fvg'])
-
-        # Update Grid Strategy
-        self.grid_strategy.update_smc_levels(smc_grid_data)
+        # 3. From Qwen (if it returns specific levels)
+        if 'smc_signals' in structure: 
+             # Qwen returns 'smc_signals' with 'order_blocks' and 'fvgs'
+             if 'order_blocks' in structure['smc_signals']:
+                 # Map Qwen OBs to Grid format if needed, or they might be strings/dicts
+                 # Qwen returns list of dicts or strings. Let's assume list of dicts based on prompt.
+                 # We need to ensure they have 'top', 'bottom', 'type'.
+                 # If Qwen returns text, we might skip. If structured, we use.
+                 pass
+             
+        # DeepSeek Signal -> Qwen Signal Mapping
+        # Qwen returns 'market_structure' -> 'trend'
+        # And 'sentiment_analysis' -> 'sentiment'
         
-        # DeepSeek Signal
-        ds_signal = structure.get('preliminary_signal', 'neutral')
-        ds_score = structure.get('structure_score', 50)
-        ds_pred = structure.get('short_term_prediction', 'neutral')
-        if ds_signal == 'neutral':
-             if ds_pred == 'bullish' and ds_score > 60: ds_signal = "buy"
-             elif ds_pred == 'bearish' and ds_score > 60: ds_signal = "sell"
+        qwen_trend = structure.get('market_structure', {}).get('trend', 'neutral')
+        qwen_sentiment = structure.get('sentiment_analysis', {}).get('sentiment', 'neutral')
+        
+        ds_signal = 'neutral'
+        if qwen_trend == 'bullish': ds_signal = 'buy'
+        elif qwen_trend == 'bearish': ds_signal = 'sell'
+        
+        ds_score = int(structure.get('sentiment_analysis', {}).get('confidence', 0.0) * 100)
+        ds_pred = qwen_trend # Use trend as prediction
+
              
         # --- Qwen Strategy ---
         technical_signals = {
@@ -581,6 +586,8 @@ class CryptoTradingBot:
         opt_sl = exit_conds.get('sl_price')
         opt_tp = exit_conds.get('tp_price')
         
+        sl_tp_source = "qwen" if (opt_sl or opt_tp) else "auto"
+
         if not opt_sl or not opt_tp:
              calc_sl, calc_tp = self.calculate_optimized_sl_tp(final_signal, ref_price, latest.get('atr', 0), market_context=adv_res)
              if not opt_sl: opt_sl = calc_sl
@@ -651,7 +658,7 @@ class CryptoTradingBot:
         
         self.send_telegram_message(msg)
         
-        return df, final_signal, strategy, strength, opt_sl, opt_tp, risk_pct
+        return df, final_signal, strategy, strength, opt_sl, opt_tp, risk_pct, sl_tp_source
 
     def evaluate_comprehensive_params(self, params, df):
         """
@@ -718,6 +725,7 @@ class CryptoTradingBot:
                 next_price = closes[i+1]
                 
                 # MFH Train (Must happen every step for consistency)
+                mfh_sig = "neutral"
                 if mfh_features is not None:
                     # Get features for current step i
                     feats = mfh_features[i]
@@ -1183,7 +1191,7 @@ class CryptoTradingBot:
         except Exception as e:
             logger.error(f"Execution Failed: {e}")
 
-    def execute_trade(self, signal, strategy, risk_pct, sl, tp):
+    def execute_trade(self, signal, strategy, risk_pct, sl, tp, sl_tp_source="auto"):
         """Execute trade based on analyzed signal"""
         # Check current positions
         positions = []
@@ -1246,18 +1254,21 @@ class CryptoTradingBot:
                      self._send_order(signal, 0, sl, tp, risk_pct, strategy=strategy)
                  else:
                      # Update SL/TP for existing
-                     logger.info("Updating SL/TP for existing position")
-                     if sl > 0 or tp > 0:
-                         amt = float(positions[0]['contracts'])
-                         self.data_processor.cancel_all_orders(self.symbol) # Cancel old SL/TP
-                         sl_side = 'sell' if pos_side == 'long' else 'buy'
-                         self.data_processor.place_sl_tp_order(self.symbol, sl_side, amt, sl_price=sl, tp_price=tp)
+                     if sl_tp_source == 'qwen':
+                         logger.info("Updating SL/TP for existing position (Source: Qwen)")
+                         if sl > 0 or tp > 0:
+                             amt = float(positions[0]['contracts'])
+                             self.data_processor.cancel_all_orders(self.symbol) # Cancel old SL/TP
+                             sl_side = 'sell' if pos_side == 'long' else 'buy'
+                             self.data_processor.place_sl_tp_order(self.symbol, sl_side, amt, sl_price=sl, tp_price=tp)
+                     else:
+                         logger.info("Skipping SL/TP update for existing position (Source: Auto/Dynamic disabled)")
 
     def run_once(self):
         try:
-            df, signal, strategy, strength, sl, tp, risk = self.analyze_market()
+            df, signal, strategy, strength, sl, tp, risk, sl_tp_source = self.analyze_market()
             if signal:
-                self.execute_trade(signal, strategy, risk, sl, tp)
+                self.execute_trade(signal, strategy, risk, sl, tp, sl_tp_source)
             # self.db_manager.perform_checkpoint() # Managed by external script
         except Exception as e:
             logger.error(f"Cycle Error: {e}", exc_info=True)

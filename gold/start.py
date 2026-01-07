@@ -1122,23 +1122,56 @@ class AI_MT5_Bot:
             "type_filling": self._get_filling_mode(),
         }
         
-        # 挂单需要不同的 filling type? 通常 Pending 订单不用 FOK，用 RETURN 或默认
-        if "limit" in type_str or "stop" in type_str:
-             if 'type_filling' in request:
-                 del request['type_filling']
-             request['type_filling'] = mt5.ORDER_FILLING_RETURN
+        # --- 增强的订单发送逻辑 (自动重试不同的 Filling Mode) ---
+        # 针对 Error 10030 (Unsupported filling mode) 进行自动故障转移
         
-        logger.info(f"发送订单请求: Action={action}, Type={order_type}, Price={price:.2f}, SL={sl:.2f}, TP={tp:.2f}")
-        result = mt5.order_send(request)
-        if result is None:
-             logger.error("order_send 返回 None")
-             return
-
-        if result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(f"下单失败 ({type_str}): {result.comment}, retcode={result.retcode}")
+        filling_modes = []
+        
+        # 确定尝试顺序
+        if "limit" in type_str or "stop" in type_str:
+            # 挂单通常优先尝试 RETURN
+            filling_modes = [mt5.ORDER_FILLING_RETURN, mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_FOK]
         else:
-            logger.info(f"下单成功 ({type_str}) #{result.order}")
-            self.send_telegram_message(f"✅ *Order Executed*\nType: `{type_str.upper()}`\nPrice: `{price}`\nSL: `{sl}`\nTP: `{tp}`")
+            # 市价单优先使用 _get_filling_mode 检测到的模式
+            preferred = self._get_filling_mode()
+            filling_modes = [preferred, mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_RETURN]
+            
+        # 去重并保持顺序
+        filling_modes = list(dict.fromkeys(filling_modes))
+        
+        result = None
+        success = False
+        
+        for mode in filling_modes:
+            request['type_filling'] = mode
+            
+            # 仅记录第一次尝试或重试信息，避免刷屏
+            if mode == filling_modes[0]:
+                logger.info(f"发送订单请求: Action={action}, Type={order_type}, Price={price:.2f}, SL={sl:.2f}, TP={tp:.2f}, Filling={mode}")
+            else:
+                logger.info(f"重试订单 (Filling Mode: {mode})...")
+                
+            result = mt5.order_send(request)
+            
+            if result is None:
+                logger.error("order_send 返回 None")
+                break
+                
+            if result.retcode == mt5.TRADE_RETCODE_DONE:
+                success = True
+                logger.info(f"下单成功 ({type_str}) #{result.order} (Mode: {mode})")
+                self.send_telegram_message(f"✅ *Order Executed*\nType: `{type_str.upper()}`\nPrice: `{price}`\nSL: `{sl}`\nTP: `{tp}`")
+                break
+            elif result.retcode == 10030: # Unsupported filling mode
+                logger.warning(f"Filling mode {mode} 不支持 (10030), 尝试下一个模式...")
+                continue
+            else:
+                # 其他错误，不重试
+                logger.error(f"下单失败 ({type_str}): {result.comment}, retcode={result.retcode}")
+                break
+                
+        if not success and result and result.retcode == 10030:
+             logger.error(f"下单失败 ({type_str}): 所有 Filling Mode 均被拒绝 (10030)")
 
 
 
@@ -1307,82 +1340,92 @@ class AI_MT5_Bot:
             if has_new_params:
                 # 使用 calculate_optimized_sl_tp 进行统一计算和验证
                 ai_exits = strategy_params.get('exit_conditions', {})
-                trade_dir = 'buy' if type_pos == mt5.POSITION_TYPE_BUY else 'sell'
                 
-                opt_sl, opt_tp = self.calculate_optimized_sl_tp(trade_dir, current_price, atr, market_context=None, ai_exit_conds=ai_exits)
+                # Check if Qwen provided explicit SL/TP
+                qwen_sl_provided = ai_exits.get('sl_price', 0) > 0
+                qwen_tp_provided = ai_exits.get('tp_price', 0) > 0
                 
-                opt_sl = self._normalize_price(opt_sl)
-                opt_tp = self._normalize_price(opt_tp)
-                
-                if opt_sl > 0:
-                    diff_sl = abs(opt_sl - sl)
-                    is_better_sl = False
-                    if type_pos == mt5.POSITION_TYPE_BUY and opt_sl > sl: is_better_sl = True
-                    if type_pos == mt5.POSITION_TYPE_SELL and opt_sl < sl: is_better_sl = True
+                # If Qwen didn't provide explicit values, skip dynamic update (User Request)
+                if not qwen_sl_provided and not qwen_tp_provided:
+                    logger.info("Qwen 未提供明确 SL/TP，跳过动态更新 (防止自动移动)")
+                else:
+                    trade_dir = 'buy' if type_pos == mt5.POSITION_TYPE_BUY else 'sell'
                     
-                    valid_sl = True
-                    if type_pos == mt5.POSITION_TYPE_BUY and (current_price - opt_sl < stop_level_dist): valid_sl = False
-                    if type_pos == mt5.POSITION_TYPE_SELL and (opt_sl - current_price < stop_level_dist): valid_sl = False
+                    opt_sl, opt_tp = self.calculate_optimized_sl_tp(trade_dir, current_price, atr, market_context=None, ai_exit_conds=ai_exits)
                     
-                    if valid_sl and (diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5)):
-                        request['sl'] = opt_sl
-                        changed = True
-                        logger.info(f"AI/Stats 更新 SL: {sl:.2f} -> {opt_sl:.2f}")
+                    opt_sl = self._normalize_price(opt_sl)
+                    opt_tp = self._normalize_price(opt_tp)
+                    
+                    if opt_sl > 0:
+                        diff_sl = abs(opt_sl - sl)
+                        is_better_sl = False
+                        if type_pos == mt5.POSITION_TYPE_BUY and opt_sl > sl: is_better_sl = True
+                        if type_pos == mt5.POSITION_TYPE_SELL and opt_sl < sl: is_better_sl = True
+                        
+                        valid_sl = True
+                        if type_pos == mt5.POSITION_TYPE_BUY and (current_price - opt_sl < stop_level_dist): valid_sl = False
+                        if type_pos == mt5.POSITION_TYPE_SELL and (opt_sl - current_price < stop_level_dist): valid_sl = False
+                        
+                        if valid_sl and (diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5)):
+                            request['sl'] = opt_sl
+                            changed = True
+                            logger.info(f"AI/Stats 更新 SL: {sl:.2f} -> {opt_sl:.2f}")
 
-                if opt_tp > 0:
-                    diff_tp = abs(opt_tp - tp)
-                    valid_tp = True
-                    if type_pos == mt5.POSITION_TYPE_BUY and (opt_tp - current_price < stop_level_dist): valid_tp = False
-                    if type_pos == mt5.POSITION_TYPE_SELL and (current_price - opt_tp < stop_level_dist): valid_tp = False
-                    
-                    if valid_tp and diff_tp > point * 30:
-                        request['tp'] = opt_tp
-                        changed = True
-                        logger.info(f"AI/Stats 更新 TP: {tp:.2f} -> {opt_tp:.2f}")
+                    if opt_tp > 0:
+                        diff_tp = abs(opt_tp - tp)
+                        valid_tp = True
+                        if type_pos == mt5.POSITION_TYPE_BUY and (opt_tp - current_price < stop_level_dist): valid_tp = False
+                        if type_pos == mt5.POSITION_TYPE_SELL and (current_price - opt_tp < stop_level_dist): valid_tp = False
+                        
+                        if valid_tp and diff_tp > point * 30:
+                            request['tp'] = opt_tp
+                            changed = True
+                            logger.info(f"AI/Stats 更新 TP: {tp:.2f} -> {opt_tp:.2f}")
 
                 # 如果没有明确价格，但有 ATR 倍数建议 (兼容旧逻辑或备用)，则计算
-                elif new_sl_multiplier > 0 or new_tp_multiplier > 0:
-                    # DEBUG: Replaced logic
-                    current_sl_dist = atr * new_sl_multiplier
-                    current_tp_dist = atr * new_tp_multiplier
-                    
-                    suggested_sl = 0.0
-                    suggested_tp = 0.0
-                    
-                    if type_pos == mt5.POSITION_TYPE_BUY:
-                        suggested_sl = current_price - current_sl_dist
-                        suggested_tp = current_price + current_tp_dist
-                    elif type_pos == mt5.POSITION_TYPE_SELL:
-                        suggested_sl = current_price + current_sl_dist
-                        suggested_tp = current_price - current_tp_dist
-                    
-                    # Normalize
-                    suggested_sl = self._normalize_price(suggested_sl)
-                    suggested_tp = self._normalize_price(suggested_tp)
-
-                    # 仅当差异显著时更新
-                    if suggested_sl > 0:
-                        diff_sl = abs(suggested_sl - sl)
-                        is_better_sl = False
-                        if type_pos == mt5.POSITION_TYPE_BUY and suggested_sl > sl: is_better_sl = True
-                        if type_pos == mt5.POSITION_TYPE_SELL and suggested_sl < sl: is_better_sl = True
-                        
-                        valid = True
-                        if type_pos == mt5.POSITION_TYPE_BUY and (current_price - suggested_sl < stop_level_dist): valid = False
-                        if type_pos == mt5.POSITION_TYPE_SELL and (suggested_sl - current_price < stop_level_dist): valid = False
-                        
-                        if valid and (diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5)):
-                            request['sl'] = suggested_sl
-                            changed = True
-                    
-                    if suggested_tp > 0 and abs(suggested_tp - tp) > point * 30:
-                        valid = True
-                        if type_pos == mt5.POSITION_TYPE_BUY and (suggested_tp - current_price < stop_level_dist): valid = False
-                        if type_pos == mt5.POSITION_TYPE_SELL and (current_price - suggested_tp < stop_level_dist): valid = False
-                        
-                        if valid:
-                            request['tp'] = suggested_tp
-                            changed = True
+                # REMOVED/SKIPPED to enforce "No Dynamic Movement"
+                # elif new_sl_multiplier > 0 or new_tp_multiplier > 0:
+                #     # DEBUG: Replaced logic
+                #     current_sl_dist = atr * new_sl_multiplier
+                #     current_tp_dist = atr * new_tp_multiplier
+                #     
+                #     suggested_sl = 0.0
+                #     suggested_tp = 0.0
+                #     
+                #     if type_pos == mt5.POSITION_TYPE_BUY:
+                #         suggested_sl = current_price - current_sl_dist
+                #         suggested_tp = current_price + current_tp_dist
+                #     elif type_pos == mt5.POSITION_TYPE_SELL:
+                #         suggested_sl = current_price + current_sl_dist
+                #         suggested_tp = current_price - current_tp_dist
+                #     
+                #     # Normalize
+                #     suggested_sl = self._normalize_price(suggested_sl)
+                #     suggested_tp = self._normalize_price(suggested_tp)
+                #
+                #     # 仅当差异显著时更新
+                #     if suggested_sl > 0:
+                #         diff_sl = abs(suggested_sl - sl)
+                #         is_better_sl = False
+                #         if type_pos == mt5.POSITION_TYPE_BUY and suggested_sl > sl: is_better_sl = True
+                #         if type_pos == mt5.POSITION_TYPE_SELL and suggested_sl < sl: is_better_sl = True
+                #         
+                #         valid = True
+                #         if type_pos == mt5.POSITION_TYPE_BUY and (current_price - suggested_sl < stop_level_dist): valid = False
+                #         if type_pos == mt5.POSITION_TYPE_SELL and (suggested_sl - current_price < stop_level_dist): valid = False
+                #         
+                #         if valid and (diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5)):
+                #             request['sl'] = suggested_sl
+                #             changed = True
+                #     
+                #     if suggested_tp > 0 and abs(suggested_tp - tp) > point * 30:
+                #         valid = True
+                #         if type_pos == mt5.POSITION_TYPE_BUY and (suggested_tp - current_price < stop_level_dist): valid = False
+                #         if type_pos == mt5.POSITION_TYPE_SELL and (current_price - suggested_tp < stop_level_dist): valid = False
+                #         
+                #         if valid:
+                #             request['tp'] = suggested_tp
+                #             changed = True
             
             # --- 2. 兜底移动止损 (Trailing Stop) ---
             # 已禁用，仅依赖 AI 更新
@@ -2435,9 +2478,15 @@ class AI_MT5_Bot:
                         qwen_sent_score = 0
                         qwen_sent_label = 'neutral'
                         try:
+                            # DEBUG: Verify method existence
+                            if not hasattr(self.qwen_client, 'analyze_market_sentiment'):
+                                logger.error(f"Method analyze_market_sentiment missing in {type(self.qwen_client)}")
+                                logger.error(f"Available methods: {[m for m in dir(self.qwen_client) if not m.startswith('__')]}")
+                            
                             qwen_sentiment = self.qwen_client.analyze_market_sentiment(market_snapshot)
-                            qwen_sent_score = qwen_sentiment.get('sentiment_score', 0)
-                            qwen_sent_label = qwen_sentiment.get('sentiment', 'neutral')
+                            if qwen_sentiment:
+                                qwen_sent_score = qwen_sentiment.get('sentiment_score', 0)
+                                qwen_sent_label = qwen_sentiment.get('sentiment', 'neutral')
                         except Exception as e:
                             logger.error(f"Sentiment Analysis Failed: {e}")
 
