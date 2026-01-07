@@ -658,7 +658,7 @@ class CryptoTradingBot:
         
         self.send_telegram_message(msg)
         
-        return df, final_signal, strategy, strength, opt_sl, opt_tp, risk_pct
+        return df, final_signal, strategy, strength, opt_sl, opt_tp, risk_pct, sl_tp_source
 
     def evaluate_comprehensive_params(self, params, df):
         """
@@ -1191,7 +1191,7 @@ class CryptoTradingBot:
         except Exception as e:
             logger.error(f"Execution Failed: {e}")
 
-    def execute_trade(self, signal, strategy, risk_pct, sl, tp):
+    def execute_trade(self, signal, strategy, risk_pct, sl, tp, sl_tp_source="auto"):
         """Execute trade based on analyzed signal"""
         # Check current positions
         positions = []
@@ -1254,18 +1254,21 @@ class CryptoTradingBot:
                      self._send_order(signal, 0, sl, tp, risk_pct, strategy=strategy)
                  else:
                      # Update SL/TP for existing
-                     logger.info("Updating SL/TP for existing position")
-                     if sl > 0 or tp > 0:
-                         amt = float(positions[0]['contracts'])
-                         self.data_processor.cancel_all_orders(self.symbol) # Cancel old SL/TP
-                         sl_side = 'sell' if pos_side == 'long' else 'buy'
-                         self.data_processor.place_sl_tp_order(self.symbol, sl_side, amt, sl_price=sl, tp_price=tp)
+                     if sl_tp_source == 'qwen':
+                         logger.info("Updating SL/TP for existing position (Source: Qwen)")
+                         if sl > 0 or tp > 0:
+                             amt = float(positions[0]['contracts'])
+                             self.data_processor.cancel_all_orders(self.symbol) # Cancel old SL/TP
+                             sl_side = 'sell' if pos_side == 'long' else 'buy'
+                             self.data_processor.place_sl_tp_order(self.symbol, sl_side, amt, sl_price=sl, tp_price=tp)
+                     else:
+                         logger.info("Skipping SL/TP update for existing position (Source: Auto/Dynamic disabled)")
 
     def run_once(self):
         try:
-            df, signal, strategy, strength, sl, tp, risk = self.analyze_market()
+            df, signal, strategy, strength, sl, tp, risk, sl_tp_source = self.analyze_market()
             if signal:
-                self.execute_trade(signal, strategy, risk, sl, tp)
+                self.execute_trade(signal, strategy, risk, sl, tp, sl_tp_source)
             # self.db_manager.perform_checkpoint() # Managed by external script
         except Exception as e:
             logger.error(f"Cycle Error: {e}", exc_info=True)
