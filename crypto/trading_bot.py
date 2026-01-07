@@ -542,15 +542,17 @@ class CryptoTradingBot:
         # SL/TP
         ref_price = latest['close']
         exit_conds = strategy.get('exit_conditions', {})
-        opt_sl = exit_conds.get('sl_price')
-        opt_tp = exit_conds.get('tp_price')
         
-        sl_tp_source = "qwen" if (opt_sl or opt_tp) else "auto"
-
-        if not opt_sl or not opt_tp:
-             calc_sl, calc_tp = self.calculate_optimized_sl_tp(final_signal, ref_price, latest.get('atr', 0), market_context=adv_res)
-             if not opt_sl: opt_sl = calc_sl
-             if not opt_tp: opt_tp = calc_tp
+        # Calculate optimized SL/TP using ensemble analysis (AI + Structure + Stats)
+        opt_sl, opt_tp = self.calculate_optimized_sl_tp(
+            final_signal, 
+            ref_price, 
+            latest.get('atr', 0), 
+            market_context=adv_res,
+            ai_exit_conds=exit_conds
+        )
+        
+        sl_tp_source = "qwen_ensemble"
              
         rr_str = "N/A"
         if opt_sl and opt_tp:
