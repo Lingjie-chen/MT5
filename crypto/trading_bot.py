@@ -397,11 +397,18 @@ class CryptoTradingBot:
         # --- Final Decision Logic (Qwen Only) ---
         qw_action = strategy.get('action', 'neutral').lower()
         final_signal = "neutral"
-        if qw_action in ['buy', 'add_buy', 'limit_buy', 'buy_limit']: final_signal = "buy" 
-        elif qw_action in ['sell', 'add_sell', 'limit_sell', 'sell_limit']: final_signal = "sell"
-        elif qw_action in ['close', 'close_buy', 'close_sell']: final_signal = "close"
-        elif qw_action == 'hold': final_signal = "hold"
-        elif qw_action == 'grid_start': final_signal = "grid_start"
+        
+        # Mapping Actions
+        if qw_action in ['buy', 'add_buy', 'limit_buy', 'buy_limit', 'close_sell_open_buy']: 
+            final_signal = "buy" 
+        elif qw_action in ['sell', 'add_sell', 'limit_sell', 'sell_limit', 'close_buy_open_sell']: 
+            final_signal = "sell"
+        elif qw_action in ['close', 'close_buy', 'close_sell']: 
+            final_signal = "close"
+        elif qw_action == 'hold': 
+            final_signal = "hold"
+        elif qw_action == 'grid_start': 
+            final_signal = "grid_start"
         
         # Grid Execution Logic
         if final_signal == 'grid_start':
