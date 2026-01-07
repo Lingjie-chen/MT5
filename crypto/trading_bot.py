@@ -36,16 +36,9 @@ logger = logging.getLogger(__name__)
 class HybridOptimizer:
     def __init__(self):
         self.weights = {
-            "qwen": 1.5, # Increased weight
+            "qwen": 1.5, 
             "crt": 0.8,
-            "price_equation": 0.6,
-            "tf_visual": 0.5,
-            "advanced_tech": 0.7,
-            "matrix_ml": 0.9,
             "smc": 1.1,
-            "mfh": 0.8,
-            "mtf": 0.8,
-            "ifvg": 0.7,
             "rvgi_cci": 0.6
         }
         self.history = []
@@ -57,6 +50,7 @@ class HybridOptimizer:
         details = {}
         
         for source, signal in signals.items():
+            if source not in self.weights: continue
             weight = self.weights.get(source, 0.5)
             val = 0
             if signal == 'buy': val = 1
@@ -105,23 +99,19 @@ class CryptoTradingBot:
             
         self.crt_analyzer = CRTAnalyzer(timeframe_htf=htf1)
         self.mtf_analyzer = MTFAnalyzer(htf1=htf1, htf2=htf2)
-        self.price_model = PriceEquationModel()
-        self.tf_analyzer = TimeframeVisualAnalyzer()
+        # self.price_model = PriceEquationModel() # Removed
+        # self.tf_analyzer = TimeframeVisualAnalyzer() # Removed
         self.advanced_adapter = AdvancedMarketAnalysisAdapter()
-        self.matrix_ml = MatrixMLAnalyzer()
+        # self.matrix_ml = MatrixMLAnalyzer() # Removed
         self.smc_analyzer = SMCAnalyzer()
-        self.mfh_analyzer = MFHAnalyzer()
+        # self.mfh_analyzer = MFHAnalyzer() # Removed
         self.advanced_analysis = AdvancedMarketAnalysis() # Legacy adapter
         
         self.hybrid_optimizer = HybridOptimizer()
         
-        # Optimization Engine Pool
+        # Optimization Engine Pool (Restricted)
         self.optimizers = {
-            "GWO": GWO(),
             "WOAm": WOAm(),
-            "DE": DE(),
-            "COAm": COAm(),
-            "BBO": BBO(),
             "TETA": TETA()
         }
         self.active_optimizer_name = "WOAm"
@@ -138,7 +128,6 @@ class CryptoTradingBot:
         # Initialize AI Clients
         self.ai_factory = AIClientFactory()
         self.qwen_client = self.ai_factory.get_client('qwen')
-        # DeepSeek client removed as requested
         
         # Telegram Configuration
         self.telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -298,21 +287,15 @@ class CryptoTradingBot:
         return final_risk # Returns risk percentage (e.g., 0.03 for 3%)
 
     def analyze_market(self):
-        """Full AI Market Analysis (Gold Logic)"""
+        """Full AI Market Analysis (Qwen Only)"""
         logger.info(f"Fetching data for {self.symbol}...")
         df = self.data_processor.get_historical_data(self.symbol, self.timeframe, limit=1000)
         
-        if df.empty: return None, None, None, 0, 0, 0, 0
+        if df.empty: return None, None, None, 0, 0, 0, 0, "auto"
             
         # Features
         df = self.data_processor.generate_features(df)
         
-        # Self-Learning Training
-        if len(df) > 2:
-            change = df['close'].iloc[-1] - df['close'].iloc[-2]
-            self.mfh_analyzer.train(change)
-            self.matrix_ml.train(change)
-            
         # Snapshot
         latest = df.iloc[-1]
         
@@ -361,119 +344,40 @@ class CryptoTradingBot:
             self.last_optimization_time = time.time()
 
         crt_res = self.crt_analyzer.analyze(self.symbol, latest, current_time, df_htf=df_htf1)
-        self.price_model.update(float(latest['close']))
-        
-        # Use optimized params for PEM
-        pem_fast = getattr(self.price_model, 'ma_fast_period', 108)
-        pem_slow = getattr(self.price_model, 'ma_slow_period', 60)
-        pem_adx = getattr(self.price_model, 'adx_threshold', 20)
-        pem_res = self.price_model.analyze(df, ma_fast_period=pem_fast, ma_slow_period=pem_slow, adx_threshold=pem_adx)
-        
-        tf_res = self.tf_analyzer.analyze(self.symbol, current_time, df_current=df)
         
         # HTF Data for MTF
-        # df_htf1 is already fetched (1h), df_htf2 (4h)
         mtf_res = self.mtf_analyzer.analyze(df, df_htf1, df_htf2) 
         
-        # Advanced Tech with Optimized Params
+        # Advanced Tech with Optimized Params (CCI/RVGI/IFVG)
         adv_res = self.advanced_adapter.analyze_full(df, params=self.short_term_params)
         adv_sig = adv_res['signal_info']['signal'] if adv_res else 'neutral'
         
-        # Matrix ML
-        ticks = [] 
-        ml_res = self.matrix_ml.predict(ticks)
-        
-        # SMC & MFH
+        # SMC
         smc_res = self.smc_analyzer.analyze(df)
-        mfh_res = self.mfh_analyzer.predict(df)
-        
-        # --- DeepSeek ---
-        current_positions = [] 
         
         # Performance Stats
         trade_stats = self.db_manager.get_trade_performance_stats(limit=50)
         
-        # Combine all advanced strategies for DeepSeek (now Qwen)
+        # Replaced DeepSeek with Qwen for structure analysis
+        # Only passing relevant tech signals to reduce noise
         extra_analysis = {
             "crt": crt_res, 
-            "pem": pem_res, 
             "mtf": mtf_res, 
             "adv": adv_res,
-            "matrix_ml": ml_res, 
             "smc": smc_res, 
-            "mfh": mfh_res,
-            "ifvg": adv_res.get('ifvg', {'active_zones': [], 'reasons': []}), # Extract IFVG explicitly
+            "ifvg": adv_res.get('ifvg', {'active_zones': [], 'reasons': []}),
             "active_params": self.short_term_params,
             "optimized_weights": self.hybrid_optimizer.weights
         }
         
-        # Replaced DeepSeek with Qwen for structure analysis
         structure = self.qwen_client.analyze_market_structure(market_snapshot)
         
-        # Update Grid Strategy with SMC Levels
-        # Extract SMC and IFVG levels for Grid
-        smc_grid_data = {
-            'ob': [],
-            'fvg': []
-        }
-        
-        # 1. From SMC Analyzer (if available in smc_res)
-        if 'structure' in smc_res:
-             # SMCAnalyzer usually returns structure state, but maybe we can enhance it to return levels
-             # Assuming smc_res might contain 'levels' or we parse them. 
-             # For now, let's rely on IFVG which provides zones.
-             pass
-             
-        # 2. From IFVG (Fair Value Gaps & Order Blocks Proxy)
-        if 'ifvg' in extra_analysis:
-            zones = extra_analysis['ifvg'].get('active_zones', [])
-            # Map zones to grid format
-            # Zone format: {'top': float, 'bottom': float, 'type': 'supply'/'demand'}
-            for z in zones:
-                z_type = 'bearish' if z['type'] == 'supply' else 'bullish'
-                smc_grid_data['ob'].append({
-                    'top': z['top'], 
-                    'bottom': z['bottom'], 
-                    'type': z_type
-                })
-                # Treat strong zones as OBs for grid placement
-        
-        # 3. From Qwen (if it returns specific levels)
-        if 'smc_signals' in structure: 
-             # Qwen returns 'smc_signals' with 'order_blocks' and 'fvgs'
-             if 'order_blocks' in structure['smc_signals']:
-                 # Map Qwen OBs to Grid format if needed, or they might be strings/dicts
-                 # Qwen returns list of dicts or strings. Let's assume list of dicts based on prompt.
-                 # We need to ensure they have 'top', 'bottom', 'type'.
-                 # If Qwen returns text, we might skip. If structured, we use.
-                 pass
-             
-        # DeepSeek Signal -> Qwen Signal Mapping
-        # Qwen returns 'market_structure' -> 'trend'
-        # And 'sentiment_analysis' -> 'sentiment'
-        
-        qwen_trend = structure.get('market_structure', {}).get('trend', 'neutral')
-        qwen_sentiment = structure.get('sentiment_analysis', {}).get('sentiment', 'neutral')
-        
-        ds_signal = 'neutral'
-        if qwen_trend == 'bullish': ds_signal = 'buy'
-        elif qwen_trend == 'bearish': ds_signal = 'sell'
-        
-        ds_score = int(structure.get('sentiment_analysis', {}).get('confidence', 0.0) * 100)
-        ds_pred = qwen_trend # Use trend as prediction
-
-             
         # --- Qwen Strategy ---
         technical_signals = {
-            "crt": crt_res, "price_equation": pem_res, "timeframe_analysis": tf_res,
-            "advanced_tech": adv_sig, "matrix_ml": ml_res['signal'],
-            "smc": smc_res['signal'], "mfh": mfh_res['signal'], "mtf": mtf_res['signal'],
-            "deepseek_analysis": {
-                "market_state": structure.get('market_state'),
-                "preliminary_signal": ds_signal,
-                "confidence": structure.get('signal_confidence'),
-                "prediction": ds_pred
-            },
+            "crt": crt_res['signal'], 
+            "advanced_tech": adv_sig, 
+            "smc": smc_res['signal'], 
+            "mtf": mtf_res['signal'],
             "performance_stats": trade_stats,
             "param_config": self.short_term_params
         }
@@ -490,21 +394,21 @@ class CryptoTradingBot:
             previous_analysis=self.latest_strategy # 传入上一次分析
         )
         
-        # --- Final Decision Logic (Gold Style) ---
+        # --- Final Decision Logic (Qwen Only) ---
         qw_action = strategy.get('action', 'neutral').lower()
         final_signal = "neutral"
         if qw_action in ['buy', 'add_buy', 'limit_buy', 'buy_limit']: final_signal = "buy" 
         elif qw_action in ['sell', 'add_sell', 'limit_sell', 'sell_limit']: final_signal = "sell"
         elif qw_action in ['close', 'close_buy', 'close_sell']: final_signal = "close"
         elif qw_action == 'hold': final_signal = "hold"
-        elif qw_action == 'grid_start': final_signal = "grid_start" # New Signal
-        
-        # ... (Consensus logic) ...
+        elif qw_action == 'grid_start': final_signal = "grid_start"
         
         # Grid Execution Logic
         if final_signal == 'grid_start':
             # Use Grid Strategy to generate plan
-            trend = 'bullish' if ds_pred == 'bullish' else 'bearish'
+            trend = structure.get('market_structure', {}).get('trend', 'neutral')
+            if trend == 'neutral': trend = 'bullish' # Default to bullish if neutral
+            
             atr = latest.get('atr', 0)
             if atr == 0: atr = latest['close'] * 0.01
             
@@ -531,22 +435,8 @@ class CryptoTradingBot:
             
             reason = "SMC Grid Deployment"
             
-        # Consensus Override
-        reason = strategy.get('reason', 'LLM Decision')
-        
-        # Prepare Technical Consensus List
-        tech_list = [crt_res['signal'], pem_res['signal'], adv_sig, ml_res['signal'], smc_res['signal'], mtf_res['signal']]
-        
-        if final_signal in ['hold', 'neutral']:
-            # 1. Qwen Sentiment Override (New)
-            if qwen_sent_score >= 0.8:
-                final_signal = 'buy'
-                reason = f"[Override] Qwen Sentiment Extreme Bullish ({qwen_sent_score})"
-            elif qwen_sent_score <= -0.8:
-                final_signal = 'sell'
-                reason = f"[Override] Qwen Sentiment Extreme Bearish ({qwen_sent_score})"
-
-            # DeepSeek Override removed
+        # Reason
+        reason = strategy.get('reason', strategy.get('strategy_rationale', 'Qwen Decision'))
         
         # Smart Exit
         if qw_action == 'close' and final_signal != 'close':
@@ -554,12 +444,12 @@ class CryptoTradingBot:
             reason = f"[Smart Exit] Qwen Profit Taking"
 
         # Strength Calc
-        strength = 60
+        strength = 70
+        tech_list = [crt_res['signal'], adv_sig, smc_res['signal'], mtf_res['signal']]
         valid_tech_count = sum(1 for s in tech_list if s != 'neutral')
         matching_count = sum(1 for s in tech_list if s == final_signal)
         if valid_tech_count > 0:
-            strength += (matching_count / valid_tech_count) * 40
-        if ds_signal == final_signal: strength = min(100, strength + 10)
+            strength += (matching_count / valid_tech_count) * 30
         
         # Save Analysis
         self.latest_strategy = strategy
@@ -569,9 +459,9 @@ class CryptoTradingBot:
         if final_signal != 'neutral':
              # Format: (timestamp, signals_dict, close_price)
              signals_dict = {
-                 "crt": crt_res['signal'], "pem": pem_res['signal'], "adv": adv_sig, 
-                 "ml": ml_res['signal'], "smc": smc_res['signal'], "mtf": mtf_res['signal'],
-                 "ds": ds_signal
+                 "crt": crt_res['signal'], "adv": adv_sig, 
+                 "smc": smc_res['signal'], "mtf": mtf_res['signal'],
+                 "qwen": final_signal
              }
              self.signal_history.append((current_time, signals_dict, float(latest['close'])))
              if len(self.signal_history) > 1000: self.signal_history.pop(0)
@@ -621,24 +511,14 @@ class CryptoTradingBot:
             )
         else:
             # Fallback to manual construction
-            ds_analysis_text = f"• Market State: {self.escape_markdown(structure.get('market_state', 'N/A'))}\n"
-            ds_analysis_text += f"• Signal: {self.escape_markdown(ds_signal.upper())} (Conf: {ds_score}/100)\n"
-            ds_analysis_text += f"• Prediction: {self.escape_markdown(ds_pred)}\n"
-            ds_analysis_text += f"• Reasoning: {self.escape_markdown(structure.get('reasoning', 'N/A'))}\n"
-            
             qw_reason = strategy.get('reason', strategy.get('rationale', 'Strategy Optimization'))
             qw_analysis_text = f"• Action: {self.escape_markdown(qw_action.upper())}\n"
             qw_analysis_text += f"• Logic: _{self.escape_markdown(qw_reason)}_\n"
-            if 'param_config' in strategy:
-                 qw_analysis_text += f"• Params: Updated by LLM\n"
             
             msg = (
                 f"🤖 *AI Crypto Strategy Report*\n"
                 f"Symbol: `{self.symbol}` | TF: `{self.timeframe}`\n"
                 f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
-                
-                f"🕵️ *DeepSeek Analysis*\n"
-                f"{ds_analysis_text}\n"
                 
                 f"🧙‍♂️ *Qwen Analysis*\n"
                 f"• Sentiment: {self.escape_markdown(qwen_sent_label.upper())} (Score: {qwen_sent_score})\n"
@@ -662,7 +542,7 @@ class CryptoTradingBot:
 
     def evaluate_comprehensive_params(self, params, df):
         """
-        Comprehensive Objective Function: Evaluates ALL dataframe-based strategy parameters together.
+        Comprehensive Objective Function: Evaluates strategy parameters together.
         params: Vector of parameter values corresponding to the defined structure.
         """
         # Global counter for progress logging
@@ -673,34 +553,22 @@ class CryptoTradingBot:
 
         # 1. Decode Parameters
         try:
+            # Revised for SMC, CCI/RVGI, IFVG (Restricted Models)
             p_smc_ma = int(params[0])
             p_smc_atr = params[1]
-            p_mfh_lr = params[2]
-            p_mfh_horizon = int(params[3])
-            p_pem_fast = int(params[4])
-            p_pem_slow = int(params[5])
-            p_pem_adx = params[6]
-            p_rvgi_sma = int(params[7])
-            p_rvgi_cci = int(params[8])
-            p_ifvg_gap = int(params[9])
+            p_rvgi_sma = int(params[2])
+            p_rvgi_cci = int(params[3])
+            p_ifvg_gap = int(params[4])
             
             # 2. Initialize Temporary Analyzers (Fresh State)
             tmp_smc = SMCAnalyzer()
             tmp_smc.ma_period = p_smc_ma
             tmp_smc.atr_threshold = p_smc_atr
             
-            tmp_mfh = MFHAnalyzer(learning_rate=p_mfh_lr)
-            tmp_mfh.horizon = p_mfh_horizon
-            
-            tmp_pem = PriceEquationModel()
-            tmp_pem.ma_fast_period = p_pem_fast
-            tmp_pem.ma_slow_period = p_pem_slow
-            tmp_pem.adx_threshold = p_pem_adx
-            
             tmp_adapter = AdvancedMarketAnalysisAdapter()
             
             # 3. Run Simulation
-            start_idx = max(p_smc_ma, p_pem_slow, 50) + 10
+            start_idx = max(p_smc_ma, 50) + 10
             if len(df) < start_idx + 50: return -9999
             
             balance = 10000.0
@@ -713,70 +581,32 @@ class CryptoTradingBot:
             # 1. RVGI Series (Vectorized)
             rvgi_series = tmp_adapter.calculate_rvgi_cci_series(df, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci)
             
-            # 2. MFH Features (Vectorized Batch)
-            mfh_features = tmp_mfh.prepare_features_batch(df)
-            
             # 3. Step Skipping
-            # Evaluate trade signals every 4 candles (1 hour) to speed up SMC/PEM/IFVG
+            # Evaluate trade signals every 4 candles (1 hour) to speed up
             eval_step = 4 
             
             for i in range(start_idx, len(df)-1):
                 curr_price = closes[i]
                 next_price = closes[i+1]
                 
-                # MFH Train (Must happen every step for consistency)
-                mfh_sig = "neutral"
-                if mfh_features is not None:
-                    # Get features for current step i
-                    feats = mfh_features[i]
-                    
-                    # Predict first (using current weights)
-                    pred = np.dot(tmp_mfh.weights, feats) + tmp_mfh.bias
-                    
-                    # Determine signal from prediction
-                    mfh_sig = "buy" if pred > 0.001 else "sell" if pred < -0.001 else "neutral"
-                    
-                    # Train (using PAST return)
-                    if i > p_mfh_horizon:
-                        past_ret = (closes[i] - closes[i-p_mfh_horizon]) / closes[i-p_mfh_horizon]
-                        target = past_ret
-                        
-                        if tmp_mfh.last_features is not None:
-                            err = target - tmp_mfh.last_prediction
-                            tmp_mfh.weights += tmp_mfh.learning_rate * err * tmp_mfh.last_features
-                            tmp_mfh.bias += tmp_mfh.learning_rate * err
-                        
-                        # Now Predict for *next*
-                        tmp_mfh.last_features = feats
-                        tmp_mfh.last_prediction = pred
-                
                 # Check Trade Condition (Skipping steps for speed)
                 if i % eval_step == 0:
                     sub_df = df.iloc[:i+1] # Still slicing, but 4x less often
                     
-                    # Update PEM (Fast update)
-                    tmp_pem.update(curr_price)
-                    
                     # Signals
-                    # 1. SMC (Heavy)
+                    # 1. SMC
                     smc_sig = tmp_smc.analyze(sub_df)['signal']
                     
-                    # 2. PEM (Medium - has rolling)
-                    pem_sig = tmp_pem.predict(sub_df)['signal']
-                    
-                    # 3. IFVG (Medium)
+                    # 2. IFVG
                     ifvg_sig = tmp_adapter.analyze_ifvg(sub_df, min_gap_points=p_ifvg_gap)['signal']
                     
-                    # 4. RVGI (Fast Lookup)
+                    # 3. RVGI (Fast Lookup)
                     rvgi_sig_val = rvgi_series.iloc[i]
                     rvgi_sig = 'buy' if rvgi_sig_val == 1 else 'sell' if rvgi_sig_val == -1 else 'neutral'
                     
-                    # 5. MFH (Already calc)
-                    # mfh_sig determined above
-                    
                     # Combine
                     votes = 0
-                    for s in [smc_sig, mfh_sig, pem_sig, ifvg_sig, rvgi_sig]:
+                    for s in [smc_sig, ifvg_sig, rvgi_sig]:
                         if s == 'buy': votes += 1
                         elif s == 'sell': votes -= 1
                     
@@ -818,9 +648,7 @@ class CryptoTradingBot:
             for i in range(len(df) - lookback, len(df)):
                 sub_df = df.iloc[:i+1].copy()
                 current_close = float(sub_df['close'].iloc[-1])
-                # Use current timestamp minus offset as approximation if index is not time
-                # But signal_history timestamp is mainly for ordering, so integer or rough time is ok.
-                # Let's try to get time from df if available
+                
                 ts = i 
                 if 'time' in sub_df.columns:
                     ts = sub_df['time'].iloc[-1]
@@ -828,22 +656,20 @@ class CryptoTradingBot:
                     ts = sub_df.index[-1].timestamp()
                 
                 # Run Technical Analyzers
-                # Note: We catch errors to prevent warmup from crashing bot
                 try:
                     smc_res = self.smc_analyzer.analyze(sub_df)
-                    pem_res = self.price_model.analyze(sub_df)
-                    adv_res = self.advanced_adapter.analyze(sub_df)
-                    ml_res = self.matrix_ml.predict(sub_df)
-                    mfh_res = self.mfh_analyzer.forecast(sub_df)
+                    adv_res = self.advanced_adapter.analyze_full(sub_df, params=self.short_term_params)
+                    adv_sig = adv_res['signal_info']['signal'] if adv_res else 'neutral'
+                    
+                    # CRT requires df_htf, skipping for warmup simplicity or using same df
+                    # crt_res = self.crt_analyzer.analyze(...) 
                     
                     signals_dict = {
                         "crt": 'neutral', 
-                        "pem": pem_res.get('signal', 'neutral'), 
-                        "adv": adv_res.get('signal', 'neutral'), 
-                        "ml": ml_res.get('signal', 'neutral'), 
+                        "adv": adv_sig, 
                         "smc": smc_res.get('signal', 'neutral'), 
                         "mtf": 'neutral',
-                        "ds": 'neutral'
+                        "qwen": 'neutral'
                     }
                     self.signal_history.append((ts, signals_dict, current_close))
                 except Exception:
@@ -869,22 +695,17 @@ class CryptoTradingBot:
             logger.warning(f"数据不足 (Count: {len(df) if df is not None else 0}), 跳过优化")
             return
             
-        # 2. Define Search Space (10 Dimensions)
-        # smc_ma, smc_atr, mfh_lr, mfh_horizon, pem_fast, pem_slow, pem_adx, rvgi_sma, rvgi_cci, ifvg_gap
+        # 2. Define Search Space (5 Dimensions)
+        # smc_ma, smc_atr, rvgi_sma, rvgi_cci, ifvg_gap
         bounds = [
             (100, 300),     # smc_ma
             (0.001, 0.005), # smc_atr
-            (0.001, 0.1),   # mfh_lr
-            (3, 10),        # mfh_horizon
-            (10, 50),       # pem_fast
-            (100, 300),     # pem_slow
-            (15.0, 30.0),   # pem_adx
             (10, 50),       # rvgi_sma
             (10, 30),       # rvgi_cci
             (10, 100)       # ifvg_gap
         ]
         
-        steps = [10, 0.0005, 0.005, 1, 5, 10, 1.0, 2, 2, 5]
+        steps = [10, 0.0005, 2, 2, 5]
         
         # 3. Objective
         def objective(params):
@@ -912,20 +733,12 @@ class CryptoTradingBot:
             self.smc_analyzer.ma_period = int(best_params[0])
             self.smc_analyzer.atr_threshold = best_params[1]
             
-            self.mfh_analyzer.learning_rate = best_params[2]
-            self.mfh_analyzer.horizon = int(best_params[3])
-            
-            self.price_model.ma_fast_period = int(best_params[4])
-            self.price_model.ma_slow_period = int(best_params[5])
-            self.price_model.adx_threshold = best_params[6]
-            
-            self.short_term_params['rvgi_sma'] = int(best_params[7])
-            self.short_term_params['rvgi_cci'] = int(best_params[8])
-            self.short_term_params['ifvg_gap'] = int(best_params[9])
+            self.short_term_params['rvgi_sma'] = int(best_params[2])
+            self.short_term_params['rvgi_cci'] = int(best_params[3])
+            self.short_term_params['ifvg_gap'] = int(best_params[4])
             
             logger.info(f"Full Strategy Params Updated (Score: {best_score:.4f})")
             logger.info(f"SMC: MA={int(best_params[0])}, ATR={best_params[1]:.4f}")
-            logger.info(f"PEM: Fast={int(best_params[4])}, Slow={int(best_params[5])}, ADX={best_params[6]:.1f}")
             logger.info(f"Short-Term: {self.short_term_params}")
             
         except Exception as e:
