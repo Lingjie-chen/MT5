@@ -248,11 +248,11 @@ class QwenClient:
     - **position_size**: 给出具体的资金比例 (0.01 - 0.1)。
     - **strategy_rationale**: 用**中文**详细解释：SMC结构分析 -> 为什么选择该方向 -> 马丁加仓计划/止盈计划 -> 参考的MAE/MFE数据。
     
-    请以JSON格式返回结果，包含以下字段：
+    請以JSON格式返回结果，包含以下字段：
     - action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell", "grid_start")
     - entry_conditions: dict ("limit_price": float)
     - exit_conditions: dict ("sl_price": float, "tp_price": float)
-    - position_management: dict ("martingale_multiplier": float, "grid_step_logic": str)
+    - position_management: dict ("martingale_multiplier": float, "grid_step_logic": str, "recommended_grid_step_pips": float)
     - position_size: float
     - leverage: int
     - signal_strength: int

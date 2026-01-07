@@ -869,7 +869,14 @@ class AI_MT5_Bot:
             symbol_info = mt5.symbol_info(self.symbol)
             point = symbol_info.point if symbol_info else 0.01
             
-            grid_orders = self.grid_strategy.generate_grid_plan(current_price, direction, atr, point=point)
+            # 提取 LLM 建议的动态网格间距 (Pips)
+            dynamic_step = None
+            if self.latest_strategy:
+                pos_mgmt = self.latest_strategy.get('position_management', {})
+                if pos_mgmt:
+                    dynamic_step = pos_mgmt.get('recommended_grid_step_pips')
+            
+            grid_orders = self.grid_strategy.generate_grid_plan(current_price, direction, atr, point=point, dynamic_step_pips=dynamic_step)
             
             # 4. 执行挂单
             if grid_orders:
