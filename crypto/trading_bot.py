@@ -471,6 +471,16 @@ class CryptoTradingBot:
         # Reason
         reason = strategy.get('reason', strategy.get('strategy_rationale', 'Qwen Decision'))
         
+        # Check Consistency with Previous
+        is_consistent = False
+        if self.latest_strategy:
+            prev_action = self.latest_strategy.get('action', 'neutral').lower()
+            if prev_action == qw_action:
+                # If action is same, check if rationale implies consistency
+                if "维持" in reason or "consistent" in reason.lower() or "unchanged" in reason.lower():
+                    is_consistent = True
+                    logger.info(f"⚖️ 决策保持一致: {qw_action.upper()} (理由: {reason[:50]}...)")
+
         # Smart Exit
         if qw_action == 'close' and final_signal != 'close':
             final_signal = 'close'

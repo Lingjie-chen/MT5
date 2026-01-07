@@ -262,6 +262,11 @@ class QwenClient:
     5. **CLOSE_BUY_OPEN_SELL / CLOSE_SELL_OPEN_BUY**: **反转信号**。当判断当前趋势已完全逆转，需要立即平掉当前仓位并反向开仓。
     6. **GRID_START**: 预埋网格单 (Limit Orders) 在未来的OB/FVG位置。
     
+    **一致性检查 (Consistency Check)**:
+    - 请务必参考 `Previous Analysis` (上一次分析结果)。
+    - 如果当前市场结构、SMC信号和趋势与上一次相比**没有显著变化**，请保持决策一致 (Maintain Consistency)。
+    - 如果决定保持一致，请在 `strategy_rationale` 中明确说明："市场结构未变，维持上一次 [Action] 决策"。
+    
     输出要求：
     - **limit_price**: 挂单必填。
     - **sl_price / tp_price**: 必填，基于MAE/MFE和SMC结构。
@@ -269,7 +274,7 @@ class QwenClient:
     - **contract_quantity**: 计算具体的合约张数（基于每张0.1 ETH）。
     - **leverage**: 建议的杠杆倍数（1-100）。
     - **recommended_grid_step_pips**: 建议的网格间距(Pip/Points)，基于ATR和SMC结构分析。
-    - **strategy_rationale**: 用**中文**详细解释：SMC结构分析 -> 为什么选择该方向 -> 马丁加仓计划/止盈计划 -> 参考的MAE/MFE数据。
+    - **strategy_rationale**: 用**中文**详细解释：SMC结构分析 -> 为什么选择该方向 -> 马丁加仓计划/止盈计划 -> 参考的MAE/MFE数据。如果维持原判，请注明。
     
     请以JSON格式返回结果，包含以下字段：
     - action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell", "grid_start", "close_buy_open_sell", "close_sell_open_buy")
