@@ -2336,8 +2336,8 @@ class AI_MT5_Bot:
                 # 如果是新 K 线 或者 这是第一次运行 (last_bar_time 为 0)
                 # 用户需求: 交易周期改为 6 分钟，大模型 6 分钟分析
                 # is_new_bar = current_bar_time != self.last_bar_time
-                # 交易分析触发器: 360秒 (6分钟)
-                should_trade_analyze = (time.time() - self.last_analysis_time >= 360) or (self.last_analysis_time == 0)
+                # 交易分析触发器: 60秒 (1分钟)
+                should_trade_analyze = (time.time() - self.last_analysis_time >= 60) or (self.last_analysis_time == 0)
                 
                 if should_trade_analyze:
                     # Run Optimization if needed (Every 4 hours)
@@ -2349,7 +2349,7 @@ class AI_MT5_Bot:
                     if self.last_analysis_time == 0:
                         logger.info("首次运行，立即执行分析...")
                     else:
-                        logger.info(f"执行周期性分析 (360s)...")
+                        logger.info(f"执行周期性分析 (60s)...")
                     
                     self.last_bar_time = current_bar_time
                     self.last_analysis_time = time.time()
