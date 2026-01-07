@@ -655,6 +655,25 @@ class AI_MT5_Bot:
                         should_add = True
                 
                 if should_add:
+                    # --- 加仓距离保护 ---
+                    can_add = True
+                    min_dist_points = 200 # 20 pips
+                    symbol_info = mt5.symbol_info(self.symbol)
+                    point = symbol_info.point if symbol_info else 0.01
+                    current_check_price = tick.ask if is_buy_pos else tick.bid
+                    
+                    for existing in positions:
+                        if existing.magic == self.magic_number and existing.type == pos.type:
+                            dist = abs(existing.price_open - current_check_price) / point
+                            if dist < min_dist_points:
+                                logger.warning(f"加仓保护: 距离现有持仓太近 ({dist:.0f} < {min_dist_points}), 跳过.")
+                                can_add = False
+                                break
+                    
+                    if not can_add:
+                        continue
+                    # -------------------
+
                     logger.info(f"执行加仓 #{pos.ticket} 方向 (Action: {llm_action})")
                     # 加仓逻辑复用开仓逻辑，但可能调整手数
                     self._send_order(
