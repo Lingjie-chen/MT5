@@ -541,13 +541,7 @@ class CryptoTradingBot:
                 final_signal = 'sell'
                 reason = f"[Override] Qwen Sentiment Extreme Bearish ({qwen_sent_score})"
 
-            # 2. DeepSeek Override
-            elif ds_signal in ['buy', 'sell'] and ds_score >= 80:
-                final_signal = ds_signal
-                reason = f"[Override] DeepSeek High Confidence ({ds_score})"
-            
-            # 3. (Deleted) Technical Consensus Override
-            # Users request: Decision fully driven by LLMs
+            # DeepSeek Override removed
         
         # Smart Exit
         if qw_action == 'close' and final_signal != 'close':
