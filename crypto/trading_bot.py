@@ -185,8 +185,8 @@ class CryptoTradingBot:
         except Exception as e:
             logger.error(f"Error sending Telegram message: {e}")
 
-    def calculate_optimized_sl_tp(self, trade_type, price, atr, market_context=None):
-        """Calculate optimized SL/TP based on ATR, MFE/MAE stats, and market structure"""
+    def calculate_optimized_sl_tp(self, trade_type, price, atr, market_context=None, ai_exit_conds=None):
+        """Calculate optimized SL/TP based on ATR, MFE/MAE stats, market structure, and AI suggestions"""
         if atr <= 0: atr = price * 0.01 
             
         mfe_tp_dist = atr * 2.0
@@ -223,25 +223,51 @@ class CryptoTradingBot:
             if candidates:
                 struct_tp_price = min(candidates) if is_buy else max(candidates)
 
+        # AI Suggestions (Ensemble Analysis)
+        ai_sl = 0.0
+        ai_tp = 0.0
+        if ai_exit_conds:
+            ai_sl = ai_exit_conds.get('sl_price', 0.0)
+            ai_tp = ai_exit_conds.get('tp_price', 0.0)
+
         final_sl = 0.0
         final_tp = 0.0
         
         if 'buy' in trade_type:
             base_tp = price + mfe_tp_dist
             base_sl = price - mae_sl_dist
-            if struct_tp_price > price:
+            
+            # SL Priority: AI -> Structure -> Statistical
+            if ai_sl > 0 and ai_sl < price:
+                final_sl = ai_sl
+            else:
+                final_sl = base_sl
+            
+            # TP Priority: AI -> Structure -> Statistical
+            if ai_tp > 0 and ai_tp > price:
+                final_tp = ai_tp
+            elif struct_tp_price > price:
                 final_tp = struct_tp_price - (atr * 0.1) if struct_tp_price < base_tp else base_tp
             else:
                 final_tp = base_tp
-            final_sl = base_sl
-        else:
+                
+        else: # sell
             base_tp = price - mfe_tp_dist
             base_sl = price + mae_sl_dist
-            if struct_tp_price > 0 and struct_tp_price < price:
+            
+            # SL Priority: AI -> Structure -> Statistical
+            if ai_sl > 0 and ai_sl > price:
+                final_sl = ai_sl
+            else:
+                final_sl = base_sl
+                
+            # TP Priority: AI -> Structure -> Statistical
+            if ai_tp > 0 and ai_tp < price:
+                final_tp = ai_tp
+            elif struct_tp_price > 0 and struct_tp_price < price:
                 final_tp = struct_tp_price + (atr * 0.1) if struct_tp_price > base_tp else base_tp
             else:
                 final_tp = base_tp
-            final_sl = base_sl
             
         return final_sl, final_tp
 
