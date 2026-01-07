@@ -65,10 +65,11 @@ class CryptoGridStrategy:
             
         logger.info(f"Updated SMC Levels for Grid: {self.smc_levels}")
 
-    def generate_grid_plan(self, current_price, trend_direction, volatility_atr):
+    def generate_grid_plan(self, current_price, trend_direction, volatility_atr, custom_step=None):
         """
         Generate a grid plan based on SMC levels and Trend.
         This focuses on "Smart Grid" placement - placing orders at key levels rather than fixed spacing.
+        custom_step: Optional fixed step size (in price units) suggested by AI.
         """
         self.grid_orders = []
         
@@ -104,17 +105,24 @@ class CryptoGridStrategy:
             # Priority 1: SMC Levels
             key_levels = sorted([p for p in supports if p >= lower_bound and p < current_price], reverse=True)
             
-            # Priority 2: Fill gaps with arithmetic spacing if SMC levels are sparse
-            if len(key_levels) < 3:
+            # Priority 2: Fill gaps with arithmetic spacing if SMC levels are sparse or Custom Step provided
+            if custom_step and custom_step > 0:
+                # Use AI recommended step
+                num_steps = 5
+                arithmetic_levels = [current_price - custom_step * i for i in range(1, num_steps + 1)]
+                # Merge and sort (prioritize SMC, but ensure we have steps)
+                key_levels = sorted(list(set(key_levels + arithmetic_levels)), reverse=True)
+            elif len(key_levels) < 3:
                 step = (current_price - lower_bound) / 5
                 arithmetic_levels = [current_price - step * i for i in range(1, 6)]
                 # Merge and sort
                 key_levels = sorted(list(set(key_levels + arithmetic_levels)), reverse=True)
             
             for level in key_levels:
+                if level <= 0: continue
                 self.grid_orders.append({
                     'price': level,
-                    'type': 'buy',
+                    'type': 'buy', # Should be limit_buy really, but 'buy' + limit type is handled
                     'reason': 'SMC Support / Grid Step'
                 })
                 
@@ -123,7 +131,12 @@ class CryptoGridStrategy:
             # Place sell orders from current price up to upper bound
             key_levels = sorted([p for p in resistances if p <= upper_bound and p > current_price])
             
-            if len(key_levels) < 3:
+            if custom_step and custom_step > 0:
+                 # Use AI recommended step
+                num_steps = 5
+                arithmetic_levels = [current_price + custom_step * i for i in range(1, num_steps + 1)]
+                key_levels = sorted(list(set(key_levels + arithmetic_levels)))
+            elif len(key_levels) < 3:
                 step = (upper_bound - current_price) / 5
                 arithmetic_levels = [current_price + step * i for i in range(1, 6)]
                 key_levels = sorted(list(set(key_levels + arithmetic_levels)))

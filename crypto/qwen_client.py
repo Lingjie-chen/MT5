@@ -259,7 +259,8 @@ class QwenClient:
     2. **BUY / SELL**: 出现SMC信号，首单入场。
     3. **ADD_BUY / ADD_SELL**: 逆势加仓。**仅当**：(a) 已有持仓且浮亏; (b) 价格到达下一个SMC支撑/阻力位; (c) 距离上一单有足够间距(>ATR)。
     4. **CLOSE**: 达到整体止盈目标，或SMC结构完全破坏(止损)。
-    5. **GRID_START**: 预埋网格单 (Limit Orders) 在未来的OB/FVG位置。
+    5. **CLOSE_BUY_OPEN_SELL / CLOSE_SELL_OPEN_BUY**: **反转信号**。当判断当前趋势已完全逆转，需要立即平掉当前仓位并反向开仓。
+    6. **GRID_START**: 预埋网格单 (Limit Orders) 在未来的OB/FVG位置。
     
     输出要求：
     - **limit_price**: 挂单必填。
@@ -267,13 +268,14 @@ class QwenClient:
     - **position_size**: 给出具体的资金比例 (0.005 - 0.05)。
     - **contract_quantity**: 计算具体的合约张数（基于每张0.1 ETH）。
     - **leverage**: 建议的杠杆倍数（1-100）。
+    - **recommended_grid_step_pips**: 建议的网格间距(Pip/Points)，基于ATR和SMC结构分析。
     - **strategy_rationale**: 用**中文**详细解释：SMC结构分析 -> 为什么选择该方向 -> 马丁加仓计划/止盈计划 -> 参考的MAE/MFE数据。
     
     请以JSON格式返回结果，包含以下字段：
-    - action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell", "grid_start")
+    - action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell", "grid_start", "close_buy_open_sell", "close_sell_open_buy")
     - entry_conditions: dict ("limit_price": float, "trigger_type": "market/limit")
     - exit_conditions: dict ("sl_price": float, "tp_price": float)
-    - position_management: dict ("martingale_multiplier": float, "grid_step_logic": str)
+    - position_management: dict ("martingale_multiplier": float, "grid_step_logic": str, "recommended_grid_step_pips": float)
     - position_size: float (资金比例 0.005-0.05)
     - contract_quantity: int (合约张数)
     - leverage: int (杠杆倍数 1-100)
