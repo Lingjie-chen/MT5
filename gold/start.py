@@ -2019,7 +2019,20 @@ class AI_MT5_Bot:
             
             # Priority: AI -> Structure -> Statistical
             if ai_sl > 0:
-                final_sl = ai_sl
+                # [Anti-Hunt Protection] Check if AI SL is too close (e.g. within 0.8 ATR)
+                # User complaint: SL hit then reversal. 
+                # If AI SL is too tight, we widen it to at least 0.8 ATR or use structure if safer.
+                sl_dist = abs(price - ai_sl)
+                min_safe_dist = atr * 0.8 # Minimum 0.8 ATR buffer
+                
+                if sl_dist < min_safe_dist:
+                    logger.info(f"AI SL {ai_sl} too close ({sl_dist/atr:.2f} ATR), widening to {min_safe_dist/atr:.2f} ATR")
+                    if 'buy' in trade_type:
+                        final_sl = min(ai_sl, price - min_safe_dist)
+                    else:
+                        final_sl = max(ai_sl, price + min_safe_dist)
+                else:
+                    final_sl = ai_sl
             elif struct_sl_price > 0:
                 final_sl = struct_sl_price if (price - struct_sl_price) >= min_sl_buffer else (price - min_sl_buffer)
             else:
