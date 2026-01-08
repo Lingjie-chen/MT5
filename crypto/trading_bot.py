@@ -19,6 +19,7 @@ from .advanced_analysis import (
 )
 from .optimization import GWO, WOAm, DE, COAm, BBO, TETA
 from .grid_strategy import CryptoGridStrategy
+from file_watcher import FileWatcher
 
 # Load environment variables
 load_dotenv()

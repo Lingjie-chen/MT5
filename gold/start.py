@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
+from file_watcher import FileWatcher
 
 # Try importing MetaTrader5
 try:
@@ -2255,6 +2256,15 @@ class AI_MT5_Bot:
         """主循环"""
         if not self.initialize_mt5():
             return
+            
+        # Start File Watcher
+        try:
+            # Watch the gold package directory
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            self.watcher = FileWatcher([current_dir])
+            self.watcher.start()
+        except Exception as e:
+            logger.error(f"Failed to start FileWatcher: {e}")
 
         logger.info(f"启动 AI 自动交易机器人 - {self.symbol}")
         self.send_telegram_message(f"🤖 *AI Bot Started*\nSymbol: `{self.symbol}`\nTimeframe: `{self.timeframe}`")
