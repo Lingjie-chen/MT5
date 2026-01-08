@@ -1185,6 +1185,9 @@ class CryptoTradingBot:
 
     def start(self):
         self.is_running = True
+        self.last_bar_time = 0
+        self.last_analysis_time = 0
+        
         try:
             self.sync_account_history() # Sync on start
             
@@ -1197,9 +1200,34 @@ class CryptoTradingBot:
             
             logger.info(f"Bot started for {self.symbol}")
             while self.is_running:
-                self.run_once()
-                logger.info(f"Cycle completed. Sleeping for {self.interval}s...")
-                time.sleep(self.interval)
+                try:
+                    # Check for new bar
+                    # Fetch just the latest bar to check timestamp
+                    latest_bar_df = self.data_processor.get_historical_data(self.symbol, self.timeframe, limit=1)
+                    
+                    if latest_bar_df is not None and not latest_bar_df.empty:
+                        current_bar_time = latest_bar_df.index[-1].timestamp()
+                        
+                        # Trigger on new bar or first run
+                        if current_bar_time != self.last_bar_time:
+                            logger.info(f"New Bar detected: {datetime.fromtimestamp(current_bar_time)}")
+                            self.last_bar_time = current_bar_time
+                            self.last_analysis_time = time.time()
+                            
+                            self.run_once()
+                            logger.info("Analysis cycle completed.")
+                        else:
+                            # Wait before checking again (e.g. 10s)
+                            # We don't need to sleep 'interval' anymore, just poll for new bar
+                            time.sleep(10) 
+                    else:
+                        logger.warning("Failed to fetch latest bar. Retrying in 10s...")
+                        time.sleep(10)
+                        
+                except Exception as e:
+                    logger.error(f"Loop error: {e}")
+                    time.sleep(10)
+                    
         except KeyboardInterrupt:
             logger.info("Bot stopped by user.")
         except Exception as e:
