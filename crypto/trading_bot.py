@@ -71,7 +71,7 @@ class HybridOptimizer:
         return final_signal, final_score, self.weights
 
 class CryptoTradingBot:
-    def __init__(self, symbol='ETH/USDT', timeframe='1h', interval=3600):
+    def __init__(self, symbol='ETH/USDT', timeframe='15m', interval=900):
         """
         Initialize the Crypto Trading Bot
         """
@@ -1180,5 +1180,5 @@ class CryptoTradingBot:
             self.is_running = False
 
 if __name__ == "__main__":
-    bot = CryptoTradingBot(symbol='ETH/USDT:USDT', timeframe='1h', interval=360) 
+    bot = CryptoTradingBot(symbol='ETH/USDT:USDT', timeframe='15m', interval=900) 
     bot.start()

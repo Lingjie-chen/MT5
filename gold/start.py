@@ -2798,5 +2798,5 @@ if __name__ == "__main__":
     else:
         symbol = "GOLD" # 默认改为黄金
         
-    bot = AI_MT5_Bot(symbol=symbol)
+    bot = AI_MT5_Bot(symbol=symbol, timeframe=mt5.TIMEFRAME_M15)
     bot.run()
