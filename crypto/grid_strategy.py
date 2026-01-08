@@ -65,11 +65,12 @@ class CryptoGridStrategy:
             
         logger.info(f"Updated SMC Levels for Grid: {self.smc_levels}")
 
-    def generate_grid_plan(self, current_price, trend_direction, volatility_atr, custom_step=None):
+    def generate_grid_plan(self, current_price, trend_direction, volatility_atr, custom_step=None, grid_level_tps=None):
         """
         Generate a grid plan based on SMC levels and Trend.
         This focuses on "Smart Grid" placement - placing orders at key levels rather than fixed spacing.
         custom_step: Optional fixed step size (in price units) suggested by AI.
+        grid_level_tps: Optional list of TP prices (or offsets) for each grid level.
         """
         self.grid_orders = []
         
@@ -118,12 +119,28 @@ class CryptoGridStrategy:
                 # Merge and sort
                 key_levels = sorted(list(set(key_levels + arithmetic_levels)), reverse=True)
             
-            for level in key_levels:
+            for i, level in enumerate(key_levels):
                 if level <= 0: continue
+                
+                # Dynamic TP Calculation
+                tp = None
+                if grid_level_tps and len(grid_level_tps) > 0:
+                    # Use provided TP (assuming it's absolute price or offset?)
+                    # If AI returns explicit prices, use them. If offsets, calculate.
+                    # Assuming AI returns optimized absolute TP prices for simplicity, or offsets if small.
+                    # Let's handle generic numeric values:
+                    val = grid_level_tps[i] if i < len(grid_level_tps) else grid_level_tps[-1]
+                    
+                    if val > level: # Absolute price
+                        tp = val
+                    else: # Offset
+                        tp = level + val
+                
                 self.grid_orders.append({
                     'price': level,
                     'type': 'buy', # Should be limit_buy really, but 'buy' + limit type is handled
-                    'reason': 'SMC Support / Grid Step'
+                    'reason': 'SMC Support / Grid Step',
+                    'tp': tp
                 })
                 
         elif trend_direction == 'bearish':
@@ -141,11 +158,22 @@ class CryptoGridStrategy:
                 arithmetic_levels = [current_price + step * i for i in range(1, 6)]
                 key_levels = sorted(list(set(key_levels + arithmetic_levels)))
                 
-            for level in key_levels:
+            for i, level in enumerate(key_levels):
+                # Dynamic TP Calculation
+                tp = None
+                if grid_level_tps and len(grid_level_tps) > 0:
+                    val = grid_level_tps[i] if i < len(grid_level_tps) else grid_level_tps[-1]
+                    
+                    if val > 0 and val < level: # Absolute price below entry (for short)
+                        tp = val
+                    else: # Offset (positive number)
+                        tp = level - val
+
                 self.grid_orders.append({
                     'price': level,
                     'type': 'sell',
-                    'reason': 'SMC Resistance / Grid Step'
+                    'reason': 'SMC Resistance / Grid Step',
+                    'tp': tp
                 })
         
         return self.grid_orders

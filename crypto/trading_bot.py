@@ -460,11 +460,21 @@ class CryptoTradingBot:
             # Extract recommended step
             pos_mgmt = strategy.get('position_management', {})
             rec_step = pos_mgmt.get('recommended_grid_step_pips')
+            grid_level_tps = pos_mgmt.get('grid_level_tp_pips') # Extract dynamic TPs
+
             try:
                 if rec_step: rec_step = float(rec_step)
             except: rec_step = None
+            
+            # Extract TPs
+            try:
+                if grid_level_tps and isinstance(grid_level_tps, list):
+                    grid_level_tps = [float(x) for x in grid_level_tps]
+                else:
+                    grid_level_tps = None
+            except: grid_level_tps = None
 
-            grid_plan = self.grid_strategy.generate_grid_plan(latest['close'], trend, atr, custom_step=rec_step)
+            grid_plan = self.grid_strategy.generate_grid_plan(latest['close'], trend, atr, custom_step=rec_step, grid_level_tps=grid_level_tps)
             
             # Calculate sizing
             balance = self.data_processor.get_account_balance('USDT')
@@ -494,12 +504,26 @@ class CryptoTradingBot:
                         
                     logger.info(f"Placing Grid Order: {order['type']} {num_contracts} contracts ({raw_amount_coin:.4f} coins) @ {order['price']:.2f}")
                     
+                    # Construct Params with attached TP if available
+                    order_params = {}
+                    if order.get('tp'):
+                        # OKX V5 attachAlgoOrds
+                        order_params['attachAlgoOrds'] = [
+                            {
+                                'tpTriggerPx': str(order['tp']),
+                                'tpOrdPx': '-1', # Market price when triggered
+                                'tpTriggerPxType': 'last'
+                            }
+                        ]
+                        logger.info(f"  > Attaching Dynamic TP: {order['tp']:.2f}")
+
                     self.data_processor.create_order(
                         self.symbol, 
                         order['type'], 
                         num_contracts, 
                         type='limit', 
-                        price=order['price']
+                        price=order['price'],
+                        params=order_params
                     )
                 except Exception as e:
                     logger.error(f"Grid Order Failed: {e}")
