@@ -228,7 +228,10 @@ class CryptoTradingBot:
         ai_tp = 0.0
         if ai_exit_conds:
             ai_sl = ai_exit_conds.get('sl_price', 0.0)
+            if ai_sl is None: ai_sl = 0.0
+            
             ai_tp = ai_exit_conds.get('tp_price', 0.0)
+            if ai_tp is None: ai_tp = 0.0
 
         final_sl = 0.0
         final_tp = 0.0
