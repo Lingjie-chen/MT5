@@ -1379,7 +1379,7 @@ class AI_MT5_Bot:
             # 如果差异很大且不是 0，说明用户手动干预了
             # 为了简化，我们设定规则: 只有当 AI 建议的新 SL/TP 明显优于当前设置，或者当前设置明显偏离风险控制时才强制更新
             
-            allow_update = False # 强制禁用动态更新 (User Request: Stop dynamic SL/TP movement)
+            allow_update = True # Enabled per User Request (Dynamic AI Update)
             
             if allow_update and has_new_params:
                 # 使用 calculate_optimized_sl_tp 进行统一计算和验证
@@ -2056,7 +2056,18 @@ class AI_MT5_Bot:
             base_sl = price + mae_sl_dist
             
             if ai_sl > 0:
-                final_sl = ai_sl
+                # [Anti-Hunt Protection]
+                sl_dist = abs(price - ai_sl)
+                min_safe_dist = atr * 0.8 
+                
+                if sl_dist < min_safe_dist:
+                    logger.info(f"AI SL {ai_sl} too close ({sl_dist/atr:.2f} ATR), widening to {min_safe_dist/atr:.2f} ATR")
+                    if 'buy' in trade_type:
+                         final_sl = min(ai_sl, price - min_safe_dist)
+                    else:
+                         final_sl = max(ai_sl, price + min_safe_dist)
+                else:
+                    final_sl = ai_sl
             elif struct_sl_price > 0:
                 final_sl = struct_sl_price if (struct_sl_price - price) >= min_sl_buffer else (price + min_sl_buffer)
             else:
