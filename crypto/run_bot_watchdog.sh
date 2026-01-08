@@ -1,18 +1,21 @@
 #!/bin/bash
 
-# 切换到脚本所在目录
+# Set terminal title
+echo -e "\033]0;AI Crypto Trading Bot Watchdog\007"
+
+# Switch to script directory
 cd "$(dirname "$0")"
 
-
-# 切换到上级目录(项目根目录)，以便作为模块运行
+# Switch to parent directory (project root)
 cd ..
 
 while true; do
     echo "[$(date)] Starting Crypto Trading Bot..."
     echo "---------------------------------------------------"
     
-    # 以模块方式运行，确保包导入正确
-    python -m crypto.trading_bot "$@"
+    # Run as module, passing all arguments
+    # Using python3 explicitly for macOS environments
+    python3 -m crypto.trading_bot "$@"
     
     echo "---------------------------------------------------"
     echo "[$(date)] Bot crashed or stopped. Restarting in 5 seconds..."
