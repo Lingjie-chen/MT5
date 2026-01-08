@@ -375,30 +375,6 @@ class CryptoTradingBot:
         if df_htf1 is None or df_htf1.empty: df_htf1 = df.copy()
         if df_htf2 is None or df_htf2.empty: df_htf2 = df.copy()
 
-        # Generate features for HTF to pass to LLM
-        df_htf1 = self.data_processor.generate_features(df_htf1)
-        df_htf2 = self.data_processor.generate_features(df_htf2)
-        
-        latest_h1 = df_htf1.iloc[-1]
-        latest_h4 = df_htf2.iloc[-1]
-        
-        # Inject Multi-Timeframe Data into Snapshot
-        market_snapshot['multi_tf_data'] = {
-            htf1_tf: {
-                "trend": "bullish" if latest_h1['ema_fast'] > latest_h1['ema_slow'] else "bearish",
-                "rsi": float(latest_h1.get('rsi', 50)),
-                "ema_fast": float(latest_h1.get('ema_fast', 0)),
-                "ema_slow": float(latest_h1.get('ema_slow', 0)),
-                "atr": float(latest_h1.get('atr', 0))
-            },
-            htf2_tf: {
-                "trend": "bullish" if latest_h4['ema_fast'] > latest_h4['ema_slow'] else "bearish",
-                "rsi": float(latest_h4.get('rsi', 50)),
-                "ema_fast": float(latest_h4.get('ema_fast', 0)),
-                "ema_slow": float(latest_h4.get('ema_slow', 0))
-            }
-        }
-
         # Run Optimizations (Real-time Param Config)
         if time.time() - self.last_optimization_time > self.optimization_interval:
             self.optimize_strategy_parameters()
@@ -432,6 +408,8 @@ class CryptoTradingBot:
             "optimized_weights": self.hybrid_optimizer.weights
         }
         
+        structure = self.qwen_client.analyze_market_structure(market_snapshot)
+        
         # --- Qwen Strategy ---
         technical_signals = {
             "crt": crt_res['signal'], 
@@ -441,42 +419,18 @@ class CryptoTradingBot:
             "performance_stats": trade_stats,
             "param_config": self.short_term_params
         }
+        
+        # Qwen Sentiment Analysis (New)
+        qwen_sentiment = self.qwen_client.analyze_market_sentiment(market_snapshot)
+        qwen_sent_score = qwen_sentiment.get('sentiment_score', 0)
+        qwen_sent_label = qwen_sentiment.get('sentiment', 'neutral')
 
-        # Smart Skip Logic (Real-time Automatic)
-        should_skip_llm = False
-        if self.latest_strategy:
-             prev_action = self.latest_strategy.get('action', 'neutral').lower()
-             prev_price = self.latest_strategy.get('market_snapshot', {}).get('prices', {}).get('close', 0)
-             current_price = latest['close']
-             
-             # Calculate change
-             pct_change = abs(current_price - prev_price) / prev_price if prev_price > 0 else 0
-             
-             # If holding/gridding and trend is intact (Conserve API calls)
-             if prev_action in ['grid_start', 'hold']:
-                 # If price hasn't moved much (< 0.5%) and no major conflicting signal
-                 if pct_change < 0.005: 
-                     should_skip_llm = True
-                     logger.info(f"⚡ Auto-Maintain: Skipping LLM (Price Change: {pct_change*100:.2f}%, Trend Stable)")
-
-        if should_skip_llm:
-             strategy = self.latest_strategy
-             strategy['reason'] = f"Auto-Maintain (Trend/Grid Continuity). Tech Signals: {mtf_res['signal']}"
-             strategy['market_snapshot'] = market_snapshot # Update snapshot
-        else:
-             structure = self.qwen_client.analyze_market_structure(market_snapshot)
-             
-             # Qwen Sentiment Analysis (New)
-             qwen_sentiment = self.qwen_client.analyze_market_sentiment(market_snapshot)
-             qwen_sent_score = qwen_sentiment.get('sentiment_score', 0)
-             qwen_sent_label = qwen_sentiment.get('sentiment', 'neutral')
-     
-             strategy = self.qwen_client.optimize_strategy_logic(
-                 structure, 
-                 market_snapshot, 
-                 technical_signals=technical_signals,
-                 previous_analysis=self.latest_strategy # 传入上一次分析
-             )
+        strategy = self.qwen_client.optimize_strategy_logic(
+            structure, 
+            market_snapshot, 
+            technical_signals=technical_signals,
+            previous_analysis=self.latest_strategy # 传入上一次分析
+        )
         
         # --- Final Decision Logic (Qwen Only) ---
         qw_action = strategy.get('action', 'neutral').lower()
