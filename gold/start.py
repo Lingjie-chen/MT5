@@ -1379,7 +1379,7 @@ class AI_MT5_Bot:
             # 如果差异很大且不是 0，说明用户手动干预了
             # 为了简化，我们设定规则: 只有当 AI 建议的新 SL/TP 明显优于当前设置，或者当前设置明显偏离风险控制时才强制更新
             
-            allow_update = False # 强制禁用动态更新 (User Request: Stop dynamic SL/TP movement)
+            allow_update = True # Enabled per User Request (Dynamic AI Update)
             
             if allow_update and has_new_params:
                 # 使用 calculate_optimized_sl_tp 进行统一计算和验证
@@ -2056,7 +2056,18 @@ class AI_MT5_Bot:
             base_sl = price + mae_sl_dist
             
             if ai_sl > 0:
-                final_sl = ai_sl
+                # [Anti-Hunt Protection]
+                sl_dist = abs(price - ai_sl)
+                min_safe_dist = atr * 0.8 
+                
+                if sl_dist < min_safe_dist:
+                    logger.info(f"AI SL {ai_sl} too close ({sl_dist/atr:.2f} ATR), widening to {min_safe_dist/atr:.2f} ATR")
+                    if 'buy' in trade_type:
+                         final_sl = min(ai_sl, price - min_safe_dist)
+                    else:
+                         final_sl = max(ai_sl, price + min_safe_dist)
+                else:
+                    final_sl = ai_sl
             elif struct_sl_price > 0:
                 final_sl = struct_sl_price if (struct_sl_price - price) >= min_sl_buffer else (price + min_sl_buffer)
             else:
@@ -2351,9 +2362,9 @@ class AI_MT5_Bot:
 
                 # 如果是新 K 线 或者 这是第一次运行 (last_bar_time 为 0)
                 # 用户需求: 交易周期改为 6 分钟，大模型 6 分钟分析
-                # is_new_bar = current_bar_time != self.last_bar_time
-                # 交易分析触发器: 60秒 (1分钟)
-                should_trade_analyze = (time.time() - self.last_analysis_time >= 60) or (self.last_analysis_time == 0)
+                is_new_bar = current_bar_time != self.last_bar_time
+                # 交易分析触发器: 新K线生成 (或第一次运行)
+                should_trade_analyze = is_new_bar or (self.last_analysis_time == 0)
                 
                 if should_trade_analyze:
                     # Run Optimization if needed (Every 4 hours)
@@ -2365,7 +2376,7 @@ class AI_MT5_Bot:
                     if self.last_analysis_time == 0:
                         logger.info("首次运行，立即执行分析...")
                     else:
-                        logger.info(f"执行周期性分析 (60s)...")
+                        logger.info(f"新K线生成 ({datetime.fromtimestamp(current_bar_time)}), 执行策略分析...")
                     
                     self.last_bar_time = current_bar_time
                     self.last_analysis_time = time.time()
