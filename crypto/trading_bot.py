@@ -375,6 +375,29 @@ class CryptoTradingBot:
         if df_htf1 is None or df_htf1.empty: df_htf1 = df.copy()
         if df_htf2 is None or df_htf2.empty: df_htf2 = df.copy()
 
+        # Process HTF Features
+        df_htf1 = self.data_processor.generate_features(df_htf1)
+        df_htf2 = self.data_processor.generate_features(df_htf2)
+        
+        latest_htf1 = df_htf1.iloc[-1]
+        latest_htf2 = df_htf2.iloc[-1]
+        
+        # Inject Multi-TF Data into Snapshot
+        market_snapshot['multi_tf_data'] = {
+            "h1": {
+                "trend": "bullish" if latest_htf1['close'] > latest_htf1['ema_slow'] else "bearish",
+                "rsi": float(latest_htf1.get('rsi', 50)),
+                "atr": float(latest_htf1.get('atr', 0)),
+                "ema_fast": float(latest_htf1.get('ema_fast', 0)),
+                "ema_slow": float(latest_htf1.get('ema_slow', 0))
+            },
+            "h4": {
+                "trend": "bullish" if latest_htf2['close'] > latest_htf2['ema_slow'] else "bearish",
+                "rsi": float(latest_htf2.get('rsi', 50)),
+                "atr": float(latest_htf2.get('atr', 0))
+            }
+        }
+
         # Run Optimizations (Real-time Param Config)
         if time.time() - self.last_optimization_time > self.optimization_interval:
             self.optimize_strategy_parameters()
@@ -1205,13 +1228,15 @@ class CryptoTradingBot:
             if signal:
                 self.execute_trade(signal, strategy, risk, sl, tp, sl_tp_source)
             # self.db_manager.perform_checkpoint() # Managed by external script
+            return strategy
         except Exception as e:
             logger.error(f"Cycle Error: {e}", exc_info=True)
+            return None
 
     def start(self):
         self.is_running = True
-        self.last_bar_time = 0
-        self.last_analysis_time = 0
+        self.next_analysis_time = 0
+        self.last_analyzed_price = 0
         
         try:
             self.sync_account_history() # Sync on start
@@ -1221,33 +1246,66 @@ class CryptoTradingBot:
             
             # Initial Optimization Check
             self.optimize_strategy_parameters()
-            self.last_optimization_time = time.time() # Prevent double run in analyze_market
+            self.last_optimization_time = time.time() 
             
-            logger.info(f"Bot started for {self.symbol}")
+            logger.info(f"Bot started for {self.symbol} (Adaptive Scheduling Mode)")
+            
+            # Initial Run
+            strategy = self.run_once()
+            if strategy:
+                current_price = self.data_processor.get_current_price(self.symbol)
+                self.last_analyzed_price = current_price if current_price else 0
+                
+                # Schedule first wait
+                pos_mgmt = strategy.get('position_management', {})
+                wait_mins = pos_mgmt.get('next_analysis_wait_minutes', 15)
+                try: wait_mins = float(wait_mins)
+                except: wait_mins = 15
+                self.next_analysis_time = time.time() + (wait_mins * 60)
+                logger.info(f"Next analysis scheduled in {wait_mins} mins")
+
             while self.is_running:
                 try:
-                    # Check for new bar
-                    # Fetch just the latest bar to check timestamp
-                    latest_bar_df = self.data_processor.get_historical_data(self.symbol, self.timeframe, limit=1)
+                    current_time = time.time()
+                    current_price = self.data_processor.get_current_price(self.symbol)
                     
-                    if latest_bar_df is not None and not latest_bar_df.empty:
-                        current_bar_time = latest_bar_df.index[-1].timestamp()
-                        
-                        # Trigger on new bar or first run
-                        if current_bar_time != self.last_bar_time:
-                            logger.info(f"New Bar detected: {datetime.fromtimestamp(current_bar_time)}")
-                            self.last_bar_time = current_bar_time
-                            self.last_analysis_time = time.time()
-                            
-                            self.run_once()
-                            logger.info("Analysis cycle completed.")
-                        else:
-                            # Wait before checking again (e.g. 10s)
-                            # We don't need to sleep 'interval' anymore, just poll for new bar
-                            time.sleep(10) 
-                    else:
-                        logger.warning("Failed to fetch latest bar. Retrying in 10s...")
+                    if not current_price:
+                        logger.warning("Failed to fetch price, retrying...")
                         time.sleep(10)
+                        continue
+
+                    # 1. Time Trigger
+                    is_time_trigger = current_time >= self.next_analysis_time
+                    
+                    # 2. Volatility Trigger
+                    is_volatility_trigger = False
+                    if self.last_analyzed_price > 0:
+                        pct_change = abs(current_price - self.last_analyzed_price) / self.last_analyzed_price
+                        if pct_change > 0.008: # 0.8% threshold (significant move)
+                            is_volatility_trigger = True
+                            logger.info(f"⚠️ Volatility Trigger: Price changed {pct_change:.2%} (Last: {self.last_analyzed_price}, Curr: {current_price})")
+
+                    if is_time_trigger or is_volatility_trigger:
+                        logger.info("Executing Adaptive Analysis...")
+                        strategy = self.run_once()
+                        self.last_analyzed_price = current_price
+                        
+                        # Schedule Next
+                        wait_mins = 15 # Default fallback
+                        if strategy:
+                            pos_mgmt = strategy.get('position_management', {})
+                            wait_mins = pos_mgmt.get('next_analysis_wait_minutes', 15)
+                            try: wait_mins = float(wait_mins)
+                            except: wait_mins = 15
+                            
+                            # Safety limits
+                            wait_mins = max(5, min(wait_mins, 240)) # Min 5 mins, Max 4 hours
+
+                        self.next_analysis_time = time.time() + (wait_mins * 60)
+                        next_time_str = datetime.fromtimestamp(self.next_analysis_time).strftime('%H:%M:%S')
+                        logger.info(f"📅 Next analysis scheduled in {wait_mins} mins at {next_time_str}")
+                    
+                    time.sleep(10) # Poll every 10s
                         
                 except Exception as e:
                     logger.error(f"Loop error: {e}")

@@ -70,6 +70,14 @@ class QwenClient:
          - **加仓单 TP**: 根据回撤深度和反弹预期进行动态调整。深层加仓单通常为了快速解套，TP 应设置较小；浅层加仓单可追求更大反弹。
          - **更新指令**: 如果你认为当前的 SL/TP 需要调整，请在 `exit_conditions` 和 `position_management` 中返回最新的数值。
 
+    **智能调度 (Adaptive Scheduling)**:
+    - **拒绝无效分析**: 不要每 15 分钟机械式地重复分析。
+    - **自主决定节奏**: 必须在 `position_management` 中返回 `next_analysis_wait_minutes` (下一次分析等待分钟数)。
+    - **逻辑**:
+      - 市场死寂/盘整 -> 60-240 分钟 (Let profits run / Wait)
+      - 关键位突破/高波动 -> 5-15 分钟 (密切监控)
+      - 刚开仓/持仓关键期 -> 15-30 分钟
+
     ## OKX交易所特性
     1. **合约规格**: ETHUSDT永续合约每张价值 0.1 ETH
     2. **杠杆范围**: 1-100倍，根据信号强度和市场状态选择
@@ -307,7 +315,7 @@ class QwenClient:
     - action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell", "grid_start", "close_buy_open_sell", "close_sell_open_buy")
     - entry_conditions: dict ("limit_price": float, "trigger_type": "market/limit")
     - exit_conditions: dict ("sl_price": float, "tp_price": float)
-    - position_management: dict ("martingale_multiplier": float, "grid_step_logic": str, "recommended_grid_step_pips": float)
+    - position_management: dict ("martingale_multiplier": float, "grid_step_logic": str, "recommended_grid_step_pips": float, "next_analysis_wait_minutes": int)
     - position_size: float (资金比例 0.005-0.05)
     - contract_quantity: int (合约张数)
     - leverage: int (杠杆倍数 1-100)
