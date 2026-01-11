@@ -99,7 +99,7 @@ class HybridOptimizer:
         
         return final_signal, final_score, self.weights
 
-class AI_MT5_Bot:
+class SymbolTrader:
     def __init__(self, symbol="XAUUSD", timeframe=mt5.TIMEFRAME_M15):
         self.symbol = symbol
         self.timeframe = timeframe
@@ -2252,28 +2252,21 @@ class AI_MT5_Bot:
         except Exception as e:
             logger.error(f"Failed to sync account history: {e}")
 
-    def run(self):
-        """主循环"""
-        if not self.initialize_mt5():
-            return
-            
-        # Start File Watcher
-        try:
-            # Watch the gold package directory
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            self.watcher = FileWatcher([current_dir])
-            self.watcher.start()
-        except Exception as e:
-            logger.error(f"Failed to start FileWatcher: {e}")
-
-        logger.info(f"启动 AI 自动交易机器人 - {self.symbol}")
-        self.send_telegram_message(f"🤖 *AI Bot Started*\nSymbol: `{self.symbol}`\nTimeframe: `{self.timeframe}`")
-        
+    def initialize(self):
+        """Initialize Trader State"""
+        logger.info(f"初始化交易代理 - {self.symbol}")
         # Sync history on startup
         self.sync_account_history()
-        
+        self.is_running = True
+
+    def process_tick(self):
+        """Single tick processing"""
+        if not self.is_running:
+            return
+
         try:
-            while True:
+            # Single iteration logic (replacing while True)
+            if True:
                 # 0. 管理持仓 (移动止损) - 使用最新策略
                 if self.latest_strategy:
                     self.manage_positions(self.latest_signal, self.latest_strategy)
