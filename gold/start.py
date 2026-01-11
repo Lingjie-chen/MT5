@@ -163,7 +163,8 @@ class SymbolTrader:
             
         # 确保数据库路径设置正确
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        db_path = os.path.join(current_dir, 'trading_data.db')
+        # 使用特定品种的数据库路径
+        db_path = os.path.join(current_dir, f'trading_data_{self.symbol}.db')
         
         # 检查是否需要更新 db_manager 的路径
         # DatabaseManager 默认初始化时可能使用了不同的路径，这里强制覆盖

@@ -103,13 +103,13 @@ apply_clean_style()
 
 # Initialize Managers
 # Remove cache_resource to ensure latest class definition is loaded during dev
+# No longer creating a single global db_manager
 @st.cache_resource 
-def get_managers():
-    db = DatabaseManager("trading_data.db")
+def get_visualizer():
     viz = TradingVisualizer()
-    return db, viz
+    return viz
 
-db_manager, visualizer = get_managers()
+visualizer = get_visualizer()
 
 # Sidebar Settings
 st.sidebar.title("Configuration")
@@ -129,6 +129,13 @@ if not selected_symbols:
 # Create tabs for each selected symbol
 tabs = st.tabs(selected_symbols)
 
+def get_db_manager(symbol):
+    """Dynamically get the DatabaseManager for a specific symbol"""
+    db_filename = f"trading_data_{symbol}.db"
+    # Assuming the DBs are in the 'gold' directory relative to this script
+    db_path = os.path.join(os.path.dirname(__file__), 'gold', db_filename)
+    return DatabaseManager(db_path=db_path)
+
 def update_dashboard():
     for symbol, tab in zip(selected_symbols, tabs):
         with tab:
@@ -137,15 +144,21 @@ def update_dashboard():
 def render_symbol_dashboard(symbol):
     st.header(f"{symbol} Overview")
     
+    # Initialize DB Manager for this specific symbol
+    db_manager = get_db_manager(symbol)
+    
     # Load Data specific to symbol
     market_df = db_manager.get_market_data(symbol, limit=200)
-    signals_df = db_manager.get_latest_signals(limit=50) # Need to filter by symbol later
-    trades_df = db_manager.get_trades(limit=100) # Need to filter by symbol later
+    signals_df = db_manager.get_latest_signals(limit=50) 
+    trades_df = db_manager.get_trades(limit=100) 
+    
+    # Note: Since DBs are now isolated, filtering by symbol is technically redundant 
+    # but kept for safety if schemas change.
     
     # Filter Dataframes
-    if not signals_df.empty:
+    if not signals_df.empty and 'symbol' in signals_df.columns:
         signals_df = signals_df[signals_df['symbol'] == symbol]
-    if not trades_df.empty:
+    if not trades_df.empty and 'symbol' in trades_df.columns:
         trades_df = trades_df[trades_df['symbol'] == symbol]
 
     # Status Placeholders
