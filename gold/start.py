@@ -1331,6 +1331,17 @@ class SymbolTrader:
         if positions is None or len(positions) == 0:
             return
 
+        # 获取 ATR 用于计算移动止损距离 (动态调整)
+        rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+        atr = 0.0
+        if rates is not None and len(rates) > 14:
+            df_temp = pd.DataFrame(rates)
+            high_low = df_temp['high'] - df_temp['low']
+            atr = high_low.rolling(14).mean().iloc[-1]
+            
+        if atr <= 0:
+            return # 无法计算 ATR，跳过
+
         # --- Grid Strategy Logic ---
         # 1. Check Basket TP
         if self.grid_strategy.check_basket_tp(positions):
@@ -1388,17 +1399,6 @@ class SymbolTrader:
 
                 self._send_order(trade_type, price, 0.0, add_tp, comment=f"Grid: {action}")
                 # Don't return, allow SL/TP update for existing positions
-
-        # 获取 ATR 用于计算移动止损距离 (动态调整)
-        rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
-        atr = 0.0
-        if rates is not None and len(rates) > 14:
-            df_temp = pd.DataFrame(rates)
-            high_low = df_temp['high'] - df_temp['low']
-            atr = high_low.rolling(14).mean().iloc[-1]
-            
-        if atr <= 0:
-            return # 无法计算 ATR，跳过
 
         trailing_dist = atr * 1.5 # 默认移动止损距离
         
