@@ -1117,7 +1117,17 @@ class SymbolTrader:
             return
 
         point = symbol_info.point
-        stops_level = (symbol_info.trade_stops_level + 10) * point # 额外加 10 points 缓冲
+        
+        # Calculate dynamic spread
+        tick = mt5.symbol_info_tick(self.symbol)
+        spread = (tick.ask - tick.bid) if tick else (symbol_info.spread * point)
+        
+        # Calculate safe distance
+        # Broker requires distance from Trigger Price (Ask for Sell SL, Bid for Buy SL)
+        # But we set SL relative to Execution Price (Bid for Sell, Ask for Buy)
+        # So we must add Spread to the buffer
+        # Buffer = TradeStopsLevel + Spread + Safety(20 points)
+        stops_level = (symbol_info.trade_stops_level * point) + spread + (20 * point)
         
         is_buy = "buy" in type_str
         is_sell = "sell" in type_str
