@@ -32,9 +32,16 @@ class QwenClient:
     使用硅基流动API服务，遵循ValueCell的API调用模式
     """
     
-    # 黄金交易系统核心Prompt
-    GOLD_TRADING_SYSTEM_PROMPT = """
-    作为黄金(XAUUSD)交易的唯一核心决策大脑，你全权负责基于SMC(Smart Money Concepts)和Martingale(马丁格尔)策略的交易执行。
+    def _get_system_prompt(self, symbol: str) -> str:
+        """
+        根据交易品种生成特定的系统提示词 (System Prompt)
+        支持针对不同品种(如 XAUUSD, ETHUSD) 定制 Martingale 网格策略和市场特性
+        """
+        symbol = symbol.upper()
+        
+        # --- 1. 核心策略架构 (通用) ---
+        core_strategy = f"""
+    作为{symbol}交易的唯一核心决策大脑，你全权负责基于SMC(Smart Money Concepts)和Martingale(马丁格尔)策略的交易执行。
     
     你的核心策略架构：**SMC + Martingale Grid (马丁网格)**
     
@@ -51,25 +58,81 @@ class QwenClient:
        - **关键区域**: 重点关注 M15 和 H1 的订单块(Order Block)和失衡区(FVG)。
        - **CRT (Candle Range Theory)**: 确认关键位置的 M15 K线反应(如Pinbar, Engulfing)。
        - **CCI/RVGI**: 辅助确认超买超卖和动量背离。
+        """
 
-    2. **Martingale Grid (马丁网格) - 仓位管理**:
+        # --- 2. Martingale Grid 配置 (品种特定) ---
+        martingale_configs = {
+            "XAUUSD": """
+    2. **Martingale Grid (马丁网格) - 仓位管理 (XAUUSD专用)**:
        - **首单**: 基于SMC信号轻仓入场 (如 0.01 lot 或 资金的 0.5%)。
        - **逆势加仓 (Grid Add)**: 如果价格向不利方向移动且未破关键失效位，在下一个SMC关键位(OB/FVG)加仓。
        - **倍投逻辑**: 加仓手数通常为上一单的 1.2倍 - 2.0倍 (几何级数)，以摊低成本。
        - **网格间距**: 不要使用固定间距！使用ATR或SMC结构位作为加仓间隔。
        - **最大层数**: 严格控制加仓次数 (建议不超过 5 层)。
 
-    3. **动态波段风控 (Dynamic Swing Risk Control)**:
-       - **SL/TP 实时优化**: 必须实时评估当前的 SL (止损) 和 TP (止盈) 是否适应最新的市场结构。
-       - **MFE/MAE 深度应用**:
-         - **TP (Take Profit)**: 结合 MFE (最大有利偏移) 和 SMC 流动性池。如果市场动能强劲，应推大 TP 以捕捉波段利润；如果动能衰竭，应收紧 TP。
-         - **SL (Stop Loss)**: 结合 MAE (最大不利偏移) 和 SMC 失效位。如果市场波动率 (ATR) 变大，应适当放宽 SL 以防被噪音扫损；如果结构紧凑，应收紧 SL。
-       - **网格 TP 动态配置 (Dynamic Grid TP)**:
-         - 对于马丁网格的每一层订单，不要使用固定的 TP。
-         - **首单 TP**: 设定为波段目标。
-         - **加仓单 TP**: 根据回撤深度和反弹预期进行动态调整。深层加仓单通常为了快速解套，TP 应设置较小；浅层加仓单可追求更大反弹。
-         - **更新指令**: 如果你认为当前的 SL/TP 需要调整，请在 `exit_conditions` 和 `position_management` 中返回最新的数值。
+    ### 五、Martingale网格管理 (XAUUSD细则)
+    **首单参数：**
+    - 仓位：账户资金的0.5%（例：$10,000账户，风险$50）
+    - 止损：设在SMC失效位之外，考虑MAE历史数据
+    - 止盈：下一流动性池或MFE分布的80%分位
+    
+    **加仓规则：**
+    1. **触发条件**：价格向不利方向移动但未破关键失效位
+    2. **加仓位置**：下一个SMC关键区域（订单块或失衡区）
+    3. **加仓手数**：前一手数的1.5倍（可调整系数）
+    4. **加仓间距**：使用ATR(14) × 1.5 或自然结构位间距
+    5. **最大层数**：严格限制5层，总风险不超过15%
+    
+    **网格计算公式：**
+    第1层：0.5%风险
+    第2层：0.75%风险（1.5倍）
+    第3层：1.125%风险
+    第4层：1.6875%风险
+    第5层：2.53125%风险
+    总风险：约6.6%（但必须控制在2%硬止损内）
+            """,
+            
+            "ETHUSD": """
+    2. **Martingale Grid (马丁网格) - 仓位管理 (ETHUSD/Crypto专用)**:
+       - **首单**: 考虑到加密货币的高波动性，首单风险控制在资金的 0.3%-0.5%。
+       - **逆势加仓 (Grid Add)**: 必须等待明确的SMC支撑/阻力位确认。
+       - **倍投逻辑**: 建议系数 1.2倍 - 1.5倍 (保守倍投)，避免在极端行情中快速爆仓。
+       - **网格间距**: 使用 ATR(14) * 2.0 或更宽的结构位间距 (Crypto波动大，间距需拉大)。
+       - **最大层数**: 严格限制 3-4 层。
 
+    ### 五、Martingale网格管理 (ETHUSD细则)
+    **首单参数：**
+    - 仓位：账户资金的0.3% - 0.5%
+    - 止损：设在SMC失效位之外 (Crypto需留更大缓冲)
+    - 止盈：下一流动性池
+    
+    **加仓规则：**
+    1. **触发条件**：价格向不利方向移动且到达关键大周期支撑/阻力
+    2. **加仓位置**：必须是 H1 或 H4 级别的订单块
+    3. **加仓手数**：前一手数的1.2 - 1.5倍
+    4. **加仓间距**：ATR(14) × 2.0 (最小间距)
+    5. **最大层数**：4层
+            """,
+            
+            "DEFAULT": """
+    2. **Martingale Grid (马丁网格) - 仓位管理 (通用)**:
+       - **首单**: 风险控制在资金的 0.5%。
+       - **逆势加仓**: 基于SMC关键位。
+       - **倍投逻辑**: 1.5倍。
+       - **网格间距**: ATR(14) * 1.5。
+       - **最大层数**: 5层。
+
+    ### 五、Martingale网格管理 (通用)
+    - 首单: 0.5% 风险
+    - 加仓: 1.5倍系数
+    - 间距: ATR * 1.5
+    - 最大层数: 5
+            """
+        }
+
+        # --- 3. 市场特性 (品种特定) ---
+        market_specs = {
+            "XAUUSD": """
     ## 黄金市场特性
     1. **交易时段特点**:
        - 亚洲时段（00:00-08:00 UTC）：流动性较低，区间震荡
@@ -87,11 +150,52 @@ class QwenClient:
        - 50美元整数位：重要支撑阻力
        - 00结尾价位：心理关口
        - 历史高低点：重要参考
-    
+            """,
+            
+            "ETHUSD": """
+    ## ETHUSD 市场特性
+    1. **交易时段特点**:
+       - 24/7 全天候交易，无明确收盘。
+       - 亚洲/美国时段重叠期往往波动较大。
+       - 周末可能出现流动性枯竭引发的剧烈波动。
+       
+    2. **Crypto特有驱动因素**:
+       - BTC 联动效应 (Correlation): 高度跟随 BTC 走势。
+       - 以太坊链上生态发展 (DeFi/NFT/L2/Upgrade)。
+       - 宏观流动性与纳斯达克(Nasdaq)科技股的高相关性。
+       
+    3. **关键心理关口**:
+       - 100/500/1000 整数位：极强心理支撑阻力。
+       - 历史高点(ATH)与关键斐波那契回调位。
+            """,
+            
+            "DEFAULT": f"""
+    ## {symbol} 市场特性
+    请根据该品种的历史波动特性、交易时段和驱动因素进行分析。
+    重点关注：
+    1. 交易活跃时段
+    2. 主要驱动因素
+    3. 关键支撑阻力位
+            """
+        }
+
+        # --- 4. 风险控制与通用规则 (通用) ---
+        common_rules = """
+    3. **动态波段风控 (Dynamic Swing Risk Control)**:
+       - **SL/TP 实时优化**: 必须实时评估当前的 SL (止损) 和 TP (止盈) 是否适应最新的市场结构。
+       - **MFE/MAE 深度应用**:
+         - **TP (Take Profit)**: 结合 MFE (最大有利偏移) 和 SMC 流动性池。如果市场动能强劲，应推大 TP 以捕捉波段利润；如果动能衰竭，应收紧 TP。
+         - **SL (Stop Loss)**: 结合 MAE (最大不利偏移) 和 SMC 失效位。如果市场波动率 (ATR) 变大，应适当放宽 SL 以防被噪音扫损；如果结构紧凑，应收紧 SL。
+       - **网格 TP 动态配置 (Dynamic Grid TP)**:
+         - 对于马丁网格的每一层订单，不要使用固定的 TP。
+         - **首单 TP**: 设定为波段目标。
+         - **加仓单 TP**: 根据回撤深度和反弹预期进行动态调整。深层加仓单通常为了快速解套，TP 应设置较小；浅层加仓单可追求更大反弹。
+         - **更新指令**: 如果你认为当前的 SL/TP 需要调整，请在 `exit_conditions` 和 `position_management` 中返回最新的数值。
+
     ## 市场分析要求
     
     ### 一、大趋势分析框架 (Multi-Timeframe)
-    你必须从多时间框架分析黄金的整体市场结构 (查看提供的 `multi_tf_data`)：
+    你必须从多时间框架分析整体市场结构 (查看提供的 `multi_tf_data`)：
     
     1. **时间框架层级分析**
        - **H4 (4小时)**: 确定长期趋势方向 (Trend Bias) 和主要支撑阻力。
@@ -169,28 +273,6 @@ class QwenClient:
     4. **流动性目标明确**
        - 至少有1:1.5的风险回报比
        - 明确的上方/下方流动性目标
-    
-    ### 五、Martingale网格管理
-    
-    **首单参数：**
-    - 仓位：账户资金的0.5%（例：$10,000账户，风险$50）
-    - 止损：设在SMC失效位之外，考虑MAE历史数据
-    - 止盈：下一流动性池或MFE分布的80%分位
-    
-    **加仓规则：**
-    1. **触发条件**：价格向不利方向移动但未破关键失效位
-    2. **加仓位置**：下一个SMC关键区域（订单块或失衡区）
-    3. **加仓手数**：前一手数的1.5倍（可调整系数）
-    4. **加仓间距**：使用ATR(14) × 1.5 或自然结构位间距
-    5. **最大层数**：严格限制5层，总风险不超过15%
-    
-    **网格计算公式：**
-    第1层：0.5%风险
-    第2层：0.75%风险（1.5倍）
-    第3层：1.125%风险
-    第4层：1.6875%风险
-    第5层：2.53125%风险
-    总风险：约6.6%（但必须控制在2%硬止损内）
     
     ### 六、退出策略
     
@@ -299,7 +381,16 @@ class QwenClient:
     - risk_metrics: dict (风险指标)
     - next_observations: list (后续观察要点)
     - telegram_report: str (专为Telegram优化的Markdown简报，包含关键分析结论、入场参数、SMC结构摘要。请使用emoji图标增强可读性，例如 ⚡️ 🛑 🎯 📉 📈 等)
-    """
+        """
+        
+        # Select Configs
+        martingale_config = martingale_configs.get(symbol, martingale_configs["DEFAULT"])
+        market_spec = market_specs.get(symbol, market_specs["DEFAULT"])
+        
+        # Assemble
+        full_prompt = f"{core_strategy}\n{martingale_config}\n{market_spec}\n{common_rules}"
+        return full_prompt
+
     
     def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "Qwen/Qwen3-VL-235B-A22B-Thinking"):
         """
@@ -696,18 +787,17 @@ class QwenClient:
             tech_context = f"\n技术信号 (SMC/CRT/CCI):\n{json.dumps(sigs_copy, indent=2, cls=CustomJSONEncoder)}\n"
 
         # 构建完整提示词
+        symbol = current_market_data.get("symbol", "XAUUSD")
+        system_prompt = self._get_system_prompt(symbol)
+        
         prompt = f"""
-        {self.GOLD_TRADING_SYSTEM_PROMPT}
+        {system_prompt}
         
         ## 核心指令更新：动态仓位计算 (Dynamic Position Sizing)
         你必须根据以下因素，精确计算本次交易的 **position_size (Lots)**：
         1. **实时账户资金**: {current_market_data.get('account_info', {}).get('available_balance', 10000)} (请根据资金规模合理配比)
         2. **风险偏好**: 单笔风险严格控制在 1% - 3% 之间。
         3. **信号置信度 & 高级算法**: 
-           - 综合 **SMC (Smart Money Concepts)** 结构分析 (OB/FVG)。
-           - 参考 **CRT (Candle Range Theory)** 和 **MTF (Multi-Timeframe)** 共振。
-           - 结合 **CCI/RVGI** 动量指标。
-           - 信号越强、算法共振越多，仓位可适当增加。
         4. **市场情绪**: 结合 {market_analysis.get('sentiment_analysis', {}).get('sentiment', 'neutral')} 情绪调整。
         5. **凯利公式**: 参考你的胜率预估。
 
@@ -737,10 +827,10 @@ class QwenClient:
         上一次分析:
         {prev_context}
         
-        ## 黄金特定注意事项
-        - 当前交易时段: {market_analysis.get('gold_specific_analysis', {}).get('trading_session', 'unknown')}
-        - 美元影响: {market_analysis.get('gold_specific_analysis', {}).get('dollar_influence', 'neutral')}
-        - 避险状态: {market_analysis.get('gold_specific_analysis', {}).get('safe_haven_status', 'inactive')}
+        ## {symbol} 特定注意事项
+        - 当前交易时段: {market_analysis.get('symbol_specific_analysis', {}).get('trading_session', 'unknown')}
+        - 宏观影响: {market_analysis.get('symbol_specific_analysis', {}).get('macro_influence', 'neutral')}
+        - 风险状态: {market_analysis.get('symbol_specific_analysis', {}).get('risk_status', 'unknown')}
         
         ## 现在，基于以上所有信息，请输出完整的交易决策
         特别注意：请计算具体的仓位大小，并给出合理的止损止盈点位。
@@ -758,7 +848,7 @@ class QwenClient:
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "你是一名专注于黄金(XAUUSD)交易的职业交易员，采用SMC(Smart Money Concepts)结合Martingale网格策略的复合交易系统。你完全自主进行市场分析和交易决策。"},
+                {"role": "system", "content": f"你是一名专注于{symbol}交易的职业交易员，采用SMC(Smart Money Concepts)结合Martingale网格策略的复合交易系统。你完全自主进行市场分析和交易决策。"},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.3,
