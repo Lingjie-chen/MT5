@@ -2697,33 +2697,33 @@ class SymbolTrader:
                                 # Here we assume Qwen can update global TP based on risk appetite
                                 if 'global_tp' in pos_mgmt:
                                     self.grid_strategy.global_tp = float(pos_mgmt['global_tp'])
-                                        logger.info(f"AI 更新 Grid Global TP: {self.grid_strategy.global_tp}")
-                                        
-                                    # Update Lot Multiplier
-                                    if 'martingale_multiplier' in pos_mgmt:
-                                        self.grid_strategy.lot_multiplier = float(pos_mgmt['martingale_multiplier'])
-                                        logger.info(f"AI 更新 Grid Lot Multiplier: {self.grid_strategy.lot_multiplier}")
-                                        
-                                    # Update Grid Step (Spacing)
-                                    if 'recommended_grid_step_pips' in pos_mgmt:
-                                        step_pips = float(pos_mgmt['recommended_grid_step_pips'])
-                                        if step_pips > 0:
-                                            # Convert pips to points (assuming 1 pip = 10 points for standard pairs)
-                                            # For crypto/gold, logic might vary, but consistency with _get_system_prompt helps
-                                            self.grid_strategy.grid_step_points = int(step_pips * 10) 
-                                            logger.info(f"AI 更新 Grid Step: {step_pips} pips ({self.grid_strategy.grid_step_points} points)")
+                                    logger.info(f"AI 更新 Grid Global TP: {self.grid_strategy.global_tp}")
                                     
-                                    # Update TP Steps (Dynamic Grid Levels)
-                                    if 'grid_level_tp_pips' in pos_mgmt:
-                                        tp_list = pos_mgmt['grid_level_tp_pips']
-                                        if isinstance(tp_list, list) and len(tp_list) > 0:
-                                            # Convert list to dict map {1: tp1, 2: tp2...}
-                                            new_tp_steps = {i+1: float(tp) for i, tp in enumerate(tp_list)}
-                                            self.grid_strategy.tp_steps.update(new_tp_steps)
-                                            logger.info(f"AI 更新 Grid Level TPs: {tp_list}")
+                                # Update Lot Multiplier
+                                if 'martingale_multiplier' in pos_mgmt:
+                                    self.grid_strategy.lot_multiplier = float(pos_mgmt['martingale_multiplier'])
+                                    logger.info(f"AI 更新 Grid Lot Multiplier: {self.grid_strategy.lot_multiplier}")
+                                    
+                                # Update Grid Step (Spacing)
+                                if 'recommended_grid_step_pips' in pos_mgmt:
+                                    step_pips = float(pos_mgmt['recommended_grid_step_pips'])
+                                    if step_pips > 0:
+                                        # Convert pips to points (assuming 1 pip = 10 points for standard pairs)
+                                        # For crypto/gold, logic might vary, but consistency with _get_system_prompt helps
+                                        self.grid_strategy.grid_step_points = int(step_pips * 10) 
+                                        logger.info(f"AI 更新 Grid Step: {step_pips} pips ({self.grid_strategy.grid_step_points} points)")
+                                
+                                # Update TP Steps (Dynamic Grid Levels)
+                                if 'grid_level_tp_pips' in pos_mgmt:
+                                    tp_list = pos_mgmt['grid_level_tp_pips']
+                                    if isinstance(tp_list, list) and len(tp_list) > 0:
+                                        # Convert list to dict map {1: tp1, 2: tp2...}
+                                        new_tp_steps = {i+1: float(tp) for i, tp in enumerate(tp_list)}
+                                        self.grid_strategy.tp_steps.update(new_tp_steps)
+                                        logger.info(f"AI 更新 Grid Level TPs: {tp_list}")
                                      
-                            except Exception as e:
-                                logger.error(f"参数动态更新失败: {e}")
+                        except Exception as e:
+                            logger.error(f"参数动态更新失败: {e}")
                         
                         # Qwen 信号转换
                         qw_action = strategy.get('action', 'neutral').lower()
