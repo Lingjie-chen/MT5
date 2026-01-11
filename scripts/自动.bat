@@ -30,6 +30,7 @@ echo [%DATE% %TIME%] Starting Sync Cycle...
 
 :: 1. Run Checkpoint Script
 :: This script handles DB WAL checkpointing to ensure data integrity
+echo [%DATE% %TIME%] Running DB Checkpoint...
 python scripts/checkpoint_dbs.py
 
 :: 2. Pull Remote Changes (Robust Sync)
