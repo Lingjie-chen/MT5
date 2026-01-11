@@ -367,20 +367,29 @@ class DatabaseManager:
             logger.error(f"Failed to get trade stats: {e}")
             return []
 
-    def get_performance_metrics(self, limit=20):
+    def get_performance_metrics(self, symbol=None, limit=20):
         """
         计算近期交易的胜率和盈亏比，用于智能资金管理
+        Optionally filter by symbol.
         """
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
             
-            cursor.execute('''
+            query = '''
                 SELECT profit FROM trades 
                 WHERE result = 'CLOSED' 
-                ORDER BY close_time DESC 
-                LIMIT ?
-            ''', (limit,))
+            '''
+            params = []
+            
+            if symbol:
+                query += " AND symbol = ? "
+                params.append(symbol)
+                
+            query += " ORDER BY close_time DESC LIMIT ?"
+            params.append(limit)
+            
+            cursor.execute(query, tuple(params))
             
             rows = cursor.fetchall()
             if not rows:
