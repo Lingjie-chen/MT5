@@ -335,64 +335,37 @@ class DatabaseManager:
             logger.warning(f"WAL Checkpoint failed: {e}")
             return False
 
-    def get_trade_performance_stats(self, limit=50):
-        """Get aggregated performance stats (MFE, MAE) for recent closed trades"""
+    def get_trade_performance_stats(self, symbol=None, limit=50):
+        """
+        Get recent trade performance statistics (MFE, MAE, Profit)
+        Optionally filter by symbol.
+        """
         try:
             conn = self._get_connection()
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            cursor.execute('''
-                SELECT 
-                    AVG(mfe) as avg_mfe,
-                    AVG(mae) as avg_mae,
-                    AVG(profit) as avg_profit,
-                    COUNT(*) as count
+            query = '''
+                SELECT profit, mfe, mae, action, volume 
                 FROM trades 
-                WHERE result = 'CLOSED' AND mfe IS NOT NULL
-                ORDER BY close_time DESC
-                LIMIT ?
-            ''', (limit,))
+                WHERE result = 'CLOSED' 
+            '''
+            params = []
             
-            row = cursor.fetchone()
-            
-            stats = None
-            if row and row['count'] > 0:
-                stats = {
-                    "avg_mfe": row['avg_mfe'],
-                    "avg_mae": row['avg_mae'],
-                    "avg_profit": row['avg_profit'],
-                    "trade_count": row['count']
-                }
-            
-            # 获取最近的 MFE/MAE 数据列表用于分布分析
-            cursor.execute('''
-                SELECT ticket, mfe, mae, profit, action 
-                FROM trades 
-                WHERE result = 'CLOSED' AND mfe IS NOT NULL 
-                ORDER BY close_time DESC 
-                LIMIT ?
-            ''', (limit,))
-            
-            rows = cursor.fetchall()
-            details = []
-            for r in rows:
-                details.append({
-                    "ticket": r['ticket'],
-                    "mfe": r['mfe'],
-                    "mae": r['mae'],
-                    "profit": r['profit'],
-                    "action": r['action']
-                })
-            
-            if stats:
-                stats["recent_trades"] = details
+            if symbol:
+                query += " AND symbol = ? "
+                params.append(symbol)
                 
-            return stats
+            query += " ORDER BY close_time DESC LIMIT ?"
+            params.append(limit)
             
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+            
+            return [dict(row) for row in rows]
         except Exception as e:
             logger.error(f"Failed to get trade stats: {e}")
-            return None
+            return []
 
     def get_performance_metrics(self, limit=20):
         """
