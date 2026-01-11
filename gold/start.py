@@ -1475,8 +1475,14 @@ class SymbolTrader:
                     # Instead of calculating based on ATR multipliers inside calculate_optimized_sl_tp,
                     # we trust the explicit values provided by the LLM (which integrated SMC/MFE/MAE/ATR)
                     
-                    opt_sl = ai_exits.get('sl_price', 0.0)
-                    opt_tp = ai_exits.get('tp_price', 0.0)
+                    # Safe get with float conversion
+                    try:
+                        opt_sl = float(ai_exits.get('sl_price', 0.0))
+                        opt_tp = float(ai_exits.get('tp_price', 0.0))
+                    except (ValueError, TypeError):
+                        logger.error(f"Invalid SL/TP from AI: {ai_exits}")
+                        opt_sl = 0.0
+                        opt_tp = 0.0
                     
                     # Validate and Normalize
                     opt_sl = self._normalize_price(opt_sl)
@@ -2338,7 +2344,7 @@ class SymbolTrader:
                         count += 1
             
             if count > 0:
-                self.db_manager.conn.commit()
+                conn.commit()
                 logger.info(f"Synced {count} historical trades from MT5 to local DB.")
                 
         except Exception as e:
@@ -2350,6 +2356,21 @@ class SymbolTrader:
         # Sync history on startup
         self.sync_account_history()
         self.is_running = True
+
+    def _get_mt5_data(self, timeframe, count):
+        """Helper to get data frame from MT5 directly"""
+        rates = mt5.copy_rates_from_pos(self.symbol, timeframe, 0, count)
+        if rates is None or len(rates) == 0:
+            return None
+        
+        df = pd.DataFrame(rates)
+        df['time'] = pd.to_datetime(df['time'], unit='s')
+        df.set_index('time', inplace=True)
+        
+        if 'tick_volume' in df.columns:
+            df.rename(columns={'tick_volume': 'volume'}, inplace=True)
+            
+        return df
 
     def process_tick(self):
         """Single tick processing"""
@@ -2393,349 +2414,289 @@ class SymbolTrader:
                     
                 current_bar_time = rates[0]['time']
                 
-                # --- Real-time Data Update (Added for Dashboard) ---
-                # 每隔 3 秒保存一次当前正在形成的 K 线数据到数据库
-                # 这样 Dashboard 就可以看到实时价格跳动
-                if time.time() - self.last_realtime_save > 3:
-                    try:
-                        df_current = pd.DataFrame(rates)
-                        df_current['time'] = pd.to_datetime(df_current['time'], unit='s')
-                        df_current.set_index('time', inplace=True)
-                        if 'tick_volume' in df_current.columns:
-                            df_current.rename(columns={'tick_volume': 'volume'}, inplace=True)
-                        
-                        self.db_manager.save_market_data(df_current.copy(), self.symbol, self.tf_name)
-                        self.last_realtime_save = time.time()
-                        
-                        # --- 实时保存账户信息 (新增) ---
-                        try:
-                            account_info = mt5.account_info()
-                            if account_info:
-                                # 计算当前品种的浮动盈亏
-                                positions = mt5.positions_get(symbol=self.symbol)
-                                symbol_pnl = 0.0
-                                magic_positions_count = 0
-                                if positions:
-                                    for pos in positions:
-                                        # 仅统计和计算属于本策略ID的持仓
-                                        if pos.magic == self.magic_number:
-                                            magic_positions_count += 1
-                                            # Handle different position object structures safely
-                                            profit = getattr(pos, 'profit', 0.0)
-                                            swap = getattr(pos, 'swap', 0.0)
-                                            commission = getattr(pos, 'commission', 0.0) # Check attribute existence
-                                            symbol_pnl += profit + swap + commission
-                                
-                                # 显示当前 ID 的持仓状态
-                                # if magic_positions_count > 0:
-                                #     logger.info(f"ID {self.magic_number} 当前持仓: {magic_positions_count} 个")
-                                # else:
-                                #     pass
-                                
-                                metrics = {
-                                    "timestamp": datetime.now(),
-                                    "balance": account_info.balance,
-                                    "equity": account_info.equity,
-                                    "margin": account_info.margin,
-                                    "free_margin": account_info.margin_free,
-                                    "margin_level": account_info.margin_level,
-                                    "total_profit": account_info.profit,
-                                    "symbol_pnl": symbol_pnl
-                                }
-                                self.db_manager.save_account_metrics(metrics)
-                        except Exception as e:
-                            logger.error(f"Failed to save account metrics: {e}")
-                        # ------------------------------
-                        
-                        # 实时更新持仓 SL/TP (使用最近一次分析的策略)
-                        if self.latest_strategy:
-                            self.manage_positions(self.latest_signal, self.latest_strategy)
-                            
-                    except Exception as e:
-                        logger.error(f"Real-time data save failed: {e}")
+                # New Bar Logic
+                is_new_bar = current_bar_time > self.last_bar_time
+                
+                # 每秒执行的逻辑 (Check orders, manage positions)
+                # ---------------------------------------------------
+                
                 # ---------------------------------------------------
 
-                # 如果是新 K 线 或者 这是第一次运行 (last_bar_time 为 0)
-                # 用户需求: 交易周期改为 6 分钟，大模型 6 分钟分析
-                is_new_bar = current_bar_time != self.last_bar_time
-                # 交易分析触发器: 新K线生成 (或第一次运行)
-                should_trade_analyze = is_new_bar or (self.last_analysis_time == 0)
-                
-                if should_trade_analyze:
-                    # Run Optimization if needed (Every 4 hours)
-                    if time.time() - self.last_optimization_time > 3600 * 4: # 4 hours
-                         self.optimize_strategy_parameters()
-                         self.optimize_weights()
-                         self.last_optimization_time = time.time()
+                if is_new_bar:
+                    logger.info(f"New Bar Detected: {datetime.fromtimestamp(current_bar_time)}")
+                    self.last_bar_time = current_bar_time
+                    
+                    # 2. 获取数据并计算指标
+                    # M15 Data (Main)
+                    # self.data_loader might not exist in SymbolTrader (it exists in MT5Bot),
+                    # so we use mt5.copy_rates_from_pos directly or self.db_manager.
+                    # Since this is SymbolTrader, we should rely on standard mt5 calls or passed in components.
+                    # Reverting to direct MT5 calls for safety if data_loader is missing.
+                    
+                    df = self._get_mt5_data(self.timeframe, 1000)
+                    if df is None or df.empty:
+                        logger.error("无法获取 K 线数据")
+                        return
 
-                    if self.last_analysis_time == 0:
-                        logger.info("首次运行，立即执行分析...")
-                    else:
+                    # H1 Data (Trend)
+                    df_h1 = self._get_mt5_data(mt5.TIMEFRAME_H1, 500)
+                    if df_h1 is None: df_h1 = pd.DataFrame()
+                    
+                    # H4 Data (Macro)
+                    df_h4 = self._get_mt5_data(mt5.TIMEFRAME_H4, 200)
+                    if df_h4 is None: df_h4 = pd.DataFrame()
+                    
+                    # 保存数据到 DB
+                    if not df.empty:
+                        self.db_manager.save_market_data(df, self.symbol, self.tf_name)
                         logger.info(f"新K线生成 ({datetime.fromtimestamp(current_bar_time)}), 执行策略分析...")
                     
-                    self.last_bar_time = current_bar_time
+                    # 更新分析时间戳
                     self.last_analysis_time = time.time()
                     
                     # 2. 获取数据并分析
-                    # PEM 需要至少 108 根 K 线 (ma_fast_period)，MTF 更新 Zones 需要 500 根
-                    # 为了确保所有模块都有足够数据，我们获取 600 根 (60 hours of M6)
-                    df = self.get_market_data(600) 
+                    # (df already fetched above as M15 Main)
                     
-                    if df is not None:
-                        # Fetch Multi-Timeframe Data (H1, H4)
-                        rates_h1 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_H1, 0, 200)
-                        rates_h4 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_H4, 0, 100)
-                        
-                        df_h1 = pd.DataFrame(rates_h1) if rates_h1 is not None else pd.DataFrame()
-                        df_h4 = pd.DataFrame(rates_h4) if rates_h4 is not None else pd.DataFrame()
+                    # Fetch Multi-Timeframe Data (Already fetched above as df_h1, df_h4)
+                    # Just need to ensure they are standard DataFrames with time index for processor
+                    
+                    # 更新 Grid Strategy 数据
+                    self.grid_strategy.update_market_data(df)
+                    
+                    # 使用 data_processor 计算指标
+                    processor = MT5DataProcessor()
+                    df_features = processor.generate_features(df)
+                    
+                    # Calculate features for H1/H4
+                    df_features_h1 = processor.generate_features(df_h1) if not df_h1.empty else pd.DataFrame()
+                    df_features_h4 = processor.generate_features(df_h4) if not df_h4.empty else pd.DataFrame()
+                    
+                    # Helper to safely get latest dict
+                    def get_latest_safe(dframe):
+                        if dframe.empty: return {}
+                        return dframe.iloc[-1].to_dict()
 
-                        if not df_h1.empty: 
-                            df_h1['time'] = pd.to_datetime(df_h1['time'], unit='s')
-                            if 'tick_volume' in df_h1: df_h1.rename(columns={'tick_volume': 'volume'}, inplace=True)
-                        if not df_h4.empty: 
-                            df_h4['time'] = pd.to_datetime(df_h4['time'], unit='s')
-                            if 'tick_volume' in df_h4: df_h4.rename(columns={'tick_volume': 'volume'}, inplace=True)
+                    feat_h1 = get_latest_safe(df_features_h1)
+                    feat_h4 = get_latest_safe(df_features_h4)
 
-                        # 保存市场数据到DB
-                        self.db_manager.save_market_data(df, self.symbol, self.tf_name)
-                        
-                        # 更新 Grid Strategy 数据
-                        self.grid_strategy.update_market_data(df)
-                        
-                        # 使用 data_processor 计算指标
-                        processor = MT5DataProcessor()
-                        df_features = processor.generate_features(df)
-                        
-                        # Calculate features for H1/H4
-                        df_features_h1 = processor.generate_features(df_h1) if not df_h1.empty else pd.DataFrame()
-                        df_features_h4 = processor.generate_features(df_h4) if not df_h4.empty else pd.DataFrame()
-                        
-                        # Helper to safely get latest dict
-                        def get_latest_safe(dframe):
-                            if dframe.empty: return {}
-                            return dframe.iloc[-1].to_dict()
-
-                        feat_h1 = get_latest_safe(df_features_h1)
-                        feat_h4 = get_latest_safe(df_features_h4)
-
-                        # 3. 调用 AI 与高级分析
-                        # 构建市场快照
-                        current_price = df.iloc[-1]
-                        latest_features = df_features.iloc[-1].to_dict()
-                        
-                        market_snapshot = {
-                            "symbol": self.symbol,
-                            "timeframe": self.tf_name,
-                            "prices": {
-                                "open": float(current_price['open']),
-                                "high": float(current_price['high']),
-                                "low": float(current_price['low']),
-                                "close": float(current_price['close']),
-                                "volume": int(current_price['volume'])
+                    # 3. 调用 AI 与高级分析
+                    # 构建市场快照
+                    current_price = df.iloc[-1]
+                    latest_features = df_features.iloc[-1].to_dict()
+                    
+                    market_snapshot = {
+                        "symbol": self.symbol,
+                        "timeframe": self.tf_name,
+                        "prices": {
+                            "open": float(current_price['open']),
+                            "high": float(current_price['high']),
+                            "low": float(current_price['low']),
+                            "close": float(current_price['close']),
+                            "volume": int(current_price['volume'])
+                        },
+                        "indicators": {
+                            "rsi": float(latest_features.get('rsi', 50)),
+                            "atr": float(latest_features.get('atr', 0)),
+                            "ema_fast": float(latest_features.get('ema_fast', 0)),
+                            "ema_slow": float(latest_features.get('ema_slow', 0)),
+                            "volatility": float(latest_features.get('volatility', 0))
+                        },
+                        "multi_tf_data": {
+                            "H1": {
+                                "close": float(feat_h1.get('close', 0)),
+                                "rsi": float(feat_h1.get('rsi', 50)),
+                                "ema_fast": float(feat_h1.get('ema_fast', 0)),
+                                "ema_slow": float(feat_h1.get('ema_slow', 0)),
+                                "trend": "bullish" if feat_h1.get('ema_fast', 0) > feat_h1.get('ema_slow', 0) else "bearish"
                             },
-                            "indicators": {
-                                "rsi": float(latest_features.get('rsi', 50)),
-                                "atr": float(latest_features.get('atr', 0)),
-                                "ema_fast": float(latest_features.get('ema_fast', 0)),
-                                "ema_slow": float(latest_features.get('ema_slow', 0)),
-                                "volatility": float(latest_features.get('volatility', 0))
-                            },
-                            "multi_tf_data": {
-                                "H1": {
-                                    "close": float(feat_h1.get('close', 0)),
-                                    "rsi": float(feat_h1.get('rsi', 50)),
-                                    "ema_fast": float(feat_h1.get('ema_fast', 0)),
-                                    "ema_slow": float(feat_h1.get('ema_slow', 0)),
-                                    "trend": "bullish" if feat_h1.get('ema_fast', 0) > feat_h1.get('ema_slow', 0) else "bearish"
-                                },
-                                "H4": {
-                                    "close": float(feat_h4.get('close', 0)),
-                                    "rsi": float(feat_h4.get('rsi', 50)),
-                                    "ema_fast": float(feat_h4.get('ema_fast', 0)),
-                                    "ema_slow": float(feat_h4.get('ema_slow', 0)),
-                                    "trend": "bullish" if feat_h4.get('ema_fast', 0) > feat_h4.get('ema_slow', 0) else "bearish"
-                                }
+                            "H4": {
+                                "close": float(feat_h4.get('close', 0)),
+                                "rsi": float(feat_h4.get('rsi', 50)),
+                                "ema_fast": float(feat_h4.get('ema_fast', 0)),
+                                "ema_slow": float(feat_h4.get('ema_slow', 0)),
+                                "trend": "bullish" if feat_h4.get('ema_fast', 0) > feat_h4.get('ema_slow', 0) else "bearish"
                             }
                         }
+                    }
+                    
+                    # --- 3.1 CRT 分析 ---
+                    crt_result = self.crt_analyzer.analyze(self.symbol, current_price, current_bar_time)
+                    logger.info(f"CRT 分析: {crt_result['signal']} ({crt_result['reason']})")
+                    
+                    # --- 3.2.1 多时间周期分析 (MTF) ---
+                    mtf_result = self.mtf_analyzer.analyze(self.symbol, current_price, current_bar_time)
+                    logger.info(f"MTF 分析: {mtf_result['signal']} ({mtf_result['reason']})")
+                    
+                    # --- 3.2.2 高级技术分析 (CCI/RVGI/IFVG) ---
+                    st_params = getattr(self, 'short_term_params', {})
+                    adv_result = self.advanced_adapter.analyze_full(df, params=st_params)
+                    adv_signal = "neutral"
+                    if adv_result:
+                        adv_signal = adv_result['signal_info']['signal']
+                        logger.info(f"高级技术分析: {adv_signal} (强度: {adv_result['signal_info']['strength']})")
                         
-                        # --- 3.1 CRT 分析 ---
-                        crt_result = self.crt_analyzer.analyze(self.symbol, current_price, current_bar_time)
-                        logger.info(f"CRT 分析: {crt_result['signal']} ({crt_result['reason']})")
+                    # --- 3.2.3 SMC 分析 ---
+                    smc_result = self.smc_analyzer.analyze(df, self.symbol)
+                    logger.info(f"SMC 结构: {smc_result['structure']} (信号: {smc_result['signal']})")
+                    
+                    # --- 3.2.4 IFVG 分析 ---
+                    if adv_result and 'ifvg' in adv_result:
+                        ifvg_result = adv_result['ifvg']
+                    else:
+                        ifvg_result = {"signal": "hold", "strength": 0, "reasons": [], "active_zones": []}
+                    logger.info(f"IFVG 分析: {ifvg_result['signal']} (Strength: {ifvg_result['strength']})")
+
+                    # --- 3.2.5 RVGI+CCI 分析 ---
+                    if adv_result and 'rvgi_cci' in adv_result:
+                        rvgi_cci_result = adv_result['rvgi_cci']
+                    else:
+                        rvgi_cci_result = {"signal": "hold", "strength": 0, "reasons": []}
+                    logger.info(f"RVGI+CCI 分析: {rvgi_cci_result['signal']} (Strength: {rvgi_cci_result['strength']})")
+                    
+                    # --- 3.2.6 Grid Strategy Analysis ---
+                    # Extract SMC and IFVG levels for Grid
+                    smc_grid_data = {'ob': [], 'fvg': []}
+                    
+                    # From IFVG
+                    if 'active_zones' in ifvg_result:
+                        for z in ifvg_result['active_zones']:
+                            z_type = 'bearish' if z['type'] == 'supply' else 'bullish'
+                            smc_grid_data['ob'].append({'top': z['top'], 'bottom': z['bottom'], 'type': z_type})
+                    
+                    # From SMC Analyzer
+                    if 'details' in smc_result:
+                        if 'ob' in smc_result['details'] and 'active_obs' in smc_result['details']['ob']:
+                            for ob in smc_result['details']['ob']['active_obs']:
+                                smc_grid_data['ob'].append({'top': ob['top'], 'bottom': ob['bottom'], 'type': ob['type']})
+                        if 'fvg' in smc_result['details'] and 'active_fvgs' in smc_result['details']['fvg']:
+                            for fvg in smc_result['details']['fvg']['active_fvgs']:
+                                smc_grid_data['fvg'].append({'top': fvg['top'], 'bottom': fvg['bottom'], 'type': fvg['type']})
+
+                    self.grid_strategy.update_smc_levels(smc_grid_data)
+                    
+                    grid_signal = self.grid_strategy.get_entry_signal(float(current_price['close']))
+                    logger.info(f"Grid Kalman Signal: {grid_signal}")
+                    
+                    grid_status = {
+                        "active": self.grid_strategy.long_pos_count > 0 or self.grid_strategy.short_pos_count > 0,
+                        "longs": self.grid_strategy.long_pos_count,
+                        "shorts": self.grid_strategy.short_pos_count,
+                        "kalman_price": self.grid_strategy.kalman_value
+                    }
+
+                    # 准备优化器池信息
+                    optimizer_info = {
+                        "available_optimizers": list(self.optimizers.keys()),
+                        "active_optimizer": self.active_optimizer_name,
+                        "last_optimization_score": self.optimizers[self.active_optimizer_name].best_score if self.optimizers[self.active_optimizer_name].best_score > -90000 else None,
+                        "descriptions": {
+                            "WOAm": "Whale Optimization Algorithm (Modified)",
+                            "TETA": "Time Evolution Travel Algorithm"
+                        }
+                    }
+
+                    # --- 3.3 Qwen 策略分析 (Sole Decision Maker) ---
+                    logger.info("正在调用 Qwen 生成策略...")
+                    
+                    # 获取历史交易绩效 (MFE/MAE) - Filter by Current Symbol
+                    trade_stats = self.db_manager.get_trade_performance_stats(symbol=self.symbol, limit=50)
                         
-                        # --- 3.2.1 多时间周期分析 (MTF) ---
-                        mtf_result = self.mtf_analyzer.analyze(self.symbol, current_price, current_bar_time)
-                        logger.info(f"MTF 分析: {mtf_result['signal']} ({mtf_result['reason']})")
-                        
-                        # --- 3.2.2 高级技术分析 (CCI/RVGI/IFVG) ---
-                        st_params = getattr(self, 'short_term_params', {})
-                        adv_result = self.advanced_adapter.analyze_full(df, params=st_params)
-                        adv_signal = "neutral"
-                        if adv_result:
-                            adv_signal = adv_result['signal_info']['signal']
-                            logger.info(f"高级技术分析: {adv_signal} (强度: {adv_result['signal_info']['strength']})")
+                    # 获取当前持仓状态
+                    positions = mt5.positions_get(symbol=self.symbol)
+                    current_positions_list = []
+                    if positions:
+                        for pos in positions:
+                            cur_mfe, cur_mae = self.get_position_stats(pos)
+                            r_multiple = 0.0
+                            if pos.sl > 0:
+                                risk_dist = abs(pos.price_open - pos.sl)
+                                if risk_dist > 0:
+                                    profit_dist = (pos.price_current - pos.price_open) if pos.type == mt5.POSITION_TYPE_BUY else (pos.price_open - pos.price_current)
+                                    r_multiple = profit_dist / risk_dist
                             
-                        # --- 3.2.3 SMC 分析 ---
-                        smc_result = self.smc_analyzer.analyze(df, self.symbol)
-                        logger.info(f"SMC 结构: {smc_result['structure']} (信号: {smc_result['signal']})")
+                            current_positions_list.append({
+                                "ticket": pos.ticket,
+                                "type": "buy" if pos.type == mt5.POSITION_TYPE_BUY else "sell",
+                                "volume": pos.volume,
+                                "open_price": pos.price_open,
+                                "current_price": pos.price_current,
+                                "profit": pos.profit,
+                                "sl": pos.sl,
+                                "tp": pos.tp,
+                                "mfe_pct": cur_mfe,
+                                "mae_pct": cur_mae,
+                                "r_multiple": r_multiple
+                            })
+                    
+                    # 准备技术信号摘要
+                    technical_signals = {
+                        "crt": crt_result,
+                        "smc": smc_result['signal'],
+                        "grid_strategy": {
+                            "signal": grid_signal,
+                            "status": grid_status,
+                            "config": self.grid_strategy.get_config()
+                        },
+                        "mtf": mtf_result['signal'], 
+                        "ifvg": ifvg_result['signal'],
+                        "rvgi_cci": rvgi_cci_result['signal'],
+                        "performance_stats": trade_stats
+                    }
+                    
+                    # Qwen Sentiment Analysis
+                    qwen_sent_score = 0
+                    qwen_sent_label = 'neutral'
+                    try:
+                        # DEBUG: Verify method existence
+                        if not hasattr(self.qwen_client, 'analyze_market_sentiment'):
+                            logger.error(f"Method analyze_market_sentiment missing in {type(self.qwen_client)}")
+                            logger.error(f"Available methods: {[m for m in dir(self.qwen_client) if not m.startswith('__')]}")
                         
-                        # --- 3.2.4 IFVG 分析 ---
-                        if adv_result and 'ifvg' in adv_result:
-                            ifvg_result = adv_result['ifvg']
-                        else:
-                            ifvg_result = {"signal": "hold", "strength": 0, "reasons": [], "active_zones": []}
-                        logger.info(f"IFVG 分析: {ifvg_result['signal']} (Strength: {ifvg_result['strength']})")
+                        qwen_sentiment = self.qwen_client.analyze_market_sentiment(market_snapshot)
+                        if qwen_sentiment:
+                            qwen_sent_score = qwen_sentiment.get('sentiment_score', 0)
+                            qwen_sent_label = qwen_sentiment.get('sentiment', 'neutral')
+                    except Exception as e:
+                        logger.error(f"Sentiment Analysis Failed: {e}")
 
-                        # --- 3.2.5 RVGI+CCI 分析 ---
-                        if adv_result and 'rvgi_cci' in adv_result:
-                            rvgi_cci_result = adv_result['rvgi_cci']
-                        else:
-                            rvgi_cci_result = {"signal": "hold", "strength": 0, "reasons": []}
-                        logger.info(f"RVGI+CCI 分析: {rvgi_cci_result['signal']} (Strength: {rvgi_cci_result['strength']})")
-                        
-                        # --- 3.2.6 Grid Strategy Analysis ---
-                        # Extract SMC and IFVG levels for Grid
-                        smc_grid_data = {'ob': [], 'fvg': []}
-                        
-                        # From IFVG
-                        if 'active_zones' in ifvg_result:
-                            for z in ifvg_result['active_zones']:
-                                z_type = 'bearish' if z['type'] == 'supply' else 'bullish'
-                                smc_grid_data['ob'].append({'top': z['top'], 'bottom': z['bottom'], 'type': z_type})
-                        
-                        # From SMC Analyzer
-                        if 'details' in smc_result:
-                            if 'ob' in smc_result['details'] and 'active_obs' in smc_result['details']['ob']:
-                                for ob in smc_result['details']['ob']['active_obs']:
-                                    smc_grid_data['ob'].append({'top': ob['top'], 'bottom': ob['bottom'], 'type': ob['type']})
-                            if 'fvg' in smc_result['details'] and 'active_fvgs' in smc_result['details']['fvg']:
-                                for fvg in smc_result['details']['fvg']['active_fvgs']:
-                                    smc_grid_data['fvg'].append({'top': fvg['top'], 'bottom': fvg['bottom'], 'type': fvg['type']})
-
-                        self.grid_strategy.update_smc_levels(smc_grid_data)
-                        
-                        grid_signal = self.grid_strategy.get_entry_signal(float(current_price['close']))
-                        logger.info(f"Grid Kalman Signal: {grid_signal}")
-                        
-                        grid_status = {
-                            "active": self.grid_strategy.long_pos_count > 0 or self.grid_strategy.short_pos_count > 0,
-                            "longs": self.grid_strategy.long_pos_count,
-                            "shorts": self.grid_strategy.short_pos_count,
-                            "kalman_price": self.grid_strategy.kalman_value
-                        }
-
-                        # 准备优化器池信息
-                        optimizer_info = {
-                            "available_optimizers": list(self.optimizers.keys()),
-                            "active_optimizer": self.active_optimizer_name,
-                            "last_optimization_score": self.optimizers[self.active_optimizer_name].best_score if self.optimizers[self.active_optimizer_name].best_score > -90000 else None,
-                            "descriptions": {
-                                "WOAm": "Whale Optimization Algorithm (Modified)",
-                                "TETA": "Time Evolution Travel Algorithm"
-                            }
-                        }
-
-                        # --- 3.3 Qwen 策略分析 (Sole Decision Maker) ---
-                        logger.info("正在调用 Qwen 生成策略...")
-                        
-                        # 获取历史交易绩效 (MFE/MAE) - Filter by Current Symbol
-                        trade_stats = self.db_manager.get_trade_performance_stats(symbol=self.symbol, limit=50)
-                        
-                        # 获取当前持仓状态
-                        positions = mt5.positions_get(symbol=self.symbol)
-                        current_positions_list = []
-                        if positions:
-                            for pos in positions:
-                                cur_mfe, cur_mae = self.get_position_stats(pos)
-                                r_multiple = 0.0
-                                if pos.sl > 0:
-                                    risk_dist = abs(pos.price_open - pos.sl)
-                                    if risk_dist > 0:
-                                        profit_dist = (pos.price_current - pos.price_open) if pos.type == mt5.POSITION_TYPE_BUY else (pos.price_open - pos.price_current)
-                                        r_multiple = profit_dist / risk_dist
-                                
-                                current_positions_list.append({
-                                    "ticket": pos.ticket,
-                                    "type": "buy" if pos.type == mt5.POSITION_TYPE_BUY else "sell",
-                                    "volume": pos.volume,
-                                    "open_price": pos.price_open,
-                                    "current_price": pos.price_current,
-                                    "profit": pos.profit,
-                                    "sl": pos.sl,
-                                    "tp": pos.tp,
-                                    "mfe_pct": cur_mfe,
-                                    "mae_pct": cur_mae,
-                                    "r_multiple": r_multiple
-                                })
-                        
-                        # 准备技术信号摘要
-                        technical_signals = {
-                            "crt": crt_result,
-                            "smc": smc_result['signal'],
-                            "grid_strategy": {
-                                "signal": grid_signal,
-                                "status": grid_status,
-                                "config": self.grid_strategy.get_config()
-                            },
-                            "mtf": mtf_result['signal'], 
-                            "ifvg": ifvg_result['signal'],
-                            "rvgi_cci": rvgi_cci_result['signal'],
-                            "performance_stats": trade_stats
-                        }
-                        
-                        # Qwen Sentiment Analysis
-                        qwen_sent_score = 0
-                        qwen_sent_label = 'neutral'
+                    # Call Qwen
+                    # Removed DeepSeek structure, pass simplified structure
+                    dummy_structure = {"market_state": "Analyzed by Qwen", "preliminary_signal": "neutral"}
+                    
+                    strategy = self.qwen_client.optimize_strategy_logic(
+                        dummy_structure, # Qwen will ignore this or treat as base
+                        market_snapshot, 
+                        technical_signals=technical_signals, 
+                        current_positions=current_positions_list,
+                        performance_stats=trade_stats,
+                        previous_analysis=self.latest_strategy
+                    )
+                    self.latest_strategy = strategy
+                    self.last_llm_time = time.time()
+                    
+                    # --- 参数自适应优化 (Feedback Loop) ---
+                    param_updates = strategy.get('parameter_updates', {})
+                    if param_updates:
                         try:
-                            # DEBUG: Verify method existence
-                            if not hasattr(self.qwen_client, 'analyze_market_sentiment'):
-                                logger.error(f"Method analyze_market_sentiment missing in {type(self.qwen_client)}")
-                                logger.error(f"Available methods: {[m for m in dir(self.qwen_client) if not m.startswith('__')]}")
+                            update_reason = param_updates.get('reason', 'AI Optimized')
+                            logger.info(f"应用参数优化 ({update_reason}): {param_updates}")
                             
-                            qwen_sentiment = self.qwen_client.analyze_market_sentiment(market_snapshot)
-                            if qwen_sentiment:
-                                qwen_sent_score = qwen_sentiment.get('sentiment_score', 0)
-                                qwen_sent_label = qwen_sentiment.get('sentiment', 'neutral')
-                        except Exception as e:
-                            logger.error(f"Sentiment Analysis Failed: {e}")
-
-                        # Call Qwen
-                        # Removed DeepSeek structure, pass simplified structure
-                        dummy_structure = {"market_state": "Analyzed by Qwen", "preliminary_signal": "neutral"}
-                        
-                        strategy = self.qwen_client.optimize_strategy_logic(
-                            dummy_structure, # Qwen will ignore this or treat as base
-                            market_snapshot, 
-                            technical_signals=technical_signals, 
-                            current_positions=current_positions_list,
-                            performance_stats=trade_stats,
-                            previous_analysis=self.latest_strategy
-                        )
-                        self.latest_strategy = strategy
-                        self.last_llm_time = time.time()
-                        
-                        # --- 参数自适应优化 (Feedback Loop) ---
-                        param_updates = strategy.get('parameter_updates', {})
-                        if param_updates:
-                            try:
-                                update_reason = param_updates.get('reason', 'AI Optimized')
-                                logger.info(f"应用参数优化 ({update_reason}): {param_updates}")
+                            # 1. SMC 参数
+                            if 'smc_atr_threshold' in param_updates:
+                                self.smc_analyzer.atr_threshold = float(param_updates['smc_atr_threshold'])
                                 
-                                # 1. SMC 参数
-                                if 'smc_atr_threshold' in param_updates:
-                                    self.smc_analyzer.atr_threshold = float(param_updates['smc_atr_threshold'])
-                                    
-                                # 2. Grid Strategy 参数
-                                if 'grid_settings' in param_updates:
-                                    self.grid_strategy.update_config(param_updates['grid_settings'])
-                                
-                                # 3. Dynamic Position & Grid Management (from Qwen Analysis)
-                                pos_mgmt = strategy.get('position_management', {})
-                                if pos_mgmt:
-                                    # Update Global TP for Basket
-                                    # Qwen might return 'global_tp' directly or implicitly via logic
-                                    # Here we assume Qwen can update global TP based on risk appetite
-                                    if 'global_tp' in pos_mgmt:
-                                        self.grid_strategy.global_tp = float(pos_mgmt['global_tp'])
+                            # 2. Grid Strategy 参数
+                            if 'grid_settings' in param_updates:
+                                self.grid_strategy.update_config(param_updates['grid_settings'])
+                            
+                            # 3. Dynamic Position & Grid Management (from Qwen Analysis)
+                            pos_mgmt = strategy.get('position_management', {})
+                            if pos_mgmt:
+                                # Update Global TP for Basket
+                                # Qwen might return 'global_tp' directly or implicitly via logic
+                                # Here we assume Qwen can update global TP based on risk appetite
+                                if 'global_tp' in pos_mgmt:
+                                    self.grid_strategy.global_tp = float(pos_mgmt['global_tp'])
                                         logger.info(f"AI 更新 Grid Global TP: {self.grid_strategy.global_tp}")
                                         
                                     # Update Lot Multiplier
@@ -2780,8 +2741,10 @@ class SymbolTrader:
                             final_signal = "grid_start"
                             
                         # Reason
-                        reason = strategy.get('reason', 'Qwen Decision')
-                        
+                        reason = strategy.get('strategy_rationale', 'Qwen Decision') # Use rationale if available
+                        if reason == 'Qwen Decision':
+                             reason = strategy.get('reason', 'Qwen Decision')
+
                         # 3. 智能平仓信号处理
                         if qw_action == 'close' and final_signal != 'close':
                             final_signal = 'close'
@@ -2819,7 +2782,11 @@ class SymbolTrader:
                         }
                         
                         # Combine Signals (Using HybridOptimizer just for weighting record)
-                        _, _, weights = self.optimizer.combine_signals(all_signals)
+                        # We don't use the result of optimizer, just for logging weights if needed
+                        # Or skip if optimizer is not critical here.
+                        weights = {}
+                        if hasattr(self, 'optimizer'):
+                             _, _, weights = self.optimizer.combine_signals(all_signals)
 
                         logger.info(f"AI 最终决定 (Qwen): {final_signal.upper()} (强度: {strength:.1f})")
                         logger.info(f"Reason: {reason}")
@@ -2836,8 +2803,6 @@ class SymbolTrader:
                                 "market_state": strategy.get('market_state', 'N/A'),
                                 "crt_reason": crt_result['reason'],
                                 "mtf_reason": mtf_result['reason'],
-                                "smc_structure": smc_result['structure'],
-                                "ifvg_reason": ", ".join(ifvg_result['reasons']) if ifvg_result['reasons'] else "N/A"
                             }
                         })
                         
