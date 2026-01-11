@@ -2546,8 +2546,8 @@ class SymbolTrader:
                         # --- 3.3 Qwen 策略分析 (Sole Decision Maker) ---
                         logger.info("正在调用 Qwen 生成策略...")
                         
-                        # 获取历史交易绩效 (MFE/MAE)
-                        trade_stats = self.db_manager.get_trade_performance_stats(limit=50)
+                        # 获取历史交易绩效 (MFE/MAE) - Filter by Current Symbol
+                        trade_stats = self.db_manager.get_trade_performance_stats(symbol=self.symbol, limit=50)
                         
                         # 获取当前持仓状态
                         positions = mt5.positions_get(symbol=self.symbol)
