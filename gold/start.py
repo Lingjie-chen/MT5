@@ -1471,36 +1471,54 @@ class SymbolTrader:
                 else:
                     trade_dir = 'buy' if type_pos == mt5.POSITION_TYPE_BUY else 'sell'
                     
-                    opt_sl, opt_tp = self.calculate_optimized_sl_tp(trade_dir, current_price, atr, market_context=None, ai_exit_conds=ai_exits)
+                    # --- NEW LOGIC: Use Qwen's Analysis Directly ---
+                    # Instead of calculating based on ATR multipliers inside calculate_optimized_sl_tp,
+                    # we trust the explicit values provided by the LLM (which integrated SMC/MFE/MAE/ATR)
                     
+                    opt_sl = ai_exits.get('sl_price', 0.0)
+                    opt_tp = ai_exits.get('tp_price', 0.0)
+                    
+                    # Validate and Normalize
                     opt_sl = self._normalize_price(opt_sl)
                     opt_tp = self._normalize_price(opt_tp)
                     
+                    # --- Update SL ---
                     if opt_sl > 0:
                         diff_sl = abs(opt_sl - sl)
-                        is_better_sl = False
-                        if type_pos == mt5.POSITION_TYPE_BUY and opt_sl > sl: is_better_sl = True
-                        if type_pos == mt5.POSITION_TYPE_SELL and opt_sl < sl: is_better_sl = True
                         
+                        # Validate Stop Level distance
                         valid_sl = True
-                        if type_pos == mt5.POSITION_TYPE_BUY and (current_price - opt_sl < stop_level_dist): valid_sl = False
-                        if type_pos == mt5.POSITION_TYPE_SELL and (opt_sl - current_price < stop_level_dist): valid_sl = False
+                        if type_pos == mt5.POSITION_TYPE_BUY:
+                            if (current_price - opt_sl) < stop_level_dist: valid_sl = False # SL must be below price
+                            if opt_sl >= current_price: valid_sl = False # Basic sanity
+                        elif type_pos == mt5.POSITION_TYPE_SELL:
+                            if (opt_sl - current_price) < stop_level_dist: valid_sl = False # SL must be above price
+                            if opt_sl <= current_price: valid_sl = False # Basic sanity
                         
-                        if valid_sl and (diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5)):
+                        # Only update if valid and difference is significant (reduce api spam)
+                        if valid_sl and diff_sl > (point * 10):
                             request['sl'] = opt_sl
                             changed = True
-                            logger.info(f"AI/Stats 更新 SL: {sl:.2f} -> {opt_sl:.2f}")
+                            logger.info(f"AI Model 更新 SL: {sl:.2f} -> {opt_sl:.2f}")
 
+                    # --- Update TP ---
                     if opt_tp > 0:
                         diff_tp = abs(opt_tp - tp)
-                        valid_tp = True
-                        if type_pos == mt5.POSITION_TYPE_BUY and (opt_tp - current_price < stop_level_dist): valid_tp = False
-                        if type_pos == mt5.POSITION_TYPE_SELL and (current_price - opt_tp < stop_level_dist): valid_tp = False
                         
-                        if valid_tp and diff_tp > point * 30:
+                        # Validate Stop Level distance
+                        valid_tp = True
+                        if type_pos == mt5.POSITION_TYPE_BUY:
+                             if (opt_tp - current_price) < stop_level_dist: valid_tp = False # TP must be above price
+                             if opt_tp <= current_price: valid_tp = False
+                        elif type_pos == mt5.POSITION_TYPE_SELL:
+                             if (current_price - opt_tp) < stop_level_dist: valid_tp = False # TP must be below price
+                             if opt_tp >= current_price: valid_tp = False
+                        
+                        # Only update if valid and difference is significant
+                        if valid_tp and diff_tp > (point * 10):
                             request['tp'] = opt_tp
                             changed = True
-                            logger.info(f"AI/Stats 更新 TP: {tp:.2f} -> {opt_tp:.2f}")
+                            logger.info(f"AI Model 更新 TP: {tp:.2f} -> {opt_tp:.2f}")
 
                 # 如果没有明确价格，但有 ATR 倍数建议 (兼容旧逻辑或备用)，则计算
                 # REMOVED/SKIPPED to enforce "No Dynamic Movement"
