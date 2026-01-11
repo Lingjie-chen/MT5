@@ -188,18 +188,33 @@ class KalmanGridStrategy:
         
         # Check Buy Grid
         if self.long_pos_count > 0 and self.long_pos_count < self.max_grid_steps:
+            # For BUY, we add when price drops below last open
             dist = self.last_long_price - current_price
-            if dist >= grid_dist:
-                # SMC Check: Is there a support level nearby?
-                # If yes, align with it? For simplicity, we stick to distance but scale lot
+            
+            # Use points logic
+            # grid_step_points is already integer points (e.g., 2000 for ETH)
+            # point is e.g. 0.01 for ETH
+            min_dist_price = self.grid_step_points * point
+            
+            # Ensure strictly greater than minimum distance
+            if dist >= min_dist_price:
+                # Double check not adding too close to existing (in case of volatility spikes)
+                # But here self.last_long_price is the *latest* opened position.
+                
                 next_lot = self.calculate_next_lot(self.long_pos_count)
+                logger.info(f"Grid Add BUY Signal: Dist {dist:.2f} >= Min {min_dist_price:.2f} (Step {self.grid_step_points})")
                 return 'add_buy', next_lot
                 
         # Check Sell Grid
         if self.short_pos_count > 0 and self.short_pos_count < self.max_grid_steps:
+            # For SELL, we add when price rises above last open
             dist = current_price - self.last_short_price
-            if dist >= grid_dist:
+            
+            min_dist_price = self.grid_step_points * point
+            
+            if dist >= min_dist_price:
                 next_lot = self.calculate_next_lot(self.short_pos_count)
+                logger.info(f"Grid Add SELL Signal: Dist {dist:.2f} >= Min {min_dist_price:.2f} (Step {self.grid_step_points})")
                 return 'add_sell', next_lot
                 
         return None, 0.0
