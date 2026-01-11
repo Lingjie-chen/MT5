@@ -2297,7 +2297,7 @@ class SymbolTrader:
                 rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 1)
                 if rates is None:
                     time.sleep(1)
-                    continue
+                    return
                     
                 current_bar_time = rates[0]['time']
                 
@@ -2820,13 +2820,91 @@ class SymbolTrader:
             logger.error(f"发生未捕获异常: {e}", exc_info=True)
             mt5.shutdown()
 
-if __name__ == "__main__":
-    # 可以通过命令行参数传入品种
-    symbol = "GOLD" 
-    if len(sys.argv) > 1:
-        symbol = sys.argv[1].upper()
-    else:
-        symbol = "GOLD" # 默认改为黄金
+class MultiSymbolBot:
+    def __init__(self, symbols, timeframe=mt5.TIMEFRAME_M15):
+        self.symbols = symbols
+        self.timeframe = timeframe
+        self.traders = []
+        self.is_running = False
+        self.watcher = None
+
+    def initialize_mt5(self):
+        """Global MT5 Initialization"""
+        # 尝试使用指定账户登录
+        account = 89633982
+        server = "Ava-Real 1-MT5"
+        password = "Clj568741230#"
         
-    bot = AI_MT5_Bot(symbol=symbol, timeframe=mt5.TIMEFRAME_M15)
-    bot.run()
+        if not mt5.initialize(login=account, server=server, password=password):
+            logger.error(f"MT5 初始化失败, 错误码: {mt5.last_error()}")
+            # 尝试不带账号初始化
+            if not mt5.initialize():
+                return False
+        
+        # 检查终端状态
+        term_info = mt5.terminal_info()
+        if not term_info.trade_allowed:
+            logger.warning("⚠️ 警告: 终端 '自动交易' (Algo Trading) 未开启！")
+            
+        logger.info(f"MT5 全局初始化成功，账户: {mt5.account_info().login}")
+        return True
+
+    def start(self):
+        if not self.initialize_mt5():
+            logger.error("MT5 初始化失败，无法启动")
+            return
+
+        # Start File Watcher
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            self.watcher = FileWatcher([current_dir])
+            self.watcher.start()
+        except Exception as e:
+            logger.error(f"Failed to start FileWatcher: {e}")
+
+        # Initialize Traders
+        for symbol in self.symbols:
+            try:
+                trader = SymbolTrader(symbol=symbol, timeframe=self.timeframe)
+                trader.initialize()
+                self.traders.append(trader)
+                logger.info(f"Trader for {symbol} initialized.")
+            except Exception as e:
+                logger.error(f"Failed to initialize trader for {symbol}: {e}")
+
+        self.is_running = True
+        logger.info(f"🚀 Multi-Symbol Bot Started for: {self.symbols}")
+
+        try:
+            while self.is_running:
+                for trader in self.traders:
+                    try:
+                        trader.process_tick()
+                    except Exception as e:
+                        logger.error(f"Error processing {trader.symbol}: {e}")
+                
+                # Sleep to prevent CPU hogging, but short enough for responsiveness
+                time.sleep(1)
+                
+        except KeyboardInterrupt:
+            logger.info("Bot stopped by user.")
+            mt5.shutdown()
+        except Exception as e:
+            logger.critical(f"Fatal Bot Error: {e}", exc_info=True)
+            mt5.shutdown()
+
+if __name__ == "__main__":
+    # Default symbols
+    symbols = ["GOLD", "ETHUSD", "EURUSD"]
+    
+    # Allow command line override (comma separated)
+    if len(sys.argv) > 1:
+        # Check if argument is a list of symbols or just one
+        arg = sys.argv[1]
+        if "," in arg:
+            symbols = [s.strip().upper() for s in arg.split(",")]
+        else:
+            symbols = [arg.upper()]
+            
+    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M15)
+    bot.start()
