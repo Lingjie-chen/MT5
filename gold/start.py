@@ -2862,36 +2862,56 @@ class MultiSymbolBot:
         except Exception as e:
             logger.error(f"Failed to start FileWatcher: {e}")
 
-        # Initialize Traders
-        for symbol in self.symbols:
-            try:
-                trader = SymbolTrader(symbol=symbol, timeframe=self.timeframe)
-                trader.initialize()
-                self.traders.append(trader)
-                logger.info(f"Trader for {symbol} initialized.")
-            except Exception as e:
-                logger.error(f"Failed to initialize trader for {symbol}: {e}")
-
         self.is_running = True
         logger.info(f"🚀 Multi-Symbol Bot Started for: {self.symbols}")
 
+        # Launch a thread for each symbol
+        for symbol in self.symbols:
+            try:
+                # Create and start a worker thread for this symbol
+                thread = threading.Thread(target=self._trader_worker, args=(symbol,), name=f"Thread-{symbol}", daemon=True)
+                thread.start()
+                logger.info(f"Thread for {symbol} started.")
+            except Exception as e:
+                logger.error(f"Failed to start thread for {symbol}: {e}")
+
         try:
+            # Main thread keep-alive
             while self.is_running:
-                for trader in self.traders:
-                    try:
-                        trader.process_tick()
-                    except Exception as e:
-                        logger.error(f"Error processing {trader.symbol}: {e}")
-                
-                # Sleep to prevent CPU hogging, but short enough for responsiveness
                 time.sleep(1)
                 
         except KeyboardInterrupt:
             logger.info("Bot stopped by user.")
+            self.is_running = False
             mt5.shutdown()
         except Exception as e:
             logger.critical(f"Fatal Bot Error: {e}", exc_info=True)
+            self.is_running = False
             mt5.shutdown()
+
+    def _trader_worker(self, symbol):
+        """Worker function for each symbol thread"""
+        try:
+            # Initialize trader instance inside the thread
+            # NOTE: MT5 calls are thread-safe, but we need to ensure separate state
+            trader = SymbolTrader(symbol=symbol, timeframe=self.timeframe)
+            trader.initialize()
+            self.traders.append(trader) # Keep reference if needed
+            
+            logger.info(f"[{symbol}] Worker Loop Started")
+            
+            while self.is_running:
+                try:
+                    trader.process_tick()
+                except Exception as e:
+                    logger.error(f"[{symbol}] Process Error: {e}")
+                
+                # Independent sleep for this symbol's loop
+                # Adjust polling rate if needed
+                time.sleep(1) 
+                
+        except Exception as e:
+            logger.error(f"[{symbol}] Worker Thread Crash: {e}")
 
 if __name__ == "__main__":
     # Default symbols
