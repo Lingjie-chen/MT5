@@ -306,8 +306,44 @@ class SymbolTrader:
             return False
         else:
             logger.info(f"平仓成功 #{position.ticket}")
-            profit = getattr(result, 'profit', 0.0)
-            self.send_telegram_message(f"🔄 *Position Closed*\nTicket: `{position.ticket}`\nReason: {comment}\nProfit: {profit}")
+            
+            # Calculate total profit for this position
+            total_profit = 0.0
+            total_swap = 0.0
+            total_commission = 0.0
+            net_profit = 0.0
+            
+            try:
+                # Short delay to ensure history is updated
+                time.sleep(0.5)
+                # Get all deals associated with this position
+                deals = mt5.history_deals_get(position=position.ticket)
+                
+                if deals:
+                    for deal in deals:
+                        total_profit += deal.profit
+                        total_swap += deal.swap
+                        total_commission += deal.commission
+                    net_profit = total_profit + total_swap + total_commission
+                else:
+                    # Fallback to result profit if history not available
+                    net_profit = getattr(result, 'profit', 0.0)
+                    total_profit = net_profit
+                    
+            except Exception as e:
+                logger.error(f"获取平仓盈亏失败: {e}")
+                net_profit = getattr(result, 'profit', 0.0)
+
+            # Construct detailed message
+            msg = f"🔄 *Position Closed*\n"
+            msg += f"Ticket: `{position.ticket}`\n"
+            msg += f"Reason: {comment}\n"
+            msg += f"Profit: `{total_profit:.2f}`\n"
+            msg += f"Swap: `{total_swap:.2f}`\n"
+            msg += f"Comm: `{total_commission:.2f}`\n"
+            msg += f"💰 *Net PnL: {net_profit:.2f}*"
+
+            self.send_telegram_message(msg)
             return True
 
     def check_risk_reward_ratio(self, entry_price, sl_price, tp_price):
