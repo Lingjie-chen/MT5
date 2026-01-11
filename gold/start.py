@@ -114,7 +114,12 @@ class SymbolTrader:
         self.lot_size = 0.01 
         self.max_drawdown_pct = 0.05
         
-        self.db_manager = DatabaseManager()
+        # 使用特定品种的独立数据库文件，确保数据完全隔离
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        db_filename = f"trading_data_{symbol}.db"
+        db_path = os.path.join(current_dir, db_filename)
+        
+        self.db_manager = DatabaseManager(db_path=db_path)
         self.ai_factory = AIClientFactory()
         
         # Only Qwen as Sole Decision Maker
