@@ -1122,12 +1122,16 @@ class SymbolTrader:
         tick = mt5.symbol_info_tick(self.symbol)
         spread = (tick.ask - tick.bid) if tick else (symbol_info.spread * point)
         
-        # Calculate safe distance
-        # Broker requires distance from Trigger Price (Ask for Sell SL, Bid for Buy SL)
-        # But we set SL relative to Execution Price (Bid for Sell, Ask for Buy)
-        # So we must add Spread to the buffer
-        # Buffer = TradeStopsLevel + Spread + Safety(20 points)
-        stops_level = (symbol_info.trade_stops_level * point) + spread + (20 * point)
+        # Base stops level required by broker
+        base_stops_level = symbol_info.trade_stops_level * point
+        
+        # SL requires Spread buffer because it triggers on the other side of execution price
+        # (Buy executes at Ask, SL triggers at Bid; Sell executes at Bid, SL triggers at Ask)
+        sl_min_dist = base_stops_level + spread + (20 * point)
+        
+        # TP triggers on the same side as execution price (usually), so Spread is strictly not required,
+        # but a small safety buffer (20 points) is good.
+        tp_min_dist = base_stops_level + (20 * point)
         
         is_buy = "buy" in type_str
         is_sell = "sell" in type_str
@@ -1157,22 +1161,22 @@ class SymbolTrader:
         # 防止 SL/TP 距离价格太近导致 Error 10016
         if sl > 0:
             dist = abs(price - sl)
-            if dist < stops_level:
-                logger.warning(f"SL too close (Dist {dist:.5f} < Level {stops_level:.5f}). Adjusting.")
+            if dist < sl_min_dist:
+                logger.warning(f"SL too close (Dist {dist:.5f} < Level {sl_min_dist:.5f}). Adjusting.")
                 if is_buy: 
-                    sl = price - stops_level
+                    sl = price - sl_min_dist
                 else: 
-                    sl = price + stops_level
+                    sl = price + sl_min_dist
                 sl = self._normalize_price(sl)
                 
         if tp > 0:
             dist = abs(price - tp)
-            if dist < stops_level:
-                logger.warning(f"TP too close (Dist {dist:.5f} < Level {stops_level:.5f}). Adjusting.")
+            if dist < tp_min_dist:
+                logger.warning(f"TP too close (Dist {dist:.5f} < Level {tp_min_dist:.5f}). Adjusting.")
                 if is_buy: 
-                    tp = price + stops_level
+                    tp = price + tp_min_dist
                 else: 
-                    tp = price - stops_level
+                    tp = price - tp_min_dist
                 tp = self._normalize_price(tp)
         
         # ----------------------------------------
