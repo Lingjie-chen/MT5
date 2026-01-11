@@ -705,14 +705,18 @@ class QwenClient:
         
         ## 核心指令更新：动态仓位计算 (Dynamic Position Sizing)
         你必须根据以下因素，精确计算本次交易的 **position_size (Lots)**：
-        1. **账户资金**: {current_market_data.get('account_info', {}).get('available_balance', 10000)}
-        2. **风险偏好**: 单笔风险建议控制在 1% - 3% 之间。
-        3. **信号置信度**: SMC结构越清晰、共振越多，仓位可适当增加。
+        1. **实时账户资金**: {current_market_data.get('account_info', {}).get('available_balance', 10000)} (请根据资金规模合理配比)
+        2. **风险偏好**: 单笔风险严格控制在 1% - 3% 之间。
+        3. **信号置信度 & 高级算法**: 
+           - 综合 **SMC (Smart Money Concepts)** 结构分析 (OB/FVG)。
+           - 参考 **CRT (Candle Range Theory)** 和 **MTF (Multi-Timeframe)** 共振。
+           - 结合 **CCI/RVGI** 动量指标。
+           - 信号越强、算法共振越多，仓位可适当增加。
         4. **市场情绪**: 结合 {market_analysis.get('sentiment_analysis', {}).get('sentiment', 'neutral')} 情绪调整。
         5. **凯利公式**: 参考你的胜率预估。
 
         **绝对不要**使用固定的 0.01 手！
-        请给出一个精确到小数点后两位的数字 (例如 0.15, 0.50, 1.20)，并在 `strategy_rationale` 中解释计算逻辑。
+        请给出一个精确到小数点后两位的数字 (例如 0.15, 0.50, 1.20)，并在 `strategy_rationale` 中详细解释计算逻辑 (例如："基于2%风险和强SMC信号，计算得出...")。
 
         ## 当前交易上下文
         
@@ -784,8 +788,8 @@ class QwenClient:
                     logger.error(f"Qwen响应格式错误 (期望dict, 实际{type(trading_decision)}): {trading_decision}")
                     return self._get_default_decision("响应格式错误")
                 
-                # 强制统一 position_size 为 0.01
-                trading_decision["position_size"] = 0.01
+                # Qwen 动态计算仓位
+                # trading_decision["position_size"] = 0.01 
                 
                 # 确保必要的字段存在
                 required_fields = ['action', 'entry_conditions', 'exit_conditions', 'strategy_rationale', 'telegram_report']
@@ -793,6 +797,18 @@ class QwenClient:
                     if field not in trading_decision:
                         trading_decision[field] = self._get_default_value(field)
                 
+                # 再次校验模型返回的 position_size，确保其存在且合法
+                if "position_size" not in trading_decision:
+                    trading_decision["position_size"] = 0.01 # 默认值作为保底
+                else:
+                    # 限制范围，防止模型给出极端值
+                    try:
+                        size = float(trading_decision["position_size"])
+                        # 0.01 到 10.0 手之间 (根据资金规模调整，放宽上限以适应大资金)
+                        trading_decision["position_size"] = max(0.01, min(10.0, size))
+                    except (ValueError, TypeError):
+                        trading_decision["position_size"] = 0.01
+
                 # 添加市场分析结果到决策中
                 trading_decision['market_analysis'] = market_analysis
                 
