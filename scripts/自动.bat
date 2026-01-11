@@ -9,6 +9,12 @@ echo [%DATE% %TIME%] Starting Database Checkpoint & Sync Service (Windows)...
 echo Intervals: Every 60 seconds
 echo ---------------------------------------------------
 
+:: ===================================================
+:: NETWORK PROXY SETTINGS (Optional / Network Fix)
+:: If you see "Failed to connect to github.com", uncomment the line below:
+:: set "https_proxy=http://127.0.0.1:7890"
+:: ===================================================
+
 :: Check and Configure Git Identity if missing
 git config user.email >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
