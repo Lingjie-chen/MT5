@@ -145,71 +145,43 @@ db_manager, visualizer = get_managers()
 
 # Sidebar Settings
 st.sidebar.title("Configuration")
-symbol = st.sidebar.text_input("Symbol", value="GOLD").upper()
+# Changed to multiselect for multi-symbol support
+available_symbols = ["GOLD", "ETHUSD", "EURUSD"]
+selected_symbols = st.sidebar.multiselect("Select Symbols", available_symbols, default=["GOLD"])
 refresh_rate = st.sidebar.slider("Refresh Rate (seconds)", 1, 60, 5)
 auto_refresh = st.sidebar.checkbox("Auto Refresh", value=True)
 
 # Main Dashboard
-st.title(f"🚀 AI Quant Trading Dashboard - {symbol}")
+st.title("🚀 AI Multi-Symbol Trading Dashboard")
 
-# Status Placeholders
-header_col1, header_col2, header_col3 = st.columns(3)
-with header_col1:
-    st.markdown("### Market Status")
-    status_placeholder = st.empty()
-with header_col2:
-    st.markdown("### AI Decision")
-    ai_decision_placeholder = st.empty()
-with header_col3:
-    st.markdown("### Last Update")
-    time_placeholder = st.empty()
+if not selected_symbols:
+    st.warning("Please select at least one symbol from the sidebar.")
+    st.stop()
 
-# Layout
-# Top Row: Chart (Left) and Stats (Right)
-row1_col1, row1_col2 = st.columns([7, 3])
-
-with row1_col1:
-    st.subheader(f"{symbol} Market Analysis")
-    chart_placeholder = st.empty()
-
-with row1_col2:
-    st.subheader("Signal & Portfolio Status")
-    gauge_placeholder = st.empty()
-    pie_placeholder = st.empty()
-
-# Bottom Row: Equity Curve and Recent Trades
-row2_col1, row2_col2 = st.columns([1, 1])
-
-with row2_col1:
-    st.subheader("Equity Curve")
-    equity_placeholder = st.empty()
-
-with row2_col2:
-    st.subheader("Trading Blotter")
-    trades_table_placeholder = st.empty()
-
-st.markdown("---")
-# AI Analysis Section
-st.subheader("🤖 AI Market Insights (DeepSeek & Qwen)")
-ai_analysis_placeholder = st.container()
-
-st.subheader("Recent Signals")
-signals_table_placeholder = st.empty()
-
-def load_data():
-    # Load Market Data
-    market_df = db_manager.get_market_data(symbol, limit=200)
-    
-    # Load Signals
-    signals_df = db_manager.get_latest_signals(limit=50)
-    
-    # Load Trades
-    trades_df = db_manager.get_trades(limit=100)
-    
-    return market_df, signals_df, trades_df
+# Create tabs for each selected symbol
+tabs = st.tabs(selected_symbols)
 
 def update_dashboard():
-    market_df, signals_df, trades_df = load_data()
+    for symbol, tab in zip(selected_symbols, tabs):
+        with tab:
+            render_symbol_dashboard(symbol)
+
+def render_symbol_dashboard(symbol):
+    st.header(f"{symbol} Overview")
+    
+    # Load Data specific to symbol
+    market_df = db_manager.get_market_data(symbol, limit=200)
+    signals_df = db_manager.get_latest_signals(limit=50) # Need to filter by symbol later
+    trades_df = db_manager.get_trades(limit=100) # Need to filter by symbol later
+    
+    # Filter Dataframes
+    if not signals_df.empty:
+        signals_df = signals_df[signals_df['symbol'] == symbol]
+    if not trades_df.empty:
+        trades_df = trades_df[trades_df['symbol'] == symbol]
+
+    # Status Placeholders
+    header_col1, header_col2, header_col3 = st.columns(3)
     
     # 1. Update Header Info
     current_price = 0.0
@@ -217,101 +189,109 @@ def update_dashboard():
         current_price = market_df.iloc[-1]['close']
         prev_price = market_df.iloc[-2]['close'] if len(market_df) > 1 else current_price
         delta = current_price - prev_price
-        status_placeholder.metric("Current Price", f"{current_price:.2f}", f"{delta:.2f}")
+        header_col1.metric("Current Price", f"{current_price:.2f}", f"{delta:.2f}")
     else:
-        status_placeholder.warning("Waiting for market data...")
+        header_col1.warning("Waiting for market data...")
 
     last_signal = None
     if not signals_df.empty:
-        # Filter for current symbol if needed
-        symbol_signals = signals_df[signals_df['symbol'] == symbol]
-        if not symbol_signals.empty:
-            last_signal = symbol_signals.iloc[0]
-            ai_decision_placeholder.info(f"{last_signal['signal'].upper()} (Strength: {last_signal['strength']:.1f}%)")
-            
-            # Update Gauge
-            fig_gauge = visualizer.create_gauge_chart(last_signal['strength'], title=f"Signal Strength: {last_signal['strength']:.1f}")
-            gauge_placeholder.plotly_chart(fig_gauge, use_container_width=True)
-
-            # Update AI Analysis Text
-            with ai_analysis_placeholder:
-                try:
-                    details = json.loads(last_signal['details'])
-                    
-                    # Extract Key AI Insights
-                    market_state = details.get('market_state', 'N/A')
-                    prediction = details.get('prediction', 'N/A')
-                    reason = details.get('reason', 'N/A')
-                    
-                    # Override Alert
-                    if '[Override]' in reason:
-                        st.error(f"🔥 STRATEGY OVERRIDE ACTIVATED: {reason}")
-                    else:
-                        st.info(f"Strategy Logic: {reason}")
-                    
-                    adv_summary = details.get('adv_summary', {})
-                    if isinstance(adv_summary, str): # Handle if it's a string
-                         st.markdown(f"**Technical Summary:** {adv_summary}")
-                    elif isinstance(adv_summary, dict):
-                         summary_text = adv_summary.get('summary', 'No summary available')
-                         regime = adv_summary.get('regime_analysis', 'N/A')
-                         st.markdown(f"**Market State:** {market_state} | **Prediction:** {prediction}")
-                         st.markdown(f"**Regime Analysis:** {regime}")
-                         st.markdown(f"**Technical Summary:** {summary_text}")
-                    
-                    # Consensus Analysis
-                    signals_map = details.get('signals', {})
-                    if signals_map:
-                        buy_count = sum(1 for v in signals_map.values() if v == 'buy')
-                        sell_count = sum(1 for v in signals_map.values() if v == 'sell')
-                        total_valid = sum(1 for v in signals_map.values() if v not in ['neutral', 'hold'])
-                        
-                        st.markdown("### 📊 Algo Consensus")
-                        col_c1, col_c2, col_c3 = st.columns(3)
-                        col_c1.metric("Buy Votes", f"{buy_count}", delta=f"{buy_count/len(signals_map):.0%}" if signals_map else None)
-                        col_c2.metric("Sell Votes", f"{sell_count}", delta=f"-{sell_count/len(signals_map):.0%}" if signals_map else None, delta_color="inverse")
-                        col_c3.metric("Active Signals", f"{total_valid}/{len(signals_map)}")
-                    
-                    # Show Reasons/Signals
-                    with st.expander("Detailed Strategy Signals", expanded=False):
-                        st.json(signals_map)
-                        
-                except Exception as e:
-                    st.error(f"Failed to parse AI details: {e}")
-
+        last_signal = signals_df.iloc[0]
+        header_col2.info(f"{last_signal['signal'].upper()} (Strength: {last_signal['strength']:.1f}%)")
+        header_col3.text(f"Last Update: {last_signal['timestamp']}")
     else:
-        ai_decision_placeholder.text("No signals yet")
+        header_col2.text("No signals yet")
+        header_col3.text(datetime.now().strftime("%H:%M:%S"))
 
-    time_placeholder.text(datetime.now().strftime("%H:%M:%S"))
+    # Layout
+    row1_col1, row1_col2 = st.columns([7, 3])
 
-    # 2. Update Charts
-    if not market_df.empty:
-        latest_details = last_signal['details'] if last_signal is not None else None
-        fig_main = visualizer.create_advanced_chart(market_df, signals_df, trades_df, latest_details)
-        chart_placeholder.plotly_chart(fig_main, use_container_width=True)
-    
-    # 3. Update Pie Chart (Win/Loss)
-    if not trades_df.empty:
-        fig_pie = visualizer.create_pnl_distribution(trades_df)
-        pie_placeholder.plotly_chart(fig_pie, use_container_width=True)
+    with row1_col1:
+        st.subheader(f"Market Analysis")
+        if not market_df.empty:
+            latest_details = last_signal['details'] if last_signal is not None else None
+            # Use visualizer (assuming it handles plotting)
+            fig_main = visualizer.create_advanced_chart(market_df, signals_df, trades_df, latest_details)
+            st.plotly_chart(fig_main, use_container_width=True, key=f"chart_{symbol}")
+        else:
+            st.info("Chart waiting for data...")
+
+    with row1_col2:
+        st.subheader("Signal Strength")
+        if last_signal is not None:
+            fig_gauge = visualizer.create_gauge_chart(last_signal['strength'], title=f"Strength")
+            st.plotly_chart(fig_gauge, use_container_width=True, key=f"gauge_{symbol}")
         
-        # Update Equity Curve
-        fig_equity = visualizer.create_equity_curve(trades_df)
-        equity_placeholder.plotly_chart(fig_equity, use_container_width=True)
+        st.subheader("Win/Loss Ratio")
+        if not trades_df.empty:
+            fig_pie = visualizer.create_pnl_distribution(trades_df)
+            st.plotly_chart(fig_pie, use_container_width=True, key=f"pie_{symbol}")
 
-        # Update Trades Table (Styled)
-        trades_display = trades_df[['time', 'action', 'price', 'volume', 'profit']].head(10).copy()
-        # Simple styling: color profit
-        def color_profit(val):
-            color = 'green' if val > 0 else 'red' if val < 0 else 'white'
-            return f'color: {color}'
-        
-        # trades_table_placeholder.dataframe(trades_display.style.applymap(color_profit, subset=['profit']), use_container_width=True)
-        trades_table_placeholder.dataframe(trades_display, use_container_width=True)
+    # Bottom Row: Equity Curve and Recent Trades
+    row2_col1, row2_col2 = st.columns([1, 1])
 
-    # 4. Update Signals Table
-    if not signals_df.empty:
-        signals_table_placeholder.dataframe(signals_df[['timestamp', 'symbol', 'signal', 'strength', 'source']].head(5), use_container_width=True)
+    with row2_col1:
+        st.subheader("Equity Curve")
+        if not trades_df.empty:
+            fig_equity = visualizer.create_equity_curve(trades_df)
+            st.plotly_chart(fig_equity, use_container_width=True, key=f"equity_{symbol}")
+        else:
+            st.info("No trades executed yet.")
+
+    with row2_col2:
+        st.subheader("Recent Trades")
+        if not trades_df.empty:
+            trades_display = trades_df[['time', 'action', 'price', 'volume', 'profit']].head(10).copy()
+            st.dataframe(trades_display, use_container_width=True)
+        else:
+            st.info("No trade history.")
+
+    st.markdown("---")
+    # AI Analysis Section
+    st.subheader("🤖 AI Market Insights")
+    if last_signal is not None:
+        try:
+            details = json.loads(last_signal['details'])
+            
+            # Extract Key AI Insights
+            market_state = details.get('market_state', 'N/A')
+            prediction = details.get('prediction', 'N/A')
+            reason = details.get('reason', 'N/A')
+            
+            # Override Alert
+            if '[Override]' in reason:
+                st.error(f"🔥 STRATEGY OVERRIDE ACTIVATED: {reason}")
+            else:
+                st.info(f"Strategy Logic: {reason}")
+            
+            adv_summary = details.get('adv_summary', {})
+            if isinstance(adv_summary, str): 
+                    st.markdown(f"**Technical Summary:** {adv_summary}")
+            elif isinstance(adv_summary, dict):
+                    summary_text = adv_summary.get('summary', 'No summary available')
+                    regime = adv_summary.get('regime_analysis', 'N/A')
+                    st.markdown(f"**Market State:** {market_state} | **Prediction:** {prediction}")
+                    st.markdown(f"**Regime Analysis:** {regime}")
+                    st.markdown(f"**Technical Summary:** {summary_text}")
+            
+            # Consensus Analysis
+            signals_map = details.get('signals', {})
+            if signals_map:
+                buy_count = sum(1 for v in signals_map.values() if v == 'buy')
+                sell_count = sum(1 for v in signals_map.values() if v == 'sell')
+                total_valid = sum(1 for v in signals_map.values() if v not in ['neutral', 'hold'])
+                
+                st.markdown("### 📊 Algo Consensus")
+                col_c1, col_c2, col_c3 = st.columns(3)
+                col_c1.metric("Buy Votes", f"{buy_count}", delta=f"{buy_count/len(signals_map):.0%}" if signals_map else None)
+                col_c2.metric("Sell Votes", f"{sell_count}", delta=f"-{sell_count/len(signals_map):.0%}" if signals_map else None, delta_color="inverse")
+                col_c3.metric("Active Signals", f"{total_valid}/{len(signals_map)}")
+            
+            # Show Reasons/Signals
+            with st.expander("Detailed Strategy Signals", expanded=False):
+                st.json(signals_map)
+                
+        except Exception as e:
+            st.error(f"Failed to parse AI details: {e}")
 
 
 # Main Loop
