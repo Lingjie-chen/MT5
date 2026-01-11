@@ -153,30 +153,29 @@ class SymbolTrader:
             "TETA": TETA()
         }
         self.active_optimizer_name = "WOAm"
-    def initialize_mt5(self):
-        """初始化 MT5 连接"""
-        # 尝试使用指定账户登录
-        account = 89633982
-        server = "Ava-Real 1-MT5"
-        password = "Clj568741230#"
-        
-        if not mt5.initialize(login=account, server=server, password=password):
-            logger.error(f"MT5 初始化失败, 错误码: {mt5.last_error()}")
-            # 尝试不带账号初始化
-            if not mt5.initialize():
-                return False
-            
-        # 确保数据库路径设置正确
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        # 使用特定品种的数据库路径
-        db_path = os.path.join(current_dir, f'trading_data_{self.symbol}.db')
-        
-        # 检查是否需要更新 db_manager 的路径
-        # DatabaseManager 默认初始化时可能使用了不同的路径，这里强制覆盖
-        if self.db_manager.db_path != db_path:
-             logger.info(f"重新定向数据库路径到: {db_path}")
-             self.db_manager = DatabaseManager(db_path=db_path)
 
+    def initialize(self):
+        """
+        初始化交易员实例
+        - 检查 MT5 连接
+        - 预热数据
+        - 检查数据库
+        """
+        logger.info(f"[{self.symbol}] 初始化交易员...")
+        
+        # 1. 检查 MT5 连接
+        if not self.check_mt5_connection():
+            logger.error(f"[{self.symbol}] MT5 连接检查失败")
+            # 这里不返回 False，因为可能只是暂时的，让主循环重试
+            
+        # 2. 预热数据 (可选)
+        # self.get_market_data(limit=100)
+        
+        logger.info(f"[{self.symbol}] 交易员初始化完成")
+        return True
+
+    def check_mt5_connection(self):
+        """检查 MT5 连接状态"""
         # 检查终端状态
         term_info = mt5.terminal_info()
         if term_info is None:
@@ -184,29 +183,24 @@ class SymbolTrader:
             return False
             
         if not term_info.trade_allowed:
-            logger.warning("⚠️ 警告: 终端 '自动交易' (Algo Trading) 未开启，无法执行交易！请在 MT5 工具栏点击 'Algo Trading' 按钮。")
+            logger.warning(f"[{self.symbol}] ⚠️ 警告: 终端 '自动交易' (Algo Trading) 未开启！")
             
         if not term_info.connected:
-            logger.warning("⚠️ 警告: 终端未连接到交易服务器，请检查网络或账号设置。")
+            logger.warning(f"[{self.symbol}] ⚠️ 警告: 终端未连接到交易服务器")
+            return False
         
         # 确认交易品种存在
         symbol_info = mt5.symbol_info(self.symbol)
         if symbol_info is None:
-            logger.error(f"找不到交易品种 {self.symbol}")
+            logger.error(f"[{self.symbol}] 找不到交易品种")
             return False
             
         if not symbol_info.visible:
-            logger.info(f"交易品种 {self.symbol} 不可见，尝试选中")
+            logger.info(f"[{self.symbol}] 交易品种不可见，尝试选中")
             if not mt5.symbol_select(self.symbol, True):
-                logger.error(f"无法选中交易品种 {self.symbol}")
+                logger.error(f"[{self.symbol}] 无法选中交易品种")
                 return False
         
-        # 检查品种是否允许交易
-        if symbol_info.trade_mode == mt5.SYMBOL_TRADE_MODE_DISABLED:
-            logger.error(f"交易品种 {self.symbol} 禁止交易")
-            return False
-                
-        logger.info(f"MT5 初始化成功，已连接到账户: {mt5.account_info().login}")
         return True
 
     def get_market_data(self, num_candles=100):
