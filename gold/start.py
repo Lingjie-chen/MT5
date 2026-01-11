@@ -417,6 +417,7 @@ class SymbolTrader:
             # 默认 2%
             base_risk_pct = 0.02
             
+            # 使用多品种隔离的历史绩效数据
             metrics = self.db_manager.get_performance_metrics(symbol=self.symbol, limit=20)
             win_rate = metrics.get('win_rate', 0.0)
             profit_factor = metrics.get('profit_factor', 0.0)
