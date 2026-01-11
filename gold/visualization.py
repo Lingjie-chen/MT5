@@ -123,19 +123,20 @@ class TradingVisualizer:
             name='Volume'
         ), row=2, col=1)
 
-        # Layout updates for Cyberpunk Theme
+        # Layout updates for Clean Theme
         fig.update_layout(
-            title=dict(text='Market Analysis Dashboard', font=dict(color='#00f3ff', family="Orbitron")),
+            title=dict(text='Market Analysis', font=dict(color='#ffffff', size=20)),
             xaxis_rangeslider_visible=False,
-            height=800,
+            height=600,
             template='plotly_dark',
-            paper_bgcolor='rgba(0,0,0,0)', # Transparent to show CSS bg
-            plot_bgcolor='rgba(10,10,16,0.7)',
-            xaxis=dict(showgrid=True, gridcolor='#1f1f2e', gridwidth=1),
-            yaxis=dict(showgrid=True, gridcolor='#1f1f2e', gridwidth=1),
+            paper_bgcolor='rgba(0,0,0,0)', 
+            plot_bgcolor='rgba(0,0,0,0)',
+            xaxis=dict(showgrid=True, gridcolor='#2e3136', gridwidth=1),
+            yaxis=dict(showgrid=True, gridcolor='#2e3136', gridwidth=1),
             yaxis2=dict(showgrid=False),
-            font=dict(family="Courier New", color="#e0e0e0"),
-            hovermode='x unified'
+            font=dict(family="Segoe UI", color="#b0b0b0"),
+            hovermode='x unified',
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
 
         return fig

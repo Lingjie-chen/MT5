@@ -20,118 +20,86 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Cyberpunk Styling
-def apply_cyberpunk_style():
+# Clean Professional Styling
+def apply_clean_style():
     st.markdown("""
         <style>
         /* Global App Background */
         .stApp {
-            background-color: #050505;
-            background-image: 
-                radial-gradient(circle at 50% 50%, #111119 0%, #000000 100%);
-            color: #e0e0e0;
-            font-family: 'Courier New', monospace;
+            background-color: #0e1117;
+            color: #fafafa;
         }
         
-        /* Headers - Neon Glow */
+        /* Headers */
         h1, h2, h3 {
-            color: #00f3ff !important;
-            text-shadow: 0 0 8px rgba(0, 243, 255, 0.6), 0 0 16px rgba(0, 243, 255, 0.4);
-            font-family: 'Orbitron', 'Courier New', sans-serif;
-            font-weight: 700;
-            letter-spacing: 1px;
+            color: #ffffff !important;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-weight: 600;
         }
         
-        /* Metrics - Cyberpunk Style */
+        /* Metrics */
         div[data-testid="stMetric"] {
-            background-color: rgba(10, 10, 15, 0.8);
-            border: 1px solid #333;
-            border-left: 3px solid #ff00ff;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(255, 0, 255, 0.1);
+            background-color: #1e2127;
+            border: 1px solid #2e3136;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         div[data-testid="stMetricLabel"] {
-            color: #888 !important;
-            font-size: 0.8rem;
+            color: #b0b0b0 !important;
+            font-size: 0.9rem;
         }
         div[data-testid="stMetricValue"] {
-            color: #ff00ff !important;
-            text-shadow: 0 0 5px rgba(255, 0, 255, 0.5);
-            font-family: 'Courier New', monospace;
-        }
-        div[data-testid="stMetricDelta"] {
-            color: #00ff9d !important;
+            color: #ffffff !important;
+            font-family: 'Segoe UI', sans-serif;
         }
         
-        /* Dataframes/Tables - Dark & Techy */
+        /* Dataframes */
         .stDataFrame {
-            border: 1px solid #333;
-            box-shadow: 0 0 15px rgba(0, 243, 255, 0.1);
+            border: 1px solid #2e3136;
         }
         
-        /* Sidebar - Dark Panel */
+        /* Sidebar */
         section[data-testid="stSidebar"] {
-            background-color: #08080c;
-            border-right: 1px solid #1f1f2e;
-        }
-        section[data-testid="stSidebar"] h1 {
-            text-shadow: none;
-            color: #fff !important;
+            background-color: #161920;
+            border-right: 1px solid #2e3136;
         }
         
-        /* Containers & Expanders */
-        .streamlit-expanderHeader {
-            background-color: #0f0f15 !important;
-            color: #00f3ff !important;
-            border: 1px solid #1f1f2e;
-            border-radius: 4px;
-        }
-        div[data-testid="stExpander"] {
-            border: 1px solid #1f1f2e;
-            background-color: rgba(10, 10, 16, 0.5);
-        }
-        
-        /* Buttons - Neon Outlines */
+        /* Buttons */
         .stButton > button {
-            background-color: transparent;
-            color: #00f3ff;
-            border: 1px solid #00f3ff;
-            border-radius: 0;
-            box-shadow: 0 0 5px rgba(0, 243, 255, 0.2);
-            font-family: 'Courier New', monospace;
-            transition: all 0.3s ease;
+            background-color: #262730;
+            color: #ffffff;
+            border: 1px solid #4f5359;
+            border-radius: 4px;
+            transition: all 0.2s;
         }
         .stButton > button:hover {
-            background-color: rgba(0, 243, 255, 0.1);
-            color: #fff;
-            box-shadow: 0 0 15px rgba(0, 243, 255, 0.5);
-            border-color: #fff;
+            border-color: #ffffff;
+            background-color: #363940;
         }
         
-        /* Alerts/Info Boxes */
-        div[data-testid="stAlert"] {
-            background-color: rgba(0, 20, 40, 0.6);
-            border: 1px solid #00f3ff;
-            color: #e0e0e0;
+        /* Tabs */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 24px;
+        }
+        .stTabs [data-baseweb="tab"] {
+            height: 50px;
+            white-space: pre-wrap;
+            background-color: transparent;
+            border-radius: 4px 4px 0px 0px;
+            color: #b0b0b0;
+            font-weight: 600;
+        }
+        .stTabs [aria-selected="true"] {
+            background-color: transparent;
+            color: #ffffff;
+            border-bottom: 2px solid #4f8bf9;
         }
         
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar {
-            width: 10px;
-            background: #050505;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #333;
-            border-radius: 5px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #00f3ff;
-        }
         </style>
     """, unsafe_allow_html=True)
 
-apply_cyberpunk_style()
+apply_clean_style()
 
 # Initialize Managers
 # Remove cache_resource to ensure latest class definition is loaded during dev
@@ -246,48 +214,55 @@ def render_symbol_dashboard(symbol):
             st.info("No trade history.")
 
     st.markdown("---")
-    # AI Analysis Section
+    # AI Analysis Section - Clean Layout
     st.subheader("🤖 AI Market Insights")
+    
     if last_signal is not None:
         try:
             details = json.loads(last_signal['details'])
-            
-            # Extract Key AI Insights
-            market_state = details.get('market_state', 'N/A')
-            prediction = details.get('prediction', 'N/A')
             reason = details.get('reason', 'N/A')
             
-            # Override Alert
+            # 1. Main Strategy Logic Box
             if '[Override]' in reason:
-                st.error(f"🔥 STRATEGY OVERRIDE ACTIVATED: {reason}")
+                st.error(f"🔥 **Override Strategy Active**\n\n{reason}")
             else:
-                st.info(f"Strategy Logic: {reason}")
+                st.info(f"💡 **Strategy Logic**\n\n{reason}")
             
-            adv_summary = details.get('adv_summary', {})
-            if isinstance(adv_summary, str): 
-                    st.markdown(f"**Technical Summary:** {adv_summary}")
-            elif isinstance(adv_summary, dict):
-                    summary_text = adv_summary.get('summary', 'No summary available')
+            # 2. Detailed Breakdown Columns
+            col_d1, col_d2 = st.columns(2)
+            
+            with col_d1:
+                st.markdown("#### 📈 Market State")
+                market_state = details.get('market_state', 'N/A')
+                prediction = details.get('prediction', 'N/A')
+                st.success(f"**State:** {market_state}")
+                st.warning(f"**Prediction:** {prediction}")
+
+                # Regime Analysis if available
+                adv_summary = details.get('adv_summary', {})
+                if isinstance(adv_summary, dict):
                     regime = adv_summary.get('regime_analysis', 'N/A')
-                    st.markdown(f"**Market State:** {market_state} | **Prediction:** {prediction}")
-                    st.markdown(f"**Regime Analysis:** {regime}")
-                    st.markdown(f"**Technical Summary:** {summary_text}")
+                    st.markdown(f"**Regime:** {regime}")
+
+            with col_d2:
+                st.markdown("#### 📊 Algo Consensus")
+                signals_map = details.get('signals', {})
+                if signals_map:
+                    buy_count = sum(1 for v in signals_map.values() if v == 'buy')
+                    sell_count = sum(1 for v in signals_map.values() if v == 'sell')
+                    total = len(signals_map)
+                    
+                    st.progress(buy_count / total if total > 0 else 0, text=f"Buy Votes: {buy_count}")
+                    st.progress(sell_count / total if total > 0 else 0, text=f"Sell Votes: {sell_count}")
             
-            # Consensus Analysis
-            signals_map = details.get('signals', {})
-            if signals_map:
-                buy_count = sum(1 for v in signals_map.values() if v == 'buy')
-                sell_count = sum(1 for v in signals_map.values() if v == 'sell')
-                total_valid = sum(1 for v in signals_map.values() if v not in ['neutral', 'hold'])
+            # 3. Technical Summary (Collapsible)
+            with st.expander("📝 Technical Analysis Summary", expanded=False):
+                if isinstance(adv_summary, str): 
+                    st.markdown(adv_summary)
+                elif isinstance(adv_summary, dict):
+                    st.markdown(adv_summary.get('summary', 'No summary available'))
                 
-                st.markdown("### 📊 Algo Consensus")
-                col_c1, col_c2, col_c3 = st.columns(3)
-                col_c1.metric("Buy Votes", f"{buy_count}", delta=f"{buy_count/len(signals_map):.0%}" if signals_map else None)
-                col_c2.metric("Sell Votes", f"{sell_count}", delta=f"-{sell_count/len(signals_map):.0%}" if signals_map else None, delta_color="inverse")
-                col_c3.metric("Active Signals", f"{total_valid}/{len(signals_map)}")
-            
-            # Show Reasons/Signals
-            with st.expander("Detailed Strategy Signals", expanded=False):
+                st.markdown("#### Detailed Signal Inputs")
                 st.json(signals_map)
                 
         except Exception as e:
