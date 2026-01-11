@@ -2771,6 +2771,17 @@ class SymbolTrader:
                         # 构建消息
                         telegram_report = strategy.get('telegram_report', '')
                         
+                        # 清理报告中可能的敏感或冗余技术参数
+                        # 例如: 移除 "Score: ...", "MA=...", "RVGI(...", "Grid: Step=..." 等行
+                        if telegram_report:
+                            lines = telegram_report.split('\n')
+                            clean_lines = []
+                            for line in lines:
+                                # 过滤掉包含特定技术关键词的行，保留核心分析
+                                if not any(k in line for k in ["Score:", "MA=", "RVGI(", "Grid: Step=", "IFVG(", "ATR="]):
+                                    clean_lines.append(line)
+                            telegram_report = "\n".join(clean_lines).strip()
+
                         if telegram_report and len(telegram_report) > 50:
                             # 使用 Qwen 生成的专用 Telegram 报告
                             analysis_msg = (
@@ -2801,7 +2812,6 @@ class SymbolTrader:
                                 
                                 f"🏆 *Decision: {final_signal.upper()}*\n"
                                 f"• Strength: {strength:.0f}%\n"
-                                f"• SL: `{opt_sl:.2f}` | TP: `{opt_tp:.2f}`\n\n"
                                 
                                 f"💼 *Positions*\n"
                                 f"{self.escape_markdown(pos_summary)}"
