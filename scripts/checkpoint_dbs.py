@@ -62,9 +62,12 @@ def git_auto_sync(base_dir):
 
 def run_checkpoints(base_dir):
     # List of databases to checkpoint
+    # Now includes separate DBs for each symbol
     dbs = [
         os.path.join(base_dir, 'crypto', 'crypto_trading.db'),
-        os.path.join(base_dir, 'gold', 'trading_data.db')
+        os.path.join(base_dir, 'gold', 'trading_data_GOLD.db'),
+        os.path.join(base_dir, 'gold', 'trading_data_ETHUSD.db'),
+        os.path.join(base_dir, 'gold', 'trading_data_EURUSD.db')
     ]
 
     for db in dbs:
