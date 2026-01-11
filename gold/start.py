@@ -405,7 +405,13 @@ class SymbolTrader:
                 
             balance = account_info.balance
             equity = account_info.equity
+            margin_free = account_info.margin_free
             
+            # 安全检查：如果可用保证金不足，直接返回最小手数或0
+            if margin_free < 100: # 至少保留 100 资金缓冲
+                logger.warning(f"可用保证金不足 ({margin_free:.2f})，强制最小手数")
+                return mt5.symbol_info(self.symbol).volume_min
+
             # --- 1. 自适应基础风险 (Self-Adaptive Base Risk) ---
             # 基于近期胜率和盈亏比动态调整基础风险
             # 默认 2%
@@ -500,6 +506,14 @@ class SymbolTrader:
             
             risk_amount = equity * final_risk_pct
             
+            # 资金池分配检查 (Portfolio Management)
+            # 确保当前品种的占用资金不会耗尽所有自由保证金
+            # 简单规则：任何单一品种的预估保证金占用不应超过剩余自由保证金的 50%
+            max_allowed_risk_amount = margin_free * 0.5 
+            if risk_amount > max_allowed_risk_amount:
+                logger.warning(f"风险金额 ({risk_amount:.2f}) 超过可用保证金池限制 ({max_allowed_risk_amount:.2f}). 自动下调.")
+                risk_amount = max_allowed_risk_amount
+            
             # --- 6. 动态止损距离估算 ---
             # 如果有明确的 SL 价格，计算实际距离；否则用 ATR
             sl_distance_points = 500.0 # 默认
@@ -546,10 +560,11 @@ class SymbolTrader:
             final_lot = max(min_lot, min(calculated_lot, max_lot))
             
             logger.info(
-                f"💰 智能资金管理:\n"
+                f"💰 智能资金管理 ({self.symbol}):\n"
                 f"• Base Risk: {base_risk_pct:.1%}\n"
                 f"• Multipliers: Consensus={consensus_multiplier:.2f}, Strength={strength_multiplier:.2f}, Struct={structure_multiplier:.2f}\n"
                 f"• Final Risk: {final_risk_pct:.2%} (${risk_amount:.2f})\n"
+                f"• Margin Free: {margin_free:.2f} (Cap: {max_allowed_risk_amount:.2f})\n"
                 f"• SL Dist: {sl_distance_points:.0f} pts\n"
                 f"• Lot Size: {final_lot}"
             )
