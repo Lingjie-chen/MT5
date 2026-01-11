@@ -10,12 +10,10 @@ class KalmanGridStrategy:
         self.symbol = symbol
         self.magic_number = magic_number
         self.lot = initial_lot
-        logger.info(f"KalmanGridStrategy Initialized for {symbol} (v2026.01.05.2)")
+        logger.info(f"KalmanGridStrategy Initialized for {symbol} (v2026.01.12.1)")
         
-        # Grid Parameters (Default from MQL)
-        self.grid_step_points = 300 
-        self.max_grid_steps = 10 
-        self.lot_type = 'GEOMETRIC' 
+        # --- Load Symbol Specific Config ---
+        self._load_config()
         
         # SMC Parameters
         self.smc_levels = {
@@ -35,20 +33,6 @@ class KalmanGridStrategy:
         self.bb_period = 100
         self.bb_deviation = 2.0
         
-        # Profit Settings (Basket TP in USD)
-        self.tp_steps = {
-            1: 3.0,
-            2: 6.0,
-            3: 10.0,
-            4: 15.0,
-            5: 25.0,
-            6: 35.0,
-            7: 45.0,
-            8: 55.0,
-            9: 65.0
-        }
-        self.global_tp = 100.0
-        
         # State
         self.last_long_price = 0.0
         self.last_short_price = 0.0
@@ -60,6 +44,53 @@ class KalmanGridStrategy:
         self.bb_upper = 0.0
         self.bb_lower = 0.0
         self.ma_value = 0.0
+
+    def _load_config(self):
+        """Load configuration based on symbol"""
+        # Default Configs
+        default_config = {
+            "grid_step_points": 300,
+            "max_grid_steps": 10,
+            "lot_type": 'GEOMETRIC',
+            "lot_multiplier": 1.5,
+            "tp_steps": {
+                1: 3.0, 2: 6.0, 3: 10.0, 4: 15.0, 5: 25.0,
+                6: 35.0, 7: 45.0, 8: 55.0, 9: 65.0
+            },
+            "global_tp": 100.0
+        }
+        
+        # ETHUSD Config
+        eth_config = {
+            "grid_step_points": 2000, # Approx 20.00 USD (Assuming point=0.01)
+            "max_grid_steps": 5,      # Stricter for crypto
+            "lot_type": 'GEOMETRIC',
+            "lot_multiplier": 1.2,    # Conservative
+            "tp_steps": {
+                1: 10.0, 2: 20.0, 3: 40.0, 4: 70.0, 5: 100.0
+            },
+            "global_tp": 200.0
+        }
+        
+        # XAUUSD Config (same as default but explicit)
+        xau_config = default_config.copy()
+        
+        # Select Config
+        config = default_config
+        if "ETH" in self.symbol.upper():
+            config = eth_config
+        elif "XAU" in self.symbol.upper() or "GOLD" in self.symbol.upper():
+            config = xau_config
+            
+        # Apply Config
+        self.grid_step_points = config["grid_step_points"]
+        self.max_grid_steps = config["max_grid_steps"]
+        self.lot_type = config["lot_type"]
+        self.lot_multiplier = config["lot_multiplier"]
+        self.tp_steps = config["tp_steps"]
+        self.global_tp = config["global_tp"]
+        
+        logger.info(f"[{self.symbol}] Grid Config Loaded: Step={self.grid_step_points}, Max={self.max_grid_steps}, Mult={self.lot_multiplier}")
 
     def update_smc_levels(self, smc_data):
         """
@@ -181,7 +212,7 @@ class KalmanGridStrategy:
         multiplier = 1.0
         if self.lot_type == 'GEOMETRIC':
             # Aggressive scaling for capital utilization
-            multiplier = 1.5 ** current_count 
+            multiplier = self.lot_multiplier ** current_count 
         elif self.lot_type == 'ARITHMETIC':
             multiplier = current_count + 1
             
