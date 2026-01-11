@@ -1376,6 +1376,15 @@ class SymbolTrader:
                              add_tp = price - (tp_pips * 10 * point)
                          
                          logger.info(f"Dynamic Add TP: {add_tp} ({tp_pips} pips)")
+                
+                # Fallback if no TP from LLM
+                if add_tp == 0.0 and atr > 0:
+                    # Fallback: ATR * 3.0 (Wider for grid)
+                    fallback_dist = atr * 3.0
+                    if trade_type == 'buy': add_tp = price + fallback_dist
+                    else: add_tp = price - fallback_dist
+                    add_tp = self._normalize_price(add_tp)
+                    logger.info(f"Dynamic Add TP (Fallback ATR): {add_tp:.2f} (ATR={atr:.2f})")
 
                 self._send_order(trade_type, price, 0.0, add_tp, comment=f"Grid: {action}")
                 # Don't return, allow SL/TP update for existing positions
