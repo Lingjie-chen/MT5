@@ -703,6 +703,17 @@ class QwenClient:
         prompt = f"""
         {self.GOLD_TRADING_SYSTEM_PROMPT}
         
+        ## 核心指令更新：动态仓位计算 (Dynamic Position Sizing)
+        你必须根据以下因素，精确计算本次交易的 **position_size (Lots)**：
+        1. **账户资金**: {current_market_data.get('account_info', {}).get('available_balance', 10000)}
+        2. **风险偏好**: 单笔风险建议控制在 1% - 3% 之间。
+        3. **信号置信度**: SMC结构越清晰、共振越多，仓位可适当增加。
+        4. **市场情绪**: 结合 {market_analysis.get('sentiment_analysis', {}).get('sentiment', 'neutral')} 情绪调整。
+        5. **凯利公式**: 参考你的胜率预估。
+
+        **绝对不要**使用固定的 0.01 手！
+        请给出一个精确到小数点后两位的数字 (例如 0.15, 0.50, 1.20)，并在 `strategy_rationale` 中解释计算逻辑。
+
         ## 当前交易上下文
         
         当前市场数据：
