@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Set terminal title
-echo -e "\033]0;AI Gold Trading Bot Watchdog\007"
+echo -e "\033]0;AI Multi-Symbol Trading Bot (Gold/ETH/EUR)\007"
 
 # Switch to script directory
 cd "$(dirname "$0")"
@@ -10,7 +10,11 @@ cd "$(dirname "$0")"
 cd ..
 
 while true; do
-    echo "[$(date)] Starting Gold Trading Bot..."
+    echo "[$(date)] Starting Multi-Symbol AI Trading Bot..."
+    echo "---------------------------------------------------"
+    echo "Supported Symbols: GOLD, ETHUSD, EURUSD"
+    echo "Usage: ./run_bot_watchdog.sh [Symbol1,Symbol2,...]"
+    echo "Default: GOLD, ETHUSD, EURUSD"
     echo "---------------------------------------------------"
     
     # Run as module, passing all arguments

@@ -1,14 +1,20 @@
 @echo off
-title AI Trading Bot Watchdog
+title AI Multi-Symbol Trading Bot (Gold/ETH/EUR)
 color 0a
 
+:: Switch to script directory's parent (project root)
 cd /d "%~dp0\.."
 
 :loop
-echo [%DATE% %TIME%] Starting Trading Bot...
+echo [%DATE% %TIME%] Starting Multi-Symbol AI Trading Bot...
 echo ---------------------------------------------------
-:: 使用 python 直接运行脚本，确保 python 在环境变量中
-:: 传递所有命令行参数给 start.py (例如: run_bot_watchdog.bat EURUSD)
+echo Supported Symbols: GOLD, ETHUSD, EURUSD
+echo Usage: run_bot_watchdog.bat [Symbol1,Symbol2,...]
+echo Default: GOLD, ETHUSD, EURUSD
+echo ---------------------------------------------------
+
+:: Run as module, passing all arguments
+:: Ensure python is in your PATH
 python -m gold.start %*
 
 echo ---------------------------------------------------
