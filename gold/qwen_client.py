@@ -401,27 +401,23 @@ class QwenClient:
     
     def analyze_market_structure(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Qwen 独立市场结构与情绪分析 (黄金版)
+        Qwen 独立市场结构与情绪分析 (多品种通用版)
         完全自主进行市场结构、情绪和SMC信号分析
-        
-        Args:
-            market_data (Dict[str, Any]): 市场数据
-            
-        Returns:
-            Dict[str, Any]: 市场结构分析结果
         """
+        symbol = market_data.get("symbol", "UNKNOWN")
+        
         prompt = f"""
-        作为专业的黄金(XAUUSD)交易员，请根据以下市场数据进行全面的市场结构与情绪分析：
+        作为专业的{symbol}交易员，请根据以下市场数据进行全面的市场结构与情绪分析：
         
         市场数据:
         {json.dumps(market_data, indent=2, cls=CustomJSONEncoder)}
         
         请完成以下分析：
         
-        1. **黄金市场特性分析**
+        1. **市场特性分析**
            - 当前交易时段特征（亚盘/欧盘/美盘）
-           - 美元指数和实际利率影响评估
-           - 避险情绪状态
+           - 相关性分析（如美元指数、BTC、SPX等影响）
+           - 避险/风险情绪状态
         
         2. **多时间框架市场结构分析**
            - 识别当前主要趋势方向（牛市/熊市/盘整）
@@ -440,7 +436,7 @@ class QwenClient:
         5. **关键水平识别**
            - 列出3-5个最重要的支撑位
            - 列出3-5个最重要的阻力位
-           - 特别关注50美元整数位和00结尾价位
+           - 关注心理整数关口
         
         请以JSON格式返回以下内容：
         {{
@@ -474,10 +470,10 @@ class QwenClient:
                 "confidence": float (0.0 to 1.0),
                 "market_context": str (当前市场背景描述)
             }},
-            "gold_specific_analysis": {{
+            "symbol_specific_analysis": {{
                 "trading_session": "asia/europe/us",
-                "dollar_influence": "positive/negative/neutral",
-                "safe_haven_status": "active/inactive"
+                "macro_influence": "positive/negative/neutral",
+                "risk_status": "on/off"
             }},
             "key_observations": str (简短的中文分析)
         }}
@@ -486,7 +482,7 @@ class QwenClient:
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "你是一位拥有20年经验的华尔街黄金交易员，精通SMC(Smart Money Concepts)和价格行为学。"},
+                {"role": "system", "content": f"你是一位拥有20年经验的华尔街{symbol}交易员，精通SMC(Smart Money Concepts)和价格行为学。"},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.3,
@@ -528,10 +524,10 @@ class QwenClient:
                 "confidence": 0.0,
                 "market_context": "分析失败"
             },
-            "gold_specific_analysis": {
+            "symbol_specific_analysis": {
                 "trading_session": "unknown",
-                "dollar_influence": "neutral",
-                "safe_haven_status": "inactive"
+                "macro_influence": "neutral",
+                "risk_status": "unknown"
             },
             "key_observations": "分析失败"
         }
