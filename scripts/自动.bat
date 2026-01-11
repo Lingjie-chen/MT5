@@ -12,7 +12,7 @@ echo ---------------------------------------------------
 :: ===================================================
 :: NETWORK PROXY SETTINGS (Optional / Network Fix)
 :: If you see "Failed to connect to github.com", uncomment the line below:
-:: set "https_proxy=http://127.0.0.1:7890"
+set "https_proxy=http://127.0.0.1:7897"
 :: ===================================================
 
 :: Check and Configure Git Identity if missing
