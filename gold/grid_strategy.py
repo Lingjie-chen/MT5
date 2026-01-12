@@ -72,6 +72,19 @@ class KalmanGridStrategy:
             "global_tp": 200.0
         }
         
+        # EURUSD Config
+        eur_config = {
+            "grid_step_points": 200,  # 20 Pips
+            "max_grid_steps": 8,
+            "lot_type": 'GEOMETRIC',
+            "lot_multiplier": 1.5,
+            "tp_steps": {
+                1: 2.0, 2: 5.0, 3: 9.0, 4: 14.0, 5: 20.0,
+                6: 28.0, 7: 38.0, 8: 50.0
+            },
+            "global_tp": 80.0
+        }
+        
         # XAUUSD Config (same as default but explicit)
         xau_config = default_config.copy()
         
@@ -79,6 +92,8 @@ class KalmanGridStrategy:
         config = default_config
         if "ETH" in self.symbol.upper():
             config = eth_config
+        elif "EUR" in self.symbol.upper():
+            config = eur_config
         elif "XAU" in self.symbol.upper() or "GOLD" in self.symbol.upper():
             config = xau_config
             
@@ -327,6 +342,7 @@ class KalmanGridStrategy:
         if 'grid_step_points' in params: self.grid_step_points = int(params['grid_step_points'])
         if 'max_grid_steps' in params: self.max_grid_steps = int(params['max_grid_steps'])
         if 'global_tp' in params: self.global_tp = float(params['global_tp'])
+        if 'tp_steps' in params: self.tp_steps.update(params['tp_steps'])
 
     def get_config(self):
         """

@@ -2747,10 +2747,28 @@ class SymbolTrader:
                                 if 'grid_level_tp_pips' in pos_mgmt:
                                     tp_list = pos_mgmt['grid_level_tp_pips']
                                     if isinstance(tp_list, list) and len(tp_list) > 0:
-                                        # Convert list to dict map {1: tp1, 2: tp2...}
-                                        new_tp_steps = {i+1: float(tp) for i, tp in enumerate(tp_list)}
+                                        # Get Symbol Info for accurate conversion
+                                        symbol_info = mt5.symbol_info(self.symbol)
+                                        tick_value = symbol_info.trade_tick_value if symbol_info else 1.0
+                                        # Assuming 1 Pip = 10 Points
+                                        pip_val_usd = 10 * tick_value * self.grid_strategy.lot
+                                        
+                                        # Convert Pips to Estimated Dollar Profit
+                                        # New Logic: Qwen returns Pips distance. 
+                                        # We want Total Profit Target ($) for that step.
+                                        # Approx: Pips * PipValue * InitialLot * Multiplier_Factor(Simplified)
+                                        # Simplified: Pips * PipValue_Per_Lot * InitialLot
+                                        
+                                        new_tp_steps = {}
+                                        for i, tp_pips in enumerate(tp_list):
+                                            # Ensure float
+                                            pips = float(tp_pips)
+                                            # Profit ($) = Pips * ($/Pip for 1 Lot) * LotSize
+                                            profit_target = pips * pip_val_usd
+                                            new_tp_steps[i+1] = profit_target
+                                            
                                         self.grid_strategy.tp_steps.update(new_tp_steps)
-                                        logger.info(f"AI 更新 Grid Level TPs: {tp_list}")
+                                        logger.info(f"AI 更新 Grid Level TPs ($): {new_tp_steps}")
                                      
                         except Exception as e:
                             logger.error(f"参数动态更新失败: {e}")
