@@ -2693,8 +2693,6 @@ class SymbolTrader:
                             pos_mgmt = strategy.get('position_management', {})
                             if pos_mgmt:
                                 # Update Global TP for Basket
-                                # Qwen might return 'global_tp' directly or implicitly via logic
-                                # Here we assume Qwen can update global TP based on risk appetite
                                 if 'global_tp' in pos_mgmt:
                                     self.grid_strategy.global_tp = float(pos_mgmt['global_tp'])
                                     logger.info(f"AI 更新 Grid Global TP: {self.grid_strategy.global_tp}")
@@ -2709,7 +2707,6 @@ class SymbolTrader:
                                     step_pips = float(pos_mgmt['recommended_grid_step_pips'])
                                     if step_pips > 0:
                                         # Convert pips to points (assuming 1 pip = 10 points for standard pairs)
-                                        # For crypto/gold, logic might vary, but consistency with _get_system_prompt helps
                                         self.grid_strategy.grid_step_points = int(step_pips * 10) 
                                         logger.info(f"AI 更新 Grid Step: {step_pips} pips ({self.grid_strategy.grid_step_points} points)")
                                 
