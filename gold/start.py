@@ -2732,6 +2732,14 @@ class SymbolTrader:
                                 if 'global_tp' in pos_mgmt:
                                     self.grid_strategy.global_tp = float(pos_mgmt['global_tp'])
                                     logger.info(f"AI 更新 Grid Global TP: {self.grid_strategy.global_tp}")
+                                
+                                # Update Dynamic Basket TP
+                                if 'dynamic_basket_tp' in pos_mgmt:
+                                    try:
+                                        basket_tp = float(pos_mgmt['dynamic_basket_tp'])
+                                        self.grid_strategy.update_dynamic_params(basket_tp=basket_tp)
+                                    except Exception as e:
+                                        logger.error(f"Failed to update Dynamic Basket TP: {e}")
                                     
                                 # Update Lot Multiplier
                                 if 'martingale_multiplier' in pos_mgmt:
