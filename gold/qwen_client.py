@@ -507,8 +507,8 @@ class QwenClient:
         for retry in range(max_retries):
             response = None
             try:
-                # 增加超时时间到120秒
-                response = requests.post(url, headers=headers, json=payload, timeout=120)
+                # 增加超时时间到300秒，应对 SiliconFlow/DeepSeek 响应慢的问题
+                response = requests.post(url, headers=headers, json=payload, timeout=300)
                 
                 # 详细记录响应状态
                 logger.debug(f"API响应状态码: {response.status_code}, 模型: {self.model}, 重试: {retry+1}/{max_retries}")
