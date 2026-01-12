@@ -16,12 +16,21 @@ except ImportError:
     print("Error: MetaTrader5 module not found.")
     sys.exit(1)
 
+# Determine log filename based on arguments to allow parallel execution
+log_filename = 'windows_bot.log'
+if len(sys.argv) > 1:
+    # Sanitize argument to create a safe filename
+    # e.g. "ETHUSD" -> "windows_bot_ETHUSD.log"
+    # e.g. "GOLD,ETHUSD" -> "windows_bot_GOLD_ETHUSD.log"
+    arg_clean = sys.argv[1].replace(',', '_').replace(' ', '').upper()
+    log_filename = f'windows_bot_{arg_clean}.log'
+
 # Configure Logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('windows_bot.log', encoding='utf-8'),
+        logging.FileHandler(log_filename, encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
