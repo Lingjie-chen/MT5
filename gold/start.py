@@ -2972,8 +2972,12 @@ class MultiSymbolBot:
             logger.error(f"Failed to start FileWatcher: {e}")
 
         self.is_running = True
-        logger.info(f"🚀 Multi-Symbol Bot Started for: {self.symbols}")
+        logger.info(f"🚀 Single-Process Bot Started for: {self.symbols}")
 
+        # In Single Process Mode (run via run_strategies.bat), we usually have only 1 symbol per process.
+        # However, MultiSymbolBot class structure supports multiple threads.
+        # If run_strategies.bat passes 1 symbol (e.g. "GOLD"), this loop runs once -> 1 thread -> effectively single process per strategy.
+        
         # Launch a thread for each symbol
         for symbol in self.symbols:
             try:
