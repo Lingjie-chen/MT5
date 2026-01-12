@@ -33,6 +33,8 @@ class KalmanGridStrategy:
         self.bb_period = 100
         self.bb_deviation = 2.0
         
+        self.dynamic_global_tp = None # Store AI recommended TP
+        
         # State
         self.last_long_price = 0.0
         self.last_short_price = 0.0
