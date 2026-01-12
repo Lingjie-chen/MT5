@@ -63,11 +63,11 @@ class KalmanGridStrategy:
         # ETHUSD Config
         eth_config = {
             "grid_step_points": 2000, # Approx 20.00 USD (Assuming point=0.01)
-            "max_grid_steps": 5,      # Stricter for crypto
+            "max_grid_steps": 5,      # Aligned with Gold Logic
             "lot_type": 'GEOMETRIC',
-            "lot_multiplier": 1.2,    # Conservative
+            "lot_multiplier": 1.2,    # Conservative for Crypto
             "tp_steps": {
-                1: 10.0, 2: 20.0, 3: 40.0, 4: 70.0, 5: 100.0
+                1: 10.0, 2: 25.0, 3: 45.0, 4: 75.0, 5: 120.0
             },
             "global_tp": 200.0
         }
