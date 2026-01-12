@@ -632,6 +632,7 @@ class CryptoTradingBot:
                 f"📊 *Live Status*\n"
                 f"• Decision: *{final_signal.upper()}* (Strength: {strength:.0f}%)\n"
                 f"• Sentiment: {self.escape_markdown(qwen_sent_label.upper())} ({qwen_sent_score:.2f})\n"
+                f"• Role Bias: {self.escape_markdown(role_bias.upper())} (Risk: {role_risk})\n"
                 f"• Size: `{suggested_lot_display}`\n\n"
                 f"🎯 *Setup (OKX)*\n"
                 f"• Entry: `{ref_price:.2f}`\n"
