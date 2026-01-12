@@ -1,1819 +1,3096 @@
-import requests
-import json
-import logging
 import time
-from typing import Dict, Any, Optional, List
+import sys
+import os
+import logging
+import threading
+from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
-from datetime import datetime, date
-import concurrent.futures
+import requests
+from dotenv import load_dotenv
+from file_watcher import FileWatcher
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Try importing MetaTrader5
+try:
+    import MetaTrader5 as mt5
+except ImportError:
+    print("Error: MetaTrader5 module not found.")
+    sys.exit(1)
 
-class CustomJSONEncoder(json.JSONEncoder):
-    """自定义JSON编码器，处理Timestamp等非序列化类型"""
-    def default(self, o):
-        if isinstance(o, (datetime, date, pd.Timestamp)):
-            return o.isoformat()
-        if isinstance(o, (pd.Series, pd.DataFrame)):
-            return o.to_dict()
-        if isinstance(o, (np.integer, int)):
-            return int(o)
-        if isinstance(o, (np.floating, float)):
-            return float(o)
-        if isinstance(o, np.ndarray):
-            return o.tolist()
-        return super().default(o)
+# Determine log filename based on arguments to allow parallel execution
+log_filename = 'windows_bot.log'
+if len(sys.argv) > 1:
+    # Sanitize argument to create a safe filename
+    # e.g. "ETHUSD" -> "windows_bot_ETHUSD.log"
+    # e.g. "GOLD,ETHUSD" -> "windows_bot_GOLD_ETHUSD.log"
+    arg_clean = sys.argv[1].replace(',', '_').replace(' ', '').upper()
+    log_filename = f'windows_bot_{arg_clean}.log'
 
-class RoleBasedAnalysisSystem:
-    """基于角色的多维分析系统"""
-    
-    def __init__(self, symbol: str):
-        self.symbol = symbol.upper()
-        self.roles_config = self._get_roles_config()
-    
-    def _get_roles_config(self) -> Dict[str, Any]:
-        """获取角色配置"""
-        configs = {
-            "XAUUSD": {
-                "name": "黄金",
-                "roles": {
-                    "fundamental_analyst": {
-                        "role": "专注于黄金的供需基本面、宏观经济关联性及避险属性",
-                        "instructions": [
-                            "分析全球央行黄金储备动向、珠宝需求、工业用途等供需数据",
-                            "评估通胀率、实际利率（名义利率-通胀率）对黄金价值的影响",
-                            "识别危险信号：如美元走强、利率上升或地缘政治缓和",
-                            "输出黄金供需平衡报告及价值高估/低估评估"
-                        ]
-                    },
-                    "sentiment_analyst": {
-                        "role": "追踪市场对黄金的避险情绪和投机热度",
-                        "instructions": [
-                            "监测Twitter、Reddit上关于黄金的讨论热度",
-                            "计算'恐惧指数'（如地缘政治风险事件引发的避险情绪）",
-                            "短期预测：情绪推动的金价波动方向",
-                            "输出情绪评分报告（看涨/看跌/中性）"
-                        ]
-                    },
-                    "news_analyst": {
-                        "role": "解读宏观经济与地缘政治事件对黄金的影响",
-                        "instructions": [
-                            "分析美联储利率决议、通胀数据（CPI/PPI）及地缘冲突",
-                            "评估突发新闻对黄金的短期/长期影响",
-                            "输出事件驱动的黄金价格影响评估报告"
-                        ]
-                    },
-                    "technical_analyst": {
-                        "role": "通过图表和指标预测黄金价格趋势",
-                        "instructions": [
-                            "分析金价历史走势、关键支撑/阻力位",
-                            "使用MACD、RSI判断超买/超卖区域，布林带识别波动区间",
-                            "识别图表形态（如双底、头肩顶）",
-                            "输出技术面买入/卖出信号及目标价位报告"
-                        ]
-                    },
-                    "bullish_researcher": {
-                        "role": "看多研究员",
-                        "instructions": [
-                            "挖掘亮点：通胀上升、地缘政治紧张、央行持续购金",
-                            "反驳空头：利率上升可能被通胀抵消，黄金避险需求仍强",
-                            "逻辑：黄金作为抗通胀和避险资产，长期上涨潜力"
-                        ]
-                    },
-                    "bearish_researcher": {
-                        "role": "看空研究员",
-                        "instructions": [
-                            "寻找漏洞：美元走强、利率实际上升、地缘冲突缓和",
-                            "反驳多头：投机需求过热，金价可能回调",
-                            "逻辑：经济复苏削弱避险需求，技术面超买风险"
-                        ]
-                    }
-                }
-            },
-            "ETHUSD": {
-                "name": "以太坊",
-                "roles": {
-                    "fundamental_analyst": {
-                        "role": "聚焦以太坊生态发展、区块链应用及链上数据",
-                        "instructions": [
-                            "分析以太坊网络活跃度（Gas费、DeFi锁仓量、NFT交易量）",
-                            "评估关键指标：网络拥堵率、开发者活跃度、Layer2扩展进展",
-                            "识别风险：监管政策、技术漏洞或竞争币威胁",
-                            "输出以太坊生态健康度报告"
-                        ]
-                    },
-                    "sentiment_analyst": {
-                        "role": "追踪加密社区对以太坊的情绪波动",
-                        "instructions": [
-                            "监测Twitter、Reddit讨论热度",
-                            "计算'贪婪指数'：如对合并升级或ETH2.0的过度乐观",
-                            "短期预测：情绪驱动的短期暴涨或暴跌",
-                            "输出情绪评分报告（极端贪婪/恐慌）"
-                        ]
-                    },
-                    "news_analyst": {
-                        "role": "解读监管、技术升级及行业动态对ETH的影响",
-                        "instructions": [
-                            "分析SEC监管政策、以太坊硬分叉公告、大型机构持仓变化",
-                            "评估事件影响：如美国ETF审批通过 vs. 中国监管打压",
-                            "输出事件驱动的价格波动评估报告"
-                        ]
-                    },
-                    "technical_analyst": {
-                        "role": "通过加密货币专用指标分析ETH趋势",
-                        "instructions": [
-                            "分析ETH价格与BTC相关性、链上交易量激增点",
-                            "使用RSI、斐波那契回撤位识别超买/超卖及支撑位",
-                            "识别图表形态：如对称三角形突破",
-                            "输出技术面信号及目标价位报告"
-                        ]
-                    },
-                    "bullish_researcher": {
-                        "role": "看多研究员",
-                        "instructions": [
-                            "亮点：ETH2.0升级成功、DeFi增长、机构采用增加",
-                            "反驳空头：监管影响可控，技术领先优势",
-                            "逻辑：以太坊作为智能合约龙头，长期增长潜力"
-                        ]
-                    },
-                    "bearish_researcher": {
-                        "role": "看空研究员",
-                        "instructions": [
-                            "漏洞：监管不确定性、高Gas费导致用户流失、Layer2竞争",
-                            "反驳多头：技术升级延迟或市场过热泡沫",
-                            "逻辑：短期风险大于收益，可能回调"
-                        ]
-                    }
-                }
-            },
-            "EURUSD": {
-                "name": "欧元兑美元",
-                "roles": {
-                    "fundamental_analyst": {
-                        "role": "专注于欧元区与美国的经济差异及货币政策",
-                        "instructions": [
-                            "分析欧元区GDP、失业率、制造业PMI vs. 美国经济数据",
-                            "评估关键指标：欧元区通胀率、欧央行利率决议预期",
-                            "识别风险：经济衰退、政治动荡或贸易摩擦",
-                            "输出欧元区经济相对强弱报告"
-                        ]
-                    },
-                    "sentiment_analyst": {
-                        "role": "追踪外汇市场对欧元的情绪波动",
-                        "instructions": [
-                            "监测Twitter、专业论坛对欧元前景的讨论",
-                            "计算'风险偏好指数'：如市场对欧央行鹰派/鸽派的预期",
-                            "短期预测：情绪驱动的汇率波动",
-                            "输出情绪评分报告（看涨/看跌/中性）"
-                        ]
-                    },
-                    "news_analyst": {
-                        "role": "解读货币政策、地缘政治及经济数据对EURUSD的影响",
-                        "instructions": [
-                            "分析欧央行/美联储利率决议、通胀数据公布、地缘冲突进展",
-                            "评估事件影响：如欧央行提前加息 vs. 美国经济衰退预期",
-                            "输出事件驱动的汇率波动评估报告"
-                        ]
-                    },
-                    "technical_analyst": {
-                        "role": "通过外汇图表分析欧元兑美元趋势",
-                        "instructions": [
-                            "分析汇率历史走势、关键斐波那契支撑/阻力位",
-                            "使用MACD、ADX指标判断趋势强度及方向",
-                            "识别图表形态：如上升通道或头肩顶",
-                            "输出技术面信号及目标价位报告"
-                        ]
-                    },
-                    "bullish_researcher": {
-                        "role": "看多研究员",
-                        "instructions": [
-                            "亮点：欧央行鹰派立场、欧元区经济复苏快于预期",
-                            "反驳空头：美国经济放缓，利差缩小支撑欧元",
-                            "逻辑：欧元相对美元升值潜力"
-                        ]
-                    },
-                    "bearish_researcher": {
-                        "role": "看空研究员",
-                        "instructions": [
-                            "漏洞：欧元区能源危机、政治不确定性、美国经济韧性",
-                            "反驳多头：利差扩大，美元避险需求",
-                            "逻辑：欧元下行风险，可能受经济数据拖累"
-                        ]
-                    }
-                }
-            }
+# Configure Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_filename, encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("WindowsBot")
+
+# Load Environment Variables
+load_dotenv()
+
+# Add current directory to sys.path to ensure local imports work
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+
+# Import Local Modules
+try:
+    from .ai_client_factory import AIClientFactory
+    from .mt5_data_processor import MT5DataProcessor
+    from .database_manager import DatabaseManager
+    from .optimization import WOAm, TETA
+    from .advanced_analysis import (
+        AdvancedMarketAnalysis, AdvancedMarketAnalysisAdapter, SMCAnalyzer, 
+        CRTAnalyzer, MTFAnalyzer
+    )
+    from .grid_strategy import KalmanGridStrategy
+except ImportError:
+    # Fallback for direct script execution
+    try:
+        from ai_client_factory import AIClientFactory
+        from mt5_data_processor import MT5DataProcessor
+        from database_manager import DatabaseManager
+        from optimization import WOAm, TETA
+        from advanced_analysis import (
+            AdvancedMarketAnalysis, AdvancedMarketAnalysisAdapter, SMCAnalyzer, 
+            CRTAnalyzer, MTFAnalyzer
+        )
+        from grid_strategy import KalmanGridStrategy
+    except ImportError as e:
+        logger.error(f"Failed to import modules: {e}")
+        sys.exit(1)
+
+class HybridOptimizer:
+    def __init__(self):
+        self.weights = {
+            "qwen": 1.5, 
+            "crt": 0.8,
+            "smc": 1.1,
+            "rvgi_cci": 0.6
+        }
+        self.history = []
+
+    def combine_signals(self, signals):
+        weighted_sum = 0
+        total_weight = 0
+        
+        details = {}
+        
+        for source, signal in signals.items():
+            if source not in self.weights: continue
+            
+            weight = self.weights.get(source, 0.5)
+            val = 0
+            if signal == 'buy': val = 1
+            elif signal == 'sell': val = -1
+            
+            weighted_sum += val * weight
+            total_weight += weight
+            details[source] = val * weight
+            
+        if total_weight == 0: return "neutral", 0, self.weights
+        
+        final_score = weighted_sum / total_weight
+        
+        final_signal = "neutral"
+        if final_score > 0.15: final_signal = "buy" # 降低阈值，更灵敏
+        elif final_score < -0.15: final_signal = "sell"
+        
+        return final_signal, final_score, self.weights
+
+class SymbolTrader:
+    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M15):
+        self.symbol = symbol
+        self.timeframe = timeframe
+        self.tf_name = "M15"
+        if timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
+        elif timeframe == mt5.TIMEFRAME_H1: self.tf_name = "H1"
+        elif timeframe == mt5.TIMEFRAME_H4: self.tf_name = "H4"
+        elif timeframe == mt5.TIMEFRAME_M6: self.tf_name = "M6"
+        
+        self.magic_number = 123456
+        self.lot_size = 0.01 
+        self.max_drawdown_pct = 0.05
+        
+        # 使用特定品种的独立数据库文件，确保数据完全隔离
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        db_filename = f"trading_data_{symbol}.db"
+        db_path = os.path.join(current_dir, db_filename)
+        
+        self.db_manager = DatabaseManager(db_path=db_path)
+        self.ai_factory = AIClientFactory()
+        
+        # Only Qwen as Sole Decision Maker
+        self.qwen_client = self.ai_factory.create_client("qwen")
+        
+        # Advanced Models: SMC, CRT, CCI (via Adapter)
+        # MTF kept for context structure
+        self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_H1)
+        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_H1, htf2=mt5.TIMEFRAME_H4) 
+        self.advanced_adapter = AdvancedMarketAnalysisAdapter()
+        self.smc_analyzer = SMCAnalyzer()
+        
+        # Grid Strategy Integration
+        self.grid_strategy = KalmanGridStrategy(self.symbol, self.magic_number)
+        
+        self.optimizer = HybridOptimizer()
+        
+        self.last_bar_time = 0
+        self.last_analysis_time = 0
+        self.last_llm_time = 0 
+        self.signal_history = []
+        self.last_optimization_time = 0
+        self.last_realtime_save = 0
+        
+        self.latest_strategy = None
+        self.latest_signal = "neutral"
+        
+        # Optimizers: WOAm and TETA only
+        self.optimizers = {
+            "WOAm": WOAm(),
+            "TETA": TETA()
+        }
+        self.active_optimizer_name = "WOAm"
+
+    def initialize(self):
+        """
+        初始化交易员实例
+        - 检查 MT5 连接
+        - 预热数据
+        - 检查数据库
+        """
+        logger.info(f"[{self.symbol}] 初始化交易员...")
+        
+        # 1. 检查 MT5 连接
+        if not self.check_mt5_connection():
+            logger.error(f"[{self.symbol}] MT5 连接检查失败")
+            # 这里不返回 False，因为可能只是暂时的，让主循环重试
+            
+        # 2. 预热数据 (可选)
+        # self.get_market_data(limit=100)
+        
+        logger.info(f"[{self.symbol}] 交易员初始化完成")
+        return True
+
+    def check_mt5_connection(self):
+        """检查 MT5 连接状态"""
+        # 检查终端状态
+        term_info = mt5.terminal_info()
+        if term_info is None:
+            logger.error("无法获取终端信息")
+            return False
+            
+        if not term_info.trade_allowed:
+            logger.warning(f"[{self.symbol}] ⚠️ 警告: 终端 '自动交易' (Algo Trading) 未开启！")
+            
+        if not term_info.connected:
+            logger.warning(f"[{self.symbol}] ⚠️ 警告: 终端未连接到交易服务器")
+            return False
+        
+        # 确认交易品种存在
+        symbol_info = mt5.symbol_info(self.symbol)
+        if symbol_info is None:
+            logger.error(f"[{self.symbol}] 找不到交易品种")
+            return False
+            
+        if not symbol_info.visible:
+            logger.info(f"[{self.symbol}] 交易品种不可见，尝试选中")
+            if not mt5.symbol_select(self.symbol, True):
+                logger.error(f"[{self.symbol}] 无法选中交易品种")
+                return False
+        
+        return True
+
+    def get_market_data(self, num_candles=100):
+        """直接从 MT5 获取历史数据"""
+        rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, num_candles)
+        
+        if rates is None or len(rates) == 0:
+            logger.error("无法获取 K 线数据")
+            return None
+            
+        # 转换为 DataFrame
+        df = pd.DataFrame(rates)
+        df['time'] = pd.to_datetime(df['time'], unit='s')
+        df.set_index('time', inplace=True)
+        
+        # 将 tick_volume 重命名为 volume 以保持一致性
+        if 'tick_volume' in df.columns:
+            df.rename(columns={'tick_volume': 'volume'}, inplace=True)
+        
+        return df
+
+    def get_position_stats(self, pos):
+        """
+        计算持仓的 MFE (最大潜在收益) 和 MAE (最大潜在亏损)
+        """
+        try:
+            # 获取持仓期间的 M1 数据
+            now = datetime.now()
+            # pos.time 是时间戳，转换为 datetime
+            open_time = datetime.fromtimestamp(pos.time)
+            
+            # 获取数据
+            rates = mt5.copy_rates_range(self.symbol, mt5.TIMEFRAME_M1, open_time, now)
+            
+            if rates is None or len(rates) == 0:
+                # 如果获取不到数据，尝试只用当前价格估算
+                # 这种情况可能发生在刚刚开仓的一瞬间
+                current_price = pos.price_current
+                if pos.type == mt5.POSITION_TYPE_BUY:
+                    mfe_price = max(0, current_price - pos.price_open)
+                    mae_price = max(0, pos.price_open - current_price)
+                else:
+                    mfe_price = max(0, pos.price_open - current_price)
+                    mae_price = max(0, current_price - pos.price_open)
+                
+                if pos.price_open > 0:
+                    return (mfe_price / pos.price_open) * 100, (mae_price / pos.price_open) * 100
+                return 0.0, 0.0
+                
+            df = pd.DataFrame(rates)
+            
+            # 计算期间最高价和最低价
+            # 注意: 还需要考虑当前价格，因为 M1 数据可能还没包含当前的 tick
+            period_high = max(df['high'].max(), pos.price_current)
+            period_low = min(df['low'].min(), pos.price_current)
+            
+            mfe = 0.0
+            mae = 0.0
+            
+            if pos.type == mt5.POSITION_TYPE_BUY:
+                # 买入: MFE = High - Open, MAE = Open - Low
+                mfe_price = max(0, period_high - pos.price_open)
+                mae_price = max(0, pos.price_open - period_low)
+            else:
+                # 卖出: MFE = Open - Low, MAE = High - Open
+                mfe_price = max(0, pos.price_open - period_low)
+                mae_price = max(0, period_high - pos.price_open)
+                
+            # 转换为百分比
+            if pos.price_open > 0:
+                mfe = (mfe_price / pos.price_open) * 100
+                mae = (mae_price / pos.price_open) * 100
+                
+            return mfe, mae
+            
+        except Exception as e:
+            logger.error(f"计算持仓统计时出错: {e}")
+            return 0.0, 0.0
+
+
+
+
+
+    def close_position(self, position, comment="AI-Bot Close"):
+        """辅助函数: 平仓"""
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": position.symbol,
+            "volume": position.volume,
+            "type": mt5.ORDER_TYPE_SELL if position.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY,
+            "position": position.ticket,
+            "price": mt5.symbol_info_tick(self.symbol).bid if position.type == mt5.POSITION_TYPE_BUY else mt5.symbol_info_tick(self.symbol).ask,
+            "deviation": 20,
+            "magic": self.magic_number,
+            "comment": comment,
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": mt5.ORDER_FILLING_FOK,
         }
         
-        default_config = {
-            "name": self.symbol,
-            "roles": {
-                "fundamental_analyst": {
-                    "role": "基本面分析师",
-                    "instructions": ["分析资产的基本面因素"]
-                },
-                "sentiment_analyst": {
-                    "role": "情绪分析师",
-                    "instructions": ["分析市场情绪"]
-                },
-                "technical_analyst": {
-                    "role": "技术分析师",
-                    "instructions": ["分析技术指标"]
-                },
-                "bullish_researcher": {
-                    "role": "看多研究员",
-                    "instructions": ["挖掘看多因素"]
-                },
-                "bearish_researcher": {
-                    "role": "看空研究员",
-                    "instructions": ["挖掘看空因素"]
-                }
-            }
-        }
-        
-        return configs.get(self.symbol, default_config)
-    
-    def generate_analysis_prompt(self, market_data: Dict[str, Any]) -> str:
-        """生成基于角色的分析提示词"""
-        config = self.roles_config
-        
-        prompt = f"""# {config['name']} ({self.symbol}) 多维角色分析系统
-
-## 分析师团队 (Analyst Team)
-
-### 1. 基本面分析师
-**角色人设**: {config['roles']['fundamental_analyst']['role']}
-**核心指令**:
-"""
-        for i, instruction in enumerate(config['roles']['fundamental_analyst']['instructions'], 1):
-            prompt += f"{i}. {instruction}\n"
-        
-        prompt += f"""
-### 2. 情绪分析师
-**角色人设**: {config['roles']['sentiment_analyst']['role']}
-**核心指令**:
-"""
-        for i, instruction in enumerate(config['roles']['sentiment_analyst']['instructions'], 1):
-            prompt += f"{i}. {instruction}\n"
-        
-        prompt += f"""
-### 3. 新闻分析师
-**角色人设**: {config['roles']['news_analyst']['role']}
-**核心指令**:
-"""
-        for i, instruction in enumerate(config['roles']['news_analyst']['instructions'], 1):
-            prompt += f"{i}. {instruction}\n"
-        
-        prompt += f"""
-### 4. 技术分析师
-**角色人设**: {config['roles']['technical_analyst']['role']}
-**核心指令**:
-"""
-        for i, instruction in enumerate(config['roles']['technical_analyst']['instructions'], 1):
-            prompt += f"{i}. {instruction}\n"
-        
-        prompt += f"""
-## 研究员团队 (Researcher Team)
-
-### 5. 看多研究员 (Bullish)
-**核心指令**:
-"""
-        for i, instruction in enumerate(config['roles']['bullish_researcher']['instructions'], 1):
-            prompt += f"{i}. {instruction}\n"
-        
-        prompt += f"""
-### 6. 看空研究员 (Bearish)
-**核心指令**:
-"""
-        for i, instruction in enumerate(config['roles']['bearish_researcher']['instructions'], 1):
-            prompt += f"{i}. {instruction}\n"
-        
-        prompt += f"""
-## 分析任务
-
-基于以下市场数据，请各角色团队进行分析：
-{json.dumps(market_data, indent=2, cls=CustomJSONEncoder)}
-
-## 输出格式要求
-
-请以JSON格式返回，包含以下字段：
-
-{{
-    "analyst_team_reports": {{
-        "fundamental_analysis": {{
-            "summary": "基本面分析摘要",
-            "key_factors": ["因素1", "因素2"],
-            "outlook": "bullish/bearish/neutral",
-            "confidence": 0.0-1.0
-        }},
-        "sentiment_analysis": {{
-            "summary": "情绪分析摘要",
-            "sentiment_score": -1.0到1.0,
-            "market_mood": "greedy/fearful/neutral",
-            "confidence": 0.0-1.0
-        }},
-        "news_analysis": {{
-            "summary": "新闻事件分析摘要",
-            "key_events": ["事件1", "事件2"],
-            "impact_level": "high/medium/low",
-            "confidence": 0.0-1.0
-        }},
-        "technical_analysis": {{
-            "summary": "技术分析摘要",
-            "key_levels": {{
-                "support": [支撑位1, 支撑位2],
-                "resistance": [阻力位1, 阻力位2]
-            }},
-            "signals": ["信号1", "信号2"],
-            "confidence": 0.0-1.0
-        }}
-    }},
-    "researcher_debate": {{
-        "bullish_arguments": ["看多论点1", "看多论点2"],
-        "bearish_arguments": ["看空论点1", "看空论点2"],
-        "consensus": "bullish/bearish/neutral",
-        "debate_confidence": 0.0-1.0
-    }},
-    "integrated_assessment": {{
-        "overall_direction": "bullish/bearish/neutral",
-        "overall_confidence": 0.0-1.0,
-        "risk_level": "low/medium/high",
-        "key_recommendations": ["建议1", "建议2"],
-        "rationale": "综合分析理由"
-    }},
-    "trading_implications": {{
-        "action_bias": "buy/sell/hold",
-        "optimal_entry_zones": [区域1, 区域2],
-        "stop_loss_suggestions": [止损建议1, 止损建议2],
-        "take_profit_targets": [目标1, 目标2],
-        "risk_reward_ratio": "如1:2.5"
-    }}
-}}
-"""
-        return prompt
-
-class QwenClient:
-    """
-    Qwen3 API客户端，用于多资产交易决策系统
-    基于SMC(Smart Money Concepts)+Martingale(马丁格尔)策略 + 角色分析系统
-    """
-    
-    def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", 
-                 model: str = "Qwen/Qwen3-VL-235B-A22B-Thinking"):
-        """
-        初始化Qwen客户端
-        """
-        self.api_key = api_key
-        self.base_url = base_url
-        self.model = model
-        self.headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        self.enable_json_mode = True
-        
-        # API Key Mapping for Multi-Symbol Support
-        self.api_keys = {
-            "DEFAULT": api_key,
-            "ETHUSD": "sk-ftwixmoqnubuwdlutwmwkjxltesmlfiygpjnjaoytljicupf",
-            "XAUUSD": "sk-lapiomzehuojnvjentexbctuajfpyfxjakwtowyiwldsfogo",
-            "GOLD": "sk-lapiomzehuojnvjentexbctuajfpyfxjakwtowyiwldsfogo",
-            "EURUSD": "sk-mwfloodyqbiqpyrmnwsdojupecximapjekwolsjjxgzneglm"
-        }
-        
-        # 初始化角色分析系统
-        self.role_system = {}
-    
-    def _get_role_system(self, symbol: str) -> RoleBasedAnalysisSystem:
-        """获取或创建角色分析系统"""
-        if symbol not in self.role_system:
-            self.role_system[symbol] = RoleBasedAnalysisSystem(symbol)
-        return self.role_system[symbol]
-    
-    def _get_system_prompt(self, symbol: str) -> str:
-        """
-        根据交易品种生成特定的系统提示词 (System Prompt)
-        集成角色分析系统
-        """
-        symbol = symbol.upper()
-        
-        # --- 1. 核心策略架构 (通用) ---
-        core_strategy = f"""
-作为{symbol}交易的唯一核心决策大脑，你全权负责基于SMC(Smart Money Concepts)和Martingale(马丁格尔)策略的交易执行。
-
-你的核心策略架构：**SMC + Martingale Grid (马丁网格)**
-
-**关键规则：你的交易周期为 15分钟 (M15)。你必须结合 1小时 (H1) 和 4小时 (H4) 的大周期趋势来制定 M15 的入场决策。**
-
-**交易节奏控制 (Trend Cycle Control)**:
-
-- **拒绝频繁交易**: 不需要每根K线都交易。
-- **趋势跟随模式**: 当持有仓位时，你的核心任务是**持有 (HOLD)**，直到趋势结束。
-- **趋势结束判定**: 只有当明确的市场结构被破坏 (Structure Break) 或达到主要盈利目标时，才结束当前趋势交易。
-- **新一轮分析**: 只有在当前趋势明确结束（平仓）后，才开始寻找下一波大的趋势机会。在趋势延续期间，不要试图捕捉每一个微小的回调。
-
-1. **SMC (Smart Money Concepts) - 入场与方向**:
-- **方向判断**: 依据 H1/H4 确定主趋势，在 M15 寻找结构破坏(BOS)或特性改变(CHoch)。
-- **关键区域**: 重点关注 M15 和 H1 的订单块(Order Block)和失衡区(FVG)。
-- **CRT (Candle Range Theory)**: 确认关键位置的 M15 K线反应(如Pinbar, Engulfing)。
-- **CCI/RVGI**: 辅助确认超买超卖和动量背离。
-"""
-        
-        # --- 2. Martingale Grid 配置 (品种特定) ---
-        martingale_configs = {
-            "XAUUSD": """
-2. **Martingale Grid (马丁网格) - 仓位管理 (XAUUSD专用)**:
-- **首单**: 基于SMC信号轻仓入场 (如 0.01 lot 或 资金的 0.5%)。
-- **逆势加仓 (Grid Add)**: 如果价格向不利方向移动且未破关键失效位，在下一个SMC关键位(OB/FVG)加仓。
-- **倍投逻辑**: 加仓手数通常为上一单的 1.2倍 - 2.0倍 (几何级数)，以摊低成本。
-- **网格间距**: 不要使用固定间距！使用ATR或SMC结构位作为加仓间隔。
-- **最大层数**: 严格控制加仓次数 (建议不超过 5 层)。
-
-### 五、Martingale网格管理 (XAUUSD细则)
-
-**首单参数：**
-- 仓位：账户资金的0.5%（例：$10,000账户，风险$50）
-- 止损：设在SMC失效位之外，考虑MAE历史数据
-- 止盈：下一流动性池或MFE分布的80%分位
-
-**加仓规则：**
-1. **触发条件**：价格向不利方向移动但未破关键失效位
-2. **加仓位置**：下一个SMC关键区域（订单块或失衡区）
-3. **加仓手数**：前一手数的1.5倍（可调整系数）
-4. **加仓间距**：使用ATR(14) × 1.5 或自然结构位间距
-5. **最大层数**：严格限制5层，总风险不超过15%
-
-**网格计算公式：**
-第1层：0.5%风险
-第2层：0.75%风险（1.5倍）
-第3层：1.125%风险
-第4层：1.6875%风险
-第5层：2.53125%风险
-总风险：约6.6%（但必须控制在2%硬止损内）
-""",
-            "ETHUSD": """
-2. **Martingale Grid (马丁网格) - 仓位管理 (ETHUSD/Crypto专用)**:
-- **首单**: 基于SMC信号入场，风险控制在资金的 0.5%。
-- **逆势加仓 (Grid Add)**: 如果价格向不利方向移动且未破关键失效位，在下一个SMC关键位(OB/FVG)加仓。
-- **倍投逻辑**: 加仓手数通常为上一单的 1.2倍 - 1.5倍 (几何级数)，以摊低成本。
-- **网格间距**: 不要使用固定间距！使用ATR或SMC结构位作为加仓间隔 (Crypto波动大，建议 ATR*2.0)。
-- **最大层数**: 严格控制加仓次数 (建议不超过 5 层)。
-
-### 五、Martingale网格管理 (ETHUSD细则)
-
-**首单参数：**
-- 仓位：账户资金的0.5%
-- 止损：设在SMC失效位之外 (Crypto需留更大缓冲)
-- 止盈：下一流动性池或MFE分布的80%分位
-
-**加仓规则：**
-1. **触发条件**：价格向不利方向移动但未破关键失效位
-2. **加仓位置**：下一个SMC关键区域（订单块或失衡区）
-3. **加仓手数**：前一手数的1.2 - 1.5倍
-4. **加仓间距**：使用ATR(14) × 2.0 或自然结构位间距 (约 $20)
-5. **最大层数**：严格限制5层，总风险不超过15%
-
-**网格计算公式：**
-第1层：0.5%风险
-第2层：0.6%风险（1.2倍）
-第3层：0.72%风险
-第4层：0.86%风险
-第5层：1.03%风险
-总风险：约3.7%（控制在安全范围内）
-
-**输出提示**:
-- 对于 ETHUSD, `grid_level_tp_pips` 应该较大 (例如 [300, 250, 200, 150, 100] pips，即 $30-$10)，以适应高波动。
-""",
-            "EURUSD": """
-2. **Martingale Grid (马丁网格) - 仓位管理 (EURUSD专用)**:
-- **首单**: 基于SMC信号轻仓入场 (如 0.01 lot 或 资金的 0.5%)。
-- **逆势加仓 (Grid Add)**: 如果价格向不利方向移动且未破关键失效位，在下一个SMC关键位(OB/FVG)加仓。
-- **倍投逻辑**: 加仓手数通常为上一单的 1.2倍 - 1.5倍 (几何级数)，以摊低成本。
-- **网格间距**: 不要使用固定间距！使用ATR或SMC结构位作为加仓间隔。
-- **最大层数**: 严格控制加仓次数 (建议不超过 8 层)。
-
-### 五、Martingale网格管理 (EURUSD细则)
-
-**首单参数：**
-- 仓位：账户资金的0.5%
-- 止损：设在SMC失效位之外，考虑MAE历史数据
-- 止盈：下一流动性池或MFE分布的80%分位
-
-**加仓规则：**
-1. **触发条件**：价格向不利方向移动但未破关键失效位
-2. **加仓位置**：下一个SMC关键区域（订单块或失衡区）
-3. **加仓手数**：前一手数的1.5倍（可调整系数）
-4. **加仓间距**：使用ATR(14) × 1.5 或自然结构位间距 (约 20 pips)
-5. **最大层数**：严格限制8层，总风险不超过15%
-
-**网格计算公式：**
-第1层：0.5%风险
-第2层：0.75%风险（1.5倍）
-第3层：1.125%风险
-第4层：1.6875%风险
-第5层：2.53125%风险
-总风险：约6.6%（但必须控制在2%硬止损内）
-""",
-            "DEFAULT": """
-2. **Martingale Grid (马丁网格) - 仓位管理 (通用)**:
-- **首单**: 风险控制在资金的 0.5%。
-- **逆势加仓**: 基于SMC关键位。
-- **倍投逻辑**: 1.5倍。
-- **网格间距**: ATR(14) * 1.5。
-- **最大层数**: 5层。
-
-### 五、Martingale网格管理 (通用)
-- 首单: 0.5% 风险
-- 加仓: 1.5倍系数
-- 间距: ATR * 1.5
-- 最大层数: 5
-"""
-        }
-        
-        # --- 3. 市场特性 (品种特定) ---
-        market_specs = {
-            "XAUUSD": """
-## 黄金市场特性
-
-1. **交易时段特点**:
-- 亚洲时段（00:00-08:00 UTC）：流动性较低，区间震荡
-- 欧洲时段（08:00-16:00 UTC）：波动增加，趋势开始形成
-- 美国时段（16:00-00:00 UTC）：波动最大，趋势延续或反转
-- 伦敦定盘价（10:30/15:00 UTC）：重要参考价位
-
-2. **黄金特有驱动因素**:
-- 美元指数反向关系
-- 实际利率（实际收益率）
-- 避险情绪（地缘政治）
-- 央行黄金储备变化
-
-3. **关键心理关口**:
-- 50美元整数位：重要支撑阻力
-- 00结尾价位：心理关口
-- 历史高低点：重要参考
-""",
-            "ETHUSD": """
-## ETHUSD 市场特性
-
-1. **交易时段特点**:
-- 24/7 全天候交易，无明确收盘。
-- 亚洲/美国时段重叠期往往波动较大。
-- 周末可能出现流动性枯竭引发的剧烈波动。
-
-2. **Crypto特有驱动因素**:
-- BTC 联动效应 (Correlation): 高度跟随 BTC 走势。
-- 以太坊链上生态发展 (DeFi/NFT/L2/Upgrade)。
-- 宏观流动性与纳斯达克(Nasdaq)科技股的高相关性。
-
-3. **关键心理关口**:
-- 100/500/1000 整数位：极强心理支撑阻力。
-- 历史高点(ATH)与关键斐波那契回调位。
-""",
-            "EURUSD": """
-## EURUSD 市场特性
-
-1. **交易时段特点**:
-- 亚洲时段：波动较小，区间震荡。
-- 欧洲时段（尤其是伦敦开盘）：波动显著增加，趋势往往形成。
-- 美国时段（尤其是与欧洲重叠期）：流动性最高，波动最大。
-
-2. **EURUSD特有驱动因素**:
-- 欧美利差 (Interest Rate Differential): ECB与Fed政策差异。
-- 欧元区与美国经济数据对比 (GDP, CPI, NFP)。
-- 地缘政治风险 (欧洲局势)。
-
-3. **关键心理关口**:
-- 1.0000 (平价) 及 00/50 结尾的整数位。
-- 历史高低点。
-""",
-            "DEFAULT": f"""
-## {symbol} 市场特性
-请根据该品种的历史波动特性、交易时段和驱动因素进行分析。
-重点关注：
-1. 交易活跃时段
-2. 主要驱动因素
-3. 关键支撑阻力位
-"""
-        }
-        
-        # --- 4. 角色分析系统集成 ---
-        role_system_intro = """
-## 5. 角色分析系统 (Role-Based Analysis System)
-
-你的决策必须综合考虑以下角色团队的专门分析：
-
-### 分析师团队 (Analyst Team):
-- **基本面分析师**: 分析供需、宏观经济、政策影响
-- **情绪分析师**: 评估市场情绪、投机热度、恐惧贪婪指数
-- **新闻分析师**: 解读重大事件、地缘政治、经济数据发布
-- **技术分析师**: 分析图表形态、技术指标、关键价位
-
-### 研究员团队 (Researcher Team):
-- **看多研究员**: 挖掘积极因素，构建看多逻辑
-- **看空研究员**: 识别风险漏洞，构建看空逻辑
-
-### 风控与执行团队 (Risk & Execution Team):
-- **风险评估**: 评估波动性、流动性、政策风险
-- **仓位管理**: 计算最优仓位，设置止损止盈
-- **执行监控**: 监控市场变化，动态调整策略
-
-在最终决策中，你必须：
-1. 引用角色分析的关键发现
-2. 解释如何权衡不同角色的观点
-3. 说明风险管理措施
-4. 提供明确的执行计划
-"""
-        
-        # --- 5. 风险控制与通用规则 (通用) ---
-        common_rules = """
-3. **动态波段风控 (Dynamic Swing Risk Control)**:
-- **SL/TP 实时优化**: 必须实时评估当前的 SL (止损) 和 TP (止盈) 是否适应最新的市场结构。
-- **MFE/MAE 深度应用**:
-  - **TP (Take Profit)**: 结合 MFE (最大有利偏移) 和 SMC 流动性池。如果市场动能强劲，应推大 TP 以捕捉波段利润；如果动能衰竭，应收紧 TP。
-  - **SL (Stop Loss)**: 结合 MAE (最大不利偏移) 和 SMC 失效位。如果市场波动率 (ATR) 变大，应适当放宽 SL 以防被噪音扫损；如果结构紧凑，应收紧 SL。
-- **Basket TP 动态实时配置 (Real-time Dynamic Basket TP)**:
-  - **核心要求**: 对于每个品种的网格 Basket TP (整体止盈)，必须根据 SMC 算法、市场结构、情绪、BOS/CHoCH 以及 MAE/MFE 进行实时分析和更新。
-  - **拒绝固定值**: 严禁使用固定的 Basket TP！必须根据当前的市场波动率和预期盈利空间动态计算。
-  - **计算逻辑**:
-    - 强趋势/高波动 -> 调大 Basket TP (追求更高利润)。
-    - 震荡/低波动/逆势 -> 调小 Basket TP (快速落袋为安)。
-    - 接近关键阻力位/SMC 结构位 -> 设置为刚好到达该位置的金额。
-  - **更新指令**: 如果你认为当前的 SL/TP 需要调整，请在 `exit_conditions` 和 `position_management` 中返回最新的数值。
-
-## 市场分析要求
-
-### 一、大趋势分析框架 (Multi-Timeframe)
-你必须从多时间框架分析整体市场结构 (查看提供的 `multi_tf_data`)：
-
-1. **时间框架层级分析**
-- **H4 (4小时)**: 确定长期趋势方向 (Trend Bias) 和主要支撑阻力。
-- **H1 (1小时)**: 确定中期市场结构 (Structure) 和关键流动性池。
-- **M15 (15分钟)**: **执行周期**。寻找精确的入场触发信号 (Trigger)。
-
-2. **市场结构识别**
-- 明确标注当前更高级别时间框架的趋势方向（牛市、熊市、盘整）
-- 识别并列出最近的BOS（突破市场结构）和CHoch（变化高点）点位
-- 判断市场当前处于：积累阶段、扩张阶段还是分配阶段
-
-3. **流动性分析**
-- 识别上方卖单流动性池（近期高点之上明显的止损区域）
-- 识别下方买单流动性池（近期低点之下明显的止损区域）
-- 评估流动性扫荡的可能性：哪个方向的流动性更容易被触发
-
-4. **关键水平识别**
-- 列出3-5个最重要的支撑位（包括订单块、失衡区、心理关口）
-- 列出3-5个最重要的阻力位（包括订单块、失衡区、心理关口）
-- 特别关注多时间框架汇合的关键水平
-
-### 二、SMC信号处理
-1. **订单块分析**
-- 识别当前价格附近的新鲜订单块（最近3-5根K线形成的）
-- 评估订单块的质量：成交量、K线强度、时间框架重要性
-- 标注订单块的方向和失效水平
-
-2. **失衡区分析**
-- 识别当前活跃的FVG（公平价值缺口）
-- 评估FVG的大小和回填概率
-- 判断FVG是推动型还是回流型
-
-3. **CRT信号确认**
-- 观察关键水平附近的K线反应：Pinbar、吞没形态、内部K线
-- 评估CRT信号的质量：影线比例、收盘位置、成交量配合
-- 确认信号是否得到多时间框架共振
-
-4. **动量指标辅助**
-- CCI分析：是否出现背离？是否进入超买超卖区？
-- RVGI分析：成交量是否确认价格行为？
-- 评估多空力量对比
-
-## 交易决策流程
-
-### 三、方向判断决策树
-你必须明确回答以下问题：
-1. H4/H1 趋势是什么方向？
-2. M15 是否出现了符合 H4/H1 趋势的结构？
-3. 最近的价格行为显示了什么意图？
-4. 流动性分布暗示了什么方向偏好？
-
-基于以上分析，你必须给出明确的交易方向：
-- 主要方向：做多、做空或观望
-- 置信度：高、中、低
-- 时间框架：交易是基于哪个时间框架的信号
-
-### 四、入场执行标准
-**首单入场必须满足所有条件：**
-1. **价格到达关键SMC区域**
-- 订单块或失衡区内
-- 距离失效位有合理的风险回报空间
-
-2. **CRT确认信号出现**
-- 明显的反转或延续形态
-- 收盘确认信号有效性
-
-3. **动量指标支持**
-- CCI显示背离或极端值回归
-- RVGI确认成交量配合
-
-4. **流动性目标明确**
-- 至少有1:1.5的风险回报比
-- 明确的上方/下方流动性目标
-
-### 六、退出策略
-**盈利退出条件：**
-1. **部分止盈**：价格到达第一目标（风险回报比1:1），平仓50%
-2. **移动止损**：剩余仓位止损移至保本，追踪至第二目标
-3. **整体止盈**：组合浮盈达到总风险的1.5倍，或到达主要流动性池
-
-**平仓 (CLOSE) 的极严格标准**:
-- **不要轻易平仓**！除非你对趋势反转有 **100% 的信心**。
-- **必须满足的平仓条件**:
-  1. **结构破坏 (Structure Break)**: M15 级别发生了明确的 **BOS** (反向突破) 或 **CHOCH** (特性改变)。
-  2. **形态确认**: 出现了教科书级别的反转形态 (如双顶/双底、头肩顶/底)，且伴随成交量验证。
-  3. **信心十足**: 如果只是普通的回调或震荡，**坚决持有 (HOLD)**。只有在确认趋势已经彻底终结时才平仓。
-
-**止损退出条件：**
-1. **技术止损**：价格突破SMC失效位，所有仓位立即离场
-2. **时间止损**：持仓超过3天无实质性进展，考虑减仓或离场
-3. **情绪止损**：连续2次亏损后，必须降低仓位50%
-
-## 输出格式要求
-
-你的每次分析必须包含以下部分：
-
-### 第一部分：市场结构分析
-1. 多时间框架趋势分析
-2. 关键水平识别
-3. 流动性分布评估
-4. 市场情绪判断
-
-### 第二部分：SMC信号识别
-1. 活跃订单块列表
-2. 重要失衡区识别
-3. CRT确认信号描述
-4. 动量指标状态
-
-### 第三部分：角色分析摘要
-1. 基本面分析师关键发现
-2. 情绪分析师评估结果
-3. 新闻分析师事件影响
-4. 技术分析师信号确认
-5. 研究员团队辩论共识
-
-### 第四部分：交易决策
-1. 明确的方向判断
-2. 置信度评估
-3. 具体入场计划（价格、仓位、止损、止盈）
-4. 加仓计划（条件、位置、仓位）
-
-### 第五部分：风险管理
-1. 单笔风险计算
-2. 总风险控制
-3. 应急预案
-4. 时间框架提醒
-
-### 第六部分：后续行动指南
-1. 如果行情按预期发展：下一步行动
-2. 如果行情反向发展：应对措施
-3. 如果行情盘整：等待策略
-4. 关键观察位和决策点
-
-### 关键新闻事件前后
-- 事件前1小时：暂停所有新开仓
-- 事件后30分钟：观察市场反应，不急于入场
-- 如果波动率异常放大：等待ATR回归正常水平
-- 只交易明确的SMC信号，忽略模糊信号
-
-## 最终决策输出
-
-请做出最终决策 (Action):
-1. **HOLD**: 震荡无方向，或持仓浮亏但在网格间距内。
-2. **BUY / SELL**: 出现SMC信号，首单入场。
-3. **ADD_BUY / ADD_SELL**: 逆势加仓。**仅当**：(a) 已有持仓且浮亏; (b) 价格到达下一个SMC支撑/阻力位; (c) 距离上一单有足够间距(>ATR)。
-4. **CLOSE**: 达到整体止盈目标，或SMC结构完全破坏(止损)。
-- **注意**: 如果决定CLOSE，请同时分析是否需要立即反手开仓(Reverse)。
-- 如果SMC结构发生了明确的反转(如CHOCH)，你应该在CLOSE的同时给出反向开仓信号(如 CLOSE_BUY -> SELL)。
-- 如果只是单纯离场观望，则仅输出CLOSE。
-- 如果需要反手，请在 action 中输出 "close_buy_open_sell" 或 "close_sell_open_buy" (或者直接给出反向信号，并在理由中说明)。
-5. **GRID_START**: 预埋网格单 (Limit Orders) 在未来的OB/FVG位置。
-
-**一致性检查 (Consistency Check)**:
-- 请务必参考 `Previous Analysis` (上一次分析结果)。
-- 如果当前市场结构、SMC信号和趋势与上一次相比**没有显著变化**，请保持决策一致 (Maintain Consistency)。
-- 如果决定保持一致，请在 `strategy_rationale` 中明确说明："市场结构未变，维持上一次 [Action] 决策"。
-
-**自我反思 (Self-Reflection)**:
-- 请仔细检查 `performance_stats` (历史交易绩效)。
-- 重点关注最近的亏损交易 (Profit < 0)。
-- 如果发现当前的市场结构/信号与之前的亏损交易非常相似，请**拒绝开仓**或**降低风险**。
-- 在 `strategy_rationale` 中注明："检测到类似历史亏损模式，执行风险规避"。
-
-**角色分析集成要求**:
-- 在 `strategy_rationale` 中必须引用角色分析的关键发现
-- 在 `telegram_report` 中必须包含角色分析的摘要
-- 在 `risk_metrics` 中必须体现风控团队的建议
-
-输出要求：
-
-- **limit_price**: 挂单必填。
-- **sl_price / tp_price**: **完全由你决定**。请务必根据多周期分析给出明确的数值，不要依赖系统默认。
-- **position_size**: 根据每个交易品种给出具体的资金比例。
-- **strategy_rationale**: 用**中文**详细解释：SMC结构分析(M15/H1/H4) -> 为什么选择该方向 -> 马丁加仓计划/止盈计划 -> 参考的MAE/MFE数据 -> **角色分析综合考量**。
-- **grid_level_tp_pips**: 针对马丁网格，请给出**每一层**网格单的最优止盈距离(Pips)。例如 [30, 25, 20, 15, 10]。越深层的单子通常TP越小以求快速离场。
-- **dynamic_basket_tp**: (重要) 请给出一个具体的美元数值 (例如 50.0, 120.5)，作为当前网格整体止盈目标。需综合考虑 MAE/MFE 和 SMC 结构。
-
-请以JSON格式返回结果，包含以下字段：
-
-- action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell", "grid_start", "close_buy_open_sell", "close_sell_open_buy")
-- entry_conditions: dict ("limit_price": float)
-- exit_conditions: dict ("sl_price": float, "tp_price": float)
-- position_management: dict ("martingale_multiplier": float, "grid_step_logic": str, "recommended_grid_step_pips": float, "grid_level_tp_pips": list[float], "dynamic_basket_tp": float)
-- position_size: float
-- leverage: int
-- signal_strength: int
-- parameter_updates: dict
-- **role_analysis_summary**: dict (角色分析摘要)
-- strategy_rationale: str (中文)
-- market_structure_analysis: dict (包含多时间框架分析)
-- smc_signals_identified: list (识别的SMC信号)
-- risk_metrics: dict (风险指标)
-- next_observations: list (后续观察要点)
-- telegram_report: str (专为Telegram优化的Markdown简报，包含关键分析结论、入场参数、SMC结构摘要、角色分析亮点。请使用emoji图标增强可读性)
-"""
-        
-        # Select Configs
-        martingale_config = martingale_configs.get(symbol, martingale_configs["DEFAULT"])
-        market_spec = market_specs.get(symbol, market_specs["DEFAULT"])
-        
-        # Assemble
-        full_prompt = f"{core_strategy}\n{martingale_config}\n{market_spec}\n{role_system_intro}\n{common_rules}"
-        return full_prompt
-    
-    def _get_api_key(self, symbol: str = "DEFAULT") -> str:
-        """根据品种获取对应的 API Key"""
-        key = self.api_keys.get(symbol.upper(), self.api_keys["DEFAULT"])
-        
-        # Fallback logic if symbol contains substrings
-        if "ETH" in symbol.upper(): 
-            key = self.api_keys["ETHUSD"]
-        elif "XAU" in symbol.upper() or "GOLD" in symbol.upper(): 
-            key = self.api_keys["XAUUSD"]
-        elif "EUR" in symbol.upper(): 
-            key = self.api_keys["EURUSD"]
-        
-        return key
-    
-    def _call_api(self, endpoint: str, payload: Dict[str, Any], max_retries: int = 3, symbol: str = "DEFAULT") -> Optional[Dict[str, Any]]:
-        """
-        调用Qwen API，支持重试机制和多品种 API Key 切换
-        """
-        url = f"{self.base_url}/{endpoint}"
-        
-        # Determine correct API Key for this call
-        current_api_key = self._get_api_key(symbol)
-        headers = self.headers.copy()
-        headers["Authorization"] = f"Bearer {current_api_key}"
-        
-        for retry in range(max_retries):
-            response = None
+        result = mt5.order_send(request)
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            logger.error(f"平仓失败 #{position.ticket}: {result.comment}")
+            return False
+        else:
+            logger.info(f"平仓成功 #{position.ticket}")
+            
+            # Calculate total profit for this position
+            total_profit = 0.0
+            total_swap = 0.0
+            total_commission = 0.0
+            net_profit = 0.0
+            
             try:
-                # 增加超时时间到300秒，应对 SiliconFlow/DeepSeek 响应慢的问题
-                response = requests.post(url, headers=headers, json=payload, timeout=300)
+                # Short delay to ensure history is updated
+                time.sleep(0.5)
+                # Get all deals associated with this position
+                deals = mt5.history_deals_get(position=position.ticket)
                 
-                # 详细记录响应状态
-                logger.debug(f"API响应状态码: {response.status_code}, 模型: {self.model}, 重试: {retry+1}/{max_retries}")
-                
-                # 处理不同状态码
-                if response.status_code == 401:
-                    logger.error(f"API认证失败，状态码: {response.status_code}，请检查API密钥是否正确")
-                    return None
-                elif response.status_code == 403:
-                    logger.error(f"API访问被拒绝，状态码: {response.status_code}，请检查API密钥权限")
-                    return None
-                elif response.status_code == 429:
-                    logger.warning(f"API请求频率过高，状态码: {response.status_code}，进入退避重试")
-                elif response.status_code >= 500:
-                    logger.error(f"API服务器错误，状态码: {response.status_code}")
-                
-                response.raise_for_status()
-                
-                # 解析响应并添加调试信息
-                response_json = response.json()
-                logger.info(f"API调用成功，状态码: {response.status_code}, 模型: {self.model}")
-                return response_json
-                
-            except requests.exceptions.ConnectionError as e:
-                logger.error(f"API连接失败 (重试 {retry+1}/{max_retries}): {e}")
-                logger.error(f"请求URL: {repr(url)}")
-                logger.error("请检查网络连接和API服务可用性")
-            except requests.exceptions.Timeout as e:
-                logger.error(f"API请求超时 (重试 {retry+1}/{max_retries}): {e}")
-                logger.error(f"请求URL: {repr(url)}")
-                logger.error("请检查网络连接和API服务响应时间")
-            except requests.exceptions.HTTPError as e:
-                logger.error(f"API HTTP错误 (重试 {retry+1}/{max_retries}): {e}")
-                logger.error(f"请求URL: {repr(url)}")
-                if response:
-                    logger.error(f"响应内容: {response.text[:200]}...")
-            except requests.exceptions.RequestException as e:
-                logger.error(f"API请求异常 (重试 {retry+1}/{max_retries}): {e}")
-                logger.error(f"请求URL: {repr(url)}")
-            except json.JSONDecodeError as e:
-                logger.error(f"JSON解析失败: {e}")
-                if response:
-                    logger.error(f"响应内容: {response.text}")
-                return None
+                if deals:
+                    for deal in deals:
+                        total_profit += deal.profit
+                        total_swap += deal.swap
+                        total_commission += deal.commission
+                    net_profit = total_profit + total_swap + total_commission
+                else:
+                    # Fallback to result profit if history not available
+                    net_profit = getattr(result, 'profit', 0.0)
+                    total_profit = net_profit
+                    
             except Exception as e:
-                logger.error(f"API调用意外错误: {e}")
-                logger.exception("完整错误堆栈:")
-                return None
-            
-            if retry < max_retries - 1:
-                # 延长重试等待时间，应对服务器过载
-                retry_delay = min(15 * (retry + 1), 60)  # 每次增加15秒，最大60秒
-                logger.info(f"等待 {retry_delay} 秒后重试...")
-                time.sleep(retry_delay)
-            else:
-                logger.error(f"API调用失败，已达到最大重试次数 {max_retries}")
-                return None
-    
-    def analyze_market_structure(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Qwen 独立市场结构与情绪分析 (多品种通用版)
-        完全自主进行市场结构、情绪和SMC信号分析
-        """
-        symbol = market_data.get("symbol", "UNKNOWN")
+                logger.error(f"获取平仓盈亏失败: {e}")
+                net_profit = getattr(result, 'profit', 0.0)
+
+            # Construct detailed message
+            msg = f"🔄 *Position Closed*\n"
+            msg += f"Ticket: `{position.ticket}`\n"
+            msg += f"Reason: {comment}\n"
+            msg += f"Profit: `{total_profit:.2f}`\n"
+            msg += f"Swap: `{total_swap:.2f}`\n"
+            msg += f"Comm: `{total_commission:.2f}`\n"
+            msg += f"💰 *Net PnL: {net_profit:.2f}*"
+
+            self.send_telegram_message(msg)
+            return True
+
+    def send_telegram_message(self, message):
+        """发送 Telegram 消息 (Safe Wrapper)"""
+        # Ensure we have a valid token and chat_id
+        # Hardcoded for reliability if env vars are flaky in bat scripts
+        token = "7626309727:AAHMkm-k3MvGvJtOVp4C_4JOo39Y4D_Cgng"
+        chat_id = "7426707328"
         
-        prompt = f"""
-作为专业的{symbol}交易员，请根据以下市场数据进行全面的市场结构与情绪分析：
+        if not token or not chat_id:
+            logger.warning("Telegram config missing. Skipping message.")
+            return
 
-市场数据:
-{json.dumps(market_data, indent=2, cls=CustomJSONEncoder)}
-
-请完成以下分析：
-
-1. **市场特性分析**
-- 当前交易时段特征（亚盘/欧盘/美盘）
-- 相关性分析（如美元指数、BTC、SPX等影响）
-- 避险/风险情绪状态
-
-2. **多时间框架市场结构分析**
-- 识别当前主要趋势方向（牛市/熊市/盘整）
-- 找出关键的市场结构点（BOS/CHoch）
-- 评估市场当前处于哪个阶段（积累/扩张/分配）
-
-3. **SMC信号识别**
-- 识别活跃的订单块(Order Blocks)
-- 识别重要的失衡区(FVGs)
-- 评估流动性池位置
-
-4. **情绪分析**
-- 情绪得分 (Sentiment Score): -1.0 (极度看空) 到 1.0 (极度看多)
-- 市场情绪状态: bullish/bearish/neutral
-
-5. **关键水平识别**
-- 列出3-5个最重要的支撑位
-- 列出3-5个最重要的阻力位
-- 关注心理整数关口
-
-请以JSON格式返回以下内容：
-
-{{
-    "market_structure": {{
-        "trend": "bullish/bearish/neutral",
-        "phase": "accumulation/expansion/distribution",
-        "timeframe_analysis": {{
-            "monthly": str,
-            "weekly": str,
-            "daily": str,
-            "h4": str
-        }},
-        "key_levels": {{
-            "support": [list of support levels],
-            "resistance": [list of resistance levels]
-        }},
-        "bos_points": [list of BOS levels],
-        "choch_points": [list of CHOCH levels]
-    }},
-    "smc_signals": {{
-        "order_blocks": [list of identified order blocks],
-        "fvgs": [list of identified fair value gaps],
-        "liquidity_pools": {{
-            "above": price,
-            "below": price
-        }}
-    }},
-    "sentiment_analysis": {{
-        "sentiment": "bullish/bearish/neutral",
-        "sentiment_score": float (-1.0 to 1.0),
-        "confidence": float (0.0 to 1.0),
-        "market_context": str (当前市场背景描述)
-    }},
-    "symbol_specific_analysis": {{
-        "trading_session": "asia/europe/us",
-        "macro_influence": "positive/negative/neutral",
-        "risk_status": "on/off"
-    }},
-    "key_observations": str (简短的中文分析)
-}}
-"""
-        
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": f"你是一位拥有20年经验的华尔街{symbol}交易员，精通SMC(Smart Money Concepts)和价格行为学。"},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.3,
-            "max_tokens": 1500,
-            "stream": False,
-            "response_format": {"type": "json_object"}
-        }
-        
-        response = self._call_api("chat/completions", payload, symbol=symbol)
-        
-        if response and "choices" in response:
-            try:
-                content = response["choices"][0]["message"]["content"]
-                return json.loads(content)
-            except json.JSONDecodeError as e:
-                logger.error(f"解析市场结构分析失败: {e}")
-                return self._get_default_market_analysis()
-        
-        return self._get_default_market_analysis()
-    
-    def _get_default_market_analysis(self) -> Dict[str, Any]:
-        """获取默认市场分析"""
-        return {
-            "market_structure": {
-                "trend": "neutral",
-                "phase": "unknown",
-                "timeframe_analysis": {
-                    "monthly": "unknown",
-                    "weekly": "unknown",
-                    "daily": "unknown",
-                    "h4": "unknown"
-                },
-                "key_levels": {"support": [], "resistance": []},
-                "bos_points": [],
-                "choch_points": []
-            },
-            "smc_signals": {
-                "order_blocks": [],
-                "fvgs": [],
-                "liquidity_pools": {"above": None, "below": None}
-            },
-            "sentiment_analysis": {
-                "sentiment": "neutral",
-                "sentiment_score": 0.0,
-                "confidence": 0.0,
-                "market_context": "分析失败"
-            },
-            "symbol_specific_analysis": {
-                "trading_session": "unknown",
-                "macro_influence": "neutral",
-                "risk_status": "unknown"
-            },
-            "key_observations": "分析失败"
-        }
-    
-    def analyze_market_sentiment(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        独立的情绪分析模块 - 全方位评估
-        """
-        logger.info("Executing Sentiment Analysis...")
-        symbol = market_data.get("symbol", "DEFAULT")
-        
-        prompt = f"""
-作为资深{symbol}市场分析师，请依据提供的市场数据，对当前市场情绪和趋势进行深度、全面的评估。
-
-输入数据:
-{json.dumps(market_data, cls=CustomJSONEncoder)}
-
-请从以下核心维度进行分析：
-
-1. **价格行为与趋势结构 (Price Action)**: 识别当前的高低点排列 (HH/HL 或 LH/LL)，判断市场是处于上升、下降还是震荡整理阶段。
-
-2. **SMC 视角 (Smart Money Concepts)**:
-- 关注是否有流动性扫荡 (Liquidity Sweep) 行为。
-- 价格对关键区域 (如 FVG, Order Block) 的反应。
-
-3. **动能与力度 (Momentum)**: 评估当前走势的强度，是否存在衰竭迹象。
-
-4. **关键位置**: 当前价格相对于近期支撑/阻力的位置关系。
-
-请严格返回以下 JSON 格式:
-
-{{
-    "sentiment": "bullish" | "bearish" | "neutral",
-    "sentiment_score": float, // 范围 -1.0 (极度看空) 到 1.0 (极度看多)
-    "trend_assessment": {{
-        "direction": "uptrend" | "downtrend" | "sideways",
-        "strength": "strong" | "moderate" | "weak"
-    }},
-    "key_drivers": ["因素1", "因素2", "因素3"],
-    "potential_risks": "主要风险点",
-    "reason": "综合分析结论 (100字以内)"
-}}
-"""
-        
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": "你是一位专注于价格行为和SMC策略的黄金交易专家。"},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.3,
-            "max_tokens": 800,
-            "response_format": {"type": "json_object"}
-        }
-        
         try:
-            response = self._call_api("chat/completions", payload, symbol=symbol)
-            if response and "choices" in response:
-                content = response["choices"][0]["message"]["content"]
-                return json.loads(content)
-        except Exception as e:
-            logger.error(f"Sentiment analysis failed: {e}")
-        
-        return {"sentiment": "neutral", "sentiment_score": 0.0, "reason": "Error", 
-                "trend_assessment": {"direction": "unknown", "strength": "weak"}}
-    
-    def execute_role_based_analysis(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        执行基于角色的多维分析
-        """
-        symbol = market_data.get("symbol", "UNKNOWN")
-        role_system = self._get_role_system(symbol)
-        
-        prompt = role_system.generate_analysis_prompt(market_data)
-        
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": f"你是一个{symbol}多角色分析系统的协调员，负责整合各个专业角色的分析结果。"},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.4,
-            "max_tokens": 2000,
-            "stream": False,
-            "response_format": {"type": "json_object"}
-        }
-        
-        response = self._call_api("chat/completions", payload, symbol=symbol)
-        
-        if response and "choices" in response:
-            try:
-                content = response["choices"][0]["message"]["content"]
-                role_analysis = json.loads(content)
-                logger.info(f"角色分析完成: {symbol}")
-                return role_analysis
-            except json.JSONDecodeError as e:
-                logger.error(f"解析角色分析失败: {e}")
-                return self._get_default_role_analysis(symbol)
-        
-        return self._get_default_role_analysis(symbol)
-    
-    def _get_default_role_analysis(self, symbol: str) -> Dict[str, Any]:
-        """获取默认角色分析"""
-        return {
-            "analyst_team_reports": {
-                "fundamental_analysis": {
-                    "summary": "基本面分析不可用",
-                    "key_factors": [],
-                    "outlook": "neutral",
-                    "confidence": 0.0
-                },
-                "sentiment_analysis": {
-                    "summary": "情绪分析不可用",
-                    "sentiment_score": 0.0,
-                    "market_mood": "neutral",
-                    "confidence": 0.0
-                },
-                "news_analysis": {
-                    "summary": "新闻分析不可用",
-                    "key_events": [],
-                    "impact_level": "low",
-                    "confidence": 0.0
-                },
-                "technical_analysis": {
-                    "summary": "技术分析不可用",
-                    "key_levels": {"support": [], "resistance": []},
-                    "signals": [],
-                    "confidence": 0.0
-                }
-            },
-            "researcher_debate": {
-                "bullish_arguments": [],
-                "bearish_arguments": [],
-                "consensus": "neutral",
-                "debate_confidence": 0.0
-            },
-            "integrated_assessment": {
-                "overall_direction": "neutral",
-                "overall_confidence": 0.0,
-                "risk_level": "medium",
-                "key_recommendations": ["等待更多数据"],
-                "rationale": "分析系统不可用"
-            },
-            "trading_implications": {
-                "action_bias": "hold",
-                "optimal_entry_zones": [],
-                "stop_loss_suggestions": [],
-                "take_profit_targets": [],
-                "risk_reward_ratio": "1:1"
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            payload = {
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "Markdown"
             }
-        }
-    
-    def optimize_strategy_logic(self, market_structure_analysis: Dict[str, Any], 
-                              current_market_data: Dict[str, Any],
-                              technical_signals: Optional[Dict[str, Any]] = None,
-                              current_positions: Optional[List[Dict[str, Any]]] = None,
-                              performance_stats: Optional[List[Dict[str, Any]]] = None,
-                              previous_analysis: Optional[Dict[str, Any]] = None,
-                              execute_role_analysis: bool = True) -> Dict[str, Any]:
-        """
-        多资产交易决策系统 - 基于SMC+Martingale策略 + 角色分析系统
-        整合完整的交易决策框架，完全自主进行市场分析和交易决策
-        """
-        
-        # 首先进行市场结构分析
-        market_analysis = market_structure_analysis
-        if not market_analysis or len(market_analysis) < 3:
-            market_analysis = self.analyze_market_structure(current_market_data)
-        
-        # 执行角色分析（如果启用）
-        role_analysis = None
-        if execute_role_analysis:
-            role_analysis = self.execute_role_based_analysis(current_market_data)
-        
-        # 构建上下文信息
-        symbol = current_market_data.get("symbol", "XAUUSD")
-        
-        # 1. 市场分析结果上下文
-        market_context = f"\n市场结构分析结果:\n{json.dumps(market_analysis, indent=2, cls=CustomJSONEncoder)}\n"
-        
-        # 2. 角色分析结果上下文
-        role_context = ""
-        if role_analysis:
-            # 提取关键信息
-            integrated = role_analysis.get("integrated_assessment", {})
-            trading_imp = role_analysis.get("trading_implications", {})
+            # Use short timeout to avoid blocking main thread
+            requests.post(url, json=payload, timeout=5)
+        except Exception as e:
+            logger.error(f"Failed to send Telegram message: {e}")
+
+    def check_risk_reward_ratio(self, entry_price, sl_price, tp_price):
+        """检查盈亏比是否达标"""
+        if sl_price <= 0 or tp_price <= 0:
+            return False, 0.0
             
-            role_context = f"""
-角色分析系统结果:
-- 综合评估: {integrated.get('overall_direction', 'neutral')} (置信度: {integrated.get('overall_confidence', 0.0)})
-- 风险等级: {integrated.get('risk_level', 'medium')}
-- 关键建议: {', '.join(integrated.get('key_recommendations', ['无']))}
-- 交易偏向: {trading_imp.get('action_bias', 'hold')}
-- 风险回报比: {trading_imp.get('risk_reward_ratio', '1:1')}
-
-详细角色分析已集成到后续决策中。
-"""
+        risk = abs(entry_price - sl_price)
+        reward = abs(tp_price - entry_price)
         
-        # 3. 上一次分析结果上下文
-        prev_context = ""
-        if previous_analysis:
-            prev_action = previous_analysis.get('action', 'unknown')
-            prev_rationale = previous_analysis.get('strategy_rationale', 'none')[:200]
-            prev_context = f"\n上一次分析结果 (Previous Analysis):\n- Action: {prev_action}\n- Rationale: {prev_rationale}...\n"
+        if risk == 0:
+            return False, 0.0
+            
+        rr_ratio = reward / risk
+        # 硬性要求: 盈亏比必须 >= 1.5
+        if rr_ratio < 1.5:
+            logger.warning(f"盈亏比过低 ({rr_ratio:.2f} < 1.5), 拒绝交易. Risk={risk:.2f}, Reward={reward:.2f}")
+            return False, rr_ratio
+            
+        return True, rr_ratio
+
+    def check_daily_loss_limit(self):
+        """检查当日亏损是否超限"""
+        try:
+            # 获取当日历史交易
+            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            deals = mt5.history_deals_get(today, datetime.now() + timedelta(days=1))
+            
+            if deals is None:
+                return True
+                
+            daily_profit = sum([d.profit + d.swap + d.commission for d in deals])
+            account_info = mt5.account_info()
+            if not account_info:
+                return True
+                
+            balance = account_info.balance
+            # 每日最大亏损: 余额的 10%
+            max_daily_loss = -1 * (balance * 0.10)
+            
+            if daily_profit < max_daily_loss:
+                logger.error(f"今日累计亏损 {daily_profit:.2f} 已超过风控限额 {max_daily_loss:.2f} (10%). 停止今日交易.")
+                return False
+                
+            return True
+        except Exception as e:
+            logger.error(f"检查日内风控失败: {e}")
+            return True # 失败时不阻断，避免死循环，但需注意
+
+    def check_consecutive_losses(self):
+        """检查连续亏损冷却"""
+        # 获取最近 10 笔已平仓交易 (足够覆盖5笔)
+        history = self.db_manager.get_trade_performance_stats(limit=10)
+        if not history:
+            return True
+            
+        losses = 0
+        for trade in history:
+            # 确保 trade 是字典并且有 profit 字段
+            if isinstance(trade, dict) and trade.get('profit', 0) < 0:
+                losses += 1
+            else:
+                break # 遇到盈利就中断
+        
+        # 阈值修改为 5 笔
+        if losses >= 5:
+            # 如果连续亏损 >= 5 笔，检查最后一笔交易的时间
+            # 确保 history[0] 存在且是字典
+            if history and isinstance(history[0], dict):
+                last_trade_time_str = history[0].get('close_time')
+                try:
+                    # 简单解析时间，如果 DB 格式不同需调整
+                    if last_trade_time_str:
+                        last_trade_time = datetime.fromisoformat(str(last_trade_time_str))
+                        time_diff = datetime.now() - last_trade_time
+                        
+                        # 冷却期 2 小时
+                        if time_diff.total_seconds() < 7200:
+                            logger.warning(f"触发连续亏损冷却 ({losses} 连败). 上次平仓于 {last_trade_time}. 需等待 2 小时.")
+                            return False
+                except Exception:
+                    pass
+                
+        return True
+
+    def calculate_dynamic_lot(self, strength, market_context=None, mfe_mae_ratio=None, ai_signals=None):
+        """
+        智能资金管理核心:
+        结合 AI 信心、市场结构、历史绩效、算法共振、账户状态进行自适应仓位计算
+        """
+        try:
+            account_info = mt5.account_info()
+            if account_info is None:
+                return self.lot_size
+                
+            balance = account_info.balance
+            equity = account_info.equity
+            margin_free = account_info.margin_free
+            
+            # 安全检查：如果可用保证金不足，直接返回最小手数或0
+            if margin_free < 100: # 至少保留 100 资金缓冲
+                logger.warning(f"可用保证金不足 ({margin_free:.2f})，强制最小手数")
+                return mt5.symbol_info(self.symbol).volume_min
+
+            # --- 1. 自适应基础风险 (Self-Adaptive Base Risk) ---
+            # 基于近期胜率和盈亏比动态调整基础风险
+            # 默认 2%
+            base_risk_pct = 0.02
+            
+            metrics = self.db_manager.get_performance_metrics(symbol=self.symbol, limit=20)
+            win_rate = metrics.get('win_rate', 0.0)
+            profit_factor = metrics.get('profit_factor', 0.0)
+            consecutive_losses = metrics.get('consecutive_losses', 0)
+            
+            # 学习逻辑:
+            # 如果近期表现好 (WinRate > 55% & PF > 1.5)，基础风险上调至 2.5% - 3.0%
+            # 如果近期表现差 (WinRate < 40% 或 连败 > 2)，基础风险下调至 1.0%
+            
+            if win_rate > 0.55 and profit_factor > 1.5:
+                base_risk_pct = 0.03
+                logger.info(f"资金管理学习: 近期表现优异 (WR={win_rate:.2%}, PF={profit_factor:.2f}), 基础风险上调至 3%")
+            elif win_rate < 0.40 or consecutive_losses >= 2:
+                base_risk_pct = 0.01
+                logger.info(f"资金管理学习: 近期表现不佳/连败 (WR={win_rate:.2%}, LossStreak={consecutive_losses}), 基础风险下调至 1%")
+            
+            # --- 2. AI 与 算法共振加成 (Consensus Multiplier) ---
+            consensus_multiplier = 1.0
+            
+            if ai_signals:
+                # A. 大模型一致性 (Only Qwen now)
+                qw_sig = ai_signals.get('qwen', 'neutral')
+                target_sig = self.latest_signal # 最终决策方向
+                
+                if qw_sig == target_sig:
+                    consensus_multiplier += 0.2 
+                
+                # B. 高级算法共振 (Voting)
+                tech_signals = [
+                    ai_signals.get('crt'), 
+                    ai_signals.get('smc'),
+                    ai_signals.get('rvgi_cci')
+                ]
+                # 计算同向比例
+                same_dir_count = sum(1 for s in tech_signals if s == target_sig)
+                total_tech = len(tech_signals)
+                
+                if total_tech > 0:
+                    ratio = same_dir_count / total_tech
+                    if ratio >= 0.8: # 80% 以上指标同向
+                        consensus_multiplier += 0.4
+                    elif ratio >= 0.6:
+                        consensus_multiplier += 0.2
+                    elif ratio < 0.3:
+                        consensus_multiplier -= 0.3 # 只有少数指标支持，减仓
+            
+            # --- 3. 信心分数调整 (Strength) ---
+            # 这里的 strength 已经是结合了投票结果的，可能与上面的共振有部分重叠
+            # 我们将其作为微调系数
+            strength_multiplier = 1.0
+            if strength > 70:
+                strength_multiplier = 1.2
+            elif strength < 50:
+                strength_multiplier = 0.6
+                
+            # --- 4. 市场结构与盈亏比调整 ---
+            structure_multiplier = 1.0
+            
+            # MFE/MAE
+            if mfe_mae_ratio and mfe_mae_ratio > 2.0:
+                structure_multiplier += 0.2
+            elif mfe_mae_ratio and mfe_mae_ratio < 0.8:
+                structure_multiplier -= 0.2
+                
+            # SMC Strong Trend
+            if market_context and 'smc' in market_context:
+                smc = market_context['smc']
+                if smc.get('structure') in ['Strong Bullish', 'Strong Bearish']:
+                    structure_multiplier += 0.2
+            
+            # Volatility Regime (Matrix ML / Advanced Tech)
+            # 如果是极高波动率，应该减仓以防滑点和剧烈扫损
+            if market_context and 'volatility_regime' in market_context:
+                regime = market_context['volatility_regime']
+                if regime == 'High' or regime == 'Extreme':
+                    structure_multiplier *= 0.7
+                    logger.info("检测到高波动率市场，自动降低仓位系数")
+
+            # --- 5. 综合计算 ---
+            final_risk_pct = base_risk_pct * consensus_multiplier * strength_multiplier * structure_multiplier
+            
+            # 硬性风控上限 (Max Risk Cap)
+            # 无论如何优化，单笔亏损不得超过权益的 6%
+            final_risk_pct = min(final_risk_pct, 0.06)
+            # 下限保护
+            final_risk_pct = max(final_risk_pct, 0.005) # 至少 0.5%
+            
+            risk_amount = equity * final_risk_pct
+            
+            # 资金池分配检查 (Portfolio Management)
+            # 确保当前品种的占用资金不会耗尽所有自由保证金
+            # 简单规则：任何单一品种的预估保证金占用不应超过剩余自由保证金的 50%
+            max_allowed_risk_amount = margin_free * 0.5 
+            if risk_amount > max_allowed_risk_amount:
+                logger.warning(f"风险金额 ({risk_amount:.2f}) 超过可用保证金池限制 ({max_allowed_risk_amount:.2f}). 自动下调.")
+                risk_amount = max_allowed_risk_amount
+            
+            # --- 6. 动态止损距离估算 ---
+            # 如果有明确的 SL 价格，计算实际距离；否则用 ATR
+            sl_distance_points = 500.0 # 默认
+            
+            # 尝试从 latest_strategy 获取建议的 SL
+            if self.latest_strategy:
+                sl_price = self.latest_strategy.get('exit_conditions', {}).get('sl_price')
+                entry_price_ref = mt5.symbol_info_tick(self.symbol).ask # 假设当前进场
+                
+                if sl_price and sl_price > 0:
+                    sl_distance_points = abs(entry_price_ref - sl_price) / mt5.symbol_info(self.symbol).point
+            
+            # 如果上面的计算异常(太小)，回退到 ATR
+            if sl_distance_points < 100 and market_context and 'atr' in market_context:
+                atr = market_context['atr']
+                if atr > 0:
+                    sl_distance_points = (atr * 1.5) / mt5.symbol_info(self.symbol).point
+            
+            # 再次保护，防止除以零或过小
+            if sl_distance_points < 50: sl_distance_points = 500.0
+            
+            # 计算合约价值 (Gold: 1 lot = 100 oz, tick_value usually corresponds to volume)
+            # 简单估算: Gold 1.0 lot, 1 point ($0.01 move) = $1 profit/loss?
+            # 通常 XAUUSD: 1 lot, 0.01 price change = $1.  1.00 price change = $100.
+            # Point = 0.01. 
+            # Loss per lot = sl_distance_points * tick_value
+            
+            symbol_info = mt5.symbol_info(self.symbol)
+            tick_value = symbol_info.trade_tick_value
+            # 有些 broker 的 tick_value 可能配置不同，这里做个典型值兜底
+            if tick_value is None or tick_value == 0:
+                tick_value = 1.0 # 假设标准合约
+                
+            loss_per_lot = sl_distance_points * tick_value
+            
+            calculated_lot = risk_amount / loss_per_lot
+            
+            # 标准化
+            step = symbol_info.volume_step
+            min_lot = symbol_info.volume_min
+            max_lot = symbol_info.volume_max
+            
+            calculated_lot = round(calculated_lot / step) * step
+            final_lot = max(min_lot, min(calculated_lot, max_lot))
+            
+            logger.info(
+                f"💰 智能资金管理 ({self.symbol}):\n"
+                f"• Base Risk: {base_risk_pct:.1%}\n"
+                f"• Multipliers: Consensus={consensus_multiplier:.2f}, Strength={strength_multiplier:.2f}, Struct={structure_multiplier:.2f}\n"
+                f"• Final Risk: {final_risk_pct:.2%} (${risk_amount:.2f})\n"
+                f"• Margin Free: {margin_free:.2f} (Cap: {max_allowed_risk_amount:.2f})\n"
+                f"• SL Dist: {sl_distance_points:.0f} pts\n"
+                f"• Lot Size: {final_lot}"
+            )
+            
+            return final_lot
+            
+        except Exception as e:
+            logger.error(f"动态仓位计算失败: {e}")
+            return self.lot_size
+
+    def execute_trade(self, signal, strength, sl_tp_params, entry_params=None, suggested_lot=None):
+        """
+        执行交易指令，完全由大模型驱动
+        :param suggested_lot: 预计算的建议手数 (可选)
+        """
+        # 允许所有相关指令进入
+        valid_actions = ['buy', 'sell', 'limit_buy', 'limit_sell', 'close', 'add_buy', 'add_sell', 'hold', 'close_buy_open_sell', 'close_sell_open_buy']
+        # 注意: signal 参数这里传入的是 final_signal，已经被归一化为 buy/sell/close/hold
+        # 但我们更关心 entry_params 中的具体 action
+        
+        # --- 1. 获取市场状态 ---
+        positions = mt5.positions_get(symbol=self.symbol)
+        tick = mt5.symbol_info_tick(self.symbol)
+        if not tick:
+            logger.error("无法获取 Tick 数据")
+            return
+
+        # 解析 LLM 指令
+        # 这里的 entry_params 是从 strategy 字典中提取的 'entry_conditions'
+        # 但 strategy 字典本身也有 'action'
+        # 为了更准确，我们应该直接使用 self.latest_strategy (在 run 循环中更新)
+        
+        # 兼容性处理
+        llm_action = "hold"
+        if self.latest_strategy:
+             llm_action = self.latest_strategy.get('action', 'hold').lower()
+        elif entry_params and 'action' in entry_params:
+             llm_action = entry_params.get('action', 'hold').lower()
         else:
-            prev_context = "\n上一次分析结果: 无 (首次运行)\n"
+             llm_action = signal if signal in valid_actions else 'hold'
+
+        # Normalize Compound Actions (Reverse)
+        if llm_action == 'close_buy_open_sell':
+            logger.info("Action Normalized: close_buy_open_sell -> sell")
+            llm_action = 'sell'
+        elif llm_action == 'close_sell_open_buy':
+            logger.info("Action Normalized: close_sell_open_buy -> buy")
+            llm_action = 'buy'
+
+        # Force Override: 如果 final_signal (signal) 已经被修正为 buy/sell，但 llm_action 仍为 hold，则强制同步
+        if signal in ['buy', 'sell'] and llm_action in ['hold', 'neutral']:
+             logger.info(f"Applying Signal Override: {llm_action} -> {signal}")
+             llm_action = signal
+
+        # 显式 MFE/MAE 止损止盈
+        # LLM 应该返回具体的 sl_price 和 tp_price，或者 MFE/MAE 的百分比建议
+        # 如果 LLM 提供了具体的 SL/TP 价格，优先使用
+        explicit_sl = None
+        explicit_tp = None
         
-        # 4. 当前持仓状态上下文
-        pos_context = ""
-        if current_positions:
-            pos_context = f"\n当前持仓状态 (包含实时 MFE/MAE 和 R-Multiple):\n{json.dumps(current_positions, indent=2, cls=CustomJSONEncoder)}\n"
+        if self.latest_strategy:
+            explicit_sl = self.latest_strategy.get('sl')
+            explicit_tp = self.latest_strategy.get('tp')
+        
+        # 如果没有具体价格，回退到 sl_tp_params (通常也是 LLM 生成的)
+        if explicit_sl is None and sl_tp_params:
+             explicit_sl = sl_tp_params.get('sl_price')
+        if explicit_tp is None and sl_tp_params:
+             explicit_tp = sl_tp_params.get('tp_price')
+
+        logger.info(f"执行逻辑: Action={llm_action}, Signal={signal}, Explicit SL={explicit_sl}, TP={explicit_tp}")
+
+        # --- 2. 持仓管理 (已开仓状态) ---
+        added_this_cycle = False
+        if positions and len(positions) > 0:
+            for pos in positions:
+                pos_type = pos.type # 0: Buy, 1: Sell
+                is_buy_pos = (pos_type == mt5.POSITION_TYPE_BUY)
+                
+                # A. 平仓/减仓逻辑 (Close)
+                should_close = False
+                close_reason = ""
+                
+                if llm_action in ['close', 'close_buy', 'close_sell']:
+                    # 检查方向匹配
+                    if llm_action == 'close': should_close = True
+                    elif llm_action == 'close_buy' and is_buy_pos: should_close = True
+                    elif llm_action == 'close_sell' and not is_buy_pos: should_close = True
+                    
+                    if should_close: close_reason = "LLM Close Instruction"
+                
+                # 反向信号平仓 (Reversal)
+                elif (llm_action in ['buy', 'add_buy'] and not is_buy_pos):
+                     should_close = True
+                     close_reason = "Reversal (Sell -> Buy)"
+                elif (llm_action in ['sell', 'add_sell'] and is_buy_pos):
+                     should_close = True
+                     close_reason = "Reversal (Buy -> Sell)"
+
+                if should_close:
+                    logger.info(f"执行平仓 #{pos.ticket}: {close_reason}")
+                    self.close_position(pos, comment=f"AI: {close_reason}")
+                    continue 
+
+                # B. 加仓逻辑 (Add Position)
+                should_add = False
+                # 用户需求: 如果大模型综合分析结果为同方向，则视为加仓指令
+                # 限制: 每个周期只加仓一次，避免重复加仓
+                if not added_this_cycle:
+                    if is_buy_pos and llm_action in ['add_buy', 'buy']: 
+                        should_add = True
+                    elif not is_buy_pos and llm_action in ['add_sell', 'sell']: 
+                        should_add = True
+                
+                if should_add:
+                    # --- 加仓距离保护 ---
+                    can_add = True
+                    min_dist_points = 200 # 20 pips
+                    symbol_info = mt5.symbol_info(self.symbol)
+                    point = symbol_info.point if symbol_info else 0.01
+                    current_check_price = tick.ask if is_buy_pos else tick.bid
+                    
+                    for existing in positions:
+                        if existing.magic == self.magic_number and existing.type == pos.type:
+                            dist = abs(existing.price_open - current_check_price) / point
+                            if dist < min_dist_points:
+                                logger.warning(f"加仓保护: 距离现有持仓太近 ({dist:.0f} < {min_dist_points}), 跳过.")
+                                can_add = False
+                                break
+                    
+                    if not can_add:
+                        continue
+                    # -------------------
+
+                    logger.info(f"执行加仓 #{pos.ticket} 方向 (Action: {llm_action})")
+                    # 加仓逻辑复用开仓逻辑，但可能调整手数
+                    self._send_order(
+                        "buy" if is_buy_pos else "sell", 
+                        tick.ask if is_buy_pos else tick.bid,
+                        explicit_sl,
+                        explicit_tp,
+                        comment="AI: Add Position"
+                    )
+                    added_this_cycle = True # 标记本轮已加仓
+                    pass
+                    
+                # C. 持仓 (Hold) - 默认行为
+                # 更新 SL/TP (如果 LLM 给出了新的优化值)
+                # 只有当新给出的 SL/TP 与当前差别较大时才修改
+                if explicit_sl is not None and explicit_tp is not None:
+                    # 简单的阈值检查，避免频繁修改
+                    point = mt5.symbol_info(self.symbol).point
+                    if abs(pos.sl - explicit_sl) > 10 * point or abs(pos.tp - explicit_tp) > 10 * point:
+                        logger.info(f"更新持仓 SL/TP #{pos.ticket}: SL {pos.sl}->{explicit_sl}, TP {pos.tp}->{explicit_tp}")
+                        request = {
+                            "action": mt5.TRADE_ACTION_SLTP,
+                            "position": pos.ticket,
+                            "sl": explicit_sl,
+                            "tp": explicit_tp
+                        }
+                        mt5.order_send(request)
+
+        # --- 3. 开仓/挂单逻辑 (未开仓 或 加仓) ---
+        # 注意: 上面的循环处理了已有仓位的 Close 和 Add。
+        # 如果当前没有仓位，或者上面的逻辑没有触发 Close (即是 Hold)，
+        # 或者是 Reversal (Close 之后)，我们需要看是否需要开新仓。
+        
+        # 重新检查持仓数 (因为刚才可能平仓了)
+        # 仅检查由本机器人 (Magic Number) 管理的持仓
+        all_positions = mt5.positions_get(symbol=self.symbol)
+        bot_positions = [p for p in all_positions if p.magic == self.magic_number] if all_positions else []
+        has_position = len(bot_positions) > 0
+        
+        # 如果有持仓且不是加仓指令，则不再开新仓
+        if has_position:
+            if added_this_cycle:
+                logger.info(f"本轮已执行加仓，跳过额外开仓")
+                return
+            elif 'add' not in llm_action:
+                logger.info(f"已有持仓 ({len(bot_positions)}), 且非加仓指令 ({llm_action}), 跳过开仓")
+                return
+
+        # 执行开仓/挂单
+        trade_type = None
+        price = 0.0
+        
+        # Mapping 'add_buy'/'add_sell' to normal buy/sell if no position exists
+        # This handles cases where LLM says "add" but position was closed or didn't exist
+        
+        if llm_action in ['buy', 'add_buy']:
+            trade_type = "buy"
+            price = tick.ask
+        elif llm_action in ['sell', 'add_sell']:
+            trade_type = "sell"
+            price = tick.bid
+        elif llm_action in ['limit_buy', 'buy_limit']:
+            # 检查现有 Limit 挂单
+            current_orders = mt5.orders_get(symbol=self.symbol)
+            if current_orders:
+                for o in current_orders:
+                    if o.magic == self.magic_number:
+                        # 如果是 Sell Limit/Stop (反向)，则取消
+                        if o.type in [mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP]:
+                             logger.info(f"取消反向挂单 #{o.ticket} (Type: {o.type})")
+                             req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
+                             mt5.order_send(req)
+                        # 如果是同向 (Buy Limit/Stop)，则保留 (叠加)
+                        
+            # 优先使用 limit_price (与 prompt 一致)，回退使用 entry_price
+            price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
+            
+            # 增强：如果价格无效，尝试自动修复
+            if price <= 0:
+                logger.warning(f"LLM 建议 Limit Buy 但未提供价格，尝试使用 ATR 自动计算")
+                # 获取 ATR
+                rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+                if rates is not None and len(rates) > 14:
+                     df_temp = pd.DataFrame(rates)
+                     high_low = df_temp['high'] - df_temp['low']
+                     atr = high_low.rolling(14).mean().iloc[-1]
+                     if atr > 0:
+                        price = tick.ask - (atr * 0.5) # 默认在当前价格下方 0.5 ATR 处挂单
+                        logger.info(f"自动设定 Limit Buy 价格: {price:.2f} (Ask: {tick.ask}, ATR: {atr:.4f})")
+            
+            # 智能判断 Limit vs Stop
+            if price > 0:
+                # 检查最小间距 (Stops Level)
+                symbol_info = mt5.symbol_info(self.symbol)
+                stop_level = symbol_info.trade_stops_level * symbol_info.point if symbol_info else 0
+                price = self._normalize_price(price)
+                
+                if price > tick.ask:
+                    trade_type = "stop_buy" # 价格高于当前价 -> 突破买入
+                    # Buy Stop must be >= Ask + StopLevel
+                    min_price = tick.ask + stop_level
+                    if price < min_price:
+                        logger.warning(f"Stop Buy Price {price} too close to Ask {tick.ask}, adjusting to {min_price}")
+                        price = self._normalize_price(min_price)
+                else:
+                    trade_type = "limit_buy" # 价格低于当前价 -> 回调买入
+                    # Buy Limit must be <= Ask - StopLevel
+                    max_price = tick.ask - stop_level
+                    if price > max_price:
+                         logger.warning(f"Limit Buy Price {price} too close to Ask {tick.ask}, adjusting to {max_price}")
+                         price = self._normalize_price(max_price)
+                
+        elif llm_action in ['limit_sell', 'sell_limit']:
+            # 检查现有 Limit 挂单
+            current_orders = mt5.orders_get(symbol=self.symbol)
+            if current_orders:
+                for o in current_orders:
+                    if o.magic == self.magic_number:
+                        # 如果是 Buy Limit/Stop (反向)，则取消
+                        if o.type in [mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP]:
+                             logger.info(f"取消反向挂单 #{o.ticket} (Type: {o.type})")
+                             req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
+                             mt5.order_send(req)
+                        # 如果是同向 (Sell Limit/Stop)，则保留 (叠加)
+
+            price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
+            
+            # 增强：如果价格无效，尝试自动修复
+            if price <= 0:
+                logger.warning(f"LLM 建议 Limit Sell 但未提供价格，尝试使用 ATR 自动计算")
+                # 获取 ATR
+                rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+                if rates is not None and len(rates) > 14:
+                     df_temp = pd.DataFrame(rates)
+                     high_low = df_temp['high'] - df_temp['low']
+                     atr = high_low.rolling(14).mean().iloc[-1]
+                     if atr > 0:
+                        price = tick.bid + (atr * 0.5) # 默认在当前价格上方 0.5 ATR 处挂单
+                        logger.info(f"自动设定 Limit Sell 价格: {price:.2f} (Bid: {tick.bid}, ATR: {atr:.4f})")
+            
+            # 智能判断 Limit vs Stop
+            if price > 0:
+                # 检查最小间距 (Stops Level)
+                symbol_info = mt5.symbol_info(self.symbol)
+                stop_level = symbol_info.trade_stops_level * symbol_info.point if symbol_info else 0
+                price = self._normalize_price(price)
+
+                if price < tick.bid:
+                    trade_type = "stop_sell" # 价格低于当前价 -> 突破卖出
+                    # Sell Stop must be <= Bid - StopLevel
+                    max_price = tick.bid - stop_level
+                    if price > max_price:
+                        logger.warning(f"Stop Sell Price {price} too close to Bid {tick.bid}, adjusting to {max_price}")
+                        price = self._normalize_price(max_price)
+                else:
+                    trade_type = "limit_sell" # 价格高于当前价 -> 反弹卖出
+                    # Sell Limit must be >= Bid + StopLevel
+                    min_price = tick.bid + stop_level
+                    if price < min_price:
+                        logger.warning(f"Limit Sell Price {price} too close to Bid {tick.bid}, adjusting to {min_price}")
+                        price = self._normalize_price(min_price)
+
+        elif llm_action == 'grid_start':
+            logger.info(">>> 执行网格部署 (Grid Start) <<<")
+            
+            # 1. 获取 ATR (用于网格间距)
+            rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+            atr = 0.0
+            if rates is not None and len(rates) > 14:
+                 df_temp = pd.DataFrame(rates)
+                 high_low = df_temp['high'] - df_temp['low']
+                 atr = high_low.rolling(14).mean().iloc[-1]
+            
+            if atr <= 0:
+                logger.warning("无法计算 ATR，无法生成网格计划")
+                return
+
+            # 2. 确定方向
+            direction = 'bullish' # Default
+            if self.latest_strategy:
+                market_state = str(self.latest_strategy.get('market_state', '')).lower()
+                pred = str(self.latest_strategy.get('short_term_prediction', '')).lower()
+                # 结合 Qwen 分析判断方向
+                if 'down' in market_state or 'bear' in pred or 'sell' in str(self.latest_strategy.get('action', '')).lower():
+                    direction = 'bearish'
+                elif 'up' in market_state or 'bull' in pred or 'buy' in str(self.latest_strategy.get('action', '')).lower():
+                    direction = 'bullish'
+            
+            logger.info(f"网格方向判定: {direction} (ATR: {atr:.5f})")
+
+            # 3. 生成网格计划
+            # 使用当前价格作为基准
+            current_price = tick.ask if direction == 'bullish' else tick.bid
+            
+            # 获取 Point
+            symbol_info = mt5.symbol_info(self.symbol)
+            point = symbol_info.point if symbol_info else 0.01
+            
+            # 提取 LLM 建议的动态网格间距 (Pips) 和 动态TP配置
+            dynamic_step = None
+            grid_level_tps = None
+            
+            if self.latest_strategy:
+                pos_mgmt = self.latest_strategy.get('position_management', {})
+                if pos_mgmt:
+                    dynamic_step = pos_mgmt.get('recommended_grid_step_pips')
+                    grid_level_tps = pos_mgmt.get('grid_level_tp_pips')
+                    if grid_level_tps:
+                         logger.info(f"Using Dynamic Grid Level TPs: {grid_level_tps}")
+            
+            grid_orders = self.grid_strategy.generate_grid_plan(current_price, direction, atr, point=point, dynamic_step_pips=dynamic_step, grid_level_tps=grid_level_tps)
+            
+            # 4. 执行挂单
+            if grid_orders:
+                logger.info(f"网格计划生成 {len(grid_orders)} 个挂单")
+                
+                # 计算一个基础手数
+                base_lot = self.lot_size
+                # 如果有 suggested_lot，使用它
+                if suggested_lot and suggested_lot > 0:
+                    base_lot = suggested_lot
+                
+                # 临时保存原始 lot_size
+                original_lot = self.lot_size
+                self.lot_size = base_lot # 设置为本次网格的基础手数
+                
+                for i, order in enumerate(grid_orders):
+                    o_type = order['type']
+                    o_price = self._normalize_price(order['price'])
+                    o_tp = self._normalize_price(order.get('tp', 0.0))
+                    
+                    # 发送订单
+                    self._send_order(o_type, o_price, sl=0.0, tp=o_tp, comment=f"AI-Grid-{i+1}")
+                    
+                # 恢复 lot_size
+                self.lot_size = original_lot
+                logger.info("网格部署完成")
+                return # 结束本次 execute_trade
+            else:
+                logger.warning("网格计划为空，未执行任何操作")
+                return
+
+        if trade_type and price > 0:
+            # 再次确认 SL/TP 是否存在
+            if explicit_sl is None or explicit_tp is None:
+                # 策略优化: 如果 LLM 未提供明确价格，则使用基于 MFE/MAE 的统计优化值
+                # 移除旧的 ATR 动态计算，确保策略的一致性和基于绩效的优化
+                logger.info("LLM 未提供明确 SL/TP，使用 MFE/MAE 统计优化值")
+                
+                # 计算 ATR
+                rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+                atr = 0.0
+                if rates is not None and len(rates) > 14:
+                     df_temp = pd.DataFrame(rates)
+                     high_low = df_temp['high'] - df_temp['low']
+                     atr = high_low.rolling(14).mean().iloc[-1]
+                
+                explicit_sl, explicit_tp = self.calculate_optimized_sl_tp(trade_type, price, atr, ai_exit_conds=sl_tp_params)
+                
+                if explicit_sl == 0 or explicit_tp == 0:
+                     logger.error("无法计算优化 SL/TP，放弃交易")
+                     return 
+
+            # 再次确认 R:R (针对 Limit 单的最终确认)
+            if 'limit' in trade_type or 'stop' in trade_type:
+                 valid, rr = self.check_risk_reward_ratio(price, explicit_sl, explicit_tp)
+                 if not valid:
+                     logger.warning(f"Limit单最终 R:R 检查未通过: {rr:.2f}")
+                     return
+
+            # FIX: Ensure 'action' is defined for the comment
+            # action variable was used in _send_order's comment but was coming from llm_action
+            action_str = llm_action.upper() if llm_action else "UNKNOWN"
+            comment = f"AI-{action_str}"
+            
+            # --- 动态仓位计算 ---
+            if suggested_lot and suggested_lot > 0:
+                optimized_lot = suggested_lot
+                logger.info(f"使用预计算的建议手数: {optimized_lot}")
+            else:
+                # 准备上下文 (Fallback)
+                # 获取历史 MFE/MAE 统计 (如果有缓存，从 db_manager 获取)
+                trade_stats = self.db_manager.get_trade_performance_stats(limit=50)
+                mfe_mae_ratio = 1.0
+                if trade_stats and 'avg_mfe' in trade_stats and 'avg_mae' in trade_stats:
+                    if abs(trade_stats['avg_mae']) > 0:
+                        mfe_mae_ratio = trade_stats['avg_mfe'] / abs(trade_stats['avg_mae'])
+                
+                # 准备 SMC 上下文 (如果 self.smc_analyzer 最近分析过)
+                # 我们从 latest_strategy 的 details 中尝试获取
+                market_ctx = {}
+                if self.latest_strategy and 'details' in self.latest_strategy:
+                     market_ctx['smc'] = {'structure': self.latest_strategy['details'].get('smc_structure')}
+                
+                # 获取 ATR (复用上面的计算)
+                rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+                if rates is not None:
+                    df_temp = pd.DataFrame(rates)
+                    high_low = df_temp['high'] - df_temp['low']
+                    atr = high_low.rolling(14).mean().iloc[-1]
+                    market_ctx['atr'] = atr
+                
+                # 从 strategy details 中提取所有 AI 信号
+                ai_signals_data = None
+                if self.latest_strategy and 'details' in self.latest_strategy:
+                    ai_signals_data = self.latest_strategy['details'].get('signals', {})
+                    # 尝试获取 Volatility Regime
+                    if 'adv_summary' in self.latest_strategy['details']:
+                        adv_sum = self.latest_strategy['details']['adv_summary']
+                        if isinstance(adv_sum, dict) and 'regime_analysis' in adv_sum:
+                            market_ctx['volatility_regime'] = adv_sum.get('risk', {}).get('level', 'Normal')
+
+                # 计算最终仓位
+                optimized_lot = self.calculate_dynamic_lot(
+                    strength, 
+                    market_context=market_ctx, 
+                    mfe_mae_ratio=mfe_mae_ratio,
+                    ai_signals=ai_signals_data
+                )
+            
+            self.lot_size = optimized_lot # 临时覆盖 self.lot_size 供 _send_order 使用
+            
+            self._send_order(trade_type, price, explicit_sl, explicit_tp, comment=comment)
         else:
-            pos_context = "\n当前无持仓。\n"
+            if llm_action not in ['hold', 'neutral']:
+                logger.warning(f"无法执行交易: Action={llm_action}, TradeType={trade_type}, Price={price}")
+
+
+
+    def _get_filling_mode(self):
+        """
+        Get the correct order filling mode for the symbol.
+        Checks broker support for FOK/IOC.
+        """
+        symbol_info = mt5.symbol_info(self.symbol)
+        if symbol_info is None:
+            return mt5.ORDER_FILLING_FOK # Default
+            
+        # filling_mode is a flag property
+        # 1: FOK, 2: IOC
+        modes = symbol_info.filling_mode
         
-        # 5. 挂单状态上下文
-        open_orders = current_market_data.get('open_orders', [])
-        orders_context = ""
-        if open_orders:
-            orders_context = f"\n当前挂单状态 (Limit/SL/TP):\n{json.dumps(open_orders, indent=2, cls=CustomJSONEncoder)}\n"
+        # Use integer values directly if constants are missing in some MT5 versions
+        # SYMBOL_FILLING_FOK = 1
+        # SYMBOL_FILLING_IOC = 2
+        
+        # Check using integer values to avoid AttributeError if constants are missing
+        SYMBOL_FILLING_FOK_VAL = 1
+        SYMBOL_FILLING_IOC_VAL = 2
+        
+        if modes & SYMBOL_FILLING_FOK_VAL: 
+            return mt5.ORDER_FILLING_FOK
+        elif modes & SYMBOL_FILLING_IOC_VAL: 
+            return mt5.ORDER_FILLING_IOC
         else:
-            orders_context = "\n当前无挂单。\n"
+            return mt5.ORDER_FILLING_RETURN
+
+    def _normalize_price(self, price):
+        """Standardize price to symbol's tick size"""
+        if price is None or price == 0:
+            return 0.0
+        symbol_info = mt5.symbol_info(self.symbol)
+        if symbol_info is None:
+            return price
         
-        # 6. 性能统计上下文
-        perf_context = self._build_performance_context(performance_stats)
+        digits = symbol_info.digits
+        return round(price, digits)
+
+    def _send_order(self, type_str, price, sl, tp, comment=""):
+        """底层下单函数"""
+        # Normalize prices
+        price = self._normalize_price(price)
+        sl = self._normalize_price(sl)
+        tp = self._normalize_price(tp)
         
-        # 7. 技术信号上下文
-        tech_context = ""
-        if technical_signals:
-            sigs_copy = technical_signals.copy()
-            if 'performance_stats' in sigs_copy:
-                del sigs_copy['performance_stats']
-            tech_context = f"\n技术信号 (SMC/CRT/CCI):\n{json.dumps(sigs_copy, indent=2, cls=CustomJSONEncoder)}\n"
+        # --- 增强验证逻辑 (Fix Invalid Stops) ---
+        symbol_info = mt5.symbol_info(self.symbol)
+        if not symbol_info:
+            logger.error("无法获取品种信息")
+            return
+
+        point = symbol_info.point
         
-        # 构建完整提示词
-        system_prompt = self._get_system_prompt(symbol)
+        # Calculate dynamic spread
+        tick = mt5.symbol_info_tick(self.symbol)
+        spread = (tick.ask - tick.bid) if tick else (symbol_info.spread * point)
         
-        # 获取账户信息
-        account_info = current_market_data.get('account_info', {})
-        available_balance = account_info.get('available_balance', 10000)
+        # Base stops level required by broker
+        base_stops_level = symbol_info.trade_stops_level * point
         
-        prompt = f"""
-{system_prompt}
-
-## 核心指令更新：动态仓位计算 (Dynamic Position Sizing)
-
-你必须根据以下因素，精确计算本次交易的 **position_size (Lots)**：
-
-1. **实时账户资金**: {available_balance} (请根据资金规模合理配比)
-2. **风险偏好**: 单笔风险严格控制在 1% - 3% 之间。
-3. **信号置信度 & 高级算法**: 结合SMC信号强度和角色分析共识
-4. **市场情绪**: 结合 {market_analysis.get('sentiment_analysis', {}).get('sentiment', 'neutral')} 情绪调整。
-5. **凯利公式**: 参考你的胜率预估。
-
-**绝对不要**使用固定的 0.01 手！
-
-请给出一个精确到小数点后两位的数字 (例如 0.15, 0.50, 1.20)，并在 `strategy_rationale` 中详细解释计算逻辑 (例如："基于2%风险和强SMC信号，计算得出...")。
-
-## 当前交易上下文
-
-当前市场数据：
-{json.dumps(current_market_data, indent=2, cls=CustomJSONEncoder)}
-
-市场结构分析结果：
-{market_context}
-
-角色分析系统结果：
-{role_context}
-
-持仓状态 (Martingale 核心关注):
-{pos_context}
-
-挂单状态:
-{orders_context}
-
-技术信号 (SMC/CRT/CCI):
-{tech_context}
-
-历史绩效 (MFE/MAE 参考):
-{perf_context}
-
-上一次分析:
-{prev_context}
-
-## {symbol} 特定注意事项
-
-- 当前交易时段: {market_analysis.get('symbol_specific_analysis', {}).get('trading_session', 'unknown')}
-- 宏观影响: {market_analysis.get('symbol_specific_analysis', {}).get('macro_influence', 'neutral')}
-- 风险状态: {market_analysis.get('symbol_specific_analysis', {}).get('risk_status', 'unknown')}
-
-## 现在，基于以上所有信息，请输出完整的交易决策
-
-特别注意：
-1. **必须引用角色分析的关键发现**
-2. 基于市场结构分析结果进行方向判断
-3. 结合SMC信号寻找最佳入场点
-4. 参考MAE/MFE数据优化止损止盈
-5. 制定Martingale网格加仓计划
-6. 严格遵循风险管理规则
-7. 生成Telegram简报（使用emoji图标增强可读性）
-"""
+        # SL requires Spread buffer because it triggers on the other side of execution price
+        # (Buy executes at Ask, SL triggers at Bid; Sell executes at Bid, SL triggers at Ask)
+        sl_min_dist = base_stops_level + spread + (20 * point)
         
-        # 构建payload
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": f"你是一名专注于{symbol}交易的职业交易员，采用SMC(Smart Money Concepts)结合Martingale网格策略的复合交易系统，并整合多维角色分析系统。"},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.3,
-            "max_tokens": 3500,
-            "stream": False
+        # TP triggers on the same side as execution price (usually), so Spread is strictly not required,
+        # but a small safety buffer (20 points) is good.
+        tp_min_dist = base_stops_level + (20 * point)
+        
+        is_buy = "buy" in type_str
+        is_sell = "sell" in type_str
+        
+        # 1. 检查方向性 (Directionality)
+        if is_buy:
+            # Buy: SL must be < Price, TP must be > Price
+            if sl > 0 and sl >= price:
+                logger.warning(f"Invalid SL for BUY (SL {sl:.2f} >= Price {price:.2f}). Auto-Correcting: Removing SL.")
+                sl = 0.0 # 移除无效 SL，优先保证成交
+            
+            if tp > 0 and tp <= price:
+                logger.warning(f"Invalid TP for BUY (TP {tp:.2f} <= Price {price:.2f}). Auto-Correcting: Removing TP.")
+                tp = 0.0
+                
+        elif is_sell:
+            # Sell: SL must be > Price, TP must be < Price
+            if sl > 0 and sl <= price:
+                logger.warning(f"Invalid SL for SELL (SL {sl:.2f} <= Price {price:.2f}). Auto-Correcting: Removing SL.")
+                sl = 0.0
+                
+            if tp > 0 and tp >= price:
+                logger.warning(f"Invalid TP for SELL (TP {tp:.2f} >= Price {price:.2f}). Auto-Correcting: Removing TP.")
+                tp = 0.0
+
+        # 2. 检查最小间距 (Stops Level)
+        # 防止 SL/TP 距离价格太近导致 Error 10016
+        if sl > 0:
+            dist = abs(price - sl)
+            if dist < sl_min_dist:
+                logger.warning(f"SL too close (Dist {dist:.5f} < Level {sl_min_dist:.5f}). Adjusting.")
+                if is_buy: 
+                    sl = price - sl_min_dist
+                else: 
+                    sl = price + sl_min_dist
+                sl = self._normalize_price(sl)
+                
+        if tp > 0:
+            dist = abs(price - tp)
+            if dist < tp_min_dist:
+                logger.warning(f"TP too close (Dist {dist:.5f} < Level {tp_min_dist:.5f}). Adjusting.")
+                if is_buy: 
+                    tp = price + tp_min_dist
+                else: 
+                    tp = price - tp_min_dist
+                tp = self._normalize_price(tp)
+        
+        # ----------------------------------------
+        
+        order_type = mt5.ORDER_TYPE_BUY
+        action = mt5.TRADE_ACTION_DEAL
+        
+        if type_str == "buy":
+            order_type = mt5.ORDER_TYPE_BUY
+            action = mt5.TRADE_ACTION_DEAL
+        elif type_str == "sell":
+            order_type = mt5.ORDER_TYPE_SELL
+            action = mt5.TRADE_ACTION_DEAL
+        elif type_str == "limit_buy":
+            order_type = mt5.ORDER_TYPE_BUY_LIMIT
+            action = mt5.TRADE_ACTION_PENDING
+        elif type_str == "limit_sell":
+            order_type = mt5.ORDER_TYPE_SELL_LIMIT
+            action = mt5.TRADE_ACTION_PENDING
+        elif type_str == "stop_buy":
+            order_type = mt5.ORDER_TYPE_BUY_STOP
+            action = mt5.TRADE_ACTION_PENDING
+        elif type_str == "stop_sell":
+            order_type = mt5.ORDER_TYPE_SELL_STOP
+            action = mt5.TRADE_ACTION_PENDING
+            
+        request = {
+            "action": action,
+            "symbol": self.symbol,
+            "volume": self.lot_size,
+            "type": order_type,
+            "price": price,
+            "sl": sl,
+            "tp": tp,
+            "deviation": 20,
+            "magic": self.magic_number,
+            "comment": comment,
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": self._get_filling_mode(),
         }
         
-        # 启用JSON模式
-        if self.enable_json_mode:
-            payload["response_format"] = {"type": "json_object"}
+        # --- 增强的订单发送逻辑 (自动重试不同的 Filling Mode) ---
+        # 针对 Error 10030 (Unsupported filling mode) 进行自动故障转移
         
-        # 调用API
-        response = self._call_api("chat/completions", payload, symbol=symbol)
+        filling_modes = []
         
-        if response and "choices" in response:
-            try:
-                message_content = response["choices"][0]["message"]["content"]
-                logger.info(f"收到模型响应: {message_content[:500]}...")
-                
-                # 解析响应
-                trading_decision = json.loads(message_content)
-                
-                if not isinstance(trading_decision, dict):
-                    logger.error(f"Qwen响应格式错误 (期望dict, 实际{type(trading_decision)}): {trading_decision}")
-                    return self._get_default_decision("响应格式错误", market_analysis, role_analysis)
-                
-                # 确保必要的字段存在
-                required_fields = ['action', 'entry_conditions', 'exit_conditions', 
-                                  'strategy_rationale', 'telegram_report']
-                for field in required_fields:
-                    if field not in trading_decision:
-                        trading_decision[field] = self._get_default_value(field)
-                
-                # 添加角色分析摘要
-                if role_analysis:
-                    trading_decision['role_analysis_summary'] = {
-                        'integrated_direction': role_analysis.get('integrated_assessment', {}).get('overall_direction', 'neutral'),
-                        'risk_level': role_analysis.get('integrated_assessment', {}).get('risk_level', 'medium'),
-                        'key_recommendations': role_analysis.get('integrated_assessment', {}).get('key_recommendations', []),
-                        'action_bias': role_analysis.get('trading_implications', {}).get('action_bias', 'hold')
-                    }
-                else:
-                    trading_decision['role_analysis_summary'] = self._get_default_role_analysis(symbol)['integrated_assessment']
-                
-                # 再次校验模型返回的 position_size，确保其存在且合法
-                if "position_size" not in trading_decision:
-                    trading_decision["position_size"] = 0.01
-                else:
-                    # 限制范围，防止模型给出极端值
-                    try:
-                        size = float(trading_decision["position_size"])
-                        # 0.01 到 10.0 手之间 (根据资金规模调整)
-                        trading_decision["position_size"] = max(0.01, min(10.0, size))
-                    except (ValueError, TypeError):
-                        trading_decision["position_size"] = 0.01
-                
-                # 添加市场分析结果到决策中
-                trading_decision['market_analysis'] = market_analysis
-                
-                # 添加完整的角色分析结果
-                if role_analysis:
-                    trading_decision['full_role_analysis'] = role_analysis
-                
-                return trading_decision
-                
-            except json.JSONDecodeError as e:
-                logger.error(f"解析Qwen响应失败: {e}")
-                logger.error(f"原始响应: {response}")
-                return self._get_default_decision("解析失败，使用默认参数", market_analysis, role_analysis)
+        # 确定尝试顺序
+        if "limit" in type_str or "stop" in type_str:
+            # 挂单通常优先尝试 RETURN
+            filling_modes = [mt5.ORDER_FILLING_RETURN, mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_FOK]
+        else:
+            # 市价单优先使用 _get_filling_mode 检测到的模式
+            preferred = self._get_filling_mode()
+            filling_modes = [preferred, mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_RETURN]
+            
+        # 去重并保持顺序
+        filling_modes = list(dict.fromkeys(filling_modes))
         
-        return self._get_default_decision("API调用失败，使用默认参数", market_analysis, role_analysis)
-    
-    def _build_performance_context(self, performance_stats):
-        """构建性能统计上下文"""
-        if not performance_stats:
-            return "\n历史交易绩效: 无可用数据\n"
+        result = None
+        success = False
+        
+        for mode in filling_modes:
+            request['type_filling'] = mode
+            
+            # 仅记录第一次尝试或重试信息，避免刷屏
+            if mode == filling_modes[0]:
+                logger.info(f"发送订单请求: Action={action}, Type={order_type}, Price={price:.2f}, SL={sl:.2f}, TP={tp:.2f}, Filling={mode}")
+            else:
+                logger.info(f"重试订单 (Filling Mode: {mode})...")
+                
+            result = mt5.order_send(request)
+            
+            if result is None:
+                logger.error("order_send 返回 None")
+                break
+                
+            if result.retcode == mt5.TRADE_RETCODE_DONE:
+                success = True
+                logger.info(f"下单成功 ({type_str}) #{result.order} (Mode: {mode})")
+                self.send_telegram_message(f"✅ *Order Executed*\nType: `{type_str.upper()}`\nPrice: `{price}`\nSL: `{sl}`\nTP: `{tp}`")
+                break
+            elif result.retcode == 10030: # Unsupported filling mode
+                logger.warning(f"Filling mode {mode} 不支持 (10030), 尝试下一个模式...")
+                continue
+            else:
+                # 其他错误，不重试
+                logger.error(f"下单失败 ({type_str}): {result.comment}, retcode={result.retcode}")
+                break
+                
+        if not success and result and result.retcode == 10030:
+             logger.error(f"下单失败 ({type_str}): 所有 Filling Mode 均被拒绝 (10030)")
+
+
+
+                
+
+
+
+    def escape_markdown(self, text):
+        """Helper to escape Markdown special characters for Telegram"""
+        if not isinstance(text, str):
+            text = str(text)
+        # Escaping for Markdown (V1)
+        escape_chars = '_*[`'
+        for char in escape_chars:
+            text = text.replace(char, f'\\{char}')
+        return text
+
+    def send_telegram_message(self, message):
+        """发送消息到 Telegram"""
+        token = "8253887074:AAE_o7hfEb6iJCZ2MdVIezOC_E0OnTCvCzY"
+        chat_id = "5254086791"
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = {
+            "chat_id": chat_id,
+            "text": message,
+            "parse_mode": "Markdown"
+        }
+        
+        # 配置代理 (针对中国大陆用户)
+        # 如果您使用 Clash，通常端口是 7890
+        # 如果您使用 v2rayN，通常端口是 10809
+        proxies = {
+            "http": "http://127.0.0.1:7890",
+            "https": "http://127.0.0.1:7890"
+        }
         
         try:
-            if isinstance(performance_stats, list):
-                recent_trades = [t for t in performance_stats if isinstance(t, dict)]
-                if not recent_trades:
-                    return "\n历史交易绩效: 数据格式错误\n"
+            import requests
+            try:
+                # 尝试通过代理发送
+                response = requests.post(url, json=data, timeout=10, proxies=proxies)
+            except (requests.exceptions.ProxyError, requests.exceptions.ConnectionError):
+                # 如果代理失败，尝试直连 (虽然可能也会被墙)
+                logger.warning("代理连接失败，尝试直连 Telegram...")
+                response = requests.post(url, json=data, timeout=10)
                 
-                # 计算统计指标
-                mfe_list = [t.get('mfe', 0) for t in recent_trades if t.get('mfe') is not None]
-                mae_list = [t.get('mae', 0) for t in recent_trades if t.get('mae') is not None]
-                wins = len([t for t in recent_trades if t.get('profit', 0) > 0])
-                total_profit = sum([t.get('profit', 0) for t in recent_trades if t.get('profit', 0) > 0])
-                total_loss = abs(sum([t.get('profit', 0) for t in recent_trades if t.get('profit', 0) < 0]))
-                
-                summary_stats = {
-                    'avg_mfe': sum(mfe_list)/len(mfe_list) if mfe_list else 0,
-                    'avg_mae': sum(mae_list)/len(mae_list) if mae_list else 0,
-                    'trade_count': len(recent_trades),
-                    'win_rate': (wins / len(recent_trades)) * 100 if recent_trades else 0,
-                    'profit_factor': (total_profit / total_loss) if total_loss > 0 else 99.9
-                }
-                
-                trades_summary = json.dumps(recent_trades[:5], indent=2, cls=CustomJSONEncoder)
-                
-                return (
-                    f"\n历史交易绩效参考 (用于 MFE/MAE 象限分析与 SL/TP 优化):\n"
-                    f"- 样本交易数: {summary_stats.get('trade_count', 0)}\n"
-                    f"- 胜率 (Win Rate): {summary_stats.get('win_rate', 0):.2f}%\n"
-                    f"- 盈亏比 (Profit Factor): {summary_stats.get('profit_factor', 0):.2f}\n"
-                    f"- 平均 MFE: {summary_stats.get('avg_mfe', 0):.2f}%\n"
-                    f"- 平均 MAE: {summary_stats.get('avg_mae', 0):.2f}%\n"
-                    f"- 最近交易详情 (用于分析体质): \n{trades_summary}\n"
-                )
-            else:
-                return "\n历史交易绩效: 数据格式错误\n"
+            if response.status_code != 200:
+                logger.error(f"Telegram 发送失败: {response.text}")
         except Exception as e:
-            logger.error(f"处理性能统计时出错: {e}")
-            return "\n历史交易绩效: 数据解析错误\n"
-    
-    def _get_default_decision(self, reason: str = "系统错误", 
-                            market_analysis: Dict[str, Any] = None,
-                            role_analysis: Dict[str, Any] = None) -> Dict[str, Any]:
-        """获取默认决策"""
-        decision = {
-            "action": "hold",
-            "entry_conditions": {"trigger_type": "market"},
-            "exit_conditions": {"sl_atr_multiplier": 1.5, "tp_atr_multiplier": 2.5},
-            "position_management": {"martingale_multiplier": 1.5, "grid_step_logic": "ATR_based"},
-            "position_size": 0.01,
-            "leverage": 1,
-            "signal_strength": 50,
-            "parameter_updates": {},
-            "role_analysis_summary": {
-                "integrated_direction": "neutral",
-                "risk_level": "medium",
-                "key_recommendations": ["等待明确信号"],
-                "action_bias": "hold"
-            },
-            "strategy_rationale": reason,
-            "market_structure_analysis": {"trend": "neutral", "phase": "waiting"},
-            "smc_signals_identified": [],
-            "risk_metrics": {"max_risk": 0.02, "current_risk": 0},
-            "next_observations": ["等待明确信号"],
-            "telegram_report": f"⚠️ *System Error*\n{reason}",
-            "market_analysis": market_analysis or self._get_default_market_analysis()
-        }
-        
-        if role_analysis:
-            decision["full_role_analysis"] = role_analysis
-        
-        return decision
-    
-    def _get_default_value(self, field: str) -> Any:
-        """获取字段默认值"""
-        defaults = {
-            'action': 'hold',
-            'entry_conditions': {"trigger_type": "market"},
-            'exit_conditions': {"sl_atr_multiplier": 1.5, "tp_atr_multiplier": 2.5},
-            'position_management': {"martingale_multiplier": 1.5, "grid_step_logic": "ATR_based"},
-            'position_size': 0.01,
-            'leverage': 1,
-            'signal_strength': 50,
-            'parameter_updates': {},
-            'role_analysis_summary': {
-                "integrated_direction": "neutral",
-                "risk_level": "medium",
-                "key_recommendations": ["等待明确信号"],
-                "action_bias": "hold"
-            },
-            'strategy_rationale': "默认决策",
-            'market_structure_analysis': {"trend": "neutral", "phase": "waiting"},
-            'smc_signals_identified': [],
-            'risk_metrics': {"max_risk": 0.02, "current_risk": 0},
-            'next_observations': ["等待明确信号"],
-            'telegram_report': "⚠️ *Default Decision*",
-            'market_analysis': self._get_default_market_analysis()
-        }
-        return defaults.get(field, None)
-    
-    def judge_signal_strength(self, market_data: Dict[str, Any], 
-                            technical_indicators: Dict[str, Any]) -> int:
+            logger.error(f"Telegram 发送异常: {e}")
+
+    def manage_positions(self, signal=None, strategy_params=None):
         """
-        判断交易信号强度
-        基于市场数据和技术指标评估信号强度
+        根据最新分析结果管理持仓:
+        1. Grid Strategy Logic (Basket TP, Adding Positions)
+        2. 更新止损止盈 (覆盖旧设置) - 基于 strategy_params
+        3. 执行移动止损 (Trailing Stop)
+        4. 检查是否需要平仓 (非反转情况，例如信号转弱)
         """
-        prompt = f"""
-作为专业的交易信号分析师，请评估以下交易信号的强度：
+        positions = mt5.positions_get(symbol=self.symbol)
+        if positions is None or len(positions) == 0:
+            return
 
-市场数据：
-{json.dumps(market_data, indent=2)}
+        # 获取 ATR 用于计算移动止损距离 (动态调整)
+        rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+        atr = 0.0
+        if rates is not None and len(rates) > 14:
+            df_temp = pd.DataFrame(rates)
+            high_low = df_temp['high'] - df_temp['low']
+            atr = high_low.rolling(14).mean().iloc[-1]
+            
+        if atr <= 0:
+            return # 无法计算 ATR，跳过
 
-技术指标：
-{json.dumps(technical_indicators, indent=2)}
+        # --- Grid Strategy Logic ---
+        # 1. Check Basket TP
+        if self.grid_strategy.check_basket_tp(positions):
+            logger.info("Grid Strategy: Basket TP Reached. Closing ALL positions.")
+            for pos in positions:
+                if pos.magic == self.magic_number:
+                    self.close_position(pos, comment="Grid Basket TP")
+            return
 
-请基于以下因素评估信号强度(0-100)：
-1. 市场结构：当前市场状态是否有利于交易
-2. SMC信号：订单块、失衡区的质量
-3. 多指标共振：技术指标是否一致支持该信号
-4. 成交量：成交量是否支持价格走势
-5. 波动率：当前波动率是否适合交易
-
-请只返回一个数字，不要包含任何其他文字或解释。
-"""
+        # 2. Check Grid Add (Only if allowed by LLM)
+        # 增加 LLM 权限控制: 默认允许，但如果 LLM 明确禁止 (allow_grid=False)，则暂停加仓
+        allow_grid = True
+        if self.latest_strategy and isinstance(self.latest_strategy, dict):
+            # 检查是否有 'grid_settings' 且其中有 'allow_add'
+            grid_settings = self.latest_strategy.get('parameter_updates', {}).get('grid_settings', {})
+            if 'allow_add' in grid_settings:
+                allow_grid = bool(grid_settings['allow_add'])
         
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": "你是一位专业的交易信号分析师，擅长评估交易信号的强度和可靠性。"},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.2,
-            "max_tokens": 10
-        }
+        tick = mt5.symbol_info_tick(self.symbol)
+        if tick and allow_grid:
+            current_price_check = tick.bid # Use Bid for price check approximation
+            action, lot = self.grid_strategy.check_grid_add(positions, current_price_check)
+            if action:
+                logger.info(f"Grid Strategy Trigger: {action} Lot={lot}")
+                trade_type = "buy" if action == 'add_buy' else "sell"
+                price = tick.ask if trade_type == 'buy' else tick.bid
+                
+                # Dynamic Add TP Logic
+                add_tp = 0.0
+                if self.latest_strategy:
+                     pos_mgmt = self.latest_strategy.get('position_management', {})
+                     grid_tps = pos_mgmt.get('grid_level_tp_pips')
+                     if grid_tps:
+                         # Determine level index
+                         current_count = self.grid_strategy.long_pos_count if trade_type == 'buy' else self.grid_strategy.short_pos_count
+                         # Use specific TP if available
+                         tp_pips = grid_tps[current_count] if current_count < len(grid_tps) else grid_tps[-1]
+                         
+                         point = mt5.symbol_info(self.symbol).point
+                         if trade_type == 'buy':
+                             add_tp = price + (tp_pips * 10 * point)
+                         else:
+                             add_tp = price - (tp_pips * 10 * point)
+                         
+                         logger.info(f"Dynamic Add TP: {add_tp} ({tp_pips} pips)")
+                
+                # Fallback if no TP from LLM
+                if add_tp == 0.0 and atr > 0:
+                    # Fallback: ATR * 3.0 (Wider for grid)
+                    fallback_dist = atr * 3.0
+                    if trade_type == 'buy': add_tp = price + fallback_dist
+                    else: add_tp = price - fallback_dist
+                    add_tp = self._normalize_price(add_tp)
+                    logger.info(f"Dynamic Add TP (Fallback ATR): {add_tp:.2f} (ATR={atr:.2f})")
+
+                self._send_order(trade_type, price, 0.0, add_tp, comment=f"Grid: {action}")
+                # Don't return, allow SL/TP update for existing positions
+
+        trailing_dist = atr * 1.5 # 默认移动止损距离
         
-        response = self._call_api("chat/completions", payload)
+        # 如果有策略参数，尝试解析最新的 SL/TP 设置
+        new_sl_multiplier = 1.5
+        new_tp_multiplier = 2.5
+        has_new_params = False
         
-        if response and "choices" in response:
+        if strategy_params:
+            exit_cond = strategy_params.get('exit_conditions')
+            if exit_cond:
+                new_sl_multiplier = exit_cond.get('sl_atr_multiplier', 1.5)
+                new_tp_multiplier = exit_cond.get('tp_atr_multiplier', 2.5)
+                has_new_params = True
+
+        symbol_info = mt5.symbol_info(self.symbol)
+        if not symbol_info:
+            return
+        point = symbol_info.point
+        stop_level_dist = symbol_info.trade_stops_level * point
+
+        # 遍历所有持仓，独立管理
+        for pos in positions:
+            if pos.magic != self.magic_number:
+                continue
+                
+            symbol = pos.symbol
+            type_pos = pos.type # 0: Buy, 1: Sell
+            price_open = pos.price_open
+            sl = pos.sl
+            tp = pos.tp
+            current_price = pos.price_current
+            
+            # 针对每个订单独立计算最优 SL/TP
+            # 如果是挂单成交后的新持仓，或者老持仓，都统一处理
+            
+            request = {
+                "action": mt5.TRADE_ACTION_SLTP,
+                "symbol": symbol,
+                "position": pos.ticket,
+                "sl": sl,
+                "tp": tp
+            }
+            
+            changed = False
+            
+            # --- 1. 基于最新策略更新 SL/TP (全量覆盖更新) ---
+            # 策略调整: 恢复 AI 驱动的持仓参数更新逻辑
+            # 但不使用机械式的 Trailing Stop，而是依赖 LLM 的 MFE/MAE 分析给出的新点位
+            
+            # [Manual Override Protection]
+            # 检查用户是否手动修改了 SL/TP
+            # 我们假设机器人上次设置的 SL/TP 应该与当前持仓的一致
+            # 如果差异很大且不是 0，说明用户手动干预了
+            # 为了简化，我们设定规则: 只有当 AI 建议的新 SL/TP 明显优于当前设置，或者当前设置明显偏离风险控制时才强制更新
+            
+            allow_update = True # Enabled per User Request (Dynamic AI Update)
+            
+            if allow_update and has_new_params:
+                # 使用 calculate_optimized_sl_tp 进行统一计算和验证
+                ai_exits = strategy_params.get('exit_conditions', {})
+                
+                # Check if Qwen provided explicit SL/TP
+                sl_val = ai_exits.get('sl_price')
+                tp_val = ai_exits.get('tp_price')
+                
+                qwen_sl_provided = sl_val is not None and float(sl_val) > 0
+                qwen_tp_provided = tp_val is not None and float(tp_val) > 0
+                
+                # If Qwen didn't provide explicit values, skip dynamic update (User Request)
+                if not qwen_sl_provided and not qwen_tp_provided:
+                    logger.info("Qwen 未提供明确 SL/TP，跳过动态更新 (防止自动移动)")
+                else:
+                    trade_dir = 'buy' if type_pos == mt5.POSITION_TYPE_BUY else 'sell'
+                    
+                    # --- NEW LOGIC: Use Qwen's Analysis Directly ---
+                    # Instead of calculating based on ATR multipliers inside calculate_optimized_sl_tp,
+                    # we trust the explicit values provided by the LLM (which integrated SMC/MFE/MAE/ATR)
+                    
+                    # Safe get with float conversion
+                    try:
+                        opt_sl = float(ai_exits.get('sl_price', 0.0))
+                        opt_tp = float(ai_exits.get('tp_price', 0.0))
+                    except (ValueError, TypeError):
+                        logger.error(f"Invalid SL/TP from AI: {ai_exits}")
+                        opt_sl = 0.0
+                        opt_tp = 0.0
+                    
+                    # Validate and Normalize
+                    opt_sl = self._normalize_price(opt_sl)
+                    opt_tp = self._normalize_price(opt_tp)
+                    
+                    # --- Update SL ---
+                    if opt_sl > 0:
+                        diff_sl = abs(opt_sl - sl)
+                        
+                        # Validate Stop Level distance
+                        valid_sl = True
+                        if type_pos == mt5.POSITION_TYPE_BUY:
+                            if (current_price - opt_sl) < stop_level_dist: valid_sl = False # SL must be below price
+                            if opt_sl >= current_price: valid_sl = False # Basic sanity
+                        elif type_pos == mt5.POSITION_TYPE_SELL:
+                            if (opt_sl - current_price) < stop_level_dist: valid_sl = False # SL must be above price
+                            if opt_sl <= current_price: valid_sl = False # Basic sanity
+                        
+                        # Only update if valid and difference is significant (reduce api spam)
+                        if valid_sl and diff_sl > (point * 10):
+                            request['sl'] = opt_sl
+                            changed = True
+                            logger.info(f"AI Model 更新 SL: {sl:.2f} -> {opt_sl:.2f}")
+
+                    # --- Update TP ---
+                    if opt_tp > 0:
+                        diff_tp = abs(opt_tp - tp)
+                        
+                        # Validate Stop Level distance
+                        valid_tp = True
+                        if type_pos == mt5.POSITION_TYPE_BUY:
+                             if (opt_tp - current_price) < stop_level_dist: valid_tp = False # TP must be above price
+                             if opt_tp <= current_price: valid_tp = False
+                        elif type_pos == mt5.POSITION_TYPE_SELL:
+                             if (current_price - opt_tp) < stop_level_dist: valid_tp = False # TP must be below price
+                             if opt_tp >= current_price: valid_tp = False
+                        
+                        # Only update if valid and difference is significant
+                        if valid_tp and diff_tp > (point * 10):
+                            request['tp'] = opt_tp
+                            changed = True
+                            logger.info(f"AI Model 更新 TP: {tp:.2f} -> {opt_tp:.2f}")
+
+                # 如果没有明确价格，但有 ATR 倍数建议 (兼容旧逻辑或备用)，则计算
+                # REMOVED/SKIPPED to enforce "No Dynamic Movement"
+                # elif new_sl_multiplier > 0 or new_tp_multiplier > 0:
+                #     # DEBUG: Replaced logic
+                #     current_sl_dist = atr * new_sl_multiplier
+                #     current_tp_dist = atr * new_tp_multiplier
+                #     
+                #     suggested_sl = 0.0
+                #     suggested_tp = 0.0
+                #     
+                #     if type_pos == mt5.POSITION_TYPE_BUY:
+                #         suggested_sl = current_price - current_sl_dist
+                #         suggested_tp = current_price + current_tp_dist
+                #     elif type_pos == mt5.POSITION_TYPE_SELL:
+                #         suggested_sl = current_price + current_sl_dist
+                #         suggested_tp = current_price - current_tp_dist
+                #     
+                #     # Normalize
+                #     suggested_sl = self._normalize_price(suggested_sl)
+                #     suggested_tp = self._normalize_price(suggested_tp)
+                #
+                #     # 仅当差异显著时更新
+                #     if suggested_sl > 0:
+                #         diff_sl = abs(suggested_sl - sl)
+                #         is_better_sl = False
+                #         if type_pos == mt5.POSITION_TYPE_BUY and suggested_sl > sl: is_better_sl = True
+                #         if type_pos == mt5.POSITION_TYPE_SELL and suggested_sl < sl: is_better_sl = True
+                #         
+                #         valid = True
+                #         if type_pos == mt5.POSITION_TYPE_BUY and (current_price - suggested_sl < stop_level_dist): valid = False
+                #         if type_pos == mt5.POSITION_TYPE_SELL and (suggested_sl - current_price < stop_level_dist): valid = False
+                #         
+                #         if valid and (diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5)):
+                #             request['sl'] = suggested_sl
+                #             changed = True
+                #     
+                #     if suggested_tp > 0 and abs(suggested_tp - tp) > point * 30:
+                #         valid = True
+                #         if type_pos == mt5.POSITION_TYPE_BUY and (suggested_tp - current_price < stop_level_dist): valid = False
+                #         if type_pos == mt5.POSITION_TYPE_SELL and (current_price - suggested_tp < stop_level_dist): valid = False
+                #         
+                #         if valid:
+                #             request['tp'] = suggested_tp
+                #             changed = True
+            
+            # --- 2. 兜底移动止损 (Trailing Stop) ---
+            # 已禁用，仅依赖 AI 更新
+            # if not changed: ... pass
+             
+            if changed:
+                logger.info(f"更新持仓 #{pos.ticket}: SL={request['sl']:.2f}, TP={request['tp']:.2f}")
+                result = mt5.order_send(request)
+                if result.retcode != mt5.TRADE_RETCODE_DONE:
+                    logger.error(f"持仓修改失败: {result.comment}")
+            # 如果最新信号转为反向或中立，且强度足够，可以考虑提前平仓
+            # 但 execute_trade 已经处理了反向开仓(会先平仓)。
+            # 这里只处理: 信号变 Weak/Neutral 时的防御性平仓 (如果需要)
+            # 用户: "operate SL/TP, or close, open"
+            if signal == 'neutral' and strategy_params:
+                # 检查是否应该平仓
+                # 简单逻辑: 如果盈利 > 0 且信号消失，落袋为安?
+                # 或者依靠 SL/TP 自然离场。
+                pass
+
+    def analyze_closed_trades(self):
+        """
+        分析已平仓的交易，计算 MFE (最大有利波动) and MAE (最大不利波动)
+        用于后续 AI 学习和策略优化
+        """
+        try:
+            # 1. 获取数据库中尚未标记为 CLOSED 的交易
+            open_trades = self.db_manager.get_open_trades()
+            
+            if not open_trades:
+                return
+
+            for trade in open_trades:
+                ticket = trade['ticket'] # 这是 Order Ticket
+                symbol = trade['symbol']
+                
+                # 2. 检查该订单是否已完全平仓
+                # 我们通过 Order Ticket 查找对应的 History Orders 或 Deals
+                # 注意: 在 MT5 中，一个 Position 可能由多个 Deal 组成 (In, Out)
+                # 我们需要找到该 Order 开启的 Position ID
+                
+                # 尝试通过 Order Ticket 获取 Position ID
+                # history_orders_get 可以通过 ticket 获取指定历史订单
+                # 但我们需要的是 Deals 来确定是否平仓
+                
+                # 方法 A: 获取该 Order 的 Deal，得到 Position ID，然后查询 Position 的所有 Deals
+                # 假设 Order Ticket 也是 Position ID (通常情况)
+                position_id = ticket 
+                
+                # 获取该 Position ID 的所有历史交易
+                # from_date 设为很久以前，确保能找到
+                deals = mt5.history_deals_get(position=position_id)
+                
+                if deals is None or len(deals) == 0:
+                    # 可能还没平仓，或者 Ticket 不是 Position ID
+                    # 如果是 Netting 账户，PositionID 通常等于开仓 Deal 的 Ticket
+                    continue
+                    
+                # 检查是否有 ENTRY_OUT (平仓) 类型的 Deal
+                has_out = False
+                close_time = 0
+                close_price = 0.0
+                profit = 0.0
+                open_price = trade['price'] # 使用 DB 中的开仓价
+                open_time_ts = 0
+                
+                # 重新计算利润和确认平仓
+                total_profit = 0.0
+                
+                for deal in deals:
+                    # Safely access commission
+                    commission = getattr(deal, 'commission', 0.0)
+                    total_profit += deal.profit + deal.swap + commission
+                    
+                    if deal.entry == mt5.DEAL_ENTRY_IN:
+                        open_time_ts = deal.time
+                        # 如果 DB 中没有准确的开仓价，可以用这个: open_price = deal.price
+                    
+                    if deal.entry == mt5.DEAL_ENTRY_OUT:
+                        has_out = True
+                        close_time = deal.time
+                        close_price = deal.price
+                
+                # 如果有 OUT deal，说明已平仓 (或部分平仓，这里简化为只要有 OUT 就视为结束分析)
+                # 并且要确保此时持仓量为 0 (完全平仓)
+                # 通过 positions_get(ticket=position_id) 检查是否还存在不要简化
+                
+                active_pos = mt5.positions_get(ticket=position_id)
+                is_fully_closed = True
+                if active_pos is not None and len(active_pos) > 0:
+                    # Position still exists
+                    is_fully_closed = False
+                
+                if has_out and is_fully_closed:
+                    # 这是一个已平仓的完整交易
+                    # 获取该时段的 M1 数据来计算 MFE/MAE
+                    
+                    # 确保时间范围有效
+                    if open_time_ts == 0:
+                        open_time_ts = int(pd.to_datetime(trade['time']).timestamp())
+                        
+                    start_dt = datetime.fromtimestamp(open_time_ts)
+                    end_dt = datetime.fromtimestamp(close_time)
+                    
+                    if start_dt >= end_dt:
+                        continue
+                        
+                    rates = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_M1, start_dt, end_dt)
+                                               
+                    if rates is not None and len(rates) > 0:
+                        df_rates = pd.DataFrame(rates)
+                        max_high = df_rates['high'].max()
+                        min_low = df_rates['low'].min()
+                        
+                        mfe = 0.0
+                        mae = 0.0
+                        
+                        action = trade['action']
+                        
+                        if action == 'BUY':
+                            mfe = (max_high - open_price) / open_price * 100 # %
+                            mae = abs((min_low - open_price) / open_price * 100) # % (Absolute)
+                        elif action == 'SELL':
+                            mfe = (open_price - min_low) / open_price * 100 # %
+                            mae = abs((open_price - max_high) / open_price * 100) # % (Absolute)
+                            
+                        # 更新数据库
+                        self.db_manager.update_trade_performance(ticket, {
+                            "close_price": close_price,
+                            "close_time": end_dt,
+                            "profit": total_profit,
+                            "mfe": mfe,
+                            "mae": mae
+                        })
+                        
+                        logger.info(f"分析交易 #{ticket} 完成: MFE={mfe:.2f}%, MAE={mae:.2f}%, Profit={total_profit:.2f}")
+
+        except Exception as e:
+            logger.error(f"分析历史交易失败: {e}")
+
+    def evaluate_comprehensive_params(self, params, df):
+        """
+        Comprehensive Objective Function: Evaluates strategy parameters together.
+        params: Vector of parameter values corresponding to the defined structure.
+        """
+        # Global counter for progress logging
+        if not hasattr(self, '_opt_counter'): self._opt_counter = 0
+        self._opt_counter += 1
+        if self._opt_counter % 50 == 0:
+            logger.info(f"Optimization Progress: {self._opt_counter} evaluations...")
+
+        # 1. Decode Parameters
+        try:
+            # Revised for SMC, CCI/RVGI, Grid
+            p_smc_ma = int(params[0])
+            p_smc_atr = params[1]
+            p_rvgi_sma = int(params[2])
+            p_rvgi_cci = int(params[3])
+            p_ifvg_gap = int(params[4])
+            
+            # Extract Grid Params
+            p_grid_step = int(params[5]) if len(params) > 5 else 300
+            p_grid_tp = float(params[6]) if len(params) > 6 else 100.0
+            
+            # 2. Initialize Temporary Analyzers (Fresh State)
+            tmp_smc = SMCAnalyzer()
+            tmp_smc.ma_period = p_smc_ma
+            tmp_smc.atr_threshold = p_smc_atr
+            
+            tmp_adapter = AdvancedMarketAnalysisAdapter()
+            
+            # 3. Run Simulation
+            start_idx = max(p_smc_ma, 50) + 10
+            if len(df) < start_idx + 50: return -9999
+            
+            balance = 10000.0
+            closes = df['close'].values
+            
+            trades_count = 0
+            wins = 0
+            
+            # OPTIMIZATION: Vectorized Pre-calculation
+            # 1. RVGI Series (Vectorized)
+            rvgi_series = tmp_adapter.calculate_rvgi_cci_series(df, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci)
+            
+            # 3. Step Skipping
+            # Evaluate trade signals every 4 candles (1 hour) to speed up
+            eval_step = 4 
+            
+            for i in range(start_idx, len(df)-1):
+                curr_price = closes[i]
+                next_price = closes[i+1]
+                
+                # Check Trade Condition (Skipping steps for speed)
+                if i % eval_step == 0:
+                    sub_df = df.iloc[:i+1] # Still slicing, but 4x less often
+                    
+                    # Signals
+                    # 1. SMC
+                    smc_sig = tmp_smc.analyze(sub_df)['signal']
+                    
+                    # 2. IFVG
+                    ifvg_sig = tmp_adapter.analyze_ifvg(sub_df, min_gap_points=p_ifvg_gap)['signal']
+                    
+                    # 3. RVGI (Fast Lookup)
+                    rvgi_sig_val = rvgi_series.iloc[i]
+                    rvgi_sig = 'buy' if rvgi_sig_val == 1 else 'sell' if rvgi_sig_val == -1 else 'neutral'
+                    
+                    # Combine
+                    votes = 0
+                    for s in [smc_sig, ifvg_sig, rvgi_sig]:
+                        if s == 'buy': votes += 1
+                        elif s == 'sell': votes -= 1
+                    
+                    final_sig = "neutral"
+                    if votes >= 2: final_sig = "buy"
+                    elif votes <= -2: final_sig = "sell"
+                    
+                    if final_sig == "buy":
+                        trades_count += 1
+                        diff = next_price - curr_price
+                        balance += diff
+                        if diff > 0: wins += 1
+                        
+                        # Grid Penalty (Simplified)
+                        if p_grid_step < 100: balance -= 10 
+                        
+                    elif final_sig == "sell":
+                        trades_count += 1
+                        diff = curr_price - next_price
+                        balance += diff
+                        if diff > 0: wins += 1
+                        
+                        if p_grid_step < 100: balance -= 10
+            
+            if trades_count == 0: return -100
+            
+            # Simple Profit Metric
+            score = (balance - 10000.0)
+            return score
+            
+        except Exception as e:
+            return -9999
+
+    def optimize_strategy_parameters(self):
+        """
+        Comprehensive Optimization: Tunes ALL strategy parameters using Auto-AO.
+        """
+        logger.info("开始执行全策略参数优化 (Comprehensive Auto-AO)...")
+        
+        # Reset progress counter
+        self._opt_counter = 0
+        
+        # 1. 获取历史数据
+        df = self.get_market_data(1000) 
+        if df is None or len(df) < 500:
+            logger.warning("数据不足，跳过优化")
+            return
+            
+        # 2. Define Search Space
+        # smc_ma, smc_atr, rvgi_sma, rvgi_cci, ifvg_gap, grid_step, grid_tp
+        bounds = [
+            (100, 300),     # smc_ma
+            (0.001, 0.005), # smc_atr
+            (10, 50),       # rvgi_sma
+            (10, 30),       # rvgi_cci
+            (10, 100),      # ifvg_gap
+            (200, 600),     # grid_step (points)
+            (50.0, 200.0)   # grid_tp (global TP USD)
+        ]
+        
+        steps = [10, 0.0005, 2, 2, 5, 50, 10.0]
+        
+        # 3. Objective
+        def objective(params):
+            return self.evaluate_comprehensive_params(params, df)
+            
+        # 4. Optimizer
+        import random
+        algo_name = random.choice(list(self.optimizers.keys()))
+        optimizer = self.optimizers[algo_name]
+        
+        # Adjust population size for realtime performance
+        if hasattr(optimizer, 'pop_size'):
+            optimizer.pop_size = 20
+            
+        logger.info(f"本次选择的优化算法: {algo_name} (Pop: {optimizer.pop_size})")
+        
+        # 5. Run
+        best_params, best_score = optimizer.optimize(
+            objective, 
+            bounds, 
+            steps=steps, 
+            epochs=4
+        )
+        
+        # 6. Apply Results
+        if best_score > -1000:
+            logger.info(f"全策略优化完成! Best Score: {best_score:.2f}")
+            
+            # Extract
+            p_smc_ma = int(best_params[0])
+            p_smc_atr = best_params[1]
+            p_rvgi_sma = int(best_params[2])
+            p_rvgi_cci = int(best_params[3])
+            p_ifvg_gap = int(best_params[4])
+            p_grid_step = int(best_params[5])
+            p_grid_tp = float(best_params[6])
+            
+            # Apply
+            self.smc_analyzer.ma_period = p_smc_ma
+            self.smc_analyzer.atr_threshold = p_smc_atr
+            
+            self.short_term_params = {
+                'rvgi_sma': p_rvgi_sma,
+                'rvgi_cci': p_rvgi_cci,
+                'ifvg_gap': p_ifvg_gap
+            }
+
+            # Apply Grid Params
+            self.grid_strategy.grid_step_points = p_grid_step
+            self.grid_strategy.global_tp = p_grid_tp
+            
+            msg = (
+                f"🧬 *Comprehensive Optimization ({algo_name})*\n"
+                f"Score: {best_score:.2f}\n"
+                f"• SMC: MA={p_smc_ma}, ATR={p_smc_atr:.4f}\n"
+                f"• ST: RVGI({p_rvgi_sma},{p_rvgi_cci}), IFVG({p_ifvg_gap})\n"
+                f"• Grid: Step={p_grid_step}, GlobalTP={p_grid_tp:.1f}"
+            )
+            logger.info(f"已更新所有策略参数: {msg}")
+            
+        else:
+            logger.warning("优化失败，保持原有参数")
+
+    def optimize_weights(self):
+        """
+        使用激活的优化算法 (GWO, WOAm, etc.) 实时优化 HybridOptimizer 的权重
+        解决优化算法一直为负数的问题：确保有实际运行并使用正向的适应度函数 (准确率)
+        """
+        if len(self.signal_history) < 20: # 需要一定的历史数据
+            return
+
+        logger.info(f"正在运行权重优化 ({self.active_optimizer_name})... 样本数: {len(self.signal_history)}")
+        
+        # 1. 准备数据
+        # 提取历史信号和实际结果
+        # history items: (timestamp, signals_dict, close_price)
+        # 我们需要计算每个样本的实际涨跌: price[i+1] - price[i]
+        
+        samples = []
+        for i in range(len(self.signal_history) - 1):
+            curr = self.signal_history[i]
+            next_bar = self.signal_history[i+1]
+            
+            signals = curr[1]
+            price_change = next_bar[2] - curr[2]
+            
+            actual_dir = 0
+            if price_change > 0: actual_dir = 1
+            elif price_change < 0: actual_dir = -1
+            
+            if actual_dir != 0:
+                samples.append((signals, actual_dir))
+                
+        if len(samples) < 10:
+            return
+
+        # 2. 定义目标函数 (适应度函数)
+        # 输入: 权重向量 [w1, w2, ...]
+        # 输出: 准确率 (0.0 - 1.0) -> 保证非负
+        strategy_keys = list(self.optimizer.weights.keys())
+        
+        def objective(weights_vec):
+            correct = 0
+            total = 0
+            
+            # 构建临时权重字典
+            temp_weights = {k: w for k, w in zip(strategy_keys, weights_vec)}
+            
+            for signals, actual_dir in samples:
+                # 模拟 combine_signals
+                weighted_sum = 0
+                total_w = 0
+                
+                for strat, sig in signals.items():
+                    w = temp_weights.get(strat, 1.0)
+                    if sig == 'buy':
+                        weighted_sum += w
+                        total_w += w
+                    elif sig == 'sell':
+                        weighted_sum -= w
+                        total_w += w
+                
+                if total_w > 0:
+                    norm_score = weighted_sum / total_w
+                    
+                    pred_dir = 0
+                    if norm_score > 0.3: pred_dir = 1
+                    elif norm_score < -0.3: pred_dir = -1
+                    
+                    if pred_dir == actual_dir:
+                        correct += 1
+                    total += 1
+            
+            if total == 0: return 0.0
+            return correct / total # 返回准确率
+            
+        # 3. 运行优化
+        optimizer = self.optimizers[self.active_optimizer_name]
+        
+        # 定义边界: 权重范围 [0.0, 2.0]
+        bounds = [(0.0, 2.0) for _ in range(len(strategy_keys))]
+        
+        try:
+            best_weights_vec, best_score = optimizer.optimize(
+                objective_function=objective,
+                bounds=bounds,
+                epochs=20 # 实时运行不宜过久
+            )
+            
+            # 4. 应用最佳权重
+            if best_score > 0: # 确保结果有效
+                for i, k in enumerate(strategy_keys):
+                    self.optimizer.weights[k] = best_weights_vec[i]
+                
+                logger.info(f"权重优化完成! 最佳准确率: {best_score:.2%}")
+                logger.info(f"新权重: {self.optimizer.weights}")
+                self.last_optimization_time = time.time()
+            else:
+                logger.warning("优化结果得分过低，未更新权重")
+                
+        except Exception as e:
+            logger.error(f"权重优化失败: {e}")
+
+    def calculate_optimized_sl_tp(self, trade_type, price, atr, market_context=None, ai_exit_conds=None):
+        """
+        计算基于综合因素的优化止损止盈点
+        结合: 14天 ATR, MFE/MAE 统计, 市场分析(Supply/Demand/FVG), 大模型建议
+        """
+        # 1. 基础波动率 (14天 ATR)
+        if atr <= 0:
+            atr = price * 0.005 # Fallback
+            
+        # 2. 历史绩效 (MFE/MAE)
+        mfe_tp_dist = atr * 2.0 
+        mae_sl_dist = atr * 1.5 
+        
+        try:
+             stats = self.db_manager.get_trade_performance_stats(limit=100)
+             trades = []
+             if isinstance(stats, list): trades = stats
+             elif isinstance(stats, dict) and 'recent_trades' in stats: trades = stats['recent_trades']
+             
+             if trades and len(trades) > 10:
+                 mfes = [t.get('mfe', 0) for t in trades if t.get('mfe', 0) > 0]
+                 maes = [abs(t.get('mae', 0)) for t in trades if abs(t.get('mae', 0)) > 0]
+                 
+                 if mfes and maes:
+                     opt_tp_pct = np.percentile(mfes, 60) / 100.0 
+                     opt_sl_pct = np.percentile(maes, 95) / 100.0 
+                     
+                     min_sl_dist = atr * 2.5
+                     calc_sl_dist = price * opt_sl_pct
+                     
+                     mfe_tp_dist = price * opt_tp_pct
+                     mae_sl_dist = max(calc_sl_dist, min_sl_dist) 
+        except Exception as e:
+             logger.warning(f"MFE/MAE 计算失败: {e}")
+
+        # 3. 市场结构调整 (Supply/Demand/FVG)
+        struct_tp_price = 0.0
+        struct_sl_price = 0.0
+        min_sl_buffer = atr * 2.0
+        
+        if market_context:
+            is_buy = 'buy' in trade_type
+            
+            # 解析 SMC 关键位
+            resistance_candidates = []
+            support_candidates = []
+            
+            if is_buy:
+                # Buy TP: Resistance
+                if 'supply_zones' in market_context:
+                    for z in market_context['supply_zones']:
+                        val = z[1] if isinstance(z, (list, tuple)) else z.get('bottom')
+                        if val and val > price: resistance_candidates.append(val)
+                if 'bearish_fvgs' in market_context:
+                    for f in market_context['bearish_fvgs']:
+                        val = f.get('bottom')
+                        if val and val > price: resistance_candidates.append(val)
+                if resistance_candidates: struct_tp_price = min(resistance_candidates)
+                
+                # Buy SL: Support
+                if 'demand_zones' in market_context:
+                     for z in market_context['demand_zones']:
+                        val = z[0] if isinstance(z, (list, tuple)) else z.get('top')
+                        if val and val < price: support_candidates.append(val)
+                if support_candidates: struct_sl_price = max(support_candidates)
+                
+            else: # Sell
+                # Sell TP: Support
+                if 'demand_zones' in market_context:
+                    for z in market_context['demand_zones']:
+                        val = z[0] if isinstance(z, (list, tuple)) else z.get('top')
+                        if val and val < price: support_candidates.append(val)
+                if 'bullish_fvgs' in market_context:
+                    for f in market_context['bullish_fvgs']:
+                        val = f.get('top')
+                        if val and val < price: support_candidates.append(val)
+                if support_candidates: struct_tp_price = max(support_candidates)
+                
+                # Sell SL: Resistance
+                if 'supply_zones' in market_context:
+                    for z in market_context['supply_zones']:
+                        val = z[1] if isinstance(z, (list, tuple)) else z.get('bottom')
+                        if val and val > price: resistance_candidates.append(val)
+                if resistance_candidates: struct_sl_price = min(resistance_candidates)
+
+        # 4. 大模型建议 (AI Integration)
+        ai_sl = 0.0
+        ai_tp = 0.0
+        if ai_exit_conds:
+            ai_sl = ai_exit_conds.get('sl_price', 0.0)
+            if ai_sl is None: ai_sl = 0.0
+            
+            ai_tp = ai_exit_conds.get('tp_price', 0.0)
+            if ai_tp is None: ai_tp = 0.0
+            
+            # Validate AI Suggestion Direction
+            if 'buy' in trade_type:
+                if ai_sl >= price: ai_sl = 0.0 # Invalid SL
+                if ai_tp <= price: ai_tp = 0.0 # Invalid TP
+            else:
+                if ai_sl <= price: ai_sl = 0.0
+                if ai_tp >= price: ai_tp = 0.0
+
+        # 5. 综合计算与融合
+        final_sl = 0.0
+        final_tp = 0.0
+        
+        if 'buy' in trade_type:
+            # --- SL Calculation ---
+            base_sl = price - mae_sl_dist
+            
+            # Priority: AI -> Structure -> Statistical
+            if ai_sl > 0:
+                # [Anti-Hunt Protection] Check if AI SL is too close (e.g. within 0.8 ATR)
+                # User complaint: SL hit then reversal. 
+                # If AI SL is too tight, we widen it to at least 0.8 ATR or use structure if safer.
+                sl_dist = abs(price - ai_sl)
+                min_safe_dist = atr * 0.8 # Minimum 0.8 ATR buffer
+                
+                if sl_dist < min_safe_dist:
+                    logger.info(f"AI SL {ai_sl} too close ({sl_dist/atr:.2f} ATR), widening to {min_safe_dist/atr:.2f} ATR")
+                    if 'buy' in trade_type:
+                        final_sl = min(ai_sl, price - min_safe_dist)
+                    else:
+                        final_sl = max(ai_sl, price + min_safe_dist)
+                else:
+                    final_sl = ai_sl
+            elif struct_sl_price > 0:
+                final_sl = struct_sl_price if (price - struct_sl_price) >= min_sl_buffer else (price - min_sl_buffer)
+            else:
+                final_sl = base_sl
+            
+            if (price - final_sl) < min_sl_buffer:
+                final_sl = price - min_sl_buffer
+                
+            # --- TP Calculation ---
+            base_tp = price + mfe_tp_dist
+            
+            if ai_tp > 0:
+                final_tp = ai_tp
+            elif struct_tp_price > 0:
+                final_tp = min(struct_tp_price - (atr * 0.1), base_tp)
+            else:
+                final_tp = base_tp
+                
+        else: # Sell
+            # --- SL Calculation ---
+            base_sl = price + mae_sl_dist
+            
+            if ai_sl > 0:
+                # [Anti-Hunt Protection]
+                sl_dist = abs(price - ai_sl)
+                min_safe_dist = atr * 0.8 
+                
+                if sl_dist < min_safe_dist:
+                    logger.info(f"AI SL {ai_sl} too close ({sl_dist/atr:.2f} ATR), widening to {min_safe_dist/atr:.2f} ATR")
+                    if 'buy' in trade_type:
+                         final_sl = min(ai_sl, price - min_safe_dist)
+                    else:
+                         final_sl = max(ai_sl, price + min_safe_dist)
+                else:
+                    final_sl = ai_sl
+            elif struct_sl_price > 0:
+                final_sl = struct_sl_price if (struct_sl_price - price) >= min_sl_buffer else (price + min_sl_buffer)
+            else:
+                final_sl = base_sl
+                
+            if (final_sl - price) < min_sl_buffer:
+                final_sl = price + min_sl_buffer
+                
+            # --- TP Calculation ---
+            base_tp = price - mfe_tp_dist
+            
+            if ai_tp > 0:
+                final_tp = ai_tp
+            elif struct_tp_price > 0:
+                final_tp = max(struct_tp_price + (atr * 0.1), base_tp)
+            else:
+                final_tp = base_tp
+
+        return final_sl, final_tp
+
+
+
+    def optimize_short_term_params(self):
+        """
+        Optimize short-term strategy parameters (RVGI+CCI, IFVG)
+        Executed every 1 hour
+        """
+        logger.info("Running Short-Term Parameter Optimization (WOAm)...")
+        
+        # 1. Get Data (Last 500 M15 candles)
+        df = self.get_market_data(500)
+        if df is None or len(df) < 200:
+            return
+
+        # 2. Define Objective Function
+        def objective(params):
+            p_rvgi_sma = int(params[0])
+            p_rvgi_cci = int(params[1])
+            p_ifvg_gap = int(params[2])
+            
+            backtest_window = 100
+            if len(df) < backtest_window + 50: return -100
+            
+            test_data = df.iloc[-(backtest_window+50):]
+            
+            # Simple Backtest Loop (Maximize Total Profit)
+            total_profit = 0
+            trades_count = 0
+            
+            closes = test_data['close'].values
+            
+            for i in range(len(test_data)-20, len(test_data)):
+                sub_df = test_data.iloc[:i+1]
+                
+                # Check signals
+                res_rvgi = self.advanced_adapter.analyze_rvgi_cci_strategy(sub_df, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci)
+                res_ifvg = self.advanced_adapter.analyze_ifvg(sub_df, min_gap_points=p_ifvg_gap)
+                
+                sig = "neutral"
+                if res_rvgi['signal'] == 'buy' or res_ifvg['signal'] == 'buy': sig = 'buy'
+                elif res_rvgi['signal'] == 'sell' or res_ifvg['signal'] == 'sell': sig = 'sell'
+                
+                # Check profit 5 bars later
+                if sig != "neutral" and i + 5 < len(test_data):
+                    entry = closes[i]
+                    exit_p = closes[i+5]
+                    if sig == 'buy': profit = (exit_p - entry) / entry
+                    else: profit = (entry - exit_p) / entry
+                    
+                    total_profit += profit
+                    trades_count += 1
+            
+            if trades_count == 0: return 0
+            return total_profit
+
+        # 3. Optimization
+        optimizer = WOAm()
+        bounds = [(10, 50), (7, 21), (10, 100)] # [sma, cci, gap]
+        steps = [1, 1, 5]
+        
+        best_params, best_score = optimizer.optimize(objective, bounds, steps=steps, epochs=3)
+        
+        # 4. Apply
+        if best_score > 0:
+            logger.info(f"Short-Term Optimization Complete. Score: {best_score}")
+            logger.info(f"New Params: RVGI_SMA={int(best_params[0])}, RVGI_CCI={int(best_params[1])}, IFVG_GAP={int(best_params[2])}")
+            
+            # Store these params in a property to be used by analyze_full
+            # We need to add a property to store these or pass them
+            self.short_term_params = {
+                'rvgi_sma': int(best_params[0]),
+                'rvgi_cci': int(best_params[1]),
+                'ifvg_gap': int(best_params[2])
+            }
+            # We also need to update the analyze call in run() to use these
+        else:
+            logger.info("Short-Term Optimization found no improvement.")
+
+    def sync_account_history(self):
+        """
+        Sync historical account trades to local DB to enable immediate self-learning.
+        Fetches last 30 days of history.
+        """
+        try:
+            # Sync last 30 days
+            from_date = datetime.now() - pd.Timedelta(days=30)
+            to_date = datetime.now()
+            
+            # Fetch history deals
+            deals = mt5.history_deals_get(from_date, to_date)
+            
+            if deals is None or len(deals) == 0:
+                logger.info("No historical deals found in the last 30 days.")
+                return
+
+            count = 0
+            for deal in deals:
+                # Only care about exits (deals that closed a position) to record profit
+                # ENTRY_OUT = 1, ENTRY_INOUT = 2 (Reversal)
+                if deal.entry in [mt5.DEAL_ENTRY_OUT, mt5.DEAL_ENTRY_INOUT]:
+                    # Use position_id as ticket
+                    ticket = deal.position_id
+                    symbol = deal.symbol
+                    # Safely access commission
+                    commission = getattr(deal, 'commission', 0.0)
+                    profit = deal.profit + deal.swap + commission
+                    
+                    # We need to ensure this trade exists in our DB
+                    # Since we don't have the full open info easily without searching IN deals,
+                    # we do a partial update/insert just for the metrics (profit)
+                    
+                    # Check if exists
+                    # This is a direct DB operation, effectively "Upsert" for performance stats
+                    # We use a custom SQL in db_manager or just standard save logic if possible.
+                    # But save_trade expects more fields.
+                    # Let's manually insert/ignore to ensure we have the record for stats.
+                    
+                    conn = self.db_manager._get_connection()
+                    cursor = conn.cursor()
+                    
+                    # Try to get existing
+                    cursor.execute("SELECT ticket FROM trades WHERE ticket = ?", (ticket,))
+                    exists = cursor.fetchone()
+                    
+                    if not exists:
+                        # Insert new record from history
+                        # We might not know if it was BUY or SELL without checking IN deal, 
+                        # but for WinRate/ProfitFactor, direction doesn't matter much.
+                        # We can infer direction from profit vs price change if needed, but let's skip for now.
+                        action = "UNKNOWN"
+                        if deal.type == mt5.DEAL_TYPE_BUY: action = "BUY" # This is the closing deal type!
+                        elif deal.type == mt5.DEAL_TYPE_SELL: action = "SELL"
+                        
+                        # Note: Closing deal type is opposite to Position type usually.
+                        # If I closed with a SELL deal, I was Long (BUY).
+                        pos_type = "BUY" if deal.type == mt5.DEAL_TYPE_SELL else "SELL"
+                        
+                        cursor.execute('''
+                            INSERT OR IGNORE INTO trades (ticket, symbol, action, volume, price, time, result, close_price, close_time, profit, mfe, mae)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            ticket, 
+                            symbol, 
+                            pos_type, 
+                            deal.volume, 
+                            0.0, # Open price unknown
+                            datetime.fromtimestamp(deal.time), # Approximate open time (actually this is close time)
+                            'CLOSED',
+                            deal.price,
+                            datetime.fromtimestamp(deal.time),
+                            profit,
+                            0.0, # MFE unknown without analysis
+                            0.0  # MAE unknown
+                        ))
+                        count += 1
+            
+            if count > 0:
+                conn.commit()
+                logger.info(f"Synced {count} historical trades from MT5 to local DB.")
+                
+        except Exception as e:
+            logger.error(f"Failed to sync account history: {e}")
+
+    def initialize(self):
+        """Initialize Trader State"""
+        logger.info(f"初始化交易代理 - {self.symbol}")
+        # Sync history on startup
+        self.sync_account_history()
+        self.is_running = True
+
+    def _get_mt5_data(self, timeframe, count):
+        """Helper to get data frame from MT5 directly"""
+        rates = mt5.copy_rates_from_pos(self.symbol, timeframe, 0, count)
+        if rates is None or len(rates) == 0:
+            return None
+        
+        df = pd.DataFrame(rates)
+        df['time'] = pd.to_datetime(df['time'], unit='s')
+        df.set_index('time', inplace=True)
+        
+        if 'tick_volume' in df.columns:
+            df.rename(columns={'tick_volume': 'volume'}, inplace=True)
+            
+        return df
+
+    def process_tick(self):
+        """Single tick processing"""
+        if not self.is_running:
+            return
+
+        try:
+            # Single iteration logic (replacing while True)
+            if True:
+                # 0. 管理持仓 (移动止损) - 使用最新策略
+                if self.latest_strategy:
+                    self.manage_positions(self.latest_signal, self.latest_strategy)
+                else:
+                    self.manage_positions() # 降级为默认
+                
+                # 0.5 分析已平仓交易 (每 60 次循环 / 约 1 分钟执行一次)
+                if int(time.time()) % 60 == 0:
+                    self.analyze_closed_trades()
+                    
+                # 0.6 执行策略参数优化 (每 4 小时一次)
+                if time.time() - self.last_optimization_time > 14400:
+                    self.optimize_strategy_parameters()
+                    self.last_optimization_time = time.time()
+                
+                # 0.7 执行短线参数优化 (每 1 小时一次)
+                if int(time.time()) % 3600 == 0:
+                    self.optimize_short_term_params()
+                
+                # 0.8 执行数据库 Checkpoint (每 1 分钟一次，以满足高实时性整合需求)
+                # 虽然 WAL 模式下读取已是实时，但定期 Checkpoint 可确保 .db 文件物理更新
+                # 已由独立的 checkpoint 服务接管，此处移除以避免锁竞争
+                # if int(time.time()) % 60 == 0:
+                #    self.db_manager.perform_checkpoint()
+
+                # 1. 检查新 K 线
+                # 获取最后一根 K 线的时间
+                rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 1)
+                if rates is None:
+                    time.sleep(1)
+                    return
+                    
+                current_bar_time = rates[0]['time']
+                
+                # New Bar Logic
+                is_new_bar = current_bar_time > self.last_bar_time
+                
+                # 每秒执行的逻辑 (Check orders, manage positions)
+                # ---------------------------------------------------
+                
+                # ---------------------------------------------------
+
+                if is_new_bar:
+                    logger.info(f"New Bar Detected: {datetime.fromtimestamp(current_bar_time)}")
+                    self.last_bar_time = current_bar_time
+                    
+                    # 2. 获取数据并计算指标
+                    # M15 Data (Main)
+                    # self.data_loader might not exist in SymbolTrader (it exists in MT5Bot),
+                    # so we use mt5.copy_rates_from_pos directly or self.db_manager.
+                    # Since this is SymbolTrader, we should rely on standard mt5 calls or passed in components.
+                    # Reverting to direct MT5 calls for safety if data_loader is missing.
+                    
+                    df = self._get_mt5_data(self.timeframe, 1000)
+                    if df is None or df.empty:
+                        logger.error("无法获取 K 线数据")
+                        return
+
+                    # H1 Data (Trend)
+                    df_h1 = self._get_mt5_data(mt5.TIMEFRAME_H1, 500)
+                    if df_h1 is None: df_h1 = pd.DataFrame()
+                    
+                    # H4 Data (Macro)
+                    df_h4 = self._get_mt5_data(mt5.TIMEFRAME_H4, 200)
+                    if df_h4 is None: df_h4 = pd.DataFrame()
+                    
+                    # 保存数据到 DB
+                    if not df.empty:
+                        self.db_manager.save_market_data(df, self.symbol, self.tf_name)
+                        logger.info(f"新K线生成 ({datetime.fromtimestamp(current_bar_time)}), 执行策略分析...")
+                    
+                    # 更新分析时间戳
+                    self.last_analysis_time = time.time()
+                    
+                    # 2. 获取数据并分析
+                    # (df already fetched above as M15 Main)
+                    
+                    # Fetch Multi-Timeframe Data (Already fetched above as df_h1, df_h4)
+                    # Just need to ensure they are standard DataFrames with time index for processor
+                    
+                    # 更新 Grid Strategy 数据
+                    self.grid_strategy.update_market_data(df)
+                    
+                    # 使用 data_processor 计算指标
+                    processor = MT5DataProcessor()
+                    df_features = processor.generate_features(df)
+                    
+                    # Calculate features for H1/H4
+                    df_features_h1 = processor.generate_features(df_h1) if not df_h1.empty else pd.DataFrame()
+                    df_features_h4 = processor.generate_features(df_h4) if not df_h4.empty else pd.DataFrame()
+                    
+                    # Helper to safely get latest dict
+                    def get_latest_safe(dframe):
+                        if dframe.empty: return {}
+                        return dframe.iloc[-1].to_dict()
+
+                    feat_h1 = get_latest_safe(df_features_h1)
+                    feat_h4 = get_latest_safe(df_features_h4)
+
+                    # 3. 调用 AI 与高级分析
+                    # 构建市场快照
+                    current_price = df.iloc[-1]
+                    latest_features = df_features.iloc[-1].to_dict()
+                    
+                    market_snapshot = {
+                        "symbol": self.symbol,
+                        "timeframe": self.tf_name,
+                        "prices": {
+                            "open": float(current_price['open']),
+                            "high": float(current_price['high']),
+                            "low": float(current_price['low']),
+                            "close": float(current_price['close']),
+                            "volume": int(current_price['volume'])
+                        },
+                        "indicators": {
+                            "rsi": float(latest_features.get('rsi', 50)),
+                            "atr": float(latest_features.get('atr', 0)),
+                            "ema_fast": float(latest_features.get('ema_fast', 0)),
+                            "ema_slow": float(latest_features.get('ema_slow', 0)),
+                            "volatility": float(latest_features.get('volatility', 0))
+                        },
+                        "multi_tf_data": {
+                            "H1": {
+                                "close": float(feat_h1.get('close', 0)),
+                                "rsi": float(feat_h1.get('rsi', 50)),
+                                "ema_fast": float(feat_h1.get('ema_fast', 0)),
+                                "ema_slow": float(feat_h1.get('ema_slow', 0)),
+                                "trend": "bullish" if feat_h1.get('ema_fast', 0) > feat_h1.get('ema_slow', 0) else "bearish"
+                            },
+                            "H4": {
+                                "close": float(feat_h4.get('close', 0)),
+                                "rsi": float(feat_h4.get('rsi', 50)),
+                                "ema_fast": float(feat_h4.get('ema_fast', 0)),
+                                "ema_slow": float(feat_h4.get('ema_slow', 0)),
+                                "trend": "bullish" if feat_h4.get('ema_fast', 0) > feat_h4.get('ema_slow', 0) else "bearish"
+                            }
+                        }
+                    }
+                    
+                    # --- 3.1 CRT 分析 ---
+                    crt_result = self.crt_analyzer.analyze(self.symbol, current_price, current_bar_time)
+                    logger.info(f"CRT 分析: {crt_result['signal']} ({crt_result['reason']})")
+                    
+                    # --- 3.2.1 多时间周期分析 (MTF) ---
+                    mtf_result = self.mtf_analyzer.analyze(self.symbol, current_price, current_bar_time)
+                    logger.info(f"MTF 分析: {mtf_result['signal']} ({mtf_result['reason']})")
+                    
+                    # --- 3.2.2 高级技术分析 (CCI/RVGI/IFVG) ---
+                    st_params = getattr(self, 'short_term_params', {})
+                    adv_result = self.advanced_adapter.analyze_full(df, params=st_params)
+                    adv_signal = "neutral"
+                    if adv_result:
+                        adv_signal = adv_result['signal_info']['signal']
+                        logger.info(f"高级技术分析: {adv_signal} (强度: {adv_result['signal_info']['strength']})")
+                        
+                    # --- 3.2.3 SMC 分析 ---
+                    smc_result = self.smc_analyzer.analyze(df, self.symbol)
+                    logger.info(f"SMC 结构: {smc_result['structure']} (信号: {smc_result['signal']})")
+                    
+                    # --- 3.2.4 IFVG 分析 ---
+                    if adv_result and 'ifvg' in adv_result:
+                        ifvg_result = adv_result['ifvg']
+                    else:
+                        ifvg_result = {"signal": "hold", "strength": 0, "reasons": [], "active_zones": []}
+                    logger.info(f"IFVG 分析: {ifvg_result['signal']} (Strength: {ifvg_result['strength']})")
+
+                    # --- 3.2.5 RVGI+CCI 分析 ---
+                    if adv_result and 'rvgi_cci' in adv_result:
+                        rvgi_cci_result = adv_result['rvgi_cci']
+                    else:
+                        rvgi_cci_result = {"signal": "hold", "strength": 0, "reasons": []}
+                    logger.info(f"RVGI+CCI 分析: {rvgi_cci_result['signal']} (Strength: {rvgi_cci_result['strength']})")
+                    
+                    # --- 3.2.6 Grid Strategy Analysis ---
+                    # Extract SMC and IFVG levels for Grid
+                    smc_grid_data = {'ob': [], 'fvg': []}
+                    
+                    # From IFVG
+                    if 'active_zones' in ifvg_result:
+                        for z in ifvg_result['active_zones']:
+                            z_type = 'bearish' if z['type'] == 'supply' else 'bullish'
+                            smc_grid_data['ob'].append({'top': z['top'], 'bottom': z['bottom'], 'type': z_type})
+                    
+                    # From SMC Analyzer
+                    if 'details' in smc_result:
+                        if 'ob' in smc_result['details'] and 'active_obs' in smc_result['details']['ob']:
+                            for ob in smc_result['details']['ob']['active_obs']:
+                                smc_grid_data['ob'].append({'top': ob['top'], 'bottom': ob['bottom'], 'type': ob['type']})
+                        if 'fvg' in smc_result['details'] and 'active_fvgs' in smc_result['details']['fvg']:
+                            for fvg in smc_result['details']['fvg']['active_fvgs']:
+                                smc_grid_data['fvg'].append({'top': fvg['top'], 'bottom': fvg['bottom'], 'type': fvg['type']})
+
+                    self.grid_strategy.update_smc_levels(smc_grid_data)
+                    
+                    grid_signal = self.grid_strategy.get_entry_signal(float(current_price['close']))
+                    logger.info(f"Grid Kalman Signal: {grid_signal}")
+                    
+                    grid_status = {
+                        "active": self.grid_strategy.long_pos_count > 0 or self.grid_strategy.short_pos_count > 0,
+                        "longs": self.grid_strategy.long_pos_count,
+                        "shorts": self.grid_strategy.short_pos_count,
+                        "kalman_price": self.grid_strategy.kalman_value
+                    }
+
+                    # 准备优化器池信息
+                    optimizer_info = {
+                        "available_optimizers": list(self.optimizers.keys()),
+                        "active_optimizer": self.active_optimizer_name,
+                        "last_optimization_score": self.optimizers[self.active_optimizer_name].best_score if self.optimizers[self.active_optimizer_name].best_score > -90000 else None,
+                        "descriptions": {
+                            "WOAm": "Whale Optimization Algorithm (Modified)",
+                            "TETA": "Time Evolution Travel Algorithm"
+                        }
+                    }
+
+                    # --- 3.3 Qwen 策略分析 (Sole Decision Maker) ---
+                    logger.info("正在调用 Qwen 生成策略...")
+                    
+                    # 获取历史交易绩效 (MFE/MAE) - Filter by Current Symbol
+                    trade_stats = self.db_manager.get_trade_performance_stats(symbol=self.symbol, limit=50)
+                        
+                    # 获取当前持仓状态
+                    positions = mt5.positions_get(symbol=self.symbol)
+                    current_positions_list = []
+                    if positions:
+                        for pos in positions:
+                            cur_mfe, cur_mae = self.get_position_stats(pos)
+                            r_multiple = 0.0
+                            if pos.sl > 0:
+                                risk_dist = abs(pos.price_open - pos.sl)
+                                if risk_dist > 0:
+                                    profit_dist = (pos.price_current - pos.price_open) if pos.type == mt5.POSITION_TYPE_BUY else (pos.price_open - pos.price_current)
+                                    r_multiple = profit_dist / risk_dist
+                            
+                            current_positions_list.append({
+                                "ticket": pos.ticket,
+                                "type": "buy" if pos.type == mt5.POSITION_TYPE_BUY else "sell",
+                                "volume": pos.volume,
+                                "open_price": pos.price_open,
+                                "current_price": pos.price_current,
+                                "profit": pos.profit,
+                                "sl": pos.sl,
+                                "tp": pos.tp,
+                                "mfe_pct": cur_mfe,
+                                "mae_pct": cur_mae,
+                                "r_multiple": r_multiple
+                            })
+                    
+                    # 准备技术信号摘要
+                    technical_signals = {
+                        "crt": crt_result,
+                        "smc": smc_result['signal'],
+                        "grid_strategy": {
+                            "signal": grid_signal,
+                            "status": grid_status,
+                            "config": self.grid_strategy.get_config()
+                        },
+                        "mtf": mtf_result['signal'], 
+                        "ifvg": ifvg_result['signal'],
+                        "rvgi_cci": rvgi_cci_result['signal'],
+                        "performance_stats": trade_stats
+                    }
+                    
+                    # Qwen Sentiment Analysis
+                    qwen_sent_score = 0
+                    qwen_sent_label = 'neutral'
+                    try:
+                        # DEBUG: Verify method existence
+                        if not hasattr(self.qwen_client, 'analyze_market_sentiment'):
+                            logger.error(f"Method analyze_market_sentiment missing in {type(self.qwen_client)}")
+                            logger.error(f"Available methods: {[m for m in dir(self.qwen_client) if not m.startswith('__')]}")
+                        
+                        qwen_sentiment = self.qwen_client.analyze_market_sentiment(market_snapshot)
+                        if qwen_sentiment:
+                            qwen_sent_score = qwen_sentiment.get('sentiment_score', 0)
+                            qwen_sent_label = qwen_sentiment.get('sentiment', 'neutral')
+                    except Exception as e:
+                        logger.error(f"Sentiment Analysis Failed: {e}")
+
+                    # Call Qwen
+                    # Removed DeepSeek structure, pass simplified structure
+                    dummy_structure = {"market_state": "Analyzed by Qwen", "preliminary_signal": "neutral"}
+                    
+                    strategy = self.qwen_client.optimize_strategy_logic(
+                        dummy_structure, # Qwen will ignore this or treat as base
+                        market_snapshot, 
+                        technical_signals=technical_signals, 
+                        current_positions=current_positions_list,
+                        performance_stats=trade_stats,
+                        previous_analysis=self.latest_strategy
+                    )
+                    self.latest_strategy = strategy
+                    self.last_llm_time = time.time()
+                    
+                    # --- 参数自适应优化 (Feedback Loop) ---
+                    param_updates = strategy.get('parameter_updates', {})
+                    if param_updates:
+                        try:
+                            update_reason = param_updates.get('reason', 'AI Optimized')
+                            logger.info(f"应用参数优化 ({update_reason}): {param_updates}")
+                            
+                            # 1. SMC 参数
+                            if 'smc_atr_threshold' in param_updates:
+                                self.smc_analyzer.atr_threshold = float(param_updates['smc_atr_threshold'])
+                                
+                            # 2. Grid Strategy 参数
+                            if 'grid_settings' in param_updates:
+                                self.grid_strategy.update_config(param_updates['grid_settings'])
+                            
+                            # 3. Dynamic Position & Grid Management (from Qwen Analysis)
+                            pos_mgmt = strategy.get('position_management', {})
+                            if pos_mgmt:
+                                # Update Global TP for Basket
+                                if 'global_tp' in pos_mgmt:
+                                    self.grid_strategy.global_tp = float(pos_mgmt['global_tp'])
+                                    logger.info(f"AI 更新 Grid Global TP: {self.grid_strategy.global_tp}")
+                                
+                                # Update Dynamic Basket TP
+                                if 'dynamic_basket_tp' in pos_mgmt:
+                                    try:
+                                        basket_tp = float(pos_mgmt['dynamic_basket_tp'])
+                                        self.grid_strategy.update_dynamic_params(basket_tp=basket_tp)
+                                    except Exception as e:
+                                        logger.error(f"Failed to update Dynamic Basket TP: {e}")
+                                    
+                                # Update Lot Multiplier
+                                if 'martingale_multiplier' in pos_mgmt:
+                                    self.grid_strategy.lot_multiplier = float(pos_mgmt['martingale_multiplier'])
+                                    logger.info(f"AI 更新 Grid Lot Multiplier: {self.grid_strategy.lot_multiplier}")
+                                    
+                                # Update Grid Step (Spacing)
+                                if 'recommended_grid_step_pips' in pos_mgmt:
+                                    step_pips = float(pos_mgmt['recommended_grid_step_pips'])
+                                    if step_pips > 0:
+                                        # Convert pips to points (assuming 1 pip = 10 points for standard pairs)
+                                        self.grid_strategy.grid_step_points = int(step_pips * 10) 
+                                        logger.info(f"AI 更新 Grid Step: {step_pips} pips ({self.grid_strategy.grid_step_points} points)")
+                                
+                                # Update TP Steps (Dynamic Grid Levels)
+                                if 'grid_level_tp_pips' in pos_mgmt:
+                                    tp_list = pos_mgmt['grid_level_tp_pips']
+                                    if isinstance(tp_list, list) and len(tp_list) > 0:
+                                        # Get Symbol Info for accurate conversion
+                                        symbol_info = mt5.symbol_info(self.symbol)
+                                        tick_value = symbol_info.trade_tick_value if symbol_info else 1.0
+                                        # Assuming 1 Pip = 10 Points
+                                        pip_val_usd = 10 * tick_value * self.grid_strategy.lot
+                                        
+                                        # Convert Pips to Estimated Dollar Profit
+                                        # New Logic: Qwen returns Pips distance. 
+                                        # We want Total Profit Target ($) for that step.
+                                        # Approx: Pips * PipValue * InitialLot * Multiplier_Factor(Simplified)
+                                        # Simplified: Pips * PipValue_Per_Lot * InitialLot
+                                        
+                                        new_tp_steps = {}
+                                        for i, tp_pips in enumerate(tp_list):
+                                            # Ensure float
+                                            pips = float(tp_pips)
+                                            # Profit ($) = Pips * ($/Pip for 1 Lot) * LotSize
+                                            profit_target = pips * pip_val_usd
+                                            new_tp_steps[i+1] = profit_target
+                                            
+                                        self.grid_strategy.tp_steps.update(new_tp_steps)
+                                        logger.info(f"AI 更新 Grid Level TPs ($): {new_tp_steps}")
+                                     
+                        except Exception as e:
+                            logger.error(f"参数动态更新失败: {e}")
+                        
+                        # Qwen 信号转换
+                        qw_action = strategy.get('action', 'neutral').lower()
+                        
+                        final_signal = "neutral"
+                        if qw_action in ['buy', 'add_buy']:
+                            final_signal = "buy"
+                        elif qw_action in ['sell', 'add_sell']:
+                            final_signal = "sell"
+                        elif qw_action in ['close_buy', 'close_sell', 'close']:
+                            final_signal = "close"
+                        elif qw_action == 'hold':
+                            final_signal = "hold"
+                        elif qw_action == 'grid_start':
+                            final_signal = "grid_start"
+                            
+                        # Reason
+                        reason = strategy.get('strategy_rationale', 'Qwen Decision') # Use rationale if available
+                        if reason == 'Qwen Decision':
+                             reason = strategy.get('reason', 'Qwen Decision')
+
+                        # 3. 智能平仓信号处理
+                        if qw_action == 'close' and final_signal != 'close':
+                            final_signal = 'close'
+                            reason = f"[Smart Exit] Qwen Profit Taking: {reason}"
+
+                        qw_signal = final_signal if final_signal not in ['hold', 'close'] else 'neutral'
+                        
+                        # 计算置信度 (简化版，仅参考 Qwen 和 Tech 一致性)
+                        matching_count = 0
+                        valid_tech_count = 0
+                        tech_signals_list = [
+                            crt_result['signal'], adv_signal, smc_result['signal'],
+                            mtf_result['signal'], ifvg_result['signal'], rvgi_cci_result['signal']
+                        ]
+                        
+                        for sig in tech_signals_list:
+                            if sig != 'neutral':
+                                valid_tech_count += 1
+                                if sig == final_signal:
+                                    matching_count += 1
+                        
+                        strength = 70 # Base for Qwen
+                        if valid_tech_count > 0:
+                            strength += (matching_count / valid_tech_count) * 30
+                            
+                        # 构建所有信号字典
+                        all_signals = {
+                            "qwen": qw_signal,
+                            "crt": crt_result['signal'],
+                            "advanced_tech": adv_signal,
+                            "smc": smc_result['signal'],
+                            "mtf": mtf_result['signal'],
+                            "ifvg": ifvg_result['signal'],
+                            "rvgi_cci": rvgi_cci_result['signal']
+                        }
+                        
+                        # Combine Signals (Using HybridOptimizer just for weighting record)
+                        # We don't use the result of optimizer, just for logging weights if needed
+                        # Or skip if optimizer is not critical here.
+                        weights = {}
+                        if hasattr(self, 'optimizer'):
+                             _, _, weights = self.optimizer.combine_signals(all_signals)
+
+                        logger.info(f"AI 最终决定 (Qwen): {final_signal.upper()} (强度: {strength:.1f})")
+                        logger.info(f"Reason: {reason}")
+                        
+                        # 保存分析结果到DB
+                        self.db_manager.save_signal(self.symbol, self.tf_name, {
+                            "final_signal": final_signal,
+                            "strength": strength,
+                            "details": {
+                                "source": "Qwen_Solo",
+                                "reason": reason,
+                                "weights": weights,
+                                "signals": all_signals,
+                                "market_state": strategy.get('market_state', 'N/A'),
+                                "crt_reason": crt_result['reason'],
+                                "mtf_reason": mtf_result['reason'],
+                            }
+                        })
+                        
+                        self.latest_strategy = strategy
+                        self.latest_signal = final_signal
+                        
+                        # --- 发送分析报告到 Telegram ---
+                        # (保持原有的 Telegram 逻辑，简化 DeepSeek 部分)
+                        
+                        # 获取当前持仓概览
+                        pos_summary = "No Open Positions"
+                        if current_positions_list:
+                            pos_details = []
+                            for p in current_positions_list:
+                                type_str = "BUY" if p['type'] == 'buy' else "SELL"
+                                pnl = p['profit']
+                                pos_details.append(f"{type_str} {p['volume']} (PnL: {pnl:.2f})")
+                            pos_summary = "\n".join(pos_details)
+
+                        # SL/TP
+                        exit_conds = strategy.get('exit_conditions', {})
+                        opt_sl = exit_conds.get('sl_price')
+                        opt_tp = exit_conds.get('tp_price')
+                        
+                        # Fallback calc
+                        if not opt_sl or not opt_tp:
+                            current_bid = mt5.symbol_info_tick(self.symbol).bid
+                            current_ask = mt5.symbol_info_tick(self.symbol).ask
+                            ref_price = current_ask if final_signal == 'buy' else current_bid
+                            atr_val = float(latest_features.get('atr', ref_price * 0.005))
+                            calc_sl, calc_tp = self.calculate_optimized_sl_tp(
+                                final_signal if final_signal in ['buy', 'sell'] else 'buy', 
+                                ref_price, 
+                                atr_val,
+                                ai_exit_conds=exit_conds
+                            )
+                            if not opt_sl: opt_sl = calc_sl
+                            if not opt_tp: opt_tp = calc_tp
+
+                        # 构建消息
+                        telegram_report = strategy.get('telegram_report', '')
+                        
+                        # 清理报告中可能的敏感或冗余技术参数
+                        # 例如: 移除 "Score: ...", "MA=...", "RVGI(...", "Grid: Step=..." 等行
+                        if telegram_report:
+                            lines = telegram_report.split('\n')
+                            clean_lines = []
+                            for line in lines:
+                                # 过滤掉包含特定技术关键词的行，保留核心分析
+                                if not any(k in line for k in ["Score:", "MA=", "RVGI(", "Grid: Step=", "IFVG(", "ATR="]):
+                                    clean_lines.append(line)
+                            telegram_report = "\n".join(clean_lines).strip()
+
+                        if telegram_report and len(telegram_report) > 50:
+                            # 使用 Qwen 生成的专用 Telegram 报告
+                            analysis_msg = (
+                                f"🤖 *AI Strategy Report (Qwen)*\n"
+                                f"Symbol: `{self.symbol}` | TF: `{self.tf_name}`\n"
+                                f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
+                                f"{telegram_report}\n\n"
+                                f"📊 *Live Status*\n"
+                                f"• Action: *{final_signal.upper()}*\n"
+                                f"• Lots: `{strategy.get('position_size', 0.01)}`\n"
+                                f"• Strength: {strength:.0f}%\n"
+                                f"• Sentiment: {qwen_sent_label.upper()} ({qwen_sent_score:.2f})\n\n"
+                                f"💼 *Positions*\n"
+                                f"{self.escape_markdown(pos_summary)}"
+                            )
+                        else:
+                            # 备用：手动构建结构化消息
+                            analysis_msg = (
+                                f"🤖 *AI Strategy Report (Qwen)*\n"
+                                f"Symbol: `{self.symbol}` | TF: `{self.tf_name}`\n"
+                                f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
+                                
+                                f"🧙‍♂️ *Qwen Analysis*\n"
+                                f"• Action: *{qw_action.upper()}*\n"
+                                f"• Lots: `{strategy.get('position_size', 0.01)}` (Dynamic)\n"
+                                f"• Sentiment: {qwen_sent_label.upper()} ({qwen_sent_score})\n"
+                                f"• Logic: _{self.escape_markdown(reason)}_\n\n"
+                                
+                                f"🏆 *Decision: {final_signal.upper()}*\n"
+                                f"• Strength: {strength:.0f}%\n"
+                                
+                                f"💼 *Positions*\n"
+                                f"{self.escape_markdown(pos_summary)}"
+                            )
+                        self.send_telegram_message(analysis_msg)
+
+                        # 4. 执行交易
+                        if final_signal != 'hold':
+                            logger.info(f">>> 执行 Qwen 决策: {final_signal.upper()} <<<")
+                            
+                            # 传入 Qwen 参数
+                            entry_params = strategy.get('entry_conditions')
+                            exit_params = strategy.get('exit_conditions')
+                            
+                            # Calculate Lot (Martingale aware if needed, or handled in execute_trade)
+                            # Here we use calculate_dynamic_lot for initial lot
+                            suggested_lot = self.calculate_dynamic_lot(
+                                strength, 
+                                market_context={'smc': smc_result}, 
+                                ai_signals=all_signals
+                            )
+                            
+                            self.execute_trade(
+                                final_signal, 
+                                strength, 
+                                exit_params,
+                                entry_params,
+                                suggested_lot=suggested_lot
+                            )
+                
+        except KeyboardInterrupt:
+            logger.info("用户停止机器人")
+            mt5.shutdown()
+        except Exception as e:
+            logger.error(f"发生未捕获异常: {e}", exc_info=True)
+            mt5.shutdown()
+
+class MultiSymbolBot:
+    def __init__(self, symbols, timeframe=mt5.TIMEFRAME_M15):
+        self.symbols = symbols
+        self.timeframe = timeframe
+        self.traders = []
+        self.is_running = False
+        self.watcher = None
+
+    def initialize_mt5(self):
+        """Global MT5 Initialization"""
+        # 尝试使用指定账户登录
+        account = 89633982
+        server = "Ava-Real 1-MT5"
+        password = "Clj568741230#"
+        
+        if not mt5.initialize(login=account, server=server, password=password):
+            logger.error(f"MT5 初始化失败, 错误码: {mt5.last_error()}")
+            # 尝试不带账号初始化
+            if not mt5.initialize():
+                return False
+        
+        # 检查终端状态
+        term_info = mt5.terminal_info()
+        if not term_info.trade_allowed:
+            logger.warning("⚠️ 警告: 终端 '自动交易' (Algo Trading) 未开启！")
+            
+        logger.info(f"MT5 全局初始化成功，账户: {mt5.account_info().login}")
+        return True
+
+    def start(self):
+        if not self.initialize_mt5():
+            logger.error("MT5 初始化失败，无法启动")
+            return
+
+        # Start File Watcher
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            self.watcher = FileWatcher([current_dir])
+            self.watcher.start()
+        except Exception as e:
+            logger.error(f"Failed to start FileWatcher: {e}")
+
+        self.is_running = True
+        logger.info(f"🚀 Single-Process Bot Started for: {self.symbols}")
+
+        # In Single Process Mode (run via run_strategies.bat), we usually have only 1 symbol per process.
+        # However, MultiSymbolBot class structure supports multiple threads.
+        # If run_strategies.bat passes 1 symbol (e.g. "GOLD"), this loop runs once -> 1 thread -> effectively single process per strategy.
+        
+        # Launch a thread for each symbol
+        for symbol in self.symbols:
             try:
-                strength = int(response["choices"][0]["message"]["content"].strip())
-                return max(0, min(100, strength))
-            except ValueError:
-                logger.error("无法解析信号强度")
-        
-        return 50
-    
-    def calculate_kelly_criterion(self, win_rate: float, risk_reward_ratio: float) -> float:
-        """
-        计算凯利准则，用于确定最优仓位
-        """
-        prompt = f"""
-请根据以下参数计算凯利准则：
-胜率：{win_rate}
-风险回报比：{risk_reward_ratio}
+                # Create and start a worker thread for this symbol
+                thread = threading.Thread(target=self._trader_worker, args=(symbol,), name=f"Thread-{symbol}", daemon=True)
+                thread.start()
+                logger.info(f"Thread for {symbol} started.")
+            except Exception as e:
+                logger.error(f"Failed to start thread for {symbol}: {e}")
 
-请只返回一个数字，表示最优仓位比例(0-1之间)，不要包含任何其他文字或解释。
-"""
-        
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": "你是一位专业的资金管理专家，擅长计算凯利准则。"},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.1,
-            "max_tokens": 10
-        }
-        
-        response = self._call_api("chat/completions", payload)
-        
-        if response and "choices" in response:
-            try:
-                kelly = float(response["choices"][0]["message"]["content"].strip())
-                return max(0.0, min(1.0, kelly))
-            except ValueError:
-                logger.error("无法解析凯利比例")
-        
-        # 使用传统凯利公式计算默认值
-        default_kelly = win_rate - ((1 - win_rate) / risk_reward_ratio)
-        return max(0.0, min(1.0, default_kelly))
+        try:
+            # Main thread keep-alive
+            while self.is_running:
+                time.sleep(1)
+                
+        except KeyboardInterrupt:
+            logger.info("Bot stopped by user.")
+            self.is_running = False
+            mt5.shutdown()
+        except Exception as e:
+            logger.critical(f"Fatal Bot Error: {e}", exc_info=True)
+            self.is_running = False
+            mt5.shutdown()
 
-
-def main():
-    """
-    主函数用于测试Qwen客户端
-    """
-    # 示例使用，实际需要替换为有效的API密钥
-    api_key = "your_qwen_api_key"
-    client = QwenClient(api_key)
-    
-    # 测试黄金市场
-    print("=" * 80)
-    print("测试黄金(XAUUSD)交易决策系统")
-    print("=" * 80)
-    
-    current_market_data = {
-        "symbol": "XAUUSD",
-        "timeframe": "H1",
-        "prices": {
-            "open": 2350.50,
-            "high": 2365.75,
-            "low": 2348.20,
-            "close": 2362.30,
-            "volume": 125000
-        },
-        "indicators": {
-            "ema_fast": 2355.50,
-            "ema_slow": 2348.80,
-            "rsi": 62.5,
-            "atr": 8.75,
-            "cci": 125.3,
-            "rvgi": 0.65
-        },
-        "order_blocks": [
-            {"price": 2352.0, "type": "bullish", "timeframe": "H1", "freshness": "fresh"},
-            {"price": 2340.0, "type": "bullish", "timeframe": "H4", "freshness": "tested"}
-        ],
-        "fvgs": [
-            {"range": [2355.0, 2348.0], "direction": "bullish"}
-        ],
-        "market_structure": {
-            "higher_tf_trend": "bullish",
-            "bos_levels": [2375.0, 2320.0],
-            "choch_levels": [2360.0, 2335.0]
-        },
-        "account_info": {
-            "available_balance": 10000.0,
-            "total_balance": 12000.0,
-            "used_margin": 2000.0
-        }
-    }
-    
-    # 测试市场结构分析
-    market_analysis = client.analyze_market_structure(current_market_data)
-    print("黄金市场结构分析结果:")
-    print(json.dumps(market_analysis, indent=2, ensure_ascii=False))
-    
-    # 测试角色分析
-    role_analysis = client.execute_role_based_analysis(current_market_data)
-    print("\n黄金角色分析结果:")
-    print(json.dumps(role_analysis, indent=2, ensure_ascii=False))
-    
-    # 测试交易决策（集成角色分析）
-    trading_decision = client.optimize_strategy_logic(
-        market_structure_analysis=market_analysis,
-        current_market_data=current_market_data,
-        technical_signals={
-            "crt_signal": "pinbar",
-            "crt_confidence": 0.8,
-            "price_action": "bullish_reversal"
-        },
-        current_positions=None,
-        performance_stats=[
-            {"profit": 125, "mfe": 1.5, "mae": 0.8},
-            {"profit": -80, "mfe": 0.5, "mae": 1.2}
-        ],
-        execute_role_analysis=True
-    )
-    
-    print("\n黄金交易决策系统输出:")
-    print(json.dumps(trading_decision, indent=2, ensure_ascii=False))
-    
-    # 打印关键信息
-    print("\n" + "=" * 80)
-    print("决策摘要:")
-    print(f"行动: {trading_decision.get('action', 'N/A')}")
-    print(f"仓位大小: {trading_decision.get('position_size', 'N/A')}")
-    print(f"信号强度: {trading_decision.get('signal_strength', 'N/A')}")
-    
-    role_summary = trading_decision.get('role_analysis_summary', {})
-    print(f"角色分析偏向: {role_summary.get('action_bias', 'N/A')}")
-    print(f"风险等级: {role_summary.get('risk_level', 'N/A')}")
-    
-    # 打印Telegram报告
-    print("\n" + "=" * 80)
-    print("Telegram报告:")
-    print(trading_decision.get('telegram_report', 'No report available'))
-    
-    # 测试ETHUSD
-    print("\n" + "=" * 80)
-    print("测试以太坊(ETHUSD)交易决策系统")
-    print("=" * 80)
-    
-    eth_market_data = {
-        "symbol": "ETHUSD",
-        "timeframe": "H1",
-        "prices": {
-            "open": 3200.50,
-            "high": 3250.75,
-            "low": 3185.20,
-            "close": 3235.30,
-            "volume": 85000
-        },
-        "indicators": {
-            "ema_fast": 3220.50,
-            "ema_slow": 3198.80,
-            "rsi": 58.5,
-            "atr": 45.75,
-            "cci": 85.3,
-            "rvgi": 0.55
-        },
-        "account_info": {
-            "available_balance": 5000.0,
-            "total_balance": 6000.0,
-            "used_margin": 1000.0
-        }
-    }
-    
-    eth_decision = client.optimize_strategy_logic(
-        market_structure_analysis=client.analyze_market_structure(eth_market_data),
-        current_market_data=eth_market_data,
-        execute_role_analysis=True
-    )
-    
-    print(f"\nETHUSD决策行动: {eth_decision.get('action', 'N/A')}")
-    print(f"ETHUSD仓位大小: {eth_decision.get('position_size', 'N/A')}")
-    
-    # 测试EURUSD
-    print("\n" + "=" * 80)
-    print("测试欧元兑美元(EURUSD)交易决策系统")
-    print("=" * 80)
-    
-    eur_market_data = {
-        "symbol": "EURUSD",
-        "timeframe": "H1",
-        "prices": {
-            "open": 1.0850,
-            "high": 1.0875,
-            "low": 1.0820,
-            "close": 1.0865,
-            "volume": 95000
-        },
-        "indicators": {
-            "ema_fast": 1.0845,
-            "ema_slow": 1.0830,
-            "rsi": 55.5,
-            "atr": 0.0025,
-            "cci": 45.3,
-            "rvgi": 0.48
-        },
-        "account_info": {
-            "available_balance": 8000.0,
-            "total_balance": 10000.0,
-            "used_margin": 2000.0
-        }
-    }
-    
-    eur_decision = client.optimize_strategy_logic(
-        market_structure_analysis=client.analyze_market_structure(eur_market_data),
-        current_market_data=eur_market_data,
-        execute_role_analysis=True
-    )
-    
-    print(f"\nEURUSD决策行动: {eur_decision.get('action', 'N/A')}")
-    print(f"EURUSD仓位大小: {eur_decision.get('position_size', 'N/A')}")
-    
-    print("\n" + "=" * 80)
-    print("所有测试完成！")
-    print("=" * 80)
-
+    def _trader_worker(self, symbol):
+        """Worker function for each symbol thread"""
+        try:
+            # Initialize trader instance inside the thread
+            # NOTE: MT5 calls are thread-safe, but we need to ensure separate state
+            trader = SymbolTrader(symbol=symbol, timeframe=self.timeframe)
+            trader.initialize()
+            self.traders.append(trader) # Keep reference if needed
+            
+            logger.info(f"[{symbol}] Worker Loop Started")
+            
+            while self.is_running:
+                try:
+                    trader.process_tick()
+                except Exception as e:
+                    logger.error(f"[{symbol}] Process Error: {e}")
+                
+                # Independent sleep for this symbol's loop
+                # Adjust polling rate if needed
+                time.sleep(1) 
+                
+        except Exception as e:
+            logger.error(f"[{symbol}] Worker Thread Crash: {e}")
 
 if __name__ == "__main__":
-    main()
+    # Default symbols
+    symbols = ["GOLD", "ETHUSD", "EURUSD"]
+    
+    # Allow command line override (comma separated)
+    if len(sys.argv) > 1:
+        # Check if argument is a list of symbols or just one
+        arg = sys.argv[1]
+        if "," in arg:
+            symbols = [s.strip().upper() for s in arg.split(",")]
+        else:
+            symbols = [arg.upper()]
+            
+    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M15)
+    bot.start()
