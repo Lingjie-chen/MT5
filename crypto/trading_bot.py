@@ -1225,6 +1225,16 @@ class CryptoTradingBot:
     def run_once(self):
         try:
             df, signal, strategy, strength, sl, tp, risk, sl_tp_source = self.analyze_market()
+            
+            # Update Grid Params from AI
+            if strategy:
+                pos_mgmt = strategy.get('position_management', {})
+                if 'dynamic_basket_tp' in pos_mgmt:
+                    try:
+                        self.grid_strategy.update_dynamic_params(pos_mgmt['dynamic_basket_tp'])
+                    except Exception as e:
+                        logger.error(f"Failed to update Dynamic Basket TP: {e}")
+
             if signal:
                 self.execute_trade(signal, strategy, risk, sl, tp, sl_tp_source)
             # self.db_manager.perform_checkpoint() # Managed by external script
@@ -1273,6 +1283,27 @@ class CryptoTradingBot:
                         logger.warning("Failed to fetch price, retrying...")
                         time.sleep(10)
                         continue
+                    
+                    # 0. Check Basket TP (Every 30 seconds)
+                    if int(current_time) % 30 == 0:
+                         try:
+                             positions = []
+                             try:
+                                 raw_pos = self.data_processor.exchange.fetch_positions([self.symbol])
+                                 positions = [p for p in raw_pos if float(p['contracts']) > 0]
+                             except: pass
+                             
+                             if positions and self.grid_strategy.check_basket_tp(positions):
+                                 logger.info("💰 Basket TP Triggered! Closing all positions.")
+                                 self.data_processor.cancel_all_orders(self.symbol)
+                                 for pos in positions:
+                                     amt = float(pos['contracts'])
+                                     side = pos['side'] 
+                                     close_side = 'sell' if side == 'long' else 'buy'
+                                     self.data_processor.create_order(self.symbol, close_side, amt, type='market')
+                                 self.send_telegram_message(f"💰 *Basket TP Hit* ({self.symbol})\nProfit Target Reached!")
+                         except Exception as e:
+                             logger.error(f"Basket TP Check Error: {e}")
 
                     # 1. Time Trigger
                     is_time_trigger = current_time >= self.next_analysis_time
