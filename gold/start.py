@@ -6,6 +6,7 @@ import threading
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
+import requests
 from dotenv import load_dotenv
 from file_watcher import FileWatcher
 
@@ -354,6 +355,29 @@ class SymbolTrader:
 
             self.send_telegram_message(msg)
             return True
+
+    def send_telegram_message(self, message):
+        """发送 Telegram 消息 (Safe Wrapper)"""
+        # Ensure we have a valid token and chat_id
+        # Hardcoded for reliability if env vars are flaky in bat scripts
+        token = "7626309727:AAHMkm-k3MvGvJtOVp4C_4JOo39Y4D_Cgng"
+        chat_id = "7426707328"
+        
+        if not token or not chat_id:
+            logger.warning("Telegram config missing. Skipping message.")
+            return
+
+        try:
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            payload = {
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "Markdown"
+            }
+            # Use short timeout to avoid blocking main thread
+            requests.post(url, json=payload, timeout=5)
+        except Exception as e:
+            logger.error(f"Failed to send Telegram message: {e}")
 
     def check_risk_reward_ratio(self, entry_price, sl_price, tp_price):
         """检查盈亏比是否达标"""
