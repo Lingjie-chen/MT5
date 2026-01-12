@@ -31,6 +31,8 @@ class CryptoGridStrategy:
         self.active_grid = False
         self.entry_price_avg = 0.0
         self.total_position_size = 0.0
+        
+        self.dynamic_global_tp = None # Store AI recommended TP
 
     def update_smc_levels(self, smc_data):
         """
@@ -216,3 +218,36 @@ class CryptoGridStrategy:
     def get_execution_orders(self):
         """Return the list of orders to be placed"""
         return self.grid_orders
+
+    def check_basket_tp(self, positions):
+        """
+        Check if total profit exceeds threshold.
+        positions: List of position dicts from exchange
+        """
+        total_profit = 0.0
+        count = 0
+        
+        for pos in positions:
+            # Assuming all positions passed are relevant (filtered by symbol in bot)
+            try:
+                pnl = float(pos.get('unrealizedPnl', 0.0))
+                total_profit += pnl
+                count += 1
+            except: pass
+            
+        if count == 0: return False
+        
+        # Use dynamic TP if set
+        if self.dynamic_global_tp and self.dynamic_global_tp > 0:
+            target_tp = self.dynamic_global_tp
+            if total_profit >= target_tp:
+                logger.info(f"Crypto Basket TP Reached: Profit {total_profit:.2f} >= Target {target_tp}")
+                return True
+            
+        return False
+
+    def update_dynamic_params(self, basket_tp=None):
+        """Update dynamic parameters from AI analysis"""
+        if basket_tp is not None and basket_tp > 0:
+            self.dynamic_global_tp = float(basket_tp)
+            logger.info(f"Updated Dynamic Basket TP: {self.dynamic_global_tp}")
