@@ -652,6 +652,7 @@ class CryptoTradingBot:
                 
                 f"🧙‍♂️ *Qwen Analysis*\n"
                 f"• Sentiment: {self.escape_markdown(qwen_sent_label.upper())} (Score: {qwen_sent_score})\n"
+                f"• Role Bias: {self.escape_markdown(role_bias.upper())} (Risk: {role_risk})\n"
                 f"{qw_analysis_text}\n"
                 
                 f"🏆 *Final Result*\n"
