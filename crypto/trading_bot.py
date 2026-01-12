@@ -283,7 +283,7 @@ class CryptoTradingBot:
             
         return final_sl, final_tp
 
-    def calculate_dynamic_lot(self, strength, market_context, mfe_mae_ratio=1.0, ai_signals=None):
+    def calculate_dynamic_lot(self, strength, market_context, mfe_mae_ratio=1.0, ai_signals=None, role_bias='neutral'):
         """
         Calculate dynamic position size based on signal strength and market context.
         Adapted for Crypto (returns % of equity).
@@ -319,7 +319,14 @@ class CryptoTradingBot:
         if mfe_mae_ratio > 2.0: perf_mult = 1.2
         elif mfe_mae_ratio < 0.8: perf_mult = 0.8
         
-        final_risk = base_risk * consensus_mult * strength_mult * struct_mult * perf_mult
+        # 5. Role Multiplier (New)
+        role_mult = 1.0
+        if role_bias in ['buy', 'sell', 'strong_buy', 'strong_sell']:
+             role_mult = 1.1
+        elif role_bias == 'hold':
+             role_mult = 0.9
+        
+        final_risk = base_risk * consensus_mult * strength_mult * struct_mult * perf_mult * role_mult
         final_risk = min(final_risk, 0.05) # Max 5% risk
         
         return final_risk # Returns risk percentage (e.g., 0.03 for 3%)
