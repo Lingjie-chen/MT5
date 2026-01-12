@@ -1212,6 +1212,29 @@ class SymbolTrader:
                     tp = price - tp_min_dist
                 tp = self._normalize_price(tp)
         
+        # 3. 检查 Limit/Stop 挂单价格有效性 (Fix Error 10015)
+        # Limit Buy: Price < Ask
+        # Limit Sell: Price > Bid
+        if "limit" in type_str:
+            if is_buy:
+                # Limit Buy: price must be < Ask
+                # Allow a small buffer (e.g. 5 points) if it's very close
+                current_ask = tick.ask if tick else price + spread # Fallback
+                if price >= current_ask:
+                    logger.warning(f"Invalid Limit Buy Price ({price} >= Ask {current_ask}). Auto-Correcting to Ask - 10 points.")
+                    # Adjust to slightly below Ask to ensure pending order validity
+                    # Or should we convert to Market? For Grid, pending is safer.
+                    price = current_ask - (10 * point)
+                    price = self._normalize_price(price)
+            
+            elif is_sell:
+                # Limit Sell: price must be > Bid
+                current_bid = tick.bid if tick else price - spread
+                if price <= current_bid:
+                    logger.warning(f"Invalid Limit Sell Price ({price} <= Bid {current_bid}). Auto-Correcting to Bid + 10 points.")
+                    price = current_bid + (10 * point)
+                    price = self._normalize_price(price)
+
         # ----------------------------------------
         
         order_type = mt5.ORDER_TYPE_BUY
