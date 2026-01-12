@@ -1495,8 +1495,11 @@ class SymbolTrader:
                 ai_exits = strategy_params.get('exit_conditions', {})
                 
                 # Check if Qwen provided explicit SL/TP
-                qwen_sl_provided = ai_exits.get('sl_price', 0) > 0
-                qwen_tp_provided = ai_exits.get('tp_price', 0) > 0
+                sl_val = ai_exits.get('sl_price')
+                tp_val = ai_exits.get('tp_price')
+                
+                qwen_sl_provided = sl_val is not None and float(sl_val) > 0
+                qwen_tp_provided = tp_val is not None and float(tp_val) > 0
                 
                 # If Qwen didn't provide explicit values, skip dynamic update (User Request)
                 if not qwen_sl_provided and not qwen_tp_provided:

@@ -244,10 +244,13 @@ class QwenClient:
        - **MFE/MAE 深度应用**:
          - **TP (Take Profit)**: 结合 MFE (最大有利偏移) 和 SMC 流动性池。如果市场动能强劲，应推大 TP 以捕捉波段利润；如果动能衰竭，应收紧 TP。
          - **SL (Stop Loss)**: 结合 MAE (最大不利偏移) 和 SMC 失效位。如果市场波动率 (ATR) 变大，应适当放宽 SL 以防被噪音扫损；如果结构紧凑，应收紧 SL。
-       - **网格 TP 动态配置 (Dynamic Grid TP)**:
-         - 对于马丁网格的每一层订单，不要使用固定的 TP。
-         - **首单 TP**: 设定为波段目标。
-         - **加仓单 TP**: 根据回撤深度和反弹预期进行动态调整。深层加仓单通常为了快速解套，TP 应设置较小；浅层加仓单可追求更大反弹。
+       - **Basket TP 动态实时配置 (Real-time Dynamic Basket TP)**:
+         - **核心要求**: 对于每个品种的网格 Basket TP (整体止盈)，必须根据 SMC 算法、市场结构、情绪、BOS/CHoCH 以及 MAE/MFE 进行实时分析和更新。
+         - **拒绝固定值**: 严禁使用固定的 Basket TP！必须根据当前的市场波动率和预期盈利空间动态计算。
+         - **计算逻辑**: 
+           - 强趋势/高波动 -> 调大 Basket TP (追求更高利润)。
+           - 震荡/低波动/逆势 -> 调小 Basket TP (快速落袋为安)。
+           - 接近关键阻力位/SMC 结构位 -> 设置为刚好到达该位置的金额。
          - **更新指令**: 如果你认为当前的 SL/TP 需要调整，请在 `exit_conditions` 和 `position_management` 中返回最新的数值。
 
     ## 市场分析要求
@@ -423,12 +426,13 @@ class QwenClient:
     - **position_size**: 根据每个交易交易品种给出具体的资金比例。
     - **strategy_rationale**: 用**中文**详细解释：SMC结构分析(M15/H1/H4) -> 为什么选择该方向 -> 马丁加仓计划/止盈计划 -> 参考的MAE/MFE数据。
     - **grid_level_tp_pips**: 针对马丁网格，请给出**每一层**网格单的最优止盈距离(Pips)。例如 [30, 25, 20, 15, 10]。越深层的单子通常TP越小以求快速离场。
+    - **dynamic_basket_tp**: (重要) 请给出一个具体的美元数值 (例如 50.0, 120.5)，作为当前网格整体止盈目标。需综合考虑 MAE/MFE 和 SMC 结构。
     
     請以JSON格式返回结果，包含以下字段：
     - action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell", "grid_start", "close_buy_open_sell", "close_sell_open_buy")
     - entry_conditions: dict ("limit_price": float)
     - exit_conditions: dict ("sl_price": float, "tp_price": float)
-    - position_management: dict ("martingale_multiplier": float, "grid_step_logic": str, "recommended_grid_step_pips": float, "grid_level_tp_pips": list[float])
+    - position_management: dict ("martingale_multiplier": float, "grid_step_logic": str, "recommended_grid_step_pips": float, "grid_level_tp_pips": list[float], "dynamic_basket_tp": float)
     - position_size: float
     - leverage: int
     - signal_strength: int
