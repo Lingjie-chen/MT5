@@ -329,15 +329,31 @@ class KalmanGridStrategy:
         
         if count == 0: return False
         
-        # Dynamic TP based on step count
-        target_tp = self.tp_steps.get(count, self.global_tp)
-        if count > 9: target_tp = self.global_tp # Fallback
+        # Determine Target TP
+        # Priority: 
+        # 1. AI Dynamic Basket TP (if available)
+        # 2. Step-based TP (from config)
+        # 3. Global TP (fallback)
         
+        target_tp = self.global_tp # Default fallback
+        
+        if self.dynamic_global_tp is not None and self.dynamic_global_tp > 0:
+            target_tp = self.dynamic_global_tp
+        else:
+            target_tp = self.tp_steps.get(count, self.global_tp)
+            if count > 9: target_tp = self.global_tp
+
         if total_profit >= target_tp:
-            logger.info(f"Grid Basket TP Reached: Profit {total_profit:.2f} >= Target {target_tp}")
+            logger.info(f"Grid Basket TP Reached: Profit {total_profit:.2f} >= Target {target_tp} (AI Dynamic: {self.dynamic_global_tp})")
             return True
             
         return False
+
+    def update_dynamic_params(self, basket_tp=None):
+        """Update dynamic parameters from AI analysis"""
+        if basket_tp is not None and basket_tp > 0:
+            self.dynamic_global_tp = float(basket_tp)
+            logger.info(f"Updated Dynamic Basket TP: {self.dynamic_global_tp}")
 
     def update_config(self, params):
         if not params: return
