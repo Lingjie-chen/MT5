@@ -414,27 +414,42 @@ class QwenClient:
         
         # 启用JSON模式，遵循ValueCell的实现
         self.enable_json_mode = True
-    
-    def _call_api(self, endpoint: str, payload: Dict[str, Any], max_retries: int = 3) -> Optional[Dict[str, Any]]:
+
+        # API Key Mapping for Multi-Symbol Support
+        self.api_keys = {
+            "DEFAULT": api_key,
+            "ETHUSD": "sk-ftwixmoqnubuwdlutwmwkjxltesmlfiygpjnjaoytljicupf",
+            "XAUUSD": "sk-lapiomzehuojnvjentexbctuajfpyfxjakwtowyiwldsfogo",
+            "GOLD": "sk-lapiomzehuojnvjentexbctuajfpyfxjakwtowyiwldsfogo",
+            "EURUSD": "sk-mwfloodyqbiqpyrmnwsdojupecximapjekwolsjjxgzneglm"
+        }
+
+    def _get_api_key(self, symbol: str = "DEFAULT") -> str:
+        """根据品种获取对应的 API Key"""
+        key = self.api_keys.get(symbol.upper(), self.api_keys["DEFAULT"])
+        # Fallback logic if symbol contains substrings
+        if "ETH" in symbol.upper(): key = self.api_keys["ETHUSD"]
+        elif "XAU" in symbol.upper() or "GOLD" in symbol.upper(): key = self.api_keys["XAUUSD"]
+        elif "EUR" in symbol.upper(): key = self.api_keys["EURUSD"]
+        return key
+
+    def _call_api(self, endpoint: str, payload: Dict[str, Any], max_retries: int = 3, symbol: str = "DEFAULT") -> Optional[Dict[str, Any]]:
         """
-        调用Qwen API，支持重试机制
-        基于ValueCell的API调用模式，增强了错误处理和日志记录
-        
-        Args:
-            endpoint (str): API端点
-            payload (Dict[str, Any]): 请求负载
-            max_retries (int): 最大尝试次数，默认为3 (增强稳定性)
-        
-        Returns:
-            Optional[Dict[str, Any]]: API响应，失败返回None
+        调用Qwen API，支持重试机制和多品种 API Key 切换
         """
         url = f"{self.base_url}/{endpoint}"
+        
+        # Determine correct API Key for this call
+        current_api_key = self._get_api_key(symbol)
+        
+        headers = self.headers.copy()
+        headers["Authorization"] = f"Bearer {current_api_key}"
         
         for retry in range(max_retries):
             response = None
             try:
-                # 增加超时时间到120秒，提高在网络不稳定情况下的成功率
-                response = requests.post(url, headers=self.headers, json=payload, timeout=120)
+                # 增加超时时间到120秒
+                response = requests.post(url, headers=headers, json=payload, timeout=120)
                 
                 # 详细记录响应状态
                 logger.debug(f"API响应状态码: {response.status_code}, 模型: {self.model}, 重试: {retry+1}/{max_retries}")
@@ -585,7 +600,7 @@ class QwenClient:
             "response_format": {"type": "json_object"}
         }
         
-        response = self._call_api("chat/completions", payload)
+        response = self._call_api("chat/completions", payload, symbol=symbol)
         if response and "choices" in response:
             try:
                 content = response["choices"][0]["message"]["content"]
@@ -631,8 +646,10 @@ class QwenClient:
         独立的情绪分析模块 - 全方位评估
         """
         logger.info("Executing Sentiment Analysis...")
+        symbol = market_data.get("symbol", "DEFAULT")
+        
         prompt = f"""
-        作为资深黄金(XAUUSD)市场分析师，请依据提供的市场数据，对当前市场情绪和趋势进行深度、全面的评估。
+        作为资深{symbol}市场分析师，请依据提供的市场数据，对当前市场情绪和趋势进行深度、全面的评估。
         
         输入数据:
         {json.dumps(market_data, cls=CustomJSONEncoder)}
@@ -671,7 +688,7 @@ class QwenClient:
         }
         
         try:
-            response = self._call_api("chat/completions", payload)
+            response = self._call_api("chat/completions", payload, symbol=symbol)
             if response and "choices" in response:
                 content = response["choices"][0]["message"]["content"]
                 return json.loads(content)
@@ -864,7 +881,7 @@ class QwenClient:
             payload["response_format"] = {"type": "json_object"}
         
         # 调用API
-        response = self._call_api("chat/completions", payload)
+        response = self._call_api("chat/completions", payload, symbol=symbol)
         if response and "choices" in response:
             try:
                 message_content = response["choices"][0]["message"]["content"]
