@@ -788,12 +788,17 @@ class SymbolTrader:
         # 如果有持仓且不是加仓指令，则不再开新仓
         if has_position:
             if added_this_cycle:
-                logger.info(f"本轮已执行加仓，跳过额外开仓")
-                return
+              logger.info(f"本轮已执行加仓，跳过额外开仓")
+              return
+            elif llm_action in ['buy', 'sell']:
+        # 检查是否是反向开仓（需要先平仓后开仓）
+        # 这个逻辑已经在之前的持仓管理部分处理过了
+        # 所以这里应该允许开仓
+              logger.info(f"已有持仓，但执行反向开仓逻辑")
+        # 继续执行，上面的持仓管理逻辑会处理平仓
             elif 'add' not in llm_action and llm_action != 'grid_start':
-                logger.info(f"已有持仓 ({len(bot_positions)}), 且非加仓指令 ({llm_action}), 跳过开仓")
-                return
-
+              logger.info(f"已有持仓 ({len(bot_positions)}), 且非加仓指令 ({llm_action}), 跳过开仓")
+              return
         # 执行开仓/挂单
         trade_type = None
         price = 0.0
@@ -2881,7 +2886,7 @@ class SymbolTrader:
                             final_signal = "hold"
                         elif qw_action == 'grid_start':
                             final_signal = "grid_start"
-                            
+                        qw_signal = final_signal
                         # Reason
                         reason = strategy.get('strategy_rationale', 'Qwen Decision') # Use rationale if available
                         if reason == 'Qwen Decision':
