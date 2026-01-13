@@ -287,11 +287,12 @@ class QwenClient:
         # --- 4. 共同执行规则 ---
         common_rules = """
     ## 共同执行规则 (All Teams Must Follow)
-    1. **SMC 核心**: 所有的入场和加仓必须基于 **SMC (Smart Money Concepts)** —— 寻找 订单块(OB)、失衡区(FVG) 和 结构破坏(BOS)。
-    2. **趋势控制**: 
+    1. **SMC 核心**: 所有的入场和加仓必须基于 **SMC (Smart Money Concepts)** —— 寻找 订单块(OB)、失衡区(FVG)、结构破坏(BOS) 和 特性改变(CHOCH)。
+    2. **高级算法验证**: 必须结合 **OBV (能量潮)** 确认成交量支持，并关注 **Liquidity Sweep (流动性扫荡)**。
+    3. **趋势控制**: 
        - M15 为执行周期，必须服从 H1/H4 趋势。
        - 只有在确认趋势反转或SMC结构破坏时才平仓。
-    3. **动态风控**: 
+    4. **动态风控**: 
        - Basket TP (整体止盈) 必须动态计算，随市场波动调整。
        - 实时监控 MAE/MFE，优化 SL/TP。
         """
