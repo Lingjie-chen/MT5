@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional, List
 import pandas as pd
 import numpy as np
 from datetime import datetime, date
+import MetaTrader5 as mt5
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -961,6 +962,11 @@ class QwenClient:
         market_analysis = market_structure_analysis
         if not market_analysis or len(market_analysis) < 3: # 简单的检查
              market_analysis = self.analyze_market_structure(current_market_data)
+        
+        # Get account info for position sizing
+        account_info = mt5.account_info()
+        balance = account_info.balance if account_info else 10000.0
+        equity = account_info.equity if account_info else 10000.0
         
         # 构建上下文信息
         tech_context = ""
