@@ -643,7 +643,7 @@ class QwenClient:
 
     
     def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "Qwen/Qwen3-VL-235B-A22B-Thinking"):
-        """"""
+        """
         初始化Qwen客户端
         
         Args:
@@ -672,7 +672,7 @@ class QwenClient:
         }
 
     def _get_api_key(self, symbol: str = "DEFAULT") -> str:
-        """根据品种获取对应的 API Key""""""
+        """根据品种获取对应的 API Key"""
         key = self.api_keys.get(symbol.upper(), self.api_keys["DEFAULT"])
         # Fallback logic if symbol contains substrings
         if "ETH" in symbol.upper(): key = self.api_keys["ETHUSD"]
