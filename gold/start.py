@@ -3358,13 +3358,21 @@ class SymbolTrader:
                                     ai_signals=all_signals
                                 )
                             
-                            self.execute_trade(
-                                final_signal, 
-                                strength, 
-                                exit_params,
-                                entry_params,
-                                suggested_lot=suggested_lot
-                            )
+                            signature = self._make_trade_signature(strategy, final_signal)
+                            now_ts = time.time()
+                            if signature == self.last_executed_signature and (now_ts - self.last_execution_time) < self.action_cooldown_seconds:
+                                logger.info(f"[{self.symbol}] 指令去重生效，跳过重复执行 (cooldown={self.action_cooldown_seconds}s)")
+                            else:
+                                self.last_executed_signature = signature
+                                self.last_execution_time = now_ts
+                            
+                                self.execute_trade(
+                                    final_signal, 
+                                    strength, 
+                                    exit_params,
+                                    entry_params,
+                                    suggested_lot=suggested_lot
+                                )
                         else:
                             # 即使是 HOLD，也调用 manage_positions 来更新 SL/TP
                             logger.info(f"维持持仓 (HOLD). 检查是否有持仓管理指令...")
