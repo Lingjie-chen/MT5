@@ -151,7 +151,6 @@ class SymbolTrader:
         self.last_bar_time = 0
         self.last_analysis_time = 0
         self.last_llm_time = 0 
-        self.llm_interval_seconds = 15
         self.action_cooldown_seconds = 10
         self.last_executed_signature = None
         self.last_execution_time = 0
@@ -2790,13 +2789,9 @@ class SymbolTrader:
                 
                 # ---------------------------------------------------
 
-                should_run_llm = is_new_bar or (time.time() - self.last_llm_time >= self.llm_interval_seconds)
-                if should_run_llm:
-                    if is_new_bar:
-                        logger.info(f"New Bar Detected: {datetime.fromtimestamp(current_bar_time)}")
-                        self.last_bar_time = current_bar_time
-                    else:
-                        logger.info(f"[{self.symbol}] LLM Interval Triggered ({self.llm_interval_seconds}s)")
+                if is_new_bar:
+                    logger.info(f"New Bar Detected: {datetime.fromtimestamp(current_bar_time)}")
+                    self.last_bar_time = current_bar_time
                     
                     # 2. 获取数据并计算指标
                     # M15 Data (Main)
@@ -2819,7 +2814,7 @@ class SymbolTrader:
                     if df_h4 is None: df_h4 = pd.DataFrame()
                     
                     # 保存数据到 DB
-                    if is_new_bar and not df.empty:
+                    if not df.empty:
                         self.db_manager.save_market_data(df, self.symbol, self.tf_name)
                         logger.info(f"新K线生成 ({datetime.fromtimestamp(current_bar_time)}), 执行策略分析...")
                     
