@@ -3036,19 +3036,24 @@ class SymbolTrader:
                         logger.info(f"Reason: {reason}")
                         
                         # 保存分析结果到DB
-                        self.db_manager.save_signal(self.symbol, self.tf_name, {
-                            "final_signal": final_signal,
-                            "strength": strength,
-                            "details": {
-                                "source": "Qwen_Solo",
-                                "reason": reason,
-                                "weights": weights,
-                                "signals": all_signals,
-                                "market_state": strategy.get('market_state', 'N/A'),
-                                "crt_reason": crt_result['reason'],
-                                "mtf_reason": mtf_result['reason'],
-                            }
-                        })
+                        logger.info("正在保存信号到数据库...")
+                        try:
+                            self.db_manager.save_signal(self.symbol, self.tf_name, {
+                                "final_signal": final_signal,
+                                "strength": strength,
+                                "details": {
+                                    "source": "Qwen_Solo",
+                                    "reason": reason,
+                                    "weights": weights,
+                                    "signals": all_signals,
+                                    "market_state": strategy.get('market_state', 'N/A'),
+                                    "crt_reason": crt_result['reason'],
+                                    "mtf_reason": mtf_result['reason'],
+                                }
+                            })
+                            logger.info("信号保存成功")
+                        except Exception as e:
+                            logger.error(f"保存信号到数据库失败: {e}")
                         
                         self.latest_strategy = strategy
                         self.latest_signal = final_signal
@@ -3139,7 +3144,14 @@ class SymbolTrader:
                         # 4. 执行交易
                         logger.info(f"决策检查: Final Signal='{final_signal}', Raw Action='{qw_action}'")
                         
-                        if final_signal != 'hold':
+                        # 确保不漏掉任何下单指令
+                        should_trade = final_signal != 'hold'
+                        if not should_trade and qw_action in ['buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell']:
+                            logger.warning(f"Final Signal is HOLD but Raw Action is {qw_action}, forcing trade execution.")
+                            should_trade = True
+                            final_signal = qw_action # Override final_signal
+                        
+                        if should_trade:
                             logger.info(f">>> 准备执行交易: {final_signal.upper()} (原始Action: {qw_action}) <<<")
                             
                             # 传入 Qwen 参数
