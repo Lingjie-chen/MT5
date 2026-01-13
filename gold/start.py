@@ -1461,6 +1461,34 @@ class SymbolTrader:
             text = text.replace(char, f'\\{char}')
         return text
 
+    def send_trade_intent(self, intent_type, action, trade_type=None, price=None, sl=None, tp=None, volume=None, extra=None):
+        intent_type = self.escape_markdown(intent_type or "TRADE")
+        action = self.escape_markdown(action or "UNKNOWN")
+        trade_type_str = self.escape_markdown(trade_type or "")
+        extra = "" if extra is None else str(extra)
+
+        lines = [
+            f"📣 *Trade Intent*",
+            f"Type: *{intent_type}*",
+            f"Symbol: `{self.escape_markdown(self.symbol)}` | TF: `{self.escape_markdown(self.tf_name)}`",
+            f"Action: *{action}*",
+        ]
+
+        if trade_type_str:
+            lines.append(f"OrderType: `{trade_type_str}`")
+        if volume is not None:
+            lines.append(f"Volume: `{volume}`")
+        if price is not None:
+            lines.append(f"Price: `{price}`")
+        if sl is not None:
+            lines.append(f"SL: `{sl}`")
+        if tp is not None:
+            lines.append(f"TP: `{tp}`")
+        if extra:
+            lines.append(self.escape_markdown(extra))
+
+        self.send_telegram_message("\n".join(lines))
+
     def send_telegram_message(self, message):
         """发送消息到 Telegram"""
         token = "8253887074:AAE_o7hfEb6iJCZ2MdVIezOC_E0OnTCvCzY"
