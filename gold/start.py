@@ -1312,6 +1312,45 @@ class SymbolTrader:
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": self._get_filling_mode(),
         }
+
+        # --- 资金检查 (防止 No Money Error) ---
+        try:
+            # 先使用 order_check 快速验证
+            check_res = mt5.order_check(request)
+            if check_res and check_res.retcode == mt5.TRADE_RETCODE_NO_MONEY:
+                logger.warning(f"预检查失败: 资金不足 (Req: {lot_to_use} lots). 尝试自动调整手数...")
+                
+                account_info = mt5.account_info()
+                if account_info and symbol_info:
+                    # 计算当前手数所需保证金
+                    margin_needed = mt5.order_calc_margin(order_type, self.symbol, lot_to_use, price)
+                    
+                    if margin_needed and margin_needed > 0:
+                        free_margin = account_info.margin_free
+                        logger.info(f"当前可用保证金: {free_margin:.2f}, 所需: {margin_needed:.2f}")
+                        
+                        if free_margin < margin_needed:
+                            # 按比例缩减，保留 5% 缓冲
+                            ratio = free_margin / margin_needed
+                            new_vol = lot_to_use * ratio * 0.95
+                            
+                            # 对齐到步长
+                            step = symbol_info.volume_step
+                            if step > 0:
+                                new_vol = (new_vol // step) * step
+                                new_vol = round(new_vol, 2)
+                            
+                            if new_vol >= symbol_info.volume_min:
+                                logger.info(f"自动调整手数: {lot_to_use} -> {new_vol}")
+                                lot_to_use = new_vol
+                                request['volume'] = lot_to_use
+                            else:
+                                logger.error(f"可用资金不足以开启最小手数 {symbol_info.volume_min}")
+                                return
+                    else:
+                        logger.warning("无法计算所需保证金，跳过调整")
+        except Exception as e:
+            logger.error(f"资金检查时发生异常: {e}")
         
         # --- 增强的订单发送逻辑 (自动重试不同的 Filling Mode) ---
         # 针对 Error 10030 (Unsupported filling mode) 进行自动故障转移
@@ -1338,7 +1377,7 @@ class SymbolTrader:
             
             # 仅记录第一次尝试或重试信息，避免刷屏
             if mode == filling_modes[0]:
-                logger.info(f"发送订单请求: Action={action}, Type={order_type}, Price={price:.2f}, SL={sl:.2f}, TP={tp:.2f}, Filling={mode}")
+                logger.info(f"发送订单请求: Action={action}, Type={order_type}, Volume={lot_to_use}, Price={price:.2f}, SL={sl:.2f}, TP={tp:.2f}, Filling={mode}")
             else:
                 logger.info(f"重试订单 (Filling Mode: {mode})...")
                 
