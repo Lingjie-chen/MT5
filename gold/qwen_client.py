@@ -100,17 +100,17 @@ class QwenClient:
     **3. 交易员团队 (Trader Agent)**
     - **综合研判**: 权衡通胀数据、地缘政治风险、技术指标。
     - **策略**: 若通胀超预期+技术面突破阻力位，决定买入黄金。
-    - **细节**: 确定建仓价格、止损位、目标价。
-    - **输出**: 交易提案（Action, Entry, SL, TP）。
+    - **细节**: 基于 SMC 结构提出 **初步** 的建仓价格、止损位 (SMC SL) 和目标价 (SMC TP)。
+    - **输出**: 交易提案（Action, Entry, SMC SL, SMC TP）。
 
     **4. 风控与执行团队 (Risk & Execution)**
     - **审核提案**: 评估仓位规模是否符合风险敞口。
-    - **MAE/MFE 深度优化**:
-        1. **MAE (Risk Management)**: 测量最大不利偏移 (Maximum Adverse Excursion)。若历史 MAE 显示频繁回撤 $5 后反弹，SL 应设在 >$5 处，避免 "Premature Exits"。
-        2. **MFE (Exit Strategy)**: 测量最大有利偏移 (Maximum Favorable Excursion)。若 MFE 显著高于实际获利，说明离场过早，需通过 "Trailing Stops" 优化退出以捕捉 "Maximum Gains"。
+    - **MAE/MFE 深度优化 (Finalizing SL/TP)**:
+        1. **MAE (Risk Management)**: 测量最大不利偏移 (Maximum Adverse Excursion)。若历史 MAE 显示频繁回撤 $5 后反弹，SL 应设在 >$5 处，避免 "Premature Exits"。**必须基于此调整 SMC SL**。
+        2. **MFE (Exit Strategy)**: 测量最大有利偏移 (Maximum Favorable Excursion)。若 MFE 显著高于实际获利，说明离场过早，需通过 "Trailing Stops" 优化退出以捕捉 "Maximum Gains"。**必须基于此调整 SMC TP**。
     - **风险评估**: 结合 MAE 数据预估潜在回撤，结合 VIX 评估市场波动。
     - **评分**: 风险等级 (0-10)。
-    - **执行**: 批准交易，基于 MAE/MFE 设置最优 SL/TP。
+    - **执行**: 批准交易，**输出经过集合分析后的最终最优 SL/TP (Optimal SL/TP)**。
         """
 
         # ETHUSD Instructions
@@ -160,17 +160,17 @@ class QwenClient:
     **3. 交易员团队 (Trader Agent)**
     - **综合研判**: 技术突破+DeFi锁仓量上升+监管利好传闻。
     - **策略**: 若ETH突破关键阻力位，决定买入。
-    - **细节**: 确定建仓价格、止损位、目标价。
+    - **细节**: 基于 SMC 结构提出 **初步** 的建仓价格、止损位 (SMC SL) 和目标价 (SMC TP)。
     - **输出**: 交易提案。
 
     **4. 风控与执行团队 (Risk & Execution)**
     - **审核提案**: 评估加密市场波动性（VIX高），流动性风险。
-    - **MAE/MFE 深度优化**:
-        1. **MAE 分析**: Crypto 波动大，需分析历史 MAE 以设定更宽的 "Safe Stop-Loss" 区域，防止被插针清洗。
-        2. **MFE 分析**: 鉴于 Crypto 的高爆发性，若 MFE 高企，必须激进使用追踪止损 (Trailing Stop) 锁定 "Moon-bag" 利润。
+    - **MAE/MFE 深度优化 (Finalizing SL/TP)**:
+        1. **MAE 分析**: Crypto 波动大，需分析历史 MAE 以设定更宽的 "Safe Stop-Loss" 区域，防止被插针清洗。**必须基于此调整 SMC SL**。
+        2. **MFE 分析**: 鉴于 Crypto 的高爆发性，若 MFE 高企，必须激进使用追踪止损 (Trailing Stop) 锁定 "Moon-bag" 利润。**必须基于此调整 SMC TP**。
     - **风险评估**: 仓位限制在总资金的X%，避免过度暴露。
     - **评分**: 风险等级 (0-10)。
-    - **执行**: 批准交易，基于 MAE/MFE 动态调整网格间距和止损。
+    - **执行**: 批准交易，**输出经过集合分析后的最终最优 SL/TP (Optimal SL/TP)**。
         """
 
         # EURUSD Instructions
