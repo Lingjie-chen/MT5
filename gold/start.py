@@ -2599,7 +2599,13 @@ class SymbolTrader:
                 current_bar_time = rates[0]['time']
                 
                 # New Bar Logic
+                # DEBUG: Force New Bar Logic for testing if needed
+                # is_new_bar = True 
                 is_new_bar = current_bar_time > self.last_bar_time
+                
+                # 如果用户报告说没有交易指示，可能是因为没有触发 New Bar
+                # 我们可以添加一个日志来确认当前时间检查
+                # logger.debug(f"Time Check: Current={current_bar_time}, Last={self.last_bar_time}, NewBar={is_new_bar}")
                 
                 # 每秒执行的逻辑 (Check orders, manage positions)
                 # ---------------------------------------------------
@@ -2873,6 +2879,11 @@ class SymbolTrader:
                         performance_stats=trade_stats,
                         previous_analysis=self.latest_strategy
                     )
+                    
+                    # DEBUG LOG: 打印 Qwen 返回的原始 Action
+                    raw_action = strategy.get('action', 'UNKNOWN')
+                    logger.info(f"Qwen 原始返回 Action: {raw_action}")
+                    
                     self.latest_strategy = strategy
                     self.last_llm_time = time.time()
                     
