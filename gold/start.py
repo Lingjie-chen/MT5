@@ -3126,6 +3126,8 @@ class SymbolTrader:
                         self.send_telegram_message(analysis_msg)
 
                         # 4. 执行交易
+                        logger.info(f"决策检查: Final Signal='{final_signal}', Raw Action='{qw_action}'")
+                        
                         if final_signal != 'hold':
                             logger.info(f">>> 准备执行交易: {final_signal.upper()} (原始Action: {qw_action}) <<<")
                             
@@ -3156,6 +3158,10 @@ class SymbolTrader:
                                 entry_params,
                                 suggested_lot=suggested_lot
                             )
+                        else:
+                            # 即使是 HOLD，也调用 manage_positions 来更新 SL/TP
+                            logger.info(f"维持持仓 (HOLD). 检查是否有持仓管理指令...")
+                            self.manage_positions(signal='hold', strategy_params=strategy)
                 
         except KeyboardInterrupt:
             logger.info("用户停止机器人")
