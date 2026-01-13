@@ -819,8 +819,9 @@ class SymbolTrader:
                 for o in current_orders:
                     if o.magic == self.magic_number:
                         # 如果是 Sell Limit/Stop (反向)，则取消
+                        # 增强逻辑: 对于 GOLD, ETHUSD, EURUSD 等品种，严格执行反向单清除
                         if o.type in [mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP]:
-                             logger.info(f"取消反向挂单 #{o.ticket} (Type: {o.type})")
+                             logger.info(f"[{self.symbol}] 发现反向卖出挂单 #{o.ticket} (Type: {o.type})，执行取消以配合新买入策略")
                              req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
                              mt5.order_send(req)
                         # 如果是同向 (Buy Limit/Stop)，则保留 (叠加)
@@ -870,8 +871,9 @@ class SymbolTrader:
                 for o in current_orders:
                     if o.magic == self.magic_number:
                         # 如果是 Buy Limit/Stop (反向)，则取消
+                        # 增强逻辑: 对于 GOLD, ETHUSD, EURUSD 等品种，严格执行反向单清除
                         if o.type in [mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP]:
-                             logger.info(f"取消反向挂单 #{o.ticket} (Type: {o.type})")
+                             logger.info(f"[{self.symbol}] 发现反向买入挂单 #{o.ticket} (Type: {o.type})，执行取消以配合新卖出策略")
                              req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
                              mt5.order_send(req)
                         # 如果是同向 (Sell Limit/Stop)，则保留 (叠加)
