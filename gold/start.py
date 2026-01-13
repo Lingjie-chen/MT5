@@ -2992,7 +2992,7 @@ class SymbolTrader:
 
                         # 4. 执行交易
                         if final_signal != 'hold':
-                            logger.info(f">>> 执行 Qwen 决策: {final_signal.upper()} <<<")
+                            logger.info(f">>> 准备执行交易: {final_signal.upper()} (原始Action: {qw_action}) <<<")
                             
                             # 传入 Qwen 参数
                             entry_params = strategy.get('entry_conditions')
