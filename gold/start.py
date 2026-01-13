@@ -2961,8 +2961,8 @@ class SymbolTrader:
                         except Exception as e:
                             logger.error(f"参数动态更新失败: {e}")
                         
-                        # Qwen 信号转换
-                        qw_action = strategy.get('action', 'neutral').lower()
+                    # Qwen 信号转换
+                    qw_action = strategy.get('action', 'neutral').lower()
                         
                         final_signal = "neutral"
                         if qw_action in ['buy', 'add_buy']:
