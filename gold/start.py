@@ -1202,7 +1202,7 @@ class SymbolTrader:
         digits = symbol_info.digits
         return round(price, digits)
 
-    def _send_order(self, type_str, price, sl, tp, comment=""):
+    def _send_order(self, type_str, price, sl=0.0, tp=0.0, volume=None, comment=""):
         """底层下单函数"""
         # Normalize prices
         price = self._normalize_price(price)
@@ -1232,8 +1232,8 @@ class SymbolTrader:
         # but a small safety buffer (20 points) is good.
         tp_min_dist = base_stops_level + (20 * point)
         
-        is_buy = "buy" in type_str
-        is_sell = "sell" in type_str
+        is_buy = "buy" in str(type_str).lower()
+        is_sell = "sell" in str(type_str).lower()
         
         # 1. 检查方向性 (Directionality)
         if is_buy:
@@ -1283,29 +1283,43 @@ class SymbolTrader:
         order_type = mt5.ORDER_TYPE_BUY
         action = mt5.TRADE_ACTION_DEAL
         
-        if type_str == "buy":
-            order_type = mt5.ORDER_TYPE_BUY
-            action = mt5.TRADE_ACTION_DEAL
-        elif type_str == "sell":
-            order_type = mt5.ORDER_TYPE_SELL
-            action = mt5.TRADE_ACTION_DEAL
-        elif type_str == "limit_buy":
-            order_type = mt5.ORDER_TYPE_BUY_LIMIT
-            action = mt5.TRADE_ACTION_PENDING
-        elif type_str == "limit_sell":
-            order_type = mt5.ORDER_TYPE_SELL_LIMIT
-            action = mt5.TRADE_ACTION_PENDING
-        elif type_str == "stop_buy":
-            order_type = mt5.ORDER_TYPE_BUY_STOP
-            action = mt5.TRADE_ACTION_PENDING
-        elif type_str == "stop_sell":
-            order_type = mt5.ORDER_TYPE_SELL_STOP
-            action = mt5.TRADE_ACTION_PENDING
+        # Use provided volume or default self.lot_size
+        lot_to_use = float(volume) if volume is not None and volume > 0 else self.lot_size
+
+        if isinstance(type_str, int):
+            order_type = type_str
+            # Infer action from type
+            if order_type in [mt5.ORDER_TYPE_BUY, mt5.ORDER_TYPE_SELL]:
+                action = mt5.TRADE_ACTION_DEAL
+            else:
+                action = mt5.TRADE_ACTION_PENDING
+            # Back-map to string for logging if needed, or just use generic
+            type_str = "int_type"
+        else:
+            type_str = type_str.lower()
+            if type_str == "buy":
+                order_type = mt5.ORDER_TYPE_BUY
+                action = mt5.TRADE_ACTION_DEAL
+            elif type_str == "sell":
+                order_type = mt5.ORDER_TYPE_SELL
+                action = mt5.TRADE_ACTION_DEAL
+            elif type_str in ["limit_buy", "buy_limit"]:
+                order_type = mt5.ORDER_TYPE_BUY_LIMIT
+                action = mt5.TRADE_ACTION_PENDING
+            elif type_str in ["limit_sell", "sell_limit"]:
+                order_type = mt5.ORDER_TYPE_SELL_LIMIT
+                action = mt5.TRADE_ACTION_PENDING
+            elif type_str in ["stop_buy", "buy_stop"]:
+                order_type = mt5.ORDER_TYPE_BUY_STOP
+                action = mt5.TRADE_ACTION_PENDING
+            elif type_str in ["stop_sell", "sell_stop"]:
+                order_type = mt5.ORDER_TYPE_SELL_STOP
+                action = mt5.TRADE_ACTION_PENDING
             
         request = {
             "action": action,
             "symbol": self.symbol,
-            "volume": self.lot_size,
+            "volume": lot_to_use,
             "type": order_type,
             "price": price,
             "sl": sl,
