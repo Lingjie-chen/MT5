@@ -2964,96 +2964,96 @@ class SymbolTrader:
                     # Qwen 信号转换
                     qw_action = strategy.get('action', 'neutral').lower()
                         
-                    final_signal = "neutral"
-                    if qw_action in ['buy', 'add_buy']:
-                        final_signal = "buy"
-                    elif qw_action in ['sell', 'add_sell']:
-                        final_signal = "sell"
-                    elif qw_action in ['limit_buy', 'buy_limit']:
-                        final_signal = "limit_buy"
-                    elif qw_action in ['limit_sell', 'sell_limit']:
-                        final_signal = "limit_sell"
-                    elif qw_action in ['stop_buy', 'buy_stop']:
-                        final_signal = "stop_buy"
-                    elif qw_action in ['stop_sell', 'sell_stop']:
-                        final_signal = "stop_sell"
-                    elif qw_action in ['close_buy', 'close_sell', 'close']:
-                        final_signal = "close"
-                    elif qw_action == 'hold':
-                        final_signal = "hold"
-                    elif qw_action == 'grid_start':
-                        final_signal = "grid_start"
-                    qw_signal = final_signal
-                    # Reason
-                    reason = strategy.get('strategy_rationale', 'Qwen Decision') # Use rationale if available
-                    if reason == 'Qwen Decision':
-                            reason = strategy.get('reason', 'Qwen Decision')
+                        final_signal = "neutral"
+                        if qw_action in ['buy', 'add_buy']:
+                            final_signal = "buy"
+                        elif qw_action in ['sell', 'add_sell']:
+                            final_signal = "sell"
+                        elif qw_action in ['limit_buy', 'buy_limit']:
+                            final_signal = "limit_buy"
+                        elif qw_action in ['limit_sell', 'sell_limit']:
+                            final_signal = "limit_sell"
+                        elif qw_action in ['stop_buy', 'buy_stop']:
+                            final_signal = "stop_buy"
+                        elif qw_action in ['stop_sell', 'sell_stop']:
+                            final_signal = "stop_sell"
+                        elif qw_action in ['close_buy', 'close_sell', 'close']:
+                            final_signal = "close"
+                        elif qw_action == 'hold':
+                            final_signal = "hold"
+                        elif qw_action == 'grid_start':
+                            final_signal = "grid_start"
+                        qw_signal = final_signal
+                        # Reason
+                        reason = strategy.get('strategy_rationale', 'Qwen Decision') # Use rationale if available
+                        if reason == 'Qwen Decision':
+                             reason = strategy.get('reason', 'Qwen Decision')
 
-                    # 3. 智能平仓信号处理
-                    if qw_action == 'close' and final_signal != 'close':
-                        final_signal = 'close'
-                        reason = f"[Smart Exit] Qwen Profit Taking: {reason}"
+                        # 3. 智能平仓信号处理
+                        if qw_action == 'close' and final_signal != 'close':
+                            final_signal = 'close'
+                            reason = f"[Smart Exit] Qwen Profit Taking: {reason}"
 
-                    qw_signal = final_signal if final_signal not in ['hold', 'close'] else 'neutral'
-                    
-                    # 计算置信度 (简化版，仅参考 Qwen 和 Tech 一致性)
-                    matching_count = 0
-                    valid_tech_count = 0
-                    tech_signals_list = [
-                        crt_result['signal'], adv_signal, smc_result['signal'],
-                        mtf_result['signal'], ifvg_result['signal'], rvgi_cci_result['signal']
-                    ]
-                    
-                    for sig in tech_signals_list:
-                        if sig != 'neutral':
-                            valid_tech_count += 1
-                            if sig == final_signal:
-                                matching_count += 1
-                    
-                    strength = 70 # Base for Qwen
-                    if valid_tech_count > 0:
-                        strength += (matching_count / valid_tech_count) * 30
+                        qw_signal = final_signal if final_signal not in ['hold', 'close'] else 'neutral'
                         
-                    # 构建所有信号字典
-                    all_signals = {
-                        "qwen": qw_signal,
-                        "crt": crt_result['signal'],
-                        "advanced_tech": adv_signal,
-                        "smc": smc_result['signal'],
-                        "mtf": mtf_result['signal'],
-                        "ifvg": ifvg_result['signal'],
-                        "rvgi_cci": rvgi_cci_result['signal']
-                    }
-                    
-                    # Combine Signals (Using HybridOptimizer just for weighting record)
-                    # We don't use the result of optimizer, just for logging weights if needed
-                    # Or skip if optimizer is not critical here.
-                    weights = {}
-                    if hasattr(self, 'optimizer'):
-                            _, _, weights = self.optimizer.combine_signals(all_signals)
+                        # 计算置信度 (简化版，仅参考 Qwen 和 Tech 一致性)
+                        matching_count = 0
+                        valid_tech_count = 0
+                        tech_signals_list = [
+                            crt_result['signal'], adv_signal, smc_result['signal'],
+                            mtf_result['signal'], ifvg_result['signal'], rvgi_cci_result['signal']
+                        ]
+                        
+                        for sig in tech_signals_list:
+                            if sig != 'neutral':
+                                valid_tech_count += 1
+                                if sig == final_signal:
+                                    matching_count += 1
+                        
+                        strength = 70 # Base for Qwen
+                        if valid_tech_count > 0:
+                            strength += (matching_count / valid_tech_count) * 30
+                            
+                        # 构建所有信号字典
+                        all_signals = {
+                            "qwen": qw_signal,
+                            "crt": crt_result['signal'],
+                            "advanced_tech": adv_signal,
+                            "smc": smc_result['signal'],
+                            "mtf": mtf_result['signal'],
+                            "ifvg": ifvg_result['signal'],
+                            "rvgi_cci": rvgi_cci_result['signal']
+                        }
+                        
+                        # Combine Signals (Using HybridOptimizer just for weighting record)
+                        # We don't use the result of optimizer, just for logging weights if needed
+                        # Or skip if optimizer is not critical here.
+                        weights = {}
+                        if hasattr(self, 'optimizer'):
+                             _, _, weights = self.optimizer.combine_signals(all_signals)
 
-                    logger.info(f"AI 最终决定 (Qwen): {final_signal.upper()} (强度: {strength:.1f})")
-                    logger.info(f"Reason: {reason}")
-                    
-                    # 保存分析结果到DB
-                    logger.info("正在保存信号到数据库...")
-                    try:
-                        self.db_manager.save_signal(self.symbol, self.tf_name, {
-                            "final_signal": final_signal,
-                            "strength": strength,
-                            "details": {
-                                "source": "Qwen_Solo",
-                                "reason": reason,
-                                "weights": weights,
-                                "signals": all_signals,
-                                "market_state": strategy.get('market_state', 'N/A'),
-                                "crt_reason": crt_result['reason'],
-                                "mtf_reason": mtf_result['reason'],
-                            }
-                        })
-                        logger.info("信号保存成功")
-                    except Exception as e:
-                        logger.error(f"保存信号到数据库失败: {e}")
+                        logger.info(f"AI 最终决定 (Qwen): {final_signal.upper()} (强度: {strength:.1f})")
+                        logger.info(f"Reason: {reason}")
+                        
+                        # 保存分析结果到DB
+                        logger.info("正在保存信号到数据库...")
+                        try:
+                            self.db_manager.save_signal(self.symbol, self.tf_name, {
+                                "final_signal": final_signal,
+                                "strength": strength,
+                                "details": {
+                                    "source": "Qwen_Solo",
+                                    "reason": reason,
+                                    "weights": weights,
+                                    "signals": all_signals,
+                                    "market_state": strategy.get('market_state', 'N/A'),
+                                    "crt_reason": crt_result['reason'],
+                                    "mtf_reason": mtf_result['reason'],
+                                }
+                            })
+                            logger.info("信号保存成功")
+                        except Exception as e:
+                            logger.error(f"保存信号到数据库失败: {e}")
                         
                         self.latest_strategy = strategy
                         self.latest_signal = final_signal
