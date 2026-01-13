@@ -151,6 +151,10 @@ class SymbolTrader:
         self.last_bar_time = 0
         self.last_analysis_time = 0
         self.last_llm_time = 0 
+        self.llm_interval_seconds = 15
+        self.action_cooldown_seconds = 10
+        self.last_executed_signature = None
+        self.last_execution_time = 0
         self.signal_history = []
         self.last_optimization_time = 0
         self.last_realtime_save = 0
@@ -1538,6 +1542,31 @@ class SymbolTrader:
             text = text.replace(char, f'\\{char}')
         return text
 
+    def _make_trade_signature(self, strategy, final_signal):
+        strategy = strategy or {}
+        entry = strategy.get("entry_conditions") or {}
+        exit_conds = strategy.get("exit_conditions") or {}
+        action = str(strategy.get("action", final_signal) or "").lower()
+        limit_price = entry.get("limit_price", entry.get("entry_price"))
+        sl = exit_conds.get("sl_price")
+        tp = exit_conds.get("tp_price")
+        lot = strategy.get("position_size")
+        def norm(x):
+            if x is None:
+                return None
+            try:
+                return round(float(x), 6)
+            except Exception:
+                return str(x)
+        return (
+            str(final_signal).lower(),
+            action,
+            norm(limit_price),
+            norm(sl),
+            norm(tp),
+            norm(lot),
+        )
+
     def send_trade_intent(self, intent_type, action, trade_type=None, price=None, sl=None, tp=None, volume=None, extra=None):
         intent_type = self.escape_markdown(intent_type or "TRADE")
         action = self.escape_markdown(action or "UNKNOWN")
@@ -2761,9 +2790,13 @@ class SymbolTrader:
                 
                 # ---------------------------------------------------
 
-                if is_new_bar:
-                    logger.info(f"New Bar Detected: {datetime.fromtimestamp(current_bar_time)}")
-                    self.last_bar_time = current_bar_time
+                should_run_llm = is_new_bar or (time.time() - self.last_llm_time >= self.llm_interval_seconds)
+                if should_run_llm:
+                    if is_new_bar:
+                        logger.info(f"New Bar Detected: {datetime.fromtimestamp(current_bar_time)}")
+                        self.last_bar_time = current_bar_time
+                    else:
+                        logger.info(f"[{self.symbol}] LLM Interval Triggered ({self.llm_interval_seconds}s)")
                     
                     # 2. 获取数据并计算指标
                     # M15 Data (Main)
@@ -2786,7 +2819,7 @@ class SymbolTrader:
                     if df_h4 is None: df_h4 = pd.DataFrame()
                     
                     # 保存数据到 DB
-                    if not df.empty:
+                    if is_new_bar and not df.empty:
                         self.db_manager.save_market_data(df, self.symbol, self.tf_name)
                         logger.info(f"新K线生成 ({datetime.fromtimestamp(current_bar_time)}), 执行策略分析...")
                     
