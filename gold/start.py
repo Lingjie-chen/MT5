@@ -79,6 +79,7 @@ class HybridOptimizer:
             "crt": 0.8,
             "smc": 1.1,
             "rvgi_cci": 0.6
+            "obv": 0.6 # type: ignore
         }
         self.history = []
 
@@ -2822,6 +2823,14 @@ class SymbolTrader:
                             final_signal = "buy"
                         elif qw_action in ['sell', 'add_sell']:
                             final_signal = "sell"
+                        elif qw_action in ['limit_buy', 'buy_limit']:
+                            final_signal = "limit_buy"
+                        elif qw_action in ['limit_sell', 'sell_limit']:
+                            final_signal = "limit_sell"
+                        elif qw_action in ['stop_buy', 'buy_stop']:
+                            final_signal = "stop_buy"
+                        elif qw_action in ['stop_sell', 'sell_stop']:
+                            final_signal = "stop_sell"
                         elif qw_action in ['close_buy', 'close_sell', 'close']:
                             final_signal = "close"
                         elif qw_action == 'hold':
