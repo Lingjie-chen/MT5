@@ -589,7 +589,6 @@ class QwenClient:
     - exit_conditions: dict ("sl_price": float, "tp_price": float)
     - position_management: dict ("martingale_multiplier": float, "grid_step_logic": str, "recommended_grid_step_pips": float, "grid_level_tp_pips": list[float], "dynamic_basket_tp": float)
     - position_size: float
-    - leverage: int
     - signal_strength: int
     - parameter_updates: dict
     - strategy_rationale: str (中文)
@@ -1187,7 +1186,6 @@ class QwenClient:
             "exit_conditions": {"sl_atr_multiplier": 1.5, "tp_atr_multiplier": 2.5},
             "position_management": {"martingale_multiplier": 1.5, "grid_step_logic": "ATR_based"},
             "position_size": 0.01,
-            "leverage": 1,
             "signal_strength": 50,
             "parameter_updates": {},
             "strategy_rationale": reason,
@@ -1210,7 +1208,6 @@ class QwenClient:
             'exit_conditions': {"sl_atr_multiplier": 1.5, "tp_atr_multiplier": 2.5},
             'position_management': {"martingale_multiplier": 1.5, "grid_step_logic": "ATR_based"},
             'position_size': 0.01,
-            'leverage': 1,
             'signal_strength': 50,
             'parameter_updates': {},
             'strategy_rationale': "默认决策",
