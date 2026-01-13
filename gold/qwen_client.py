@@ -618,35 +618,22 @@ class QwenClient:
     - telegram_report: str (专为Telegram优化的Markdown简报，包含关键分析结论、入场参数、SMC结构摘要。请使用emoji图标增强可读性，例如 ⚡️ � � � � 等)
         """
         
-    def _generate_strategy_prompt(self, symbol, core_strategy, martingale_configs, market_specs, common_rules, balance, equity):
-        """Assemble the full prompt"""
-        
         # Select Configs
         martingale_config = martingale_configs.get(symbol, martingale_configs["DEFAULT"])
         market_spec = market_specs.get(symbol, market_specs["DEFAULT"])
         
         # Assemble
-        full_prompt = f"""
-        {core_strategy}
-        
-        **账户状态**:
-        - 余额: {balance} USD
-        - 净值: {equity} USD
-        - 风险偏好: 每次交易风险 0.5% - 5% (动态调整)
-        
-        {martingale_config}
-        {market_spec}
-        {common_rules}
-        
+        full_prompt = f"{core_strategy}\n{martingale_config}\n{market_spec}\n{common_rules}"
+         """
         **资金管理指令**:
         1. **仓位计算**: 必须基于当前 `equity` 动态计算 `position_size`。
         2. **网格交易**: 若执行 `grid_start`，请在 `grid_params` 中明确每一层网格的 `size` (手数)。建议首单较小，后续按倍率增加。
-        """
+         """
         return full_prompt
 
     
     def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "Qwen/Qwen3-VL-235B-A22B-Thinking"):
-        """
+        ""
         初始化Qwen客户端
         
         Args:
@@ -675,7 +662,7 @@ class QwenClient:
         }
 
     def _get_api_key(self, symbol: str = "DEFAULT") -> str:
-        """根据品种获取对应的 API Key"""
+        """根据品种获取对应的 API Key""
         key = self.api_keys.get(symbol.upper(), self.api_keys["DEFAULT"])
         # Fallback logic if symbol contains substrings
         if "ETH" in symbol.upper(): key = self.api_keys["ETHUSD"]
