@@ -1466,8 +1466,8 @@ class SymbolTrader:
                 # 如果默认代理失败，尝试另一种常见端口 (v2rayN)
                 try:
                     alt_proxies = {
-                        "http": "http://127.0.0.1:7987",
-                        "https": "http://127.0.0.1:7987"
+                        "http": "http://127.0.0.1:10809",
+                        "https": "http://127.0.0.1:10809"
                     }
                     response = requests.post(url, json=data, timeout=15, proxies=alt_proxies)
                 except:
