@@ -2520,9 +2520,26 @@ class SymbolTrader:
                     current_price = df.iloc[-1]
                     latest_features = df_features.iloc[-1].to_dict()
                     
+                    # 获取账户信息
+                    acc_info = mt5.account_info()
+                    account_data = {
+                        "balance": 0.0,
+                        "equity": 0.0,
+                        "margin_free": 0.0,
+                        "available_balance": 0.0
+                    }
+                    if acc_info:
+                        account_data = {
+                            "balance": float(acc_info.balance),
+                            "equity": float(acc_info.equity),
+                            "margin_free": float(acc_info.margin_free),
+                            "available_balance": float(acc_info.margin_free) # Approximation
+                        }
+
                     market_snapshot = {
                         "symbol": self.symbol,
                         "timeframe": self.tf_name,
+                        "account_info": account_data,
                         "prices": {
                             "open": float(current_price['open']),
                             "high": float(current_price['high']),
@@ -2533,6 +2550,7 @@ class SymbolTrader:
                         "indicators": {
                             "rsi": float(latest_features.get('rsi', 50)),
                             "atr": float(latest_features.get('atr', 0)),
+                            "obv": float(latest_features.get('obv', 0)),
                             "ema_fast": float(latest_features.get('ema_fast', 0)),
                             "ema_slow": float(latest_features.get('ema_slow', 0)),
                             "volatility": float(latest_features.get('volatility', 0))
@@ -2961,11 +2979,19 @@ class SymbolTrader:
                             
                             # Calculate Lot (Martingale aware if needed, or handled in execute_trade)
                             # Here we use calculate_dynamic_lot for initial lot
-                            suggested_lot = self.calculate_dynamic_lot(
-                                strength, 
-                                market_context={'smc': smc_result}, 
-                                ai_signals=all_signals
-                            )
+                            
+                            # 优先使用 Qwen 计算的动态手数
+                            qwen_lot = strategy.get('position_size')
+                            if qwen_lot and isinstance(qwen_lot, (int, float)) and qwen_lot > 0:
+                                suggested_lot = float(qwen_lot)
+                                logger.info(f"使用 Qwen 动态计算手数: {suggested_lot}")
+                            else:
+                                # 回退到本地计算
+                                suggested_lot = self.calculate_dynamic_lot(
+                                    strength, 
+                                    market_context={'smc': smc_result}, 
+                                    ai_signals=all_signals
+                                )
                             
                             self.execute_trade(
                                 final_signal, 
