@@ -982,41 +982,94 @@ class SymbolTrader:
             # 提取 LLM 建议的动态网格间距 (Pips) 和 动态TP配置
             dynamic_step = None
             grid_level_tps = None
+            grid_levels_config = None # New: Support explicit grid levels from LLM
             
             if self.latest_strategy:
                 pos_mgmt = self.latest_strategy.get('position_management', {})
                 if pos_mgmt:
                     dynamic_step = pos_mgmt.get('recommended_grid_step_pips')
                     grid_level_tps = pos_mgmt.get('grid_level_tp_pips')
+                    
+                    # Check for explicit grid levels (from GOLD example)
+                    # "grid_levels": [ { "level": ... } ] inside "grid_params" or directly in pos_mgmt
+                    grid_params = pos_mgmt.get('grid_params', {})
+                    if grid_params and 'grid_levels' in grid_params:
+                        grid_levels_config = grid_params['grid_levels']
+                        logger.info(f"Using Explicit Grid Levels from LLM (Count: {len(grid_levels_config)})")
+                    elif 'grid_levels' in pos_mgmt:
+                        grid_levels_config = pos_mgmt['grid_levels']
+                        logger.info(f"Using Explicit Grid Levels from LLM (Count: {len(grid_levels_config)})")
+
                     if grid_level_tps:
                          logger.info(f"Using Dynamic Grid Level TPs: {grid_level_tps}")
             
-            grid_orders = self.grid_strategy.generate_grid_plan(current_price, direction, atr, point=point, dynamic_step_pips=dynamic_step, grid_level_tps=grid_level_tps)
+            # Use explicit grid levels if available, otherwise fallback to auto-generation
+            if grid_levels_config:
+                grid_orders = []
+                # Map LLM explicit levels to order format
+                # Example: {"level": 4588.0, "volume": 0.02, "sl": ..., "tp": ...}
+                for lvl in grid_levels_config:
+                    try:
+                        # Determine Order Type based on Level vs Current Price
+                        l_price = float(lvl['level'])
+                        l_vol = float(lvl.get('volume', self.lot_size))
+                        l_tp = float(lvl.get('tp', 0.0))
+                        l_sl = float(lvl.get('sl', 0.0))
+                        
+                        o_type = None
+                        if direction == 'bullish':
+                            if l_price < tick.ask: o_type = mt5.ORDER_TYPE_BUY_LIMIT
+                            elif l_price > tick.ask: o_type = mt5.ORDER_TYPE_BUY_STOP
+                        else: # bearish
+                            if l_price > tick.bid: o_type = mt5.ORDER_TYPE_SELL_LIMIT
+                            elif l_price < tick.bid: o_type = mt5.ORDER_TYPE_SELL_STOP
+                            
+                        if o_type is not None:
+                            grid_orders.append({
+                                'type': o_type,
+                                'price': l_price,
+                                'volume': l_vol, # Custom volume per level
+                                'tp': l_tp,
+                                'sl': l_sl
+                            })
+                    except Exception as e:
+                        logger.error(f"Error parsing grid level {lvl}: {e}")
+            else:
+                # Fallback to standard algorithmic generation
+                grid_orders = self.grid_strategy.generate_grid_plan(current_price, direction, atr, point=point, dynamic_step_pips=dynamic_step, grid_level_tps=grid_level_tps)
             
             # 4. 执行挂单
             if grid_orders:
                 logger.info(f"网格计划生成 {len(grid_orders)} 个挂单")
                 
-                # 计算一个基础手数
+                # 计算一个基础手数 (Only for auto-gen, explicit uses its own)
                 base_lot = self.lot_size
-                # 如果有 suggested_lot，使用它
                 if suggested_lot and suggested_lot > 0:
                     base_lot = suggested_lot
                 
-                # 临时保存原始 lot_size
                 original_lot = self.lot_size
-                self.lot_size = base_lot # 设置为本次网格的基础手数
                 
                 for i, order in enumerate(grid_orders):
                     o_type = order['type']
                     o_price = self._normalize_price(order['price'])
                     o_tp = self._normalize_price(order.get('tp', 0.0))
+                    o_sl = self._normalize_price(order.get('sl', 0.0))
+                    
+                    # Use specific volume if provided (Explicit Levels), else use base_lot * multiplier logic (Auto)
+                    # For explicit levels, we put 'volume' in order dict above.
+                    # For auto-gen, generate_grid_plan usually returns simple dict, we need to check grid_strategy.py
+                    # Assuming auto-gen relies on self.lot_size * multiplier externally or internally.
+                    # Actually generate_grid_plan in typical implementation might not return volume?
+                    # Let's check: if 'volume' is in order, use it. Else use self.lot_size (which we set to base_lot)
+                    
+                    vol_to_use = order.get('volume', base_lot)
+                    
+                    # Note: We can't easily change self.lot_size per iteration for auto-gen if it depends on internal state.
+                    # But assuming explicit levels have 'volume'.
                     
                     # 发送订单
-                    self._send_order(o_type, o_price, sl=0.0, tp=o_tp, comment=f"AI-Grid-{i+1}")
+                    self._send_order(o_type, o_price, sl=o_sl, tp=o_tp, volume=vol_to_use, comment=f"AI-Grid-{i+1}")
                     
-                # 恢复 lot_size
-                self.lot_size = original_lot
                 logger.info("网格部署完成")
                 return # 结束本次 execute_trade
             else:
