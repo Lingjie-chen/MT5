@@ -847,6 +847,11 @@ class QwenClient:
                 # Qwen 动态计算仓位
                 # trading_decision["position_size"] = 0.01 
                 
+                # 处理嵌套的 decision 结构
+                if 'decision' in trading_decision:
+                    logger.info("Detect nested 'decision' key, flattening structure...")
+                    trading_decision.update(trading_decision.pop('decision'))
+
                 # 确保必要的字段存在
                 required_fields = ['action', 'entry_conditions', 'exit_conditions', 'strategy_rationale', 'telegram_report']
                 for field in required_fields:
