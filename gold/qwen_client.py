@@ -822,7 +822,18 @@ class QwenClient:
         if response and "choices" in response:
             try:
                 content = response["choices"][0]["message"]["content"]
-                return json.loads(content)
+                
+                # 清理 Markdown 代码块标记
+                cleaned_content = content.strip()
+                if cleaned_content.startswith("```json"):
+                    cleaned_content = cleaned_content[7:]
+                elif cleaned_content.startswith("```"):
+                    cleaned_content = cleaned_content[3:]
+                if cleaned_content.endswith("```"):
+                    cleaned_content = cleaned_content[:-3]
+                cleaned_content = cleaned_content.strip()
+                
+                return json.loads(cleaned_content)
             except json.JSONDecodeError as e:
                 logger.error(f"解析市场结构分析失败: {e}")
         
@@ -909,7 +920,18 @@ class QwenClient:
             response = self._call_api("chat/completions", payload, symbol=symbol)
             if response and "choices" in response:
                 content = response["choices"][0]["message"]["content"]
-                return json.loads(content)
+                
+                # 清理 Markdown 代码块标记
+                cleaned_content = content.strip()
+                if cleaned_content.startswith("```json"):
+                    cleaned_content = cleaned_content[7:]
+                elif cleaned_content.startswith("```"):
+                    cleaned_content = cleaned_content[3:]
+                if cleaned_content.endswith("```"):
+                    cleaned_content = cleaned_content[:-3]
+                cleaned_content = cleaned_content.strip()
+                
+                return json.loads(cleaned_content)
         except Exception as e:
             logger.error(f"Sentiment analysis failed: {e}")
         
@@ -1105,8 +1127,20 @@ class QwenClient:
                 message_content = response["choices"][0]["message"]["content"]
                 logger.info(f"收到模型响应: {message_content}")
                 
+                # 清理 Markdown 代码块标记
+                cleaned_content = message_content.strip()
+                if cleaned_content.startswith("```json"):
+                    cleaned_content = cleaned_content[7:]
+                elif cleaned_content.startswith("```"):
+                    cleaned_content = cleaned_content[3:]
+                
+                if cleaned_content.endswith("```"):
+                    cleaned_content = cleaned_content[:-3]
+                
+                cleaned_content = cleaned_content.strip()
+                
                 # 解析响应
-                trading_decision = json.loads(message_content)
+                trading_decision = json.loads(cleaned_content)
                 
                 if not isinstance(trading_decision, dict):
                     logger.error(f"Qwen响应格式错误 (期望dict, 实际{type(trading_decision)}): {trading_decision}")

@@ -1438,42 +1438,63 @@ class SymbolTrader:
             "parse_mode": "Markdown"
         }
         
-        # 配置代理 (针对中国大陆用户)
-        # 如果您使用 Clash，通常端口是 7890
-        # 如果您使用 v2rayN，通常端口是 10809
-        proxies = {
-            "http": "http://127.0.0.1:7897",
-            "https": "http://127.0.0.1:7897"
-        }
+        # 配置代理
+        proxies = None
+        # 1. 优先使用环境变量
+        env_http = os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
+        env_https = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+        
+        if env_http or env_https:
+            proxies = {
+                "http": env_http,
+                "https": env_https
+            }
+        else:
+            # 2. 回退到常见的本地代理端口
+            proxies = {
+                "http": "http://127.0.0.1:7897",
+                "https": "http://127.0.0.1:7897"
+            }
         
         try:
             import requests
             response = None
             try:
                 # 尝试通过代理发送
-                response = requests.post(url, json=data, timeout=10, proxies=proxies)
+                response = requests.post(url, json=data, timeout=15, proxies=proxies)
             except (requests.exceptions.ProxyError, requests.exceptions.ConnectionError):
-                # 如果代理失败，尝试直连 (虽然可能也会被墙)
-                logger.warning("代理连接失败，尝试直连 Telegram...")
-                response = requests.post(url, json=data, timeout=10)
+                # 如果默认代理失败，尝试另一种常见端口 (v2rayN)
+                try:
+                    alt_proxies = {
+                        "http": "http://127.0.0.1:10809",
+                        "https": "http://127.0.0.1:10809"
+                    }
+                    response = requests.post(url, json=data, timeout=15, proxies=alt_proxies)
+                except:
+                    # 最后尝试直连
+                    logger.warning("代理连接失败，尝试直连 Telegram...")
+                    response = requests.post(url, json=data, timeout=15)
                 
             if response.status_code != 200:
                 logger.error(f"Telegram 发送失败 (Markdown): {response.text}")
                 
                 # 自动降级重试：如果是因为 Markdown 解析失败，移除格式后重发
-                if "can't parse entities" in response.text:
+                if "can't parse entities" in response.text or "Bad Request" in response.text:
                     logger.warning("检测到 Markdown 语法错误，尝试以纯文本发送...")
                     if "parse_mode" in data:
                         del data["parse_mode"]
                     
                     try:
-                        response = requests.post(url, json=data, timeout=10, proxies=proxies)
-                    except:
-                        response = requests.post(url, json=data, timeout=10)
+                        if proxies:
+                            response = requests.post(url, json=data, timeout=15, proxies=proxies)
+                        else:
+                            response = requests.post(url, json=data, timeout=15)
+                    except Exception as e2:
+                        logger.error(f"纯文本重试连接失败: {e2}")
                         
-                    if response.status_code == 200:
+                    if response and response.status_code == 200:
                         logger.info("纯文本消息发送成功")
-                    else:
+                    elif response:
                         logger.error(f"Telegram 纯文本发送也失败: {response.text}")
 
         except Exception as e:
