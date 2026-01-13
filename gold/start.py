@@ -971,6 +971,12 @@ class SymbolTrader:
                 if pos_mgmt:
                     dynamic_step = pos_mgmt.get('recommended_grid_step_pips')
                     grid_level_tps = pos_mgmt.get('grid_level_tp_pips')
+                    basket_tp = pos_mgmt.get('dynamic_basket_tp')
+                    
+                    logger.info(f"🤖 AI 网格配置解析:\n"
+                                f"- 动态步长: {dynamic_step} pips\n"
+                                f"- 动态 Basket TP: ${basket_tp}\n"
+                                f"- 分层止盈配置: {grid_level_tps}")
                     
                     # Check for explicit grid levels (from GOLD example)
                     # "grid_levels": [ { "level": ... } ] inside "grid_params" or directly in pos_mgmt
