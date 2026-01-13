@@ -78,7 +78,7 @@ class HybridOptimizer:
             "qwen": 1.5, 
             "crt": 0.8,
             "smc": 1.1,
-            "rvgi_cci": 0.6
+            "rvgi_cci": 0.6,
             "obv": 0.6 # type: ignore
         }
         self.history = []
