@@ -830,7 +830,7 @@ class SymbolTrader:
         elif llm_action in ['sell', 'add_sell']:
             trade_type = "sell"
             price = tick.bid
-        elif llm_action in ['limit_buy', 'buy_limit']:
+        elif llm_action in ['limit_buy', 'buy_limit', 'stop_buy', 'buy_stop']:
             # 检查现有 Limit 挂单
             current_orders = mt5.orders_get(symbol=self.symbol)
             if current_orders:
@@ -881,7 +881,7 @@ class SymbolTrader:
                          logger.warning(f"Limit Buy Price {price} too close to Ask {tick.ask}, adjusting to {max_price}")
                          price = self._normalize_price(max_price)
                 
-        elif llm_action in ['limit_sell', 'sell_limit']:
+        elif llm_action in ['limit_sell', 'sell_limit', 'stop_sell', 'sell_stop']:
             # 检查现有 Limit 挂单
             current_orders = mt5.orders_get(symbol=self.symbol)
             if current_orders:
