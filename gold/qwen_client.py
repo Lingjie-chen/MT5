@@ -650,8 +650,8 @@ class QwenClient:
         
         # 2. 上一次分析结果上下文
         if previous_analysis:
-            prev_action = previous_analysis.get('action', 'unknown')
-            prev_rationale = previous_analysis.get('strategy_rationale', 'none')
+            prev_action = str(previous_analysis.get('action', 'unknown'))
+            prev_rationale = str(previous_analysis.get('strategy_rationale', 'none'))
             prev_context = f"\\n上一次分析结果 (Previous Analysis):\\n- Action: {prev_action}\\n- Rationale: {prev_rationale[:200]}...\\n"
         else:
             prev_context = "\\n上一次分析结果: 无 (首次运行)\\n"
