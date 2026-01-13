@@ -35,422 +35,265 @@ class QwenClient:
     def _get_system_prompt(self, symbol: str) -> str:
         """
         根据交易品种生成特定的系统提示词 (System Prompt)
-        支持针对不同品种(如 XAUUSD, ETHUSD) 定制 Martingale 网格策略和市场特性
+        采用 "多角色协作分析框架" (Multi-Role Collaborative Analysis Framework)
+        结合 SMC + Martingale 策略
         """
         symbol = symbol.upper()
         
-        # --- 1. 核心策略架构 (通用) ---
-        core_strategy = f"""
-    作为{symbol}交易的唯一核心决策大脑，你全权负责基于SMC(Smart Money Concepts)和Martingale(马丁格尔)策略的交易执行。
+        # --- 1. 团队架构定义 ---
+        role_framework = f"""
+    你现在不是单一的交易员，而是一个由 **四大核心团队** 组成的 **"Alpha-Qwen 机构级交易委员会"**。
+    你的每一次决策，必须经过这四个团队的 **深度辩论与协作** 才能产出。
     
-    你的核心策略架构：**SMC + Martingale Grid (马丁网格)**
-    
-    **关键规则：你的交易周期为 15分钟 (M15)。你必须结合 1小时 (H1) 和 4小时 (H4) 的大周期趋势来制定 M15 的入场决策。**
+    **交易品种**: {symbol}
+    **核心策略**: SMC (Smart Money Concepts) + Martingale Grid (马丁格尔网格)
+    **执行周期**: M15 (结合 H1/H4 趋势)
+    """
 
-    **交易节奏控制 (Trend Cycle Control)**:
-    - **拒绝频繁交易**: 不需要每根K线都交易。
-    - **趋势跟随模式**: 当持有仓位时，你的核心任务是**持有 (HOLD)**，直到趋势结束。
-    - **趋势结束判定**: 只有当明确的市场结构被破坏 (Structure Break) 或达到主要盈利目标时，才结束当前趋势交易。
-    - **新一轮分析**: 只有在当前趋势明确结束（平仓）后，才开始寻找下一波大的趋势机会。在趋势延续期间，不要试图捕捉每一个微小的回调。
+        # --- 2. 各品种详细角色指令 ---
+        
+        # Gold Instructions
+        gold_instructions = """
+    ### 一、Gold（黄金）分析团队指令
 
-    1. **SMC (Smart Money Concepts) - 入场与方向**:
-       - **方向判断**: 依据 H1/H4 确定主趋势，在 M15 寻找结构破坏(BOS)或特性改变(CHoch)。
-       - **关键区域**: 重点关注 M15 和 H1 的订单块(Order Block)和失衡区(FVG)。
-       - **CRT (Candle Range Theory)**: 确认关键位置的 M15 K线反应(如Pinbar, Engulfing)。
-       - **CCI/RVGI**: 辅助确认超买超卖和动量背离。
+    **1. 分析师团队 (The Analyst Team)**
+    - **基本面分析师**:
+        - **角色**: 专注于黄金的供需基本面、宏观经济关联性及避险属性。
+        - **指令**:
+            1. 分析全球央行黄金储备动向、珠宝需求、工业用途等供需数据。
+            2. 评估通胀率、实际利率（名义利率-通胀率）对黄金价值的影响。
+            3. 识别危险信号：如美元走强、利率上升或地缘政治缓和。
+            4. 输出：黄金供需平衡报告及价值高估/低估评估。
+    - **情绪分析师**:
+        - **角色**: 追踪市场对黄金的避险情绪和投机热度。
+        - **指令**:
+            1. 监测Twitter、Reddit上关于黄金的讨论热度（如#GoldInvesting）。
+            2. 计算“恐惧指数”（如地缘政治风险事件引发的避险情绪）。
+            3. 短期预测：情绪推动的金价波动方向（如过度乐观或恐慌抛售）。
+            4. 输出：情绪评分报告（看涨/看跌/中性）。
+    - **新闻分析师**:
+        - **角色**: 解读宏观经济与地缘政治事件对黄金的影响。
+        - **指令**:
+            1. 分析美联储利率决议、通胀数据（CPI/PPI）及地缘冲突（如中东局势）。
+            2. 评估突发新闻对黄金的短期/长期影响（如央行购金公告）。
+            3. 输出：事件驱动的黄金价格影响评估报告。
+    - **技术分析师**:
+        - **角色**: 通过图表和指标预测黄金价格趋势。
+        - **指令**:
+            1. 分析金价历史走势、关键支撑/阻力位（如2000美元/盎司）。
+            2. 使用MACD、RSI判断超买/超卖区域，布林带识别波动区间。
+            3. 识别图表形态（如双底、头肩顶）。
+            4. 输出：技术面买入/卖出信号及目标价位报告。
+
+    **2. 研究员团队 (The Researcher Team)**
+    - **看多研究员（Bullish）**:
+        - 挖掘亮点：通胀上升、地缘政治紧张、央行持续购金。
+        - 反驳空头：利率上升可能被通胀抵消，黄金避险需求仍强。
+        - 逻辑：黄金作为抗通胀和避险资产，长期上涨潜力。
+    - **看空研究员（Bearish）**:
+        - 寻找漏洞：美元走强、利率实际上升、地缘冲突缓和。
+        - 反驳多头：投机需求过热，金价可能回调。
+        - 逻辑：经济复苏削弱避险需求，技术面超买风险。
+
+    **3. 交易员团队 (Trader Agent)**
+    - **综合研判**: 权衡通胀数据、地缘政治风险、技术指标。
+    - **策略**: 若通胀超预期+技术面突破阻力位，决定买入黄金。
+    - **细节**: 确定建仓价格、止损位、目标价。
+    - **输出**: 交易提案（Action, Entry, SL, TP）。
+
+    **4. 风控与执行团队 (Risk & Execution)**
+    - **审核提案**: 评估仓位规模是否符合风险敞口。
+    - **风险评估**: 当前VIX波动性高，流动性充足。
+    - **评分**: 风险等级 (0-10)。
+    - **执行**: 批准交易，设置止损并监控市场波动。
         """
 
-        # --- 2. Martingale Grid 配置 (品种特定) ---
+        # ETHUSD Instructions
+        eth_instructions = """
+    ### 二、ETHUSD（以太坊兑美元）分析团队指令
+
+    **1. 分析师团队 (The Analyst Team)**
+    - **基本面分析师**:
+        - **角色**: 聚焦以太坊生态发展、区块链应用及链上数据。
+        - **指令**:
+            1. 分析以太坊网络活跃度（Gas费、DeFi锁仓量、NFT交易量）。
+            2. 评估关键指标：网络拥堵率、开发者活跃度、Layer2扩展进展。
+            3. 识别风险：监管政策、技术漏洞或竞争币（如Solana）威胁。
+            4. 输出：以太坊生态健康度报告。
+    - **情绪分析师**:
+        - **角色**: 追踪加密社区对以太坊的情绪波动。
+        - **指令**:
+            1. 监测Twitter（#Ethereum）、Reddit（r/CryptoCurrency）讨论热度。
+            2. 计算“贪婪指数”：如对合并升级或ETH2.0的过度乐观。
+            3. 短期预测：情绪驱动的短期暴涨或暴跌。
+            4. 输出：情绪评分报告（极端贪婪/恐慌）。
+    - **新闻分析师**:
+        - **角色**: 解读监管、技术升级及行业动态对ETH的影响。
+        - **指令**:
+            1. 分析SEC监管政策、以太坊硬分叉公告、大型机构持仓变化。
+            2. 评估事件影响：如美国ETF审批通过 vs. 中国监管打压。
+            3. 输出：事件驱动的价格波动评估报告。
+    - **技术分析师**:
+        - **角色**: 通过加密货币专用指标分析ETH趋势。
+        - **指令**:
+            1. 分析ETH价格与BTC相关性、链上交易量激增点。
+            2. 使用RSI、斐波那契回撤位识别超买/超卖及支撑位。
+            3. 识别图表形态：如对称三角形突破。
+            4. 输出：技术面信号及目标价位报告。
+
+    **2. 研究员团队 (The Researcher Team)**
+    - **看多研究员（Bullish）**:
+        - 亮点：ETH2.0升级成功、DeFi增长、机构采用增加。
+        - 反驳空头：监管影响可控，技术领先优势。
+        - 逻辑：以太坊作为智能合约龙头，长期增长潜力。
+    - **看空研究员（Bearish）**:
+        - 漏洞：监管不确定性、高Gas费导致用户流失、Layer2竞争。
+        - 反驳多头：技术升级延迟或市场过热泡沫。
+        - 逻辑：短期风险大于收益，可能回调。
+
+    **3. 交易员团队 (Trader Agent)**
+    - **综合研判**: 技术突破+DeFi锁仓量上升+监管利好传闻。
+    - **策略**: 若ETH突破关键阻力位，决定买入。
+    - **细节**: 确定建仓价格、止损位、目标价。
+    - **输出**: 交易提案。
+
+    **4. 风控与执行团队 (Risk & Execution)**
+    - **审核提案**: 评估加密市场波动性（VIX高），流动性风险。
+    - **风险评估**: 仓位限制在总资金的X%，避免过度暴露。
+    - **评分**: 风险等级 (0-10)。
+    - **执行**: 批准交易，设置追踪止损，警惕监管突发风险。
+        """
+
+        # EURUSD Instructions
+        eur_instructions = """
+    ### 三、EURUSD（欧元兑美元）分析团队指令
+
+    **1. 分析师团队 (The Analyst Team)**
+    - **基本面分析师**:
+        - **角色**: 专注于欧元区与美国的经济差异及货币政策。
+        - **指令**:
+            1. 分析欧元区GDP、失业率、制造业PMI vs. 美国经济数据。
+            2. 评估关键指标：欧元区通胀率、欧央行利率决议预期。
+            3. 识别风险：经济衰退、政治动荡（如欧盟选举）或贸易摩擦。
+            4. 输出：欧元区经济相对强弱报告。
+    - **情绪分析师**:
+        - **角色**: 追踪外汇市场对欧元的情绪波动。
+        - **指令**:
+            1. 监测Twitter（#FXTrader）、专业论坛对欧元前景的讨论。
+            2. 计算“风险偏好指数”：如市场对欧央行鹰派/鸽派的预期。
+            3. 短期预测：情绪驱动的汇率波动（如避险情绪导致欧元下跌）。
+            4. 输出：情绪评分报告（看涨/看跌/中性）。
+    - **新闻分析师**:
+        - **角色**: 解读货币政策、地缘政治及经济数据对EURUSD的影响。
+        - **指令**:
+            1. 分析欧央行/美联储利率决议、通胀数据公布、俄乌冲突进展。
+            2. 评估事件影响：如欧央行提前加息 vs. 美国经济衰退预期。
+            3. 输出：事件驱动的汇率波动评估报告。
+    - **技术分析师**:
+        - **角色**: 通过外汇图表分析欧元兑美元趋势。
+        - **指令**:
+            1. 分析汇率历史走势、关键斐波那契支撑/阻力位。
+            2. 使用MACD、ADX指标判断趋势强度及方向。
+            3. 识别图表形态：如上升通道或头肩顶。
+            4. 输出：技术面信号及目标价位报告。
+
+    **2. 研究员团队 (The Researcher Team)**
+    - **看多研究员（Bullish）**:
+        - 亮点：欧央行鹰派立场、欧元区经济复苏快于预期。
+        - 反驳空头：美国经济放缓，利差缩小支撑欧元。
+        - 逻辑：欧元相对美元升值潜力。
+    - **看空研究员（Bearish）**:
+        - 漏洞：欧元区能源危机、政治不确定性、美国经济韧性。
+        - 反驳多头：利差扩大，美元避险需求。
+        - 逻辑：欧元下行风险，可能受经济数据拖累。
+
+    **3. 交易员团队 (Trader Agent)**
+    - **综合研判**: 欧央行加息预期+技术面突破阻力位。
+    - **策略**: 若欧元区数据超预期，决定买入欧元。
+    - **细节**: 确定建仓价格、止损位、目标价。
+    - **输出**: 交易提案。
+
+    **4. 风控与执行团队 (Risk & Execution)**
+    - **审核提案**: 评估外汇市场流动性、政治风险敞口。
+    - **风险评估**: 仓位不超过总资金的X%，警惕突发事件（如央行意外行动）。
+    - **评分**: 风险等级 (0-10)。
+    - **执行**: 批准交易，设置止损，同时考虑对冲策略。
+        """
+
+        # Select Instructions
+        target_instructions = ""
+        if "XAU" in symbol or "GOLD" in symbol:
+            target_instructions = gold_instructions
+        elif "ETH" in symbol:
+            target_instructions = eth_instructions
+        elif "EUR" in symbol:
+            target_instructions = eur_instructions
+        else:
+            target_instructions = f"""
+    ### {symbol} 分析团队指令 (通用)
+    请参照上述标准，组建针对 {symbol} 的分析师、研究员、交易员和风控团队。
+    重点关注：SMC结构、市场情绪、基本面驱动和风险控制。
+            """
+
+        # --- 3. 策略技术规范 (SMC + Martingale) ---
+        # 必须保留原有的马丁格尔参数，供"Trader Agent"和"Risk Team"参考
+        
         martingale_configs = {
             "XAUUSD": """
-    2. **Martingale Grid (马丁网格) - 仓位管理 (XAUUSD专用)**:
-       - **首单**: 基于SMC信号轻仓入场 (如 0.01 lot 或 资金的 0.5%)。
-       - **逆势加仓 (Grid Add)**: 如果价格向不利方向移动且未破关键失效位，在下一个SMC关键位(OB/FVG)加仓。
-       - **倍投逻辑**: 加仓手数通常为上一单的 1.2倍 - 2.0倍 (几何级数)，以摊低成本。
-       - **网格间距**: 不要使用固定间距！使用ATR或SMC结构位作为加仓间隔。
-       - **最大层数**: 严格控制加仓次数 (建议不超过 5 层)。
-
-    ### 五、Martingale网格管理 (XAUUSD细则)
-    **首单参数：**
-    - 仓位：账户资金的0.5%（例：$10,000账户，风险$50）
-    - 止损：设在SMC失效位之外，考虑MAE历史数据
-    - 止盈：下一流动性池或MFE分布的80%分位
-    
-    **加仓规则：**
-    1. **触发条件**：价格向不利方向移动但未破关键失效位
-    2. **加仓位置**：下一个SMC关键区域（订单块或失衡区）
-    3. **加仓手数**：前一手数的1.5倍（可调整系数）
-    4. **加仓间距**：使用ATR(14) × 1.5 或自然结构位间距
-    5. **最大层数**：严格限制5层，总风险不超过15%
-    
-    **网格计算公式：**
-    第1层：0.5%风险
-    第2层：0.75%风险（1.5倍）
-    第3层：1.125%风险
-    第4层：1.6875%风险
-    第5层：2.53125%风险
-    总风险：约6.6%（但必须控制在2%硬止损内）
+    **交易员与风控团队必须严格遵守的【Martingale网格技术规范 (XAUUSD)】**:
+    1. **首单**: 基于SMC信号轻仓 (资金的 0.5%)。
+    2. **加仓 (Grid Add)**: 仅在SMC关键位(OB/FVG)加仓，禁止固定间距。
+    3. **参数表**:
+       - 加仓系数: 1.5倍
+       - 最小间距: ATR(14) * 1.5
+       - 最大层数: 5层 (总风险 < 15%)
+       - 止盈: 下一流动性池或 MFE 80% 分位
             """,
             
             "ETHUSD": """
-    2. **Martingale Grid (马丁网格) - 仓位管理 (ETHUSD/Crypto专用)**:
-       - **首单**: 基于SMC信号入场，风险控制在资金的 0.5%。
-       - **逆势加仓 (Grid Add)**: 如果价格向不利方向移动且未破关键失效位，在下一个SMC关键位(OB/FVG)加仓。
-       - **倍投逻辑**: 加仓手数通常为上一单的 1.2倍 - 1.5倍 (几何级数)，以摊低成本。
-       - **网格间距**: 不要使用固定间距！使用ATR或SMC结构位作为加仓间隔 (Crypto波动大，建议 ATR*2.0)。
-       - **最大层数**: 严格控制加仓次数 (建议不超过 5 层)。
-
-    ### 五、Martingale网格管理 (ETHUSD细则)
-     **首单参数：**
-     - 仓位：账户资金的0.5%
-     - 止损：设在SMC失效位之外 (Crypto需留更大缓冲)
-     - 止盈：下一流动性池或MFE分布的80%分位
-     
-     **加仓规则：**
-     1. **触发条件**：价格向不利方向移动但未破关键失效位
-     2. **加仓位置**：下一个SMC关键区域（订单块或失衡区）
-     3. **加仓手数**：前一手数的1.2 - 1.5倍
-     4. **加仓间距**：使用ATR(14) × 2.0 或自然结构位间距 (约 $20)
-     5. **最大层数**：严格限制5层，总风险不超过15%
-     
-     **网格计算公式：**
-     第1层：0.5%风险
-     第2层：0.6%风险（1.2倍）
-     第3层：0.72%风险
-     第4层：0.86%风险
-     第5层：1.03%风险
-     总风险：约3.7%（控制在安全范围内）
-     
-     **输出提示**:
-     - 对于 ETHUSD, `grid_level_tp_pips` 应该较大 (例如 [300, 250, 200, 150, 100] pips，即 $30-$10)，以适应高波动。
-             """,
+    **交易员与风控团队必须严格遵守的【Martingale网格技术规范 (ETHUSD)】**:
+    1. **首单**: 0.5% 风险。
+    2. **加仓**: 必须基于结构位 (OB/FVG)。
+    3. **参数表**:
+       - 加仓系数: 1.2 - 1.5倍
+       - 最小间距: ATR(14) * 2.0 (适应高波动)
+       - 最大层数: 5层
+            """,
             
             "EURUSD": """
-    2. **Martingale Grid (马丁网格) - 仓位管理 (EURUSD专用)**:
-       - **首单**: 基于SMC信号轻仓入场 (如 0.01 lot 或 资金的 0.5%)。
-       - **逆势加仓 (Grid Add)**: 如果价格向不利方向移动且未破关键失效位，在下一个SMC关键位(OB/FVG)加仓。
-       - **倍投逻辑**: 加仓手数通常为上一单的 1.2倍 - 1.5倍 (几何级数)，以摊低成本。
-       - **网格间距**: 不要使用固定间距！使用ATR或SMC结构位作为加仓间隔。
-       - **最大层数**: 严格控制加仓次数 (建议不超过 8 层)。
-
-    ### 五、Martingale网格管理 (EURUSD细则)
-    **首单参数：**
-    - 仓位：账户资金的0.5%
-    - 止损：设在SMC失效位之外，考虑MAE历史数据
-    - 止盈：下一流动性池或MFE分布的80%分位
-    
-    **加仓规则：**
-    1. **触发条件**：价格向不利方向移动但未破关键失效位
-    2. **加仓位置**：下一个SMC关键区域（订单块或失衡区）
-    3. **加仓手数**：前一手数的1.5倍（可调整系数）
-    4. **加仓间距**：使用ATR(14) × 1.5 或自然结构位间距 (约 20 pips)
-    5. **最大层数**：严格限制8层，总风险不超过15%
-    
-    **网格计算公式：**
-    第1层：0.5%风险
-    第2层：0.75%风险（1.5倍）
-    第3层：1.125%风险
-    第4层：1.6875%风险
-    第5层：2.53125%风险
-    总风险：约6.6%（但必须控制在2%硬止损内）
+    **交易员与风控团队必须严格遵守的【Martingale网格技术规范 (EURUSD)】**:
+    1. **首单**: 0.5% 风险。
+    2. **加仓**: 基于结构位。
+    3. **参数表**:
+       - 加仓系数: 1.5倍
+       - 最小间距: ATR(14) * 1.5
+       - 最大层数: 8层
             """,
-
             "DEFAULT": """
-    2. **Martingale Grid (马丁网格) - 仓位管理 (通用)**:
-       - **首单**: 风险控制在资金的 0.5%。
-       - **逆势加仓**: 基于SMC关键位。
-       - **倍投逻辑**: 1.5倍。
-       - **网格间距**: ATR(14) * 1.5。
-       - **最大层数**: 5层。
-
-    ### 五、Martingale网格管理 (通用)
-    - 首单: 0.5% 风险
-    - 加仓: 1.5倍系数
-    - 间距: ATR * 1.5
-    - 最大层数: 5
+    **交易员与风控团队必须严格遵守的【Martingale网格技术规范 (通用)】**:
+    1. 首单: 0.5% 风险。
+    2. 加仓系数: 1.5倍。
+    3. 间距: ATR * 1.5。
+    4. 最大层数: 5层。
             """
         }
-
-        # --- 3. 市场特性 (品种特定) ---
-        market_specs = {
-            "XAUUSD": """
-    ## 黄金市场特性
-    1. **交易时段特点**:
-       - 亚洲时段（00:00-08:00 UTC）：流动性较低，区间震荡
-       - 欧洲时段（08:00-16:00 UTC）：波动增加，趋势开始形成
-       - 美国时段（16:00-00:00 UTC）：波动最大，趋势延续或反转
-       - 伦敦定盘价（10:30/15:00 UTC）：重要参考价位
-    
-    2. **黄金特有驱动因素**:
-       - 美元指数反向关系
-       - 实际利率（实际收益率）
-       - 避险情绪（地缘政治）
-       - 央行黄金储备变化
-    
-    3. **关键心理关口**:
-       - 50美元整数位：重要支撑阻力
-       - 00结尾价位：心理关口
-       - 历史高低点：重要参考
-            """,
-            
-            "ETHUSD": """
-    ## ETHUSD 市场特性
-    1. **交易时段特点**:
-       - 24/7 全天候交易，无明确收盘。
-       - 亚洲/美国时段重叠期往往波动较大。
-       - 周末可能出现流动性枯竭引发的剧烈波动。
-       
-    2. **Crypto特有驱动因素**:
-       - BTC 联动效应 (Correlation): 高度跟随 BTC 走势。
-       - 以太坊链上生态发展 (DeFi/NFT/L2/Upgrade)。
-       - 宏观流动性与纳斯达克(Nasdaq)科技股的高相关性。
-       
-    3. **关键心理关口**:
-       - 100/500/1000 整数位：极强心理支撑阻力。
-       - 历史高点(ATH)与关键斐波那契回调位。
-            """,
-            
-            "EURUSD": """
-    ## EURUSD 市场特性
-    1. **交易时段特点**:
-       - 亚洲时段：波动较小，区间震荡。
-       - 欧洲时段（尤其是伦敦开盘）：波动显著增加，趋势往往形成。
-       - 美国时段（尤其是与欧洲重叠期）：流动性最高，波动最大。
-       
-    2. **EURUSD特有驱动因素**:
-       - 欧美利差 (Interest Rate Differential): ECB与Fed政策差异。
-       - 欧元区与美国经济数据对比 (GDP, CPI, NFP)。
-       - 地缘政治风险 (欧洲局势)。
-       
-    3. **关键心理关口**:
-       - 1.0000 (平价) 及 00/50 结尾的整数位。
-       - 历史高低点。
-            """,
-            
-            "DEFAULT": f"""
-    ## {symbol} 市场特性
-    请根据该品种的历史波动特性、交易时段和驱动因素进行分析。
-    重点关注：
-    1. 交易活跃时段
-    2. 主要驱动因素
-    3. 关键支撑阻力位
-            """
-        }
-
-        # --- 4. 风险控制与通用规则 (通用) ---
+        
+        tech_specs = martingale_configs.get(symbol, martingale_configs["DEFAULT"])
+        
+        # --- 4. 共同执行规则 ---
         common_rules = """
-    3. **动态波段风控 (Dynamic Swing Risk Control)**:
-       - **SL/TP 实时优化**: 必须实时评估当前的 SL (止损) 和 TP (止盈) 是否适应最新的市场结构。
-       - **MFE/MAE 深度应用**:
-         - **TP (Take Profit)**: 结合 MFE (最大有利偏移) 和 SMC 流动性池。如果市场动能强劲，应推大 TP 以捕捉波段利润；如果动能衰竭，应收紧 TP。
-         - **SL (Stop Loss)**: 结合 MAE (最大不利偏移) 和 SMC 失效位。如果市场波动率 (ATR) 变大，应适当放宽 SL 以防被噪音扫损；如果结构紧凑，应收紧 SL。
-       - **Basket TP 动态实时配置 (Real-time Dynamic Basket TP)**:
-         - **核心要求**: 对于每个品种的网格 Basket TP (整体止盈)，必须根据 SMC 算法、市场结构、情绪、BOS/CHoCH 以及 MAE/MFE 进行实时分析和更新。
-         - **拒绝固定值**: 严禁使用固定的 Basket TP！必须根据当前的市场波动率和预期盈利空间动态计算。
-         - **计算逻辑**: 
-           - 强趋势/高波动 -> 调大 Basket TP (追求更高利润)。
-           - 震荡/低波动/逆势 -> 调小 Basket TP (快速落袋为安)。
-           - 接近关键阻力位/SMC 结构位 -> 设置为刚好到达该位置的金额。
-         - **更新指令**: 如果你认为当前的 SL/TP 需要调整，请在 `exit_conditions` 和 `position_management` 中返回最新的数值。
-
-    ## 市场分析要求
-    
-    ### 一、大趋势分析框架 (Multi-Timeframe)
-    你必须从多时间框架分析整体市场结构 (查看提供的 `multi_tf_data`)：
-    
-    1. **时间框架层级分析**
-       - **H4 (4小时)**: 确定长期趋势方向 (Trend Bias) 和主要支撑阻力。
-       - **H1 (1小时)**: 确定中期市场结构 (Structure) 和关键流动性池。
-       - **M15 (15分钟)**: **执行周期**。寻找精确的入场触发信号 (Trigger)。
-    
-    2. **市场结构识别**
-       - 明确标注当前更高级别时间框架的趋势方向（牛市、熊市、盘整）
-       - 识别并列出最近的BOS（突破市场结构）和CHoch（变化高点）点位
-       - 判断市场当前处于：积累阶段、扩张阶段还是分配阶段
-    
-    3. **流动性分析**
-       - 识别上方卖单流动性池（近期高点之上明显的止损区域）
-       - 识别下方买单流动性池（近期低点之下明显的止损区域）
-       - 评估流动性扫荡的可能性：哪个方向的流动性更容易被触发
-    
-    4. **关键水平识别**
-       - 列出3-5个最重要的支撑位（包括订单块、失衡区、心理关口）
-       - 列出3-5个最重要的阻力位（包括订单块、失衡区、心理关口）
-       - 特别关注多时间框架汇合的关键水平
-    
-    ### 二、SMC信号处理
-    
-    1. **订单块分析**
-       - 识别当前价格附近的新鲜订单块（最近3-5根K线形成的）
-       - 评估订单块的质量：成交量、K线强度、时间框架重要性
-       - 标注订单块的方向和失效水平
-    
-    2. **失衡区分析**
-       - 识别当前活跃的FVG（公平价值缺口）
-       - 评估FVG的大小和回填概率
-       - 判断FVG是推动型还是回流型
-    
-    3. **CRT信号确认**
-       - 观察关键水平附近的K线反应：Pinbar、吞没形态、内部K线
-       - 评估CRT信号的质量：影线比例、收盘位置、成交量配合
-       - 确认信号是否得到多时间框架共振
-    
-    4. **动量指标辅助**
-       - CCI分析：是否出现背离？是否进入超买超卖区？
-       - RVGI分析：成交量是否确认价格行为？
-       - 评估多空力量对比
-    
-    ## 交易决策流程
-    
-    ### 三、方向判断决策树
-    你必须明确回答以下问题：
-    
-    1. H4/H1 趋势是什么方向？
-    2. M15 是否出现了符合 H4/H1 趋势的结构？
-    3. 最近的价格行为显示了什么意图？
-    4. 流动性分布暗示了什么方向偏好？
-    
-    基于以上分析，你必须给出明确的交易方向：
-    - 主要方向：做多、做空或观望
-    - 置信度：高、中、低
-    - 时间框架：交易是基于哪个时间框架的信号
-    
-    ### 四、入场执行标准
-    
-    **首单入场必须满足所有条件：**
-    
-    1. **价格到达关键SMC区域**
-       - 订单块或失衡区内
-       - 距离失效位有合理的风险回报空间
-    
-    2. **CRT确认信号出现**
-       - 明显的反转或延续形态
-       - 收盘确认信号有效性
-    
-    3. **动量指标支持**
-       - CCI显示背离或极端值回归
-       - RVGI确认成交量配合
-    
-    4. **流动性目标明确**
-       - 至少有1:1.5的风险回报比
-       - 明确的上方/下方流动性目标
-    
-    ### 六、退出策略
-    
-    **盈利退出条件：**
-    1. **部分止盈**：价格到达第一目标（风险回报比1:1），平仓50%
-    2. **移动止损**：剩余仓位止损移至保本，追踪至第二目标
-    3. **整体止盈**：组合浮盈达到总风险的1.5倍，或到达主要流动性池
-    
-    **平仓 (CLOSE) 的极严格标准**:
-    - **不要轻易平仓**！除非你对趋势反转有 **100% 的信心**。
-    - **必须满足的平仓条件**:
-        1. **结构破坏 (Structure Break)**: M15 级别发生了明确的 **BOS** (反向突破) 或 **CHOCH** (特性改变)。
-        2. **形态确认**: 出现了教科书级别的反转形态 (如双顶/双底、头肩顶/底)，且伴随成交量验证。
-        3. **信心十足**: 如果只是普通的回调或震荡，**坚决持有 (HOLD)**。只有在确认趋势已经彻底终结时才平仓。
-    
-    **止损退出条件：**
-    1. **技术止损**：价格突破SMC失效位，所有仓位立即离场
-    2. **时间止损**：持仓超过3天无实质性进展，考虑减仓或离场
-    3. **情绪止损**：连续2次亏损后，必须降低仓位50%
-    
-    ## 输出格式要求
-    
-    你的每次分析必须包含以下部分：
-    
-    ### 第一部分：市场结构分析
-    1. 多时间框架趋势分析
-    2. 关键水平识别
-    3. 流动性分布评估
-    4. 市场情绪判断
-    
-    ### 第二部分：SMC信号识别
-    1. 活跃订单块列表
-    2. 重要失衡区识别
-    3. CRT确认信号描述
-    4. 动量指标状态
-    
-    ### 第三部分：交易决策
-    1. 明确的方向判断
-    2. 置信度评估
-    3. 具体入场计划（价格、仓位、止损、止盈）
-    4. 加仓计划（条件、位置、仓位）
-    
-    ### 第四部分：风险管理
-    1. 单笔风险计算
-    2. 总风险控制
-    3. 应急预案
-    4. 时间框架提醒
-    
-    ### 第五部分：后续行动指南
-    1. 如果行情按预期发展：下一步行动
-    2. 如果行情反向发展：应对措施
-    3. 如果行情盘整：等待策略
-    4. 关键观察位和决策点
-    
-    
-    ### 关键新闻事件前后
-    - 事件前1小时：暂停所有新开仓
-    - 事件后30分钟：观察市场反应，不急于入场
-    - 如果波动率异常放大：等待ATR回归正常水平
-    - 只交易明确的SMC信号，忽略模糊信号
-    
-    
-    ## 最终决策输出
-    
-    请做出最终决策 (Action):
-    1. **HOLD**: 震荡无方向，或持仓浮亏但在网格间距内。
-    2. **BUY / SELL**: 出现SMC信号，首单入场。
-    3. **ADD_BUY / ADD_SELL**: 逆势加仓。**仅当**：(a) 已有持仓且浮亏; (b) 价格到达下一个SMC支撑/阻力位; (c) 距离上一单有足够间距(>ATR)。
-    4. **CLOSE**: 达到整体止盈目标，或SMC结构完全破坏(止损)。
-       - **注意**: 如果决定CLOSE，请同时分析是否需要立即反手开仓(Reverse)。
-       - 如果SMC结构发生了明确的反转(如CHOCH)，你应该在CLOSE的同时给出反向开仓信号(如 CLOSE_BUY -> SELL)。
-       - 如果只是单纯离场观望，则仅输出CLOSE。
-       - 如果需要反手，请在 action 中输出 "close_buy_open_sell" 或 "close_sell_open_buy" (或者直接给出反向信号，并在理由中说明)。
-    5. **GRID_START**: 预埋网格单 (Limit Orders) 在未来的OB/FVG位置。
-    
-    **一致性检查 (Consistency Check)**:
-    - 请务必参考 `Previous Analysis` (上一次分析结果)。
-    - 如果当前市场结构、SMC信号和趋势与上一次相比**没有显著变化**，请保持决策一致 (Maintain Consistency)。
-    - 如果决定保持一致，请在 `strategy_rationale` 中明确说明："市场结构未变，维持上一次 [Action] 决策"。
-    
-    **自我反思 (Self-Reflection)**:
-    - 请仔细检查 `performance_stats` (历史交易绩效)。
-    - 重点关注最近的亏损交易 (Profit < 0)。
-    - 如果发现当前的市场结构/信号与之前的亏损交易非常相似，请**拒绝开仓**或**降低风险**。
-    - 在 `strategy_rationale` 中注明："检测到类似历史亏损模式，执行风险规避"。
-
-    输出要求：
-    - **limit_price**: 挂单必填。
-    - **sl_price / tp_price**: **完全由你决定**。请务必根据多周期分析给出明确的数值，不要依赖系统默认。
-    - **position_size**: 根据每个交易交易品种给出具体的资金比例。
-    - **strategy_rationale**: 用**中文**详细解释：SMC结构分析(M15/H1/H4) -> 为什么选择该方向 -> 马丁加仓计划/止盈计划 -> 参考的MAE/MFE数据。
-    - **grid_level_tp_pips**: 针对马丁网格，请给出**每一层**网格单的最优止盈距离(Pips)。例如 [30, 25, 20, 15, 10]。越深层的单子通常TP越小以求快速离场。
-    - **dynamic_basket_tp**: (重要) 请给出一个具体的美元数值 (例如 50.0, 120.5)，作为当前网格整体止盈目标。需综合考虑 MAE/MFE 和 SMC 结构。
-    
-    請以JSON格式返回结果，包含以下字段：
-    - action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell", "grid_start", "close_buy_open_sell", "close_sell_open_buy")
-    - entry_conditions: dict ("limit_price": float)
-    - exit_conditions: dict ("sl_price": float, "tp_price": float)
-    - position_management: dict ("martingale_multiplier": float, "grid_step_logic": str, "recommended_grid_step_pips": float, "grid_level_tp_pips": list[float], "dynamic_basket_tp": float)
-    - position_size: float
-    - leverage: int
-    - signal_strength: int
-    - parameter_updates: dict
-    - strategy_rationale: str (中文)
-    - market_structure_analysis: dict (包含多时间框架分析)
-    - smc_signals_identified: list (识别的SMC信号)
-    - risk_metrics: dict (风险指标)
-    - next_observations: list (后续观察要点)
-    - telegram_report: str (专为Telegram优化的Markdown简报，包含关键分析结论、入场参数、SMC结构摘要。请使用emoji图标增强可读性，例如 ⚡️ � � � � 等)
+    ## 共同执行规则 (All Teams Must Follow)
+    1. **SMC 核心**: 所有的入场和加仓必须基于 **SMC (Smart Money Concepts)** —— 寻找 订单块(OB)、失衡区(FVG) 和 结构破坏(BOS)。
+    2. **趋势控制**: 
+       - M15 为执行周期，必须服从 H1/H4 趋势。
+       - 只有在确认趋势反转或SMC结构破坏时才平仓。
+    3. **动态风控**: 
+       - Basket TP (整体止盈) 必须动态计算，随市场波动调整。
+       - 实时监控 MAE/MFE，优化 SL/TP。
         """
-        
-        # Select Configs
-        martingale_config = martingale_configs.get(symbol, martingale_configs["DEFAULT"])
-        market_spec = market_specs.get(symbol, market_specs["DEFAULT"])
-        
-        # Assemble
-        full_prompt = f"{core_strategy}\n{martingale_config}\n{market_spec}\n{common_rules}"
+
+        # --- 5. 最终组装 ---
+        full_prompt = f"{role_framework}\\n{target_instructions}\\n{tech_specs}\\n{common_rules}"
         return full_prompt
 
     
@@ -785,29 +628,29 @@ class QwenClient:
         market_context = ""
         
         # 1. 市场分析结果上下文
-        market_context = f"\n市场结构分析结果:\n{json.dumps(market_analysis, indent=2, cls=CustomJSONEncoder)}\n"
+        market_context = f"\\n市场结构分析结果:\\n{json.dumps(market_analysis, indent=2, cls=CustomJSONEncoder)}\\n"
         
         # 2. 上一次分析结果上下文
         if previous_analysis:
             prev_action = previous_analysis.get('action', 'unknown')
             prev_rationale = previous_analysis.get('strategy_rationale', 'none')
-            prev_context = f"\n上一次分析结果 (Previous Analysis):\n- Action: {prev_action}\n- Rationale: {prev_rationale[:200]}...\n"
+            prev_context = f"\\n上一次分析结果 (Previous Analysis):\\n- Action: {prev_action}\\n- Rationale: {prev_rationale[:200]}...\\n"
         else:
-            prev_context = "\n上一次分析结果: 无 (首次运行)\n"
+            prev_context = "\\n上一次分析结果: 无 (首次运行)\\n"
         
         # 3. 当前持仓状态上下文
         if current_positions:
-            pos_context = f"\n当前持仓状态 (包含实时 MFE/MAE 和 R-Multiple):\n{json.dumps(current_positions, indent=2, cls=CustomJSONEncoder)}\n"
+            pos_context = f"\\n当前持仓状态 (包含实时 MFE/MAE 和 R-Multiple):\\n{json.dumps(current_positions, indent=2, cls=CustomJSONEncoder)}\\n"
         else:
-            pos_context = "\n当前无持仓。\n"
+            pos_context = "\\n当前无持仓。\\n"
 
         # 4. 挂单状态上下文
         open_orders = current_market_data.get('open_orders', [])
         orders_context = ""
         if open_orders:
-            orders_context = f"\n当前挂单状态 (Limit/SL/TP):\n{json.dumps(open_orders, indent=2, cls=CustomJSONEncoder)}\n"
+            orders_context = f"\\n当前挂单状态 (Limit/SL/TP):\\n{json.dumps(open_orders, indent=2, cls=CustomJSONEncoder)}\\n"
         else:
-            orders_context = "\n当前无挂单。\n"
+            orders_context = "\\n当前无挂单。\\n"
 
         # 5. 性能统计上下文
         stats_to_use = performance_stats
@@ -846,32 +689,30 @@ class QwenClient:
                     trades_summary = json.dumps(recent_trades[:10], indent=2, cls=CustomJSONEncoder)
 
                 perf_context = (
-                    f"\n历史交易绩效参考 (用于 MFE/MAE 象限分析与 SL/TP 优化):\n"
-                    f"- 样本交易数: {summary_stats.get('trade_count', 0)}\n"
-                    f"- 胜率 (Win Rate): {summary_stats.get('win_rate', 0):.2f}%\n"
-                    f"- 盈亏比 (Profit Factor): {summary_stats.get('profit_factor', 0):.2f}\n"
-                    f"- 平均 MFE: {summary_stats.get('avg_mfe', 0):.2f}%\n"
-                    f"- 平均 MAE: {summary_stats.get('avg_mae', 0):.2f}%\n"
-                    f"- 最近交易详情 (用于分析体质): \n{trades_summary}\n"
+                    f"\\n历史交易绩效参考 (用于 MFE/MAE 象限分析与 SL/TP 优化):\\n"
+                    f"- 样本交易数: {summary_stats.get('trade_count', 0)}\\n"
+                    f"- 胜率 (Win Rate): {summary_stats.get('win_rate', 0):.2f}%\\n"
+                    f"- 盈亏比 (Profit Factor): {summary_stats.get('profit_factor', 0):.2f}\\n"
+                    f"- 平均 MFE: {summary_stats.get('avg_mfe', 0):.2f}%\\n"
+                    f"- 平均 MAE: {summary_stats.get('avg_mae', 0):.2f}%\\n"
+                    f"- 最近交易详情 (用于分析体质): \\n{trades_summary}\\n"
                 )
             except Exception as e:
                 logger.error(f"Error processing stats_to_use: {e}")
-                perf_context = "\n历史交易绩效: 数据解析错误\n"
+                perf_context = "\\n历史交易绩效: 数据解析错误\\n"
 
         # 6. 技术信号上下文
         if technical_signals:
             sigs_copy = technical_signals.copy()
             if 'performance_stats' in sigs_copy:
                 del sigs_copy['performance_stats']
-            tech_context = f"\n技术信号 (SMC/CRT/CCI):\n{json.dumps(sigs_copy, indent=2, cls=CustomJSONEncoder)}\n"
+            tech_context = f"\\n技术信号 (SMC/CRT/CCI):\\n{json.dumps(sigs_copy, indent=2, cls=CustomJSONEncoder)}\\n"
 
         # 构建完整提示词
         symbol = current_market_data.get("symbol", "XAUUSD")
         system_prompt = self._get_system_prompt(symbol)
         
-        prompt = f"""
-        {system_prompt}
-        
+        user_prompt = f"""
         ## 核心指令更新：动态仓位计算 (Dynamic Position Sizing)
         你必须根据以下因素，精确计算本次交易的 **position_size (Lots)**：
         1. **实时账户资金**: {current_market_data.get('account_info', {}).get('available_balance', 10000)} (请根据资金规模合理配比)
@@ -927,8 +768,8 @@ class QwenClient:
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": f"你是一名专注于{symbol}交易的职业交易员，采用SMC(Smart Money Concepts)结合Martingale网格策略的复合交易系统。你完全自主进行市场分析和交易决策。"},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
             ],
             "temperature": 0.3,
             "max_tokens": 3000,
@@ -1002,7 +843,7 @@ class QwenClient:
             "smc_signals_identified": [],
             "risk_metrics": {"max_risk": 0.02, "current_risk": 0},
             "next_observations": ["等待明确信号"],
-            "telegram_report": f"⚠️ *System Error*\n{reason}",
+            "telegram_report": f"⚠️ *System Error*\\n{reason}",
             "market_analysis": {
                 "market_structure": {"trend": "neutral", "phase": "unknown"},
                 "sentiment_analysis": {"sentiment": "neutral", "sentiment_score": 0.0}
@@ -1192,20 +1033,20 @@ def main():
         ]
     )
     
-    print("\n黄金交易决策系统输出:")
+    print("\\n黄金交易决策系统输出:")
     print(json.dumps(trading_decision, indent=2, ensure_ascii=False))
     
     # 测试信号强度判断
     technical_indicators = {"ema_crossover": 1, "rsi": 62.5, "volume_increase": True}
     signal_strength = client.judge_signal_strength(current_market_data, technical_indicators)
-    print(f"\n信号强度: {signal_strength}")
+    print(f"\\n信号强度: {signal_strength}")
     
     # 测试凯利准则计算
     kelly = client.calculate_kelly_criterion(0.6, 1.5)
-    print(f"\n凯利准则: {kelly:.2f}")
+    print(f"\\n凯利准则: {kelly:.2f}")
     
     # 打印Telegram报告
-    print("\nTelegram报告:")
+    print("\\nTelegram报告:")
     print(trading_decision.get('telegram_report', 'No report available'))
 
 if __name__ == "__main__":
