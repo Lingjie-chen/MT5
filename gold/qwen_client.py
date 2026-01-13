@@ -33,7 +33,7 @@ class QwenClient:
     使用硅基流动API服务，遵循ValueCell的API调用模式
     """
     
-    def _get_system_prompt(self, symbol: str) -> str:
+    def _get_system_prompt(self, symbol: str, balance: float = 10000.0, equity: float = 10000.0) -> str:
         """
         根据交易品种生成特定的系统提示词 (System Prompt)
         支持针对不同品种(如 XAUUSD, ETHUSD) 定制 Martingale 网格策略和市场特性
@@ -43,6 +43,11 @@ class QwenClient:
         # --- 1. 核心策略架构 (通用) ---
         core_strategy = f"""
     作为{symbol}交易的唯一核心决策大脑，你全权负责基于SMC(Smart Money Concepts)和Martingale(马丁格尔)策略的交易执行。
+    
+    **账户实时状态**:
+    - 余额: {balance} USD
+    - 净值: {equity} USD
+    - 风险控制: 必须根据净值动态计算仓位。
     
     你的核心策略架构：**SMC + Martingale Grid (马丁网格)**
     
@@ -1058,7 +1063,7 @@ class QwenClient:
 
         # 构建完整提示词
         symbol = current_market_data.get("symbol", "XAUUSD")
-        system_prompt = self._get_system_prompt(symbol)
+        system_prompt = self._get_system_prompt(symbol, balance, equity)
         
         prompt = f"""
         {system_prompt}
