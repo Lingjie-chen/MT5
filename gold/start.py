@@ -1440,6 +1440,7 @@ class SymbolTrader:
         
         try:
             import requests
+            response = None
             try:
                 # 尝试通过代理发送
                 response = requests.post(url, json=data, timeout=10, proxies=proxies)
@@ -1449,7 +1450,24 @@ class SymbolTrader:
                 response = requests.post(url, json=data, timeout=10)
                 
             if response.status_code != 200:
-                logger.error(f"Telegram 发送失败: {response.text}")
+                logger.error(f"Telegram 发送失败 (Markdown): {response.text}")
+                
+                # 自动降级重试：如果是因为 Markdown 解析失败，移除格式后重发
+                if "can't parse entities" in response.text:
+                    logger.warning("检测到 Markdown 语法错误，尝试以纯文本发送...")
+                    if "parse_mode" in data:
+                        del data["parse_mode"]
+                    
+                    try:
+                        response = requests.post(url, json=data, timeout=10, proxies=proxies)
+                    except:
+                        response = requests.post(url, json=data, timeout=10)
+                        
+                    if response.status_code == 200:
+                        logger.info("纯文本消息发送成功")
+                    else:
+                        logger.error(f"Telegram 纯文本发送也失败: {response.text}")
+
         except Exception as e:
             logger.error(f"Telegram 发送异常: {e}")
 
