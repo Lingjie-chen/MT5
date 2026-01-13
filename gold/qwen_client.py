@@ -243,6 +243,18 @@ class QwenClient:
 
     **4. 风控与执行团队 (Risk & Execution)**
     - **审核提案**: 评估外汇市场流动性、政治风险敞口。
+    - **账户资金与仓位管理 (Account & Position Management)**:
+        - **实时资金**: 当前账户余额 {balance} USD，净值 {equity} USD。
+        - **仓位计算**: 
+            - 必须根据当前 `equity` 和 `risk_per_trade` (例如 1-2%) 动态计算 `position_size`。
+    **4. 风控与执行团队 (Risk & Execution)**
+    - **审核提案**: 评估外汇市场流动性、政治风险敞口。
+    - **账户资金与仓位管理 (Account & Position Management)**:
+        - **实时资金**: 当前账户余额 {balance} USD，净值 {equity} USD。
+        - **仓位计算**: 
+            - 必须根据当前 `equity` 和 `risk_per_trade` (例如 1-5%) 动态计算 `position_size`。
+            - 公式: `Lot = (Equity * Risk%) / (SL_Pips * Pip_Value)`. 
+            - 若使用网格策略，`position_size` 应为**首单手数**，后续挂单手数应在 `grid_params` 中明确列出。
     - **MAE/MFE 深度优化 (Finalizing SL/TP)**:
         1. **MAE 分析**: 外汇波动相对较小，利用 MAE 精确计算 "Intraday Drawdown" 极限，设置紧凑但安全的 SL。**必须基于此调整 SMC SL**。
         2. **MFE 分析**: 分析 "Intraday Gain" 峰值，优化波段策略，避免利润回吐。**必须基于此调整 SMC TP**。
@@ -600,12 +612,30 @@ class QwenClient:
     - telegram_report: str (专为Telegram优化的Markdown简报，包含关键分析结论、入场参数、SMC结构摘要。请使用emoji图标增强可读性，例如 ⚡️ � � � � 等)
         """
         
+    def _generate_strategy_prompt(self, symbol, core_strategy, martingale_configs, market_specs, common_rules, balance, equity):
+        """Assemble the full prompt"""
+        
         # Select Configs
         martingale_config = martingale_configs.get(symbol, martingale_configs["DEFAULT"])
         market_spec = market_specs.get(symbol, market_specs["DEFAULT"])
         
         # Assemble
-        full_prompt = f"{core_strategy}\n{martingale_config}\n{market_spec}\n{common_rules}"
+        full_prompt = f"""
+        {core_strategy}
+        
+        **账户状态**:
+        - 余额: {balance} USD
+        - 净值: {equity} USD
+        - 风险偏好: 每次交易风险 0.5% - 5% (动态调整)
+        
+        {martingale_config}
+        {market_spec}
+        {common_rules}
+        
+        **资金管理指令**:
+        1. **仓位计算**: 必须基于当前 `equity` 动态计算 `position_size`。
+        2. **网格交易**: 若执行 `grid_start`，请在 `grid_params` 中明确每一层网格的 `size` (手数)。建议首单较小，后续按倍率增加。
+        """
         return full_prompt
 
     
