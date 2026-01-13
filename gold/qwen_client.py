@@ -728,16 +728,35 @@ class QwenClient:
         system_prompt = self._get_system_prompt(symbol)
         
         user_prompt = f"""
-        ## 核心指令更新：动态仓位计算 (Dynamic Position Sizing)
-        你必须根据以下因素，精确计算本次交易的 **position_size (Lots)**：
-        1. **实时账户资金**: {current_market_data.get('account_info', {}).get('available_balance', 10000)} (请根据资金规模合理配比)
-        2. **风险偏好**: 单笔风险严格控制在 1% - 3% 之间。
-        3. **信号置信度 & 高级算法**: 
-        4. **市场情绪**: 结合 {market_analysis.get('sentiment_analysis', {}).get('sentiment', 'neutral')} 情绪调整。
-        5. **凯利公式**: 参考你的胜率预估。
-
-        **绝对不要**使用固定的 0.01 手！
-        请给出一个精确到小数点后两位的数字 (例如 0.15, 0.50, 1.20)，并在 `strategy_rationale` 中详细解释计算逻辑 (例如："基于2%风险和强SMC信号，计算得出...")。
+        ## 🔥 核心指令更新：全维度动态参数配置 (Real-time Dynamic Parameter Configuration)
+        
+        **你必须基于实时资金规模和全套高级算法 (SMC+OBV+MAE/MFE)，实时计算并配置以下所有参数：**
+        
+        **1. 实时资金上下文 (Capital Context)**:
+           - **可用资金**: ${current_market_data.get('account_info', {}).get('available_balance', 10000)}
+           - **风险承受力**: 单笔亏损限制在 1%-2% (根据信号强度动态调整)。
+        
+        **2. 交易参数动态配置 (Trading Params)**:
+           - **Position Size (手数)**: **严禁使用固定 0.01 手！** 请根据 `(可用资金 * 风险%) / (SL距离 * 点值)` 公式精确计算。
+             - *结合算法*: 若 SMC 信号强 (OB/FVG共振) + MAE 风险低 -> 适当增加仓位 (Max 2%)。
+             - *结合算法*: 若 趋势不明 + MFE 预期低 -> 降低仓位 (0.5%)。
+             - *参考*: 凯利公式建议比例。
+           - **Optimal SL/TP**: 必须基于前述的 MAE/MFE 深度优化结果，结合 SMC 失效位设定。
+        
+        **3. 网格参数动态配置 (Grid Params)**:
+           - **Grid Step (间距)**: **严禁固定间距！**
+             - *高波动 (ATR高/VIX高)* -> 扩大间距 (e.g., ATR * 2.0) 以防被噪音扫损。
+             - *强SMC结构支撑* -> 缩紧间距至关键结构位 (OB/FVG) 附近。
+           - **Multiplier (倍数)**: 
+             - *顺势网格* -> 降低倍数 (1.2-1.3) 以降低风险。
+             - *逆势SMC反转* -> 维持标准倍数 (1.5) 以快速回本。
+           - **Max Layers (层数)**: 根据资金规模动态设定 (资金越大，可承受层数越多，但建议不超过 5-8 层)。
+           - **Basket TP (整体止盈)**: 
+             - *计算公式*: `目标金额 = 波动率 * 总持仓量 * 动态系数`。
+             - *逻辑*: 必须确保在 SMC 阻力位前离场，且满足 MFE 优化目标。
+        
+        **输出要求**:
+        请在 JSON 的 `position_management` (含 grid_level_tp_pips, dynamic_basket_tp) 和 `entry_conditions` 中返回这些**精确计算后**的数值，并在 `strategy_rationale` 中详细解释计算过程 (例如："资金$10k, 风险1.5%, SL距离30pips -> 计算手数0.5; ATR高波动 -> 网格间距扩大至 350pips")。
 
         ## 当前交易上下文
         
