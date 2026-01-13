@@ -1012,7 +1012,7 @@ class SymbolTrader:
                     try:
                         # Determine Order Type based on Level vs Current Price
                         l_price = float(lvl['level'])
-                        l_vol = float(lvl.get('volume', self.lot_size))
+                        l_vol = float(lvl.get('volume', lvl.get('size', self.lot_size)))
                         l_tp = float(lvl.get('tp', 0.0))
                         l_sl = float(lvl.get('sl', 0.0))
                         
