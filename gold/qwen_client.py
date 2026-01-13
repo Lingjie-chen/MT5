@@ -797,6 +797,15 @@ class QwenClient:
         特别注意：请计算具体的仓位大小，并给出合理的止损止盈点位。
         
         决策要求：
+        1. Action 必须从 ['buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'grid_start', 'hold', 'close'] 中选择一个。
+           - 'buy' / 'sell': 市价单。
+           - 'limit_buy': 在当前价格下方挂单买入（回调买入）。
+           - 'limit_sell': 在当前价格上方挂单卖出（反弹卖出）。
+           - 'stop_buy': 在当前价格上方挂单买入（突破买入）。
+           - 'stop_sell': 在当前价格下方挂单卖出（突破卖出）。
+           - 'grid_start': 启动网格策略。
+        2. 如果选择 Limit/Stop 挂单，必须在 entry_conditions 中提供 'limit_price'。
+        3. 必须提供 'position_size'，不要使用默认值。
         1. 基于市场结构分析结果进行方向判断
         2. 结合SMC信号寻找最佳入场点
         3. **基于集合分析 (SMC + MAE/MFE) 计算并输出最优的 Take Profit (TP) 和 Stop Loss (SL)**
