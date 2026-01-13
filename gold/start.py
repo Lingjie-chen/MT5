@@ -312,7 +312,12 @@ class SymbolTrader:
         }
         
         result = mt5.order_send(request)
-        if result.retcode != mt5.TRADE_RETCODE_DONE:
+        success_retcodes = {mt5.TRADE_RETCODE_DONE}
+        try:
+            success_retcodes.add(getattr(mt5, 'TRADE_RETCODE_DONE_PARTIAL'))
+        except Exception:
+            success_retcodes.add(10010)
+        if result.retcode not in success_retcodes:
             logger.error(f"平仓失败 #{position.ticket}: {result.comment}")
             return False
         else:
@@ -751,8 +756,8 @@ class SymbolTrader:
                     self._send_order(
                         "buy" if is_buy_pos else "sell", 
                         tick.ask if is_buy_pos else tick.bid,
-                        explicit_sl,
-                        explicit_tp,
+                        explicit_sl or 0.0,
+                        explicit_tp or 0.0,
                         comment="AI: Add Position"
                     )
                     added_this_cycle = True # 标记本轮已加仓
@@ -802,6 +807,14 @@ class SymbolTrader:
         # 执行开仓/挂单
         trade_type = None
         price = 0.0
+        planned_entry_price = 0.0
+        if entry_params:
+            planned_entry_price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) or 0.0
+
+        if planned_entry_price and llm_action in ['buy', 'add_buy']:
+            llm_action = 'limit_buy'
+        elif planned_entry_price and llm_action in ['sell', 'add_sell']:
+            llm_action = 'limit_sell'
         
         # Mapping 'add_buy'/'add_sell' to normal buy/sell if no position exists
         # This handles cases where LLM says "add" but position was closed or didn't exist
@@ -1379,6 +1392,15 @@ class SymbolTrader:
         
         result = None
         success = False
+        success_retcodes = {mt5.TRADE_RETCODE_DONE}
+        try:
+            success_retcodes.add(getattr(mt5, 'TRADE_RETCODE_PLACED'))
+        except Exception:
+            success_retcodes.add(10008)
+        try:
+            success_retcodes.add(getattr(mt5, 'TRADE_RETCODE_DONE_PARTIAL'))
+        except Exception:
+            success_retcodes.add(10010)
         
         for mode in filling_modes:
             request['type_filling'] = mode
@@ -1395,10 +1417,22 @@ class SymbolTrader:
                 logger.error("order_send 返回 None")
                 break
                 
-            if result.retcode == mt5.TRADE_RETCODE_DONE:
+            if result.retcode in success_retcodes:
                 success = True
-                logger.info(f"下单成功 ({type_str}) #{result.order} (Mode: {mode})")
-                self.send_telegram_message(f"✅ *Order Executed*\nType: `{type_str.upper()}`\nPrice: `{price}`\nSL: `{sl}`\nTP: `{tp}`")
+                order_id = getattr(result, 'order', 0)
+                deal_id = getattr(result, 'deal', 0)
+                logger.info(f"下单成功 ({type_str}) order={order_id} deal={deal_id} (Mode: {mode})")
+                self.send_telegram_message(
+                    f"✅ *Order Accepted*\n"
+                    f"Symbol: `{self.symbol}`\n"
+                    f"Type: `{str(type_str).upper()}`\n"
+                    f"Volume: `{lot_to_use}`\n"
+                    f"Price: `{price}`\n"
+                    f"SL: `{sl}`\n"
+                    f"TP: `{tp}`\n"
+                    f"Order: `{order_id}` Deal: `{deal_id}`\n"
+                    f"Retcode: `{result.retcode}`"
+                )
                 break
             elif result.retcode == 10030: # Unsupported filling mode
                 logger.warning(f"Filling mode {mode} 不支持 (10030), 尝试下一个模式...")
@@ -1432,11 +1466,20 @@ class SymbolTrader:
         token = "8253887074:AAE_o7hfEb6iJCZ2MdVIezOC_E0OnTCvCzY"
         chat_id = "5254086791"
         url = f"https://api.telegram.org/bot{token}/sendMessage"
-        data = {
-            "chat_id": chat_id,
-            "text": message,
-            "parse_mode": "Markdown"
-        }
+        message = "" if message is None else str(message)
+        chunks = []
+        remaining = message
+        max_len = 3500
+        while remaining:
+            if len(remaining) <= max_len:
+                chunks.append(remaining)
+                break
+            window = remaining[:max_len]
+            cut = window.rfind("\n")
+            if cut < 1000:
+                cut = max_len
+            chunks.append(remaining[:cut].strip())
+            remaining = remaining[cut:].lstrip("\n")
         
         # 配置代理
         proxies = None
@@ -1445,10 +1488,12 @@ class SymbolTrader:
         env_https = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
         
         if env_http or env_https:
-            proxies = {
-                "http": env_http,
-                "https": env_https
-            }
+            proxy_map = {}
+            if env_http:
+                proxy_map["http"] = env_http
+            if env_https:
+                proxy_map["https"] = env_https
+            proxies = proxy_map if proxy_map else None
         else:
             # 2. 回退到常见的本地代理端口
             proxies = {
@@ -1458,44 +1503,43 @@ class SymbolTrader:
         
         try:
             import requests
-            response = None
-            try:
-                # 尝试通过代理发送
-                response = requests.post(url, json=data, timeout=15, proxies=proxies)
-            except (requests.exceptions.ProxyError, requests.exceptions.ConnectionError):
-                # 如果默认代理失败，尝试另一种常见端口 (v2rayN)
+            for idx, chunk in enumerate(chunks):
+                data = {
+                    "chat_id": chat_id,
+                    "text": chunk,
+                    "parse_mode": "Markdown"
+                }
+                response = None
                 try:
-                    alt_proxies = {
-                        "http": "http://127.0.0.1:10809",
-                        "https": "http://127.0.0.1:10809"
-                    }
-                    response = requests.post(url, json=data, timeout=15, proxies=alt_proxies)
-                except:
-                    # 最后尝试直连
-                    logger.warning("代理连接失败，尝试直连 Telegram...")
-                    response = requests.post(url, json=data, timeout=15)
-                
-            if response.status_code != 200:
-                logger.error(f"Telegram 发送失败 (Markdown): {response.text}")
-                
-                # 自动降级重试：如果是因为 Markdown 解析失败，移除格式后重发
-                if "can't parse entities" in response.text or "Bad Request" in response.text:
-                    logger.warning("检测到 Markdown 语法错误，尝试以纯文本发送...")
-                    if "parse_mode" in data:
-                        del data["parse_mode"]
-                    
+                    response = requests.post(url, json=data, timeout=15, proxies=proxies)
+                except (requests.exceptions.ProxyError, requests.exceptions.ConnectionError):
                     try:
-                        if proxies:
-                            response = requests.post(url, json=data, timeout=15, proxies=proxies)
-                        else:
-                            response = requests.post(url, json=data, timeout=15)
-                    except Exception as e2:
-                        logger.error(f"纯文本重试连接失败: {e2}")
-                        
-                    if response and response.status_code == 200:
-                        logger.info("纯文本消息发送成功")
-                    elif response:
-                        logger.error(f"Telegram 纯文本发送也失败: {response.text}")
+                        alt_proxies = {
+                            "http": "http://127.0.0.1:10809",
+                            "https": "http://127.0.0.1:10809"
+                        }
+                        response = requests.post(url, json=data, timeout=15, proxies=alt_proxies)
+                    except Exception:
+                        logger.warning("代理连接失败，尝试直连 Telegram...")
+                        response = requests.post(url, json=data, timeout=15)
+                
+                if response is None:
+                    continue
+                
+                if response.status_code != 200:
+                    logger.error(f"Telegram 发送失败 (Markdown): {response.text}")
+                    if "can't parse entities" in response.text or "Bad Request" in response.text:
+                        if "parse_mode" in data:
+                            del data["parse_mode"]
+                        try:
+                            if proxies:
+                                response = requests.post(url, json=data, timeout=15, proxies=proxies)
+                            else:
+                                response = requests.post(url, json=data, timeout=15)
+                        except Exception as e2:
+                            logger.error(f"纯文本重试连接失败: {e2}")
+                        if response and response.status_code != 200:
+                            logger.error(f"Telegram 纯文本发送也失败: {response.text}")
 
         except Exception as e:
             logger.error(f"Telegram 发送异常: {e}")
