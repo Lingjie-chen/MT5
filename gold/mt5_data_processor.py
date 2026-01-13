@@ -130,6 +130,20 @@ class MT5DataProcessor:
         rsi = 100 - (100 / (1 + rs))
         return rsi
 
+    def calculate_obv(self, df, price_column='close', volume_column='volume'):
+        """Calculate On-Balance Volume (OBV)
+        
+        Args:
+            df (pd.DataFrame): Price data
+            price_column (str): Price column name
+            volume_column (str): Volume column name
+        
+        Returns:
+            pd.Series: OBV values
+        """
+        obv = (np.sign(df[price_column].diff()) * df[volume_column]).fillna(0).cumsum()
+        return obv
+
     def generate_features(self, df, fast_ema=12, slow_ema=26, atr_period=14, rsi_period=14):
         """Generate trading features
         
@@ -154,6 +168,9 @@ class MT5DataProcessor:
         
         # Calculate RSI
         df['rsi'] = self.calculate_rsi(df, rsi_period)
+
+        # Calculate OBV
+        df['obv'] = self.calculate_obv(df)
         
         # Calculate EMA crossover signal
         df['ema_crossover'] = 0
@@ -168,7 +185,7 @@ class MT5DataProcessor:
         
         # Instead of dropping rows with NaN, fill forward from first valid value
         # This preserves all original data points while handling missing indicator values
-        indicators = ['ema_fast', 'ema_slow', 'atr', 'rsi', 'ema_crossover', 'volatility', 'price_change']
+        indicators = ['ema_fast', 'ema_slow', 'atr', 'rsi', 'obv', 'ema_crossover', 'volatility', 'price_change']
         for indicator in indicators:
             if indicator in df.columns:
                 # Fill NaN values with the first valid value of the indicator
