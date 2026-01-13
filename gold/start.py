@@ -357,29 +357,6 @@ class SymbolTrader:
             self.send_telegram_message(msg)
             return True
 
-    def send_telegram_message(self, message):
-        """发送 Telegram 消息 (Safe Wrapper)"""
-        # Ensure we have a valid token and chat_id
-        # Hardcoded for reliability if env vars are flaky in bat scripts
-        token = "7626309727:AAHMkm-k3MvGvJtOVp4C_4JOo39Y4D_Cgng"
-        chat_id = "7426707328"
-        
-        if not token or not chat_id:
-            logger.warning("Telegram config missing. Skipping message.")
-            return
-
-        try:
-            url = f"https://api.telegram.org/bot{token}/sendMessage"
-            payload = {
-                "chat_id": chat_id,
-                "text": message,
-                "parse_mode": "Markdown"
-            }
-            # Use short timeout to avoid blocking main thread
-            requests.post(url, json=payload, timeout=5)
-        except Exception as e:
-            logger.error(f"Failed to send Telegram message: {e}")
-
     def check_risk_reward_ratio(self, entry_price, sl_price, tp_price):
         """检查盈亏比是否达标"""
         if sl_price <= 0 or tp_price <= 0:
@@ -1413,8 +1390,8 @@ class SymbolTrader:
         # 如果您使用 Clash，通常端口是 7890
         # 如果您使用 v2rayN，通常端口是 10809
         proxies = {
-            "http": "http://127.0.0.1:7890",
-            "https": "http://127.0.0.1:7890"
+            "http": "http://127.0.0.1:7897",
+            "https": "http://127.0.0.1:7897"
         }
         
         try:
