@@ -297,70 +297,99 @@ class SymbolTrader:
 
     def close_position(self, position, comment="AI-Bot Close"):
         """辅助函数: 平仓"""
+        is_buy_pos = position.type == mt5.POSITION_TYPE_BUY
+        tick = mt5.symbol_info_tick(self.symbol)
+        if not tick:
+            self.send_telegram_message(
+                f"❌ *Close Rejected*\nSymbol: `{self.escape_markdown(self.symbol)}`\nTicket: `{position.ticket}`\nReason: `No tick data`"
+            )
+            return False
+
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": position.symbol,
             "volume": position.volume,
-            "type": mt5.ORDER_TYPE_SELL if position.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY,
+            "type": mt5.ORDER_TYPE_SELL if is_buy_pos else mt5.ORDER_TYPE_BUY,
             "position": position.ticket,
-            "price": mt5.symbol_info_tick(self.symbol).bid if position.type == mt5.POSITION_TYPE_BUY else mt5.symbol_info_tick(self.symbol).ask,
+            "price": tick.bid if is_buy_pos else tick.ask,
             "deviation": 20,
             "magic": self.magic_number,
             "comment": comment,
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": mt5.ORDER_FILLING_FOK,
         }
-        
-        result = mt5.order_send(request)
+
+        preferred = self._get_filling_mode()
+        filling_modes = [preferred, mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_RETURN]
+        filling_modes = list(dict.fromkeys(filling_modes))
+
+        result = None
         success_retcodes = {mt5.TRADE_RETCODE_DONE}
         try:
             success_retcodes.add(getattr(mt5, 'TRADE_RETCODE_DONE_PARTIAL'))
         except Exception:
             success_retcodes.add(10010)
-        if result.retcode not in success_retcodes:
-            logger.error(f"平仓失败 #{position.ticket}: {result.comment}")
+        for mode in filling_modes:
+            request["type_filling"] = mode
+            result = mt5.order_send(request)
+            if result is None:
+                break
+            if result.retcode in success_retcodes:
+                break
+            if result.retcode == 10030:
+                continue
+            break
+
+        if not result or result.retcode not in success_retcodes:
+            comment_text = getattr(result, "comment", "order_send returned None")
+            retcode = getattr(result, "retcode", "N/A")
+            logger.error(f"平仓失败 #{position.ticket}: {comment_text}")
+            self.send_telegram_message(
+                f"❌ *Close Rejected*\n"
+                f"Symbol: `{self.escape_markdown(self.symbol)}`\n"
+                f"Ticket: `{position.ticket}`\n"
+                f"Reason: `{self.escape_markdown(comment)}`\n"
+                f"Retcode: `{retcode}`\n"
+                f"Comment: `{self.escape_markdown(comment_text)}`"
+            )
             return False
-        else:
-            logger.info(f"平仓成功 #{position.ticket}")
-            
-            # Calculate total profit for this position
-            total_profit = 0.0
-            total_swap = 0.0
-            total_commission = 0.0
-            net_profit = 0.0
-            
-            try:
-                # Short delay to ensure history is updated
-                time.sleep(0.5)
-                # Get all deals associated with this position
-                deals = mt5.history_deals_get(position=position.ticket)
-                
-                if deals:
-                    for deal in deals:
-                        total_profit += deal.profit
-                        total_swap += deal.swap
-                        total_commission += deal.commission
-                    net_profit = total_profit + total_swap + total_commission
-                else:
-                    # Fallback to result profit if history not available
-                    net_profit = getattr(result, 'profit', 0.0)
-                    total_profit = net_profit
-                    
-            except Exception as e:
-                logger.error(f"获取平仓盈亏失败: {e}")
+
+        logger.info(f"平仓成功 #{position.ticket}")
+
+        total_profit = 0.0
+        total_swap = 0.0
+        total_commission = 0.0
+        net_profit = 0.0
+
+        try:
+            time.sleep(0.5)
+            deals = mt5.history_deals_get(position=position.ticket)
+
+            if deals:
+                for deal in deals:
+                    total_profit += deal.profit
+                    total_swap += deal.swap
+                    total_commission += deal.commission
+                net_profit = total_profit + total_swap + total_commission
+            else:
                 net_profit = getattr(result, 'profit', 0.0)
+                total_profit = net_profit
 
-            # Construct detailed message
-            msg = f"🔄 *Position Closed*\n"
-            msg += f"Ticket: `{position.ticket}`\n"
-            msg += f"Reason: {comment}\n"
-            msg += f"Profit: `{total_profit:.2f}`\n"
-            msg += f"Swap: `{total_swap:.2f}`\n"
-            msg += f"Comm: `{total_commission:.2f}`\n"
-            msg += f"💰 *Net PnL: {net_profit:.2f}*"
+        except Exception as e:
+            logger.error(f"获取平仓盈亏失败: {e}")
+            net_profit = getattr(result, 'profit', 0.0)
 
-            self.send_telegram_message(msg)
-            return True
+        msg = f"🔄 *Position Closed*\n"
+        msg += f"Symbol: `{self.escape_markdown(self.symbol)}`\n"
+        msg += f"Ticket: `{position.ticket}`\n"
+        msg += f"Reason: {self.escape_markdown(comment)}\n"
+        msg += f"Profit: `{total_profit:.2f}`\n"
+        msg += f"Swap: `{total_swap:.2f}`\n"
+        msg += f"Comm: `{total_commission:.2f}`\n"
+        msg += f"💰 *Net PnL: {net_profit:.2f}*"
+
+        self.send_telegram_message(msg)
+        return True
 
     def check_risk_reward_ratio(self, entry_price, sl_price, tp_price):
         """检查盈亏比是否达标"""
@@ -718,6 +747,16 @@ class SymbolTrader:
 
                 if should_close:
                     logger.info(f"执行平仓 #{pos.ticket}: {close_reason}")
+                    self.send_trade_intent(
+                        intent_type="CLOSE",
+                        action=llm_action,
+                        trade_type="close",
+                        price=None,
+                        sl=None,
+                        tp=None,
+                        volume=pos.volume,
+                        extra=f"Ticket: `{pos.ticket}`\nReason: {close_reason}"
+                    )
                     self.close_position(pos, comment=f"AI: {close_reason}")
                     continue 
 
@@ -1159,6 +1198,16 @@ class SymbolTrader:
             
             self.lot_size = optimized_lot # 临时覆盖 self.lot_size 供 _send_order 使用
             
+            self.send_trade_intent(
+                intent_type="OPEN",
+                action=llm_action,
+                trade_type=str(trade_type),
+                price=price,
+                sl=explicit_sl,
+                tp=explicit_tp,
+                volume=optimized_lot,
+                extra=None
+            )
             self._send_order(trade_type, price, explicit_sl, explicit_tp, comment=comment)
         else:
             if llm_action not in ['hold', 'neutral']:
