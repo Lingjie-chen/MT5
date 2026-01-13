@@ -220,17 +220,17 @@ class QwenClient:
     **3. 交易员团队 (Trader Agent)**
     - **综合研判**: 欧央行加息预期+技术面突破阻力位。
     - **策略**: 若欧元区数据超预期，决定买入欧元。
-    - **细节**: 确定建仓价格、止损位、目标价。
+    - **细节**: 基于 SMC 结构提出 **初步** 的建仓价格、止损位 (SMC SL) 和目标价 (SMC TP)。
     - **输出**: 交易提案。
 
     **4. 风控与执行团队 (Risk & Execution)**
     - **审核提案**: 评估外汇市场流动性、政治风险敞口。
-    - **MAE/MFE 深度优化**:
-        1. **MAE 分析**: 外汇波动相对较小，利用 MAE 精确计算 "Intraday Drawdown" 极限，设置紧凑但安全的 SL。
-        2. **MFE 分析**: 分析 "Intraday Gain" 峰值，优化波段策略，避免利润回吐。
+    - **MAE/MFE 深度优化 (Finalizing SL/TP)**:
+        1. **MAE 分析**: 外汇波动相对较小，利用 MAE 精确计算 "Intraday Drawdown" 极限，设置紧凑但安全的 SL。**必须基于此调整 SMC SL**。
+        2. **MFE 分析**: 分析 "Intraday Gain" 峰值，优化波段策略，避免利润回吐。**必须基于此调整 SMC TP**。
     - **风险评估**: 仓位不超过总资金的X%，警惕突发事件（如央行意外行动）。
     - **评分**: 风险等级 (0-10)。
-    - **执行**: 批准交易，利用 MAE/MFE 数据微调入场和出场点。
+    - **执行**: 批准交易，**输出经过集合分析后的最终最优 SL/TP (Optimal SL/TP)**。
         """
 
         # Select Instructions
@@ -773,7 +773,7 @@ class QwenClient:
         决策要求：
         1. 基于市场结构分析结果进行方向判断
         2. 结合SMC信号寻找最佳入场点
-        3. 参考MAE/MFE数据优化止损止盈
+        3. **基于集合分析 (SMC + MAE/MFE) 计算并输出最优的 Take Profit (TP) 和 Stop Loss (SL)**
         4. 制定Martingale网格加仓计划
         5. 严格遵循风险管理规则
         6. 生成Telegram简报（使用emoji图标增强可读性）
