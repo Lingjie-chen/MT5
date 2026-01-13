@@ -1489,10 +1489,38 @@ class SymbolTrader:
             else:
                 # 其他错误，不重试
                 logger.error(f"下单失败 ({type_str}): {result.comment}, retcode={result.retcode}")
+                try:
+                    self.send_telegram_message(
+                        f"❌ *Order Rejected*\n"
+                        f"Symbol: `{self.escape_markdown(self.symbol)}`\n"
+                        f"Type: `{self.escape_markdown(str(type_str).upper())}`\n"
+                        f"Volume: `{lot_to_use}`\n"
+                        f"Price: `{price}`\n"
+                        f"SL: `{sl}`\n"
+                        f"TP: `{tp}`\n"
+                        f"Retcode: `{getattr(result, 'retcode', 'N/A')}`\n"
+                        f"Comment: `{self.escape_markdown(getattr(result, 'comment', ''))}`"
+                    )
+                except Exception:
+                    pass
                 break
                 
         if not success and result and result.retcode == 10030:
              logger.error(f"下单失败 ({type_str}): 所有 Filling Mode 均被拒绝 (10030)")
+             try:
+                 self.send_telegram_message(
+                     f"❌ *Order Rejected*\n"
+                     f"Symbol: `{self.escape_markdown(self.symbol)}`\n"
+                     f"Type: `{self.escape_markdown(str(type_str).upper())}`\n"
+                     f"Volume: `{lot_to_use}`\n"
+                     f"Price: `{price}`\n"
+                     f"SL: `{sl}`\n"
+                     f"TP: `{tp}`\n"
+                     f"Retcode: `{getattr(result, 'retcode', 10030)}`\n"
+                     f"Comment: `Unsupported filling mode`"
+                 )
+             except Exception:
+                 pass
 
 
 
