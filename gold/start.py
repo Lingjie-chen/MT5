@@ -3008,7 +3008,7 @@ class SymbolTrader:
                         # Qwen 信号转换
                         qw_action = strategy.get('action', 'neutral').lower()
                         
-                        final_signal = "neutral"
+                        final_signal = "hold"
                         if qw_action in ['buy', 'add_buy']:
                             final_signal = "buy"
                         elif qw_action in ['sell', 'add_sell']:
@@ -3027,6 +3027,8 @@ class SymbolTrader:
                             final_signal = "hold"
                         elif qw_action == 'grid_start':
                             final_signal = "grid_start"
+                        else:
+                            logger.warning(f"未知 Qwen action='{qw_action}'，按 HOLD 处理")
                         qw_signal = final_signal
                         # Reason
                         reason = strategy.get('strategy_rationale', 'Qwen Decision') # Use rationale if available
