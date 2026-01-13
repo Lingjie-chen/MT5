@@ -102,6 +102,8 @@ class QwenClient:
     - **策略**: 若通胀超预期+技术面突破阻力位，决定买入黄金。
     - **细节**: 基于 SMC 结构提出 **初步** 的建仓价格、止损位 (SMC SL) 和目标价 (SMC TP)。
     - **输出**: 交易提案（Action, Entry, SMC SL, SMC TP）。
+      - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'grid_start' (网格部署), 'hold', 'close'。
+      - **注意**: 若判断为震荡行情或需部署SMC马丁格尔网格，请务必使用 'grid_start'。
 
     **4. 风控与执行团队 (Risk & Execution)**
     - **审核提案**: 评估仓位规模是否符合风险敞口。
@@ -301,6 +303,7 @@ class QwenClient:
     3. **趋势控制**: 
        - M15 为执行周期，必须服从 H1/H4 趋势。
        - 只有在确认趋势反转或SMC结构破坏时才平仓。
+       - **网格策略**: 当市场处于震荡或需左侧挂单时，使用 'grid_start' Action，系统将自动生成基于 ATR 和 SMC 阻力位的网格挂单。
     4. **动态风控 (MAE/MFE Optimization Protocol)**: 
        - **Stop-Loss Optimization (MAE)**: Analyze `Maximum Adverse Excursion`. If trades frequently survive a drawdown of X pips, set SL > X to avoid stopping out before the move.
        - **Take-Profit Optimization (MFE)**: Analyze `Maximum Favorable Excursion`. If `Average MFE` >> `Average Profit`, use dynamic Trailing Stops to capture the full move.

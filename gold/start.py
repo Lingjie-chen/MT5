@@ -812,7 +812,7 @@ class SymbolTrader:
             if added_this_cycle:
                 logger.info(f"本轮已执行加仓，跳过额外开仓")
                 return
-            elif 'add' not in llm_action:
+            elif 'add' not in llm_action and llm_action != 'grid_start':
                 logger.info(f"已有持仓 ({len(bot_positions)}), 且非加仓指令 ({llm_action}), 跳过开仓")
                 return
 
@@ -932,6 +932,18 @@ class SymbolTrader:
 
         elif llm_action == 'grid_start':
             logger.info(">>> 执行网格部署 (Grid Start) <<<")
+            
+            # 0. 清除现有挂单 (避免重复)
+            current_orders = mt5.orders_get(symbol=self.symbol)
+            if current_orders:
+                count_removed = 0
+                for o in current_orders:
+                    if o.magic == self.magic_number:
+                        req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
+                        mt5.order_send(req)
+                        count_removed += 1
+                if count_removed > 0:
+                    logger.info(f"已清除 {count_removed} 个旧挂单，准备部署新网格")
             
             # 1. 获取 ATR (用于网格间距)
             rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
