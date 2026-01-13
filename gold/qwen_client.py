@@ -105,9 +105,12 @@ class QwenClient:
 
     **4. 风控与执行团队 (Risk & Execution)**
     - **审核提案**: 评估仓位规模是否符合风险敞口。
-    - **风险评估**: 当前VIX波动性高，流动性充足。
+    - **MAE/MFE 深度优化**:
+        1. **MAE (Risk Management)**: 测量最大不利偏移 (Maximum Adverse Excursion)。若历史 MAE 显示频繁回撤 $5 后反弹，SL 应设在 >$5 处，避免 "Premature Exits"。
+        2. **MFE (Exit Strategy)**: 测量最大有利偏移 (Maximum Favorable Excursion)。若 MFE 显著高于实际获利，说明离场过早，需通过 "Trailing Stops" 优化退出以捕捉 "Maximum Gains"。
+    - **风险评估**: 结合 MAE 数据预估潜在回撤，结合 VIX 评估市场波动。
     - **评分**: 风险等级 (0-10)。
-    - **执行**: 批准交易，设置止损并监控市场波动。
+    - **执行**: 批准交易，基于 MAE/MFE 设置最优 SL/TP。
         """
 
         # ETHUSD Instructions
@@ -162,9 +165,12 @@ class QwenClient:
 
     **4. 风控与执行团队 (Risk & Execution)**
     - **审核提案**: 评估加密市场波动性（VIX高），流动性风险。
+    - **MAE/MFE 深度优化**:
+        1. **MAE 分析**: Crypto 波动大，需分析历史 MAE 以设定更宽的 "Safe Stop-Loss" 区域，防止被插针清洗。
+        2. **MFE 分析**: 鉴于 Crypto 的高爆发性，若 MFE 高企，必须激进使用追踪止损 (Trailing Stop) 锁定 "Moon-bag" 利润。
     - **风险评估**: 仓位限制在总资金的X%，避免过度暴露。
     - **评分**: 风险等级 (0-10)。
-    - **执行**: 批准交易，设置追踪止损，警惕监管突发风险。
+    - **执行**: 批准交易，基于 MAE/MFE 动态调整网格间距和止损。
         """
 
         # EURUSD Instructions
@@ -219,9 +225,12 @@ class QwenClient:
 
     **4. 风控与执行团队 (Risk & Execution)**
     - **审核提案**: 评估外汇市场流动性、政治风险敞口。
+    - **MAE/MFE 深度优化**:
+        1. **MAE 分析**: 外汇波动相对较小，利用 MAE 精确计算 "Intraday Drawdown" 极限，设置紧凑但安全的 SL。
+        2. **MFE 分析**: 分析 "Intraday Gain" 峰值，优化波段策略，避免利润回吐。
     - **风险评估**: 仓位不超过总资金的X%，警惕突发事件（如央行意外行动）。
     - **评分**: 风险等级 (0-10)。
-    - **执行**: 批准交易，设置止损，同时考虑对冲策略。
+    - **执行**: 批准交易，利用 MAE/MFE 数据微调入场和出场点。
         """
 
         # Select Instructions
@@ -292,9 +301,10 @@ class QwenClient:
     3. **趋势控制**: 
        - M15 为执行周期，必须服从 H1/H4 趋势。
        - 只有在确认趋势反转或SMC结构破坏时才平仓。
-    4. **动态风控**: 
-       - Basket TP (整体止盈) 必须动态计算，随市场波动调整。
-       - 实时监控 MAE/MFE，优化 SL/TP。
+    4. **动态风控 (MAE/MFE Optimization Protocol)**: 
+       - **Stop-Loss Optimization (MAE)**: Analyze `Maximum Adverse Excursion`. If trades frequently survive a drawdown of X pips, set SL > X to avoid stopping out before the move.
+       - **Take-Profit Optimization (MFE)**: Analyze `Maximum Favorable Excursion`. If `Average MFE` >> `Average Profit`, use dynamic Trailing Stops to capture the full move.
+       - **Basket TP**: Dynamically calculated based on volatility and MFE potential.
         """
 
         # --- 5. 最终组装 ---
