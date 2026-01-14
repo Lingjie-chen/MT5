@@ -576,6 +576,7 @@ class QwenClient:
        - **注意**: 如果决定CLOSE，请同时分析是否需要立即反手开仓(Reverse)。
        - 如果SMC结构发生了明确的反转(如CHOCH)，你应该在CLOSE的同时给出反向开仓信号(如 CLOSE_BUY -> SELL)。
        - 如果只是单纯离场观望，则仅输出CLOSE。
+       - **Profit Estimate**: 必须在 `strategy_rationale` 和 `telegram_report` 中明确预估本次平仓的预计盈亏金额 (Estimated PnL)，并说明是基于 SMC 止损还是 MFE 止盈。
        - 如果需要反手，请在 action 中输出 "close_buy_open_sell" 或 "close_sell_open_buy" (或者直接给出反向信号，并在理由中说明)。
     5. **GRID_START**: 预埋网格单 (Limit Orders) 在未来的OB/FVG位置。
     
