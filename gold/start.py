@@ -641,33 +641,27 @@ class SymbolTrader:
             return
 
         # 解析 LLM 指令
-        # 这里的 entry_params 是从 strategy 字典中提取的 'entry_conditions'
-        # 但 strategy 字典本身也有 'action'
-        # 为了更准确，我们应该直接使用 self.latest_strategy (在 run 循环中更新)
-        
-        # 兼容性处理
         llm_action = "hold"
-        if self.latest_strategy:
-             llm_action = self.latest_strategy.get('action', 'hold').lower()
-             # Ensure entry_params is available if not passed
+        
+        # 1. 优先从 latest_strategy 获取原始指令 (包含 add_buy, grid_start 等细粒度动作)
+        if self.latest_strategy and 'action' in self.latest_strategy:
+             llm_action = self.latest_strategy['action'].lower()
+             # 如果 entry_params 未传入，尝试补全
              if entry_params is None:
                  entry_params = self.latest_strategy.get('entry_conditions', {})
+                 
+        # 2. 其次尝试从 entry_params 获取 (兼容旧格式)
         elif entry_params and 'action' in entry_params:
-             llm_action = entry_params.get('action', 'hold').lower()
-        else:
-             llm_action = signal if signal in valid_actions else 'hold'
-
-        # Normalize Compound Actions (Reverse)
-        if llm_action == 'close_buy_open_sell':
-            logger.info("Action Normalized: close_buy_open_sell -> sell")
-            llm_action = 'sell'
-        elif llm_action == 'close_sell_open_buy':
-            logger.info("Action Normalized: close_sell_open_buy -> buy")
-            llm_action = 'buy'
-
-        # Force Override: 如果 final_signal (signal) 已经被修正为 buy/sell，但 llm_action 仍为 hold，则强制同步
+             llm_action = entry_params['action'].lower()
+             
+        # 3. 最后使用传入的 signal (归一化后的信号)
+        elif signal and signal in valid_actions:
+             llm_action = signal.lower()
+        
+        # Double Check: 确保 llm_action 与 signal (如果存在且有效) 保持基本方向一致
+        # 防止 latest_strategy 是旧的，而 signal 是新的 (虽然在 run loop 中应该是同步的)
         if signal in ['buy', 'sell'] and llm_action in ['hold', 'neutral']:
-             logger.info(f"Applying Signal Override: {llm_action} -> {signal}")
+             logger.warning(f"Action mismatch detected! Signal={signal}, Action={llm_action}. Overriding Action to {signal}.")
              llm_action = signal
 
         # 显式 MFE/MAE 止损止盈
