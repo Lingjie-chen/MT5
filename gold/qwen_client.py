@@ -943,14 +943,18 @@ class QwenClient:
         
         ## 核心指令更新：动态仓位计算 (Dynamic Position Sizing)
         你必须根据以下因素，精确计算本次交易的 **position_size (Lots)**：
-        1. **实时账户资金**: {current_market_data.get('account_info', {}).get('available_balance', 10000)} (请根据资金规模合理配比)
-        2. **风险偏好**: 单笔风险严格控制在 1% - 3% 之间。
-        3. **信号置信度 & 高级算法**: 
+        1. **实时账户资金**: {current_market_data.get('account_info', {}).get('available_balance', 10000)} USD
+        2. **风险管理**: 
+           - **单笔风险**: 账户余额的 0.5% - 2.0% (根据信号强度动态调整)。
+           - **计算公式**: Position Size (Lots) = (Account Balance * Risk Percentage) / (Stop Loss Distance * Contract Size).
+           - **假设**: XAUUSD 标准合约大小为 100 (即价格波动 $1，1手盈亏 $100)。
+        3. **具体示例**:
+           - 资金 $10,000, 风险 1% ($100). 止损距离 $4.
+           - Lots = 100 / (4 * 100) = 0.25 Lots.
         4. **市场情绪**: 结合 {market_analysis.get('sentiment_analysis', {}).get('sentiment', 'neutral')} 情绪调整。
-        5. **凯利公式**: 参考你的胜率预估。
-
-        **绝对不要**使用固定的 0.01 手！
-        请给出一个精确到小数点后两位的数字 (例如 0.15, 0.50, 1.20)，并在 `strategy_rationale` 中详细解释计算逻辑 (例如："基于2%风险和强SMC信号，计算得出...")。
+        
+        **绝对不要**默认使用 0.01 手！必须基于资金量计算。
+        请给出一个精确到小数点后两位的数字 (例如 0.15, 0.50, 1.20)，并在 `strategy_rationale` 中详细解释计算逻辑。
 
         ## 当前交易上下文
         

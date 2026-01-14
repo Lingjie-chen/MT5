@@ -2447,8 +2447,24 @@ class SymbolTrader:
                         current_price = df.iloc[-1]
                         latest_features = df_features.iloc[-1].to_dict()
                         
+                        # 获取账户资金信息
+                        account_info_dict = {}
+                        try:
+                            acc = mt5.account_info()
+                            if acc:
+                                account_info_dict = {
+                                    "balance": float(acc.balance),
+                                    "equity": float(acc.equity),
+                                    "margin": float(acc.margin),
+                                    "margin_free": float(acc.margin_free),
+                                    "available_balance": float(acc.balance) 
+                                }
+                        except Exception as e:
+                            logger.error(f"Error fetching account info: {e}")
+
                         market_snapshot = {
                             "symbol": self.symbol,
+                            "account_info": account_info_dict,
                             "timeframe": self.tf_name,
                             "prices": {
                                 "open": float(current_price['open']),
