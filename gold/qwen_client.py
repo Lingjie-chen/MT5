@@ -509,7 +509,7 @@ class QwenClient:
     - smc_signals_identified: list (识别的SMC信号)
     - risk_metrics: dict (风险指标)
     - next_observations: list (后续观察要点)
-    - telegram_report: str (专为Telegram优化的Markdown简报，包含关键分析结论、入场参数、SMC结构摘要。请使用emoji图标增强可读性，例如 ⚡️ � � � � 等)
+    - telegram_report: str (专为Telegram优化的Markdown简报，包含关键分析结论、入场参数、SMC结构摘要。请使用emoji图标增强可读性，例如 ⚡️     等)
         """
         
         # Select Configs
@@ -1022,11 +1022,8 @@ class QwenClient:
                     logger.error(f"Qwen响应格式错误 (期望dict, 实际{type(trading_decision)}): {trading_decision}")
                     return self._get_default_decision("响应格式错误")
                 
-                # Qwen 动态计算仓位
-                # trading_decision["position_size"] = 0.01 
-                
                 # 确保必要的字段存在
-                required_fields = ['action', 'entry_conditions', 'exit_conditions', 'strategy_rationale', 'telegram_report']
+                required_fields = ['action', 'entry_conditions', 'exit_conditions', 'strategy_rationale', 'telegram_report', 'position_management']
                 for field in required_fields:
                     if field not in trading_decision:
                         trading_decision[field] = self._get_default_value(field)
@@ -1061,7 +1058,13 @@ class QwenClient:
             "action": "hold",
             "entry_conditions": {"trigger_type": "market"},
             "exit_conditions": {"sl_atr_multiplier": 1.5, "tp_atr_multiplier": 2.5},
-            "position_management": {"martingale_multiplier": 1.5, "grid_step_logic": "ATR_based"},
+            "position_management": {
+                "martingale_multiplier": 1.5, 
+                "grid_step_logic": "ATR_based",
+                "recommended_grid_step_pips": 20,
+                "grid_level_tp_pips": [30, 25, 20, 15, 10],
+                "dynamic_basket_tp": 50.0
+            },
             "position_size": 0.01,
             "leverage": 1,
             "signal_strength": 50,
@@ -1084,7 +1087,13 @@ class QwenClient:
             'action': 'hold',
             'entry_conditions': {"trigger_type": "market"},
             'exit_conditions': {"sl_atr_multiplier": 1.5, "tp_atr_multiplier": 2.5},
-            'position_management': {"martingale_multiplier": 1.5, "grid_step_logic": "ATR_based"},
+            'position_management': {
+                "martingale_multiplier": 1.5, 
+                "grid_step_logic": "ATR_based",
+                "recommended_grid_step_pips": 20,
+                "grid_level_tp_pips": [30, 25, 20, 15, 10],
+                "dynamic_basket_tp": 50.0
+            },
             'position_size': 0.01,
             'leverage': 1,
             'signal_strength': 50,
