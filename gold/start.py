@@ -915,53 +915,7 @@ class SymbolTrader:
                         logger.warning(f"Limit Sell Price {price} too close to Bid {tick.bid}, adjusting to {min_price}")
                         price = self._normalize_price(min_price)
 
-        elif llm_action == 'grid_start':
-            # 网格部署逻辑
-            logger.info("执行智能网格部署 (Grid Start)...")
-            
-            # 获取趋势方向
-            trend = "neutral"
-            if self.latest_strategy and 'market_structure_analysis' in self.latest_strategy:
-                 trend = self.latest_strategy['market_structure_analysis'].get('trend', 'neutral')
-            
-            # 确定网格方向
-            grid_direction = None
-            if 'bullish' in trend.lower(): grid_direction = 'bullish'
-            elif 'bearish' in trend.lower(): grid_direction = 'bearish'
-            
-            if grid_direction:
-                # 生成网格计划
-                pos_mgmt = {}
-                if self.latest_strategy:
-                    pos_mgmt = self.latest_strategy.get('position_management', {})
-                
-                dynamic_step = float(pos_mgmt.get('recommended_grid_step_pips', 0))
-                grid_tps = pos_mgmt.get('grid_level_tp_pips', [])
-                
-                # 获取 ATR
-                atr = self.last_atr if self.last_atr > 0 else (tick.ask * 0.005)
 
-                orders = self.grid_strategy.generate_grid_plan(
-                    current_price=tick.bid if grid_direction == 'bullish' else tick.ask,
-                    trend_direction=grid_direction,
-                    atr=atr,
-                    point=mt5.symbol_info(self.symbol).point,
-                    dynamic_step_pips=dynamic_step,
-                    grid_level_tps=grid_tps
-                )
-                
-                # 执行挂单
-                for order in orders:
-                    self._send_order(
-                        order['type'], 
-                        order['price'],
-                        sl=None, 
-                        tp=order['tp'],
-                        comment="AI: Grid Level"
-                    )
-            else:
-                logger.warning("Grid Start 信号收到，但趋势不明 (Neutral)，跳过部署。")
-            return
 
 
 
