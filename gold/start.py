@@ -649,6 +649,9 @@ class SymbolTrader:
         llm_action = "hold"
         if self.latest_strategy:
              llm_action = self.latest_strategy.get('action', 'hold').lower()
+             # Ensure entry_params is available if not passed
+             if entry_params is None:
+                 entry_params = self.latest_strategy.get('entry_conditions', {})
         elif entry_params and 'action' in entry_params:
              llm_action = entry_params.get('action', 'hold').lower()
         else:
