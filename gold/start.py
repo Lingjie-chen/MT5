@@ -151,9 +151,6 @@ class SymbolTrader:
         self.last_bar_time = 0
         self.last_analysis_time = 0
         self.last_llm_time = 0 
-        self.action_cooldown_seconds = 10
-        self.last_executed_signature = None
-        self.last_execution_time = 0
         self.signal_history = []
         self.last_optimization_time = 0
         self.last_realtime_save = 0
@@ -300,99 +297,65 @@ class SymbolTrader:
 
     def close_position(self, position, comment="AI-Bot Close"):
         """辅助函数: 平仓"""
-        is_buy_pos = position.type == mt5.POSITION_TYPE_BUY
-        tick = mt5.symbol_info_tick(self.symbol)
-        if not tick:
-            self.send_telegram_message(
-                f"❌ *Close Rejected*\nSymbol: `{self.escape_markdown(self.symbol)}`\nTicket: `{position.ticket}`\nReason: `No tick data`"
-            )
-            return False
-
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": position.symbol,
             "volume": position.volume,
-            "type": mt5.ORDER_TYPE_SELL if is_buy_pos else mt5.ORDER_TYPE_BUY,
+            "type": mt5.ORDER_TYPE_SELL if position.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY,
             "position": position.ticket,
-            "price": tick.bid if is_buy_pos else tick.ask,
+            "price": mt5.symbol_info_tick(self.symbol).bid if position.type == mt5.POSITION_TYPE_BUY else mt5.symbol_info_tick(self.symbol).ask,
             "deviation": 20,
             "magic": self.magic_number,
             "comment": comment,
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": mt5.ORDER_FILLING_FOK,
         }
-
-        preferred = self._get_filling_mode()
-        filling_modes = [preferred, mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_RETURN]
-        filling_modes = list(dict.fromkeys(filling_modes))
-
-        result = None
-        success_retcodes = {mt5.TRADE_RETCODE_DONE}
-        try:
-            success_retcodes.add(getattr(mt5, 'TRADE_RETCODE_DONE_PARTIAL'))
-        except Exception:
-            success_retcodes.add(10010)
-        for mode in filling_modes:
-            request["type_filling"] = mode
-            result = mt5.order_send(request)
-            if result is None:
-                break
-            if result.retcode in success_retcodes:
-                break
-            if result.retcode == 10030:
-                continue
-            break
-
-        if not result or result.retcode not in success_retcodes:
-            comment_text = getattr(result, "comment", "order_send returned None")
-            retcode = getattr(result, "retcode", "N/A")
-            logger.error(f"平仓失败 #{position.ticket}: {comment_text}")
-            self.send_telegram_message(
-                f"❌ *Close Rejected*\n"
-                f"Symbol: `{self.escape_markdown(self.symbol)}`\n"
-                f"Ticket: `{position.ticket}`\n"
-                f"Reason: `{self.escape_markdown(comment)}`\n"
-                f"Retcode: `{retcode}`\n"
-                f"Comment: `{self.escape_markdown(comment_text)}`"
-            )
+        
+        result = mt5.order_send(request)
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            logger.error(f"平仓失败 #{position.ticket}: {result.comment}")
             return False
-
-        logger.info(f"平仓成功 #{position.ticket}")
-
-        total_profit = 0.0
-        total_swap = 0.0
-        total_commission = 0.0
-        net_profit = 0.0
-
-        try:
-            time.sleep(0.5)
-            deals = mt5.history_deals_get(position=position.ticket)
-
-            if deals:
-                for deal in deals:
-                    total_profit += deal.profit
-                    total_swap += deal.swap
-                    total_commission += deal.commission
-                net_profit = total_profit + total_swap + total_commission
-            else:
+        else:
+            logger.info(f"平仓成功 #{position.ticket}")
+            
+            # Calculate total profit for this position
+            total_profit = 0.0
+            total_swap = 0.0
+            total_commission = 0.0
+            net_profit = 0.0
+            
+            try:
+                # Short delay to ensure history is updated
+                time.sleep(0.5)
+                # Get all deals associated with this position
+                deals = mt5.history_deals_get(position=position.ticket)
+                
+                if deals:
+                    for deal in deals:
+                        total_profit += deal.profit
+                        total_swap += deal.swap
+                        total_commission += deal.commission
+                    net_profit = total_profit + total_swap + total_commission
+                else:
+                    # Fallback to result profit if history not available
+                    net_profit = getattr(result, 'profit', 0.0)
+                    total_profit = net_profit
+                    
+            except Exception as e:
+                logger.error(f"获取平仓盈亏失败: {e}")
                 net_profit = getattr(result, 'profit', 0.0)
-                total_profit = net_profit
 
-        except Exception as e:
-            logger.error(f"获取平仓盈亏失败: {e}")
-            net_profit = getattr(result, 'profit', 0.0)
+            # Construct detailed message
+            msg = f"🔄 *Position Closed*\n"
+            msg += f"Ticket: `{position.ticket}`\n"
+            msg += f"Reason: {comment}\n"
+            msg += f"Profit: `{total_profit:.2f}`\n"
+            msg += f"Swap: `{total_swap:.2f}`\n"
+            msg += f"Comm: `{total_commission:.2f}`\n"
+            msg += f"💰 *Net PnL: {net_profit:.2f}*"
 
-        msg = f"🔄 *Position Closed*\n"
-        msg += f"Symbol: `{self.escape_markdown(self.symbol)}`\n"
-        msg += f"Ticket: `{position.ticket}`\n"
-        msg += f"Reason: {self.escape_markdown(comment)}\n"
-        msg += f"Profit: `{total_profit:.2f}`\n"
-        msg += f"Swap: `{total_swap:.2f}`\n"
-        msg += f"Comm: `{total_commission:.2f}`\n"
-        msg += f"💰 *Net PnL: {net_profit:.2f}*"
-
-        self.send_telegram_message(msg)
-        return True
+            self.send_telegram_message(msg)
+            return True
 
     def check_risk_reward_ratio(self, entry_price, sl_price, tp_price):
         """检查盈亏比是否达标"""
@@ -750,16 +713,6 @@ class SymbolTrader:
 
                 if should_close:
                     logger.info(f"执行平仓 #{pos.ticket}: {close_reason}")
-                    self.send_trade_intent(
-                        intent_type="CLOSE",
-                        action=llm_action,
-                        trade_type="close",
-                        price=None,
-                        sl=None,
-                        tp=None,
-                        volume=pos.volume,
-                        extra=f"Ticket: `{pos.ticket}`\nReason: {close_reason}"
-                    )
                     self.close_position(pos, comment=f"AI: {close_reason}")
                     continue 
 
@@ -798,8 +751,8 @@ class SymbolTrader:
                     self._send_order(
                         "buy" if is_buy_pos else "sell", 
                         tick.ask if is_buy_pos else tick.bid,
-                        explicit_sl or 0.0,
-                        explicit_tp or 0.0,
+                        explicit_sl,
+                        explicit_tp,
                         comment="AI: Add Position"
                     )
                     added_this_cycle = True # 标记本轮已加仓
@@ -849,14 +802,6 @@ class SymbolTrader:
         # 执行开仓/挂单
         trade_type = None
         price = 0.0
-        planned_entry_price = 0.0
-        if entry_params:
-            planned_entry_price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) or 0.0
-
-        if planned_entry_price and llm_action in ['buy', 'add_buy']:
-            llm_action = 'limit_buy'
-        elif planned_entry_price and llm_action in ['sell', 'add_sell']:
-            llm_action = 'limit_sell'
         
         # Mapping 'add_buy'/'add_sell' to normal buy/sell if no position exists
         # This handles cases where LLM says "add" but position was closed or didn't exist
@@ -1201,16 +1146,6 @@ class SymbolTrader:
             
             self.lot_size = optimized_lot # 临时覆盖 self.lot_size 供 _send_order 使用
             
-            self.send_trade_intent(
-                intent_type="OPEN",
-                action=llm_action,
-                trade_type=str(trade_type),
-                price=price,
-                sl=explicit_sl,
-                tp=explicit_tp,
-                volume=optimized_lot,
-                extra=None
-            )
             self._send_order(trade_type, price, explicit_sl, explicit_tp, comment=comment)
         else:
             if llm_action not in ['hold', 'neutral']:
@@ -1444,15 +1379,6 @@ class SymbolTrader:
         
         result = None
         success = False
-        success_retcodes = {mt5.TRADE_RETCODE_DONE}
-        try:
-            success_retcodes.add(getattr(mt5, 'TRADE_RETCODE_PLACED'))
-        except Exception:
-            success_retcodes.add(10008)
-        try:
-            success_retcodes.add(getattr(mt5, 'TRADE_RETCODE_DONE_PARTIAL'))
-        except Exception:
-            success_retcodes.add(10010)
         
         for mode in filling_modes:
             request['type_filling'] = mode
@@ -1469,22 +1395,10 @@ class SymbolTrader:
                 logger.error("order_send 返回 None")
                 break
                 
-            if result.retcode in success_retcodes:
+            if result.retcode == mt5.TRADE_RETCODE_DONE:
                 success = True
-                order_id = getattr(result, 'order', 0)
-                deal_id = getattr(result, 'deal', 0)
-                logger.info(f"下单成功 ({type_str}) order={order_id} deal={deal_id} (Mode: {mode})")
-                self.send_telegram_message(
-                    f"✅ *Order Accepted*\n"
-                    f"Symbol: `{self.symbol}`\n"
-                    f"Type: `{str(type_str).upper()}`\n"
-                    f"Volume: `{lot_to_use}`\n"
-                    f"Price: `{price}`\n"
-                    f"SL: `{sl}`\n"
-                    f"TP: `{tp}`\n"
-                    f"Order: `{order_id}` Deal: `{deal_id}`\n"
-                    f"Retcode: `{result.retcode}`"
-                )
+                logger.info(f"下单成功 ({type_str}) #{result.order} (Mode: {mode})")
+                self.send_telegram_message(f"✅ *Order Executed*\nType: `{type_str.upper()}`\nPrice: `{price}`\nSL: `{sl}`\nTP: `{tp}`")
                 break
             elif result.retcode == 10030: # Unsupported filling mode
                 logger.warning(f"Filling mode {mode} 不支持 (10030), 尝试下一个模式...")
@@ -1492,38 +1406,10 @@ class SymbolTrader:
             else:
                 # 其他错误，不重试
                 logger.error(f"下单失败 ({type_str}): {result.comment}, retcode={result.retcode}")
-                try:
-                    self.send_telegram_message(
-                        f"❌ *Order Rejected*\n"
-                        f"Symbol: `{self.escape_markdown(self.symbol)}`\n"
-                        f"Type: `{self.escape_markdown(str(type_str).upper())}`\n"
-                        f"Volume: `{lot_to_use}`\n"
-                        f"Price: `{price}`\n"
-                        f"SL: `{sl}`\n"
-                        f"TP: `{tp}`\n"
-                        f"Retcode: `{getattr(result, 'retcode', 'N/A')}`\n"
-                        f"Comment: `{self.escape_markdown(getattr(result, 'comment', ''))}`"
-                    )
-                except Exception:
-                    pass
                 break
                 
         if not success and result and result.retcode == 10030:
              logger.error(f"下单失败 ({type_str}): 所有 Filling Mode 均被拒绝 (10030)")
-             try:
-                 self.send_telegram_message(
-                     f"❌ *Order Rejected*\n"
-                     f"Symbol: `{self.escape_markdown(self.symbol)}`\n"
-                     f"Type: `{self.escape_markdown(str(type_str).upper())}`\n"
-                     f"Volume: `{lot_to_use}`\n"
-                     f"Price: `{price}`\n"
-                     f"SL: `{sl}`\n"
-                     f"TP: `{tp}`\n"
-                     f"Retcode: `{getattr(result, 'retcode', 10030)}`\n"
-                     f"Comment: `Unsupported filling mode`"
-                 )
-             except Exception:
-                 pass
 
 
 
@@ -1541,138 +1427,54 @@ class SymbolTrader:
             text = text.replace(char, f'\\{char}')
         return text
 
-    def _make_trade_signature(self, strategy, final_signal):
-        strategy = strategy or {}
-        entry = strategy.get("entry_conditions") or {}
-        exit_conds = strategy.get("exit_conditions") or {}
-        action = str(strategy.get("action", final_signal) or "").lower()
-        limit_price = entry.get("limit_price", entry.get("entry_price"))
-        sl = exit_conds.get("sl_price")
-        tp = exit_conds.get("tp_price")
-        lot = strategy.get("position_size")
-        def norm(x):
-            if x is None:
-                return None
-            try:
-                return round(float(x), 6)
-            except Exception:
-                return str(x)
-        return (
-            str(final_signal).lower(),
-            action,
-            norm(limit_price),
-            norm(sl),
-            norm(tp),
-            norm(lot),
-        )
-
-    def send_trade_intent(self, intent_type, action, trade_type=None, price=None, sl=None, tp=None, volume=None, extra=None):
-        intent_type = self.escape_markdown(intent_type or "TRADE")
-        action = self.escape_markdown(action or "UNKNOWN")
-        trade_type_str = self.escape_markdown(trade_type or "")
-        extra = "" if extra is None else str(extra)
-
-        lines = [
-            f"📣 *Trade Intent*",
-            f"Type: *{intent_type}*",
-            f"Symbol: `{self.escape_markdown(self.symbol)}` | TF: `{self.escape_markdown(self.tf_name)}`",
-            f"Action: *{action}*",
-        ]
-
-        if trade_type_str:
-            lines.append(f"OrderType: `{trade_type_str}`")
-        if volume is not None:
-            lines.append(f"Volume: `{volume}`")
-        if price is not None:
-            lines.append(f"Price: `{price}`")
-        if sl is not None:
-            lines.append(f"SL: `{sl}`")
-        if tp is not None:
-            lines.append(f"TP: `{tp}`")
-        if extra:
-            lines.append(self.escape_markdown(extra))
-
-        self.send_telegram_message("\n".join(lines))
-
     def send_telegram_message(self, message):
         """发送消息到 Telegram"""
         token = "8253887074:AAE_o7hfEb6iJCZ2MdVIezOC_E0OnTCvCzY"
         chat_id = "5254086791"
         url = f"https://api.telegram.org/bot{token}/sendMessage"
-        message = "" if message is None else str(message)
-        chunks = []
-        remaining = message
-        max_len = 3500
-        while remaining:
-            if len(remaining) <= max_len:
-                chunks.append(remaining)
-                break
-            window = remaining[:max_len]
-            cut = window.rfind("\n")
-            if cut < 1000:
-                cut = max_len
-            chunks.append(remaining[:cut].strip())
-            remaining = remaining[cut:].lstrip("\n")
+        data = {
+            "chat_id": chat_id,
+            "text": message,
+            "parse_mode": "Markdown"
+        }
         
-        # 配置代理
-        proxies = None
-        # 1. 优先使用环境变量
-        env_http = os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
-        env_https = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
-        
-        if env_http or env_https:
-            proxy_map = {}
-            if env_http:
-                proxy_map["http"] = env_http
-            if env_https:
-                proxy_map["https"] = env_https
-            proxies = proxy_map if proxy_map else None
-        else:
-            # 2. 回退到常见的本地代理端口
-            proxies = {
-                "http": "http://127.0.0.1:7897",
-                "https": "http://127.0.0.1:7897"
-            }
+        # 配置代理 (针对中国大陆用户)
+        # 如果您使用 Clash，通常端口是 7890
+        # 如果您使用 v2rayN，通常端口是 10809
+        proxies = {
+            "http": "http://127.0.0.1:7897",
+            "https": "http://127.0.0.1:7897"
+        }
         
         try:
             import requests
-            for idx, chunk in enumerate(chunks):
-                data = {
-                    "chat_id": chat_id,
-                    "text": chunk,
-                    "parse_mode": "Markdown"
-                }
-                response = None
-                try:
-                    response = requests.post(url, json=data, timeout=15, proxies=proxies)
-                except (requests.exceptions.ProxyError, requests.exceptions.ConnectionError):
+            response = None
+            try:
+                # 尝试通过代理发送
+                response = requests.post(url, json=data, timeout=10, proxies=proxies)
+            except (requests.exceptions.ProxyError, requests.exceptions.ConnectionError):
+                # 如果代理失败，尝试直连 (虽然可能也会被墙)
+                logger.warning("代理连接失败，尝试直连 Telegram...")
+                response = requests.post(url, json=data, timeout=10)
+                
+            if response.status_code != 200:
+                logger.error(f"Telegram 发送失败 (Markdown): {response.text}")
+                
+                # 自动降级重试：如果是因为 Markdown 解析失败，移除格式后重发
+                if "can't parse entities" in response.text:
+                    logger.warning("检测到 Markdown 语法错误，尝试以纯文本发送...")
+                    if "parse_mode" in data:
+                        del data["parse_mode"]
+                    
                     try:
-                        alt_proxies = {
-                            "http": "http://127.0.0.1:10809",
-                            "https": "http://127.0.0.1:10809"
-                        }
-                        response = requests.post(url, json=data, timeout=15, proxies=alt_proxies)
-                    except Exception:
-                        logger.warning("代理连接失败，尝试直连 Telegram...")
-                        response = requests.post(url, json=data, timeout=15)
-                
-                if response is None:
-                    continue
-                
-                if response.status_code != 200:
-                    logger.error(f"Telegram 发送失败 (Markdown): {response.text}")
-                    if "can't parse entities" in response.text or "Bad Request" in response.text:
-                        if "parse_mode" in data:
-                            del data["parse_mode"]
-                        try:
-                            if proxies:
-                                response = requests.post(url, json=data, timeout=15, proxies=proxies)
-                            else:
-                                response = requests.post(url, json=data, timeout=15)
-                        except Exception as e2:
-                            logger.error(f"纯文本重试连接失败: {e2}")
-                        if response and response.status_code != 200:
-                            logger.error(f"Telegram 纯文本发送也失败: {response.text}")
+                        response = requests.post(url, json=data, timeout=10, proxies=proxies)
+                    except:
+                        response = requests.post(url, json=data, timeout=10)
+                        
+                    if response.status_code == 200:
+                        logger.info("纯文本消息发送成功")
+                    else:
+                        logger.error(f"Telegram 纯文本发送也失败: {response.text}")
 
         except Exception as e:
             logger.error(f"Telegram 发送异常: {e}")
@@ -2776,13 +2578,7 @@ class SymbolTrader:
                 current_bar_time = rates[0]['time']
                 
                 # New Bar Logic
-                # DEBUG: Force New Bar Logic for testing if needed
-                # is_new_bar = True 
                 is_new_bar = current_bar_time > self.last_bar_time
-                
-                # 如果用户报告说没有交易指示，可能是因为没有触发 New Bar
-                # 我们可以添加一个日志来确认当前时间检查
-                # logger.debug(f"Time Check: Current={current_bar_time}, Last={self.last_bar_time}, NewBar={is_new_bar}")
                 
                 # 每秒执行的逻辑 (Check orders, manage positions)
                 # ---------------------------------------------------
@@ -3056,11 +2852,6 @@ class SymbolTrader:
                         performance_stats=trade_stats,
                         previous_analysis=self.latest_strategy
                     )
-                    
-                    # DEBUG LOG: 打印 Qwen 返回的原始 Action
-                    raw_action = strategy.get('action', 'UNKNOWN')
-                    logger.info(f"Qwen 原始返回 Action: {raw_action}")
-                    
                     self.latest_strategy = strategy
                     self.last_llm_time = time.time()
                     
@@ -3141,7 +2932,7 @@ class SymbolTrader:
                         # Qwen 信号转换
                         qw_action = strategy.get('action', 'neutral').lower()
                         
-                        final_signal = "hold"
+                        final_signal = "neutral"
                         if qw_action in ['buy', 'add_buy']:
                             final_signal = "buy"
                         elif qw_action in ['sell', 'add_sell']:
@@ -3160,8 +2951,6 @@ class SymbolTrader:
                             final_signal = "hold"
                         elif qw_action == 'grid_start':
                             final_signal = "grid_start"
-                        else:
-                            logger.warning(f"未知 Qwen action='{qw_action}'，按 HOLD 处理")
                         qw_signal = final_signal
                         # Reason
                         reason = strategy.get('strategy_rationale', 'Qwen Decision') # Use rationale if available
@@ -3215,24 +3004,19 @@ class SymbolTrader:
                         logger.info(f"Reason: {reason}")
                         
                         # 保存分析结果到DB
-                        logger.info("正在保存信号到数据库...")
-                        try:
-                            self.db_manager.save_signal(self.symbol, self.tf_name, {
-                                "final_signal": final_signal,
-                                "strength": strength,
-                                "details": {
-                                    "source": "Qwen_Solo",
-                                    "reason": reason,
-                                    "weights": weights,
-                                    "signals": all_signals,
-                                    "market_state": strategy.get('market_state', 'N/A'),
-                                    "crt_reason": crt_result['reason'],
-                                    "mtf_reason": mtf_result['reason'],
-                                }
-                            })
-                            logger.info("信号保存成功")
-                        except Exception as e:
-                            logger.error(f"保存信号到数据库失败: {e}")
+                        self.db_manager.save_signal(self.symbol, self.tf_name, {
+                            "final_signal": final_signal,
+                            "strength": strength,
+                            "details": {
+                                "source": "Qwen_Solo",
+                                "reason": reason,
+                                "weights": weights,
+                                "signals": all_signals,
+                                "market_state": strategy.get('market_state', 'N/A'),
+                                "crt_reason": crt_result['reason'],
+                                "mtf_reason": mtf_result['reason'],
+                            }
+                        })
                         
                         self.latest_strategy = strategy
                         self.latest_signal = final_signal
@@ -3321,16 +3105,7 @@ class SymbolTrader:
                         self.send_telegram_message(analysis_msg)
 
                         # 4. 执行交易
-                        logger.info(f"决策检查: Final Signal='{final_signal}', Raw Action='{qw_action}'")
-                        
-                        # 确保不漏掉任何下单指令
-                        should_trade = final_signal != 'hold'
-                        if not should_trade and qw_action in ['buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell']:
-                            logger.warning(f"Final Signal is HOLD but Raw Action is {qw_action}, forcing trade execution.")
-                            should_trade = True
-                            final_signal = qw_action # Override final_signal
-                        
-                        if should_trade:
+                        if final_signal != 'hold':
                             logger.info(f">>> 准备执行交易: {final_signal.upper()} (原始Action: {qw_action}) <<<")
                             
                             # 传入 Qwen 参数
@@ -3353,25 +3128,13 @@ class SymbolTrader:
                                     ai_signals=all_signals
                                 )
                             
-                            signature = self._make_trade_signature(strategy, final_signal)
-                            now_ts = time.time()
-                            if signature == self.last_executed_signature and (now_ts - self.last_execution_time) < self.action_cooldown_seconds:
-                                logger.info(f"[{self.symbol}] 指令去重生效，跳过重复执行 (cooldown={self.action_cooldown_seconds}s)")
-                            else:
-                                self.last_executed_signature = signature
-                                self.last_execution_time = now_ts
-                            
-                                self.execute_trade(
-                                    final_signal, 
-                                    strength, 
-                                    exit_params,
-                                    entry_params,
-                                    suggested_lot=suggested_lot
-                                )
-                        else:
-                            # 即使是 HOLD，也调用 manage_positions 来更新 SL/TP
-                            logger.info(f"维持持仓 (HOLD). 检查是否有持仓管理指令...")
-                            self.manage_positions(signal='hold', strategy_params=strategy)
+                            self.execute_trade(
+                                final_signal, 
+                                strength, 
+                                exit_params,
+                                entry_params,
+                                suggested_lot=suggested_lot
+                            )
                 
         except KeyboardInterrupt:
             logger.info("用户停止机器人")
