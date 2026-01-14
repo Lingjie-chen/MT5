@@ -823,57 +823,11 @@ class SymbolTrader:
                         # 增强逻辑: 对于 GOLD, ETHUSD, EURUSD 等品种，严格执行反向单清除
                         if o.type in [mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP]:
                              logger.info(f"[{self.symbol}] 发现反向卖出挂单 #{o.ticket} (Type: {o.type})，执行取消以配合新买入策略")
-        
-        elif llm_action == 'grid_start':
-            # 网格部署逻辑
-            logger.info("执行智能网格部署 (Grid Start)...")
-            
-            # 获取趋势方向
-            trend = "neutral"
-            if self.latest_strategy and 'market_structure_analysis' in self.latest_strategy:
-                 trend = self.latest_strategy['market_structure_analysis'].get('trend', 'neutral')
-            
-            # 确定网格方向
-            grid_direction = None
-            if 'bullish' in trend.lower(): grid_direction = 'bullish'
-            elif 'bearish' in trend.lower(): grid_direction = 'bearish'
-            
-            if grid_direction:
-                # 生成网格计划
-                pos_mgmt = {}
-                if self.latest_strategy:
-                    pos_mgmt = self.latest_strategy.get('position_management', {})
-                
-                dynamic_step = float(pos_mgmt.get('recommended_grid_step_pips', 0))
-                grid_tps = pos_mgmt.get('grid_level_tp_pips', [])
-                
-                # 获取 ATR
-                atr = self.last_atr if self.last_atr > 0 else (tick.ask * 0.005)
+                             req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
+                             mt5.order_send(req)
 
-                orders = self.grid_strategy.generate_grid_plan(
-                    current_price=tick.bid if grid_direction == 'bullish' else tick.ask,
-                    trend_direction=grid_direction,
-                    atr=atr,
-                    point=mt5.symbol_info(self.symbol).point,
-                    dynamic_step_pips=dynamic_step,
-                    grid_level_tps=grid_tps
-                )
-                
-                # 执行挂单
-                for order in orders:
-                    self._send_order(
-                        order['type'], 
-                        order['price'],
-                        sl=None, 
-                        tp=order['tp'],
-                        comment="AI: Grid Level"
-                    )
-            else:
-                logger.warning("Grid Start 信号收到，但趋势不明 (Neutral)，跳过部署。")
-            return
-
-        # 优先使用 limit_price (与 prompt 一致)，回退使用 entry_price
-        price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
+            # 优先使用 limit_price (与 prompt 一致)，回退使用 entry_price
+            price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
             
             # 增强：如果价格无效，尝试自动修复
             if price <= 0:
@@ -960,6 +914,54 @@ class SymbolTrader:
                     if price < min_price:
                         logger.warning(f"Limit Sell Price {price} too close to Bid {tick.bid}, adjusting to {min_price}")
                         price = self._normalize_price(min_price)
+
+        elif llm_action == 'grid_start':
+            # 网格部署逻辑
+            logger.info("执行智能网格部署 (Grid Start)...")
+            
+            # 获取趋势方向
+            trend = "neutral"
+            if self.latest_strategy and 'market_structure_analysis' in self.latest_strategy:
+                 trend = self.latest_strategy['market_structure_analysis'].get('trend', 'neutral')
+            
+            # 确定网格方向
+            grid_direction = None
+            if 'bullish' in trend.lower(): grid_direction = 'bullish'
+            elif 'bearish' in trend.lower(): grid_direction = 'bearish'
+            
+            if grid_direction:
+                # 生成网格计划
+                pos_mgmt = {}
+                if self.latest_strategy:
+                    pos_mgmt = self.latest_strategy.get('position_management', {})
+                
+                dynamic_step = float(pos_mgmt.get('recommended_grid_step_pips', 0))
+                grid_tps = pos_mgmt.get('grid_level_tp_pips', [])
+                
+                # 获取 ATR
+                atr = self.last_atr if self.last_atr > 0 else (tick.ask * 0.005)
+
+                orders = self.grid_strategy.generate_grid_plan(
+                    current_price=tick.bid if grid_direction == 'bullish' else tick.ask,
+                    trend_direction=grid_direction,
+                    atr=atr,
+                    point=mt5.symbol_info(self.symbol).point,
+                    dynamic_step_pips=dynamic_step,
+                    grid_level_tps=grid_tps
+                )
+                
+                # 执行挂单
+                for order in orders:
+                    self._send_order(
+                        order['type'], 
+                        order['price'],
+                        sl=None, 
+                        tp=order['tp'],
+                        comment="AI: Grid Level"
+                    )
+            else:
+                logger.warning("Grid Start 信号收到，但趋势不明 (Neutral)，跳过部署。")
+            return
 
         elif llm_action == 'grid_start':
             logger.info(">>> 执行网格部署 (Grid Start) <<<")
