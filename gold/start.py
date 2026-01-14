@@ -1430,7 +1430,7 @@ class SymbolTrader:
                         if valid_sl and (diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5)):
                             request['sl'] = opt_sl
                             changed = True
-                            logger.info(f"AI/Stats 更新 SL: {sl:.2f} -> {opt_sl:.2f}")
+                    
 
                     if opt_tp > 0:
                         diff_tp = abs(opt_tp - tp)
