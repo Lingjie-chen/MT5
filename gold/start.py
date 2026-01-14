@@ -2540,6 +2540,12 @@ class SymbolTrader:
         if not self.is_running:
             return
 
+        # 限制 ETHUSD 仅在周末交易 (周六=5, 周日=6)
+        if self.symbol == "ETHUSD":
+            if datetime.now().weekday() < 5:
+                # 非周末，不执行交易逻辑
+                return
+
         try:
             # Single iteration logic (replacing while True)
             if True:
@@ -3242,7 +3248,7 @@ class MultiSymbolBot:
 
 if __name__ == "__main__":
     # Default symbols
-    symbols = ["GOLD", "ETHUSD", "EURUSD"]
+    symbols = ["GOLD", "ETHUSD"]
     
     # Allow command line override (comma separated)
     if len(sys.argv) > 1:
