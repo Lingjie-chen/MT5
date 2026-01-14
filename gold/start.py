@@ -870,10 +870,7 @@ class SymbolTrader:
                     )
             else:
                 logger.warning("Grid Start 信号收到，但趋势不明 (Neutral)，跳过部署。")
-                             req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
-                             mt5.order_send(req)
-                        # 如果是同向 (Buy Limit/Stop)，则保留 (叠加)
-                        
+
             # 优先使用 limit_price (与 prompt 一致)，回退使用 entry_price
             price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
             
@@ -979,12 +976,7 @@ class SymbolTrader:
                     logger.info(f"已清除 {count_removed} 个旧挂单，准备部署新网格")
             
             # 1. 获取 ATR (用于网格间距)
-            rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
-            atr = 0.0
-            if rates is not None and len(rates) > 14:
-                 df_temp = pd.DataFrame(rates)
-                 high_low = df_temp['high'] - df_temp['low']
-                 atr = high_low.rolling(14).mean().iloc[-1]
+            atr = self.last_atr if self.last_atr > 0 else (tick.ask * 0.005)
             
             if atr <= 0:
                 logger.warning("无法计算 ATR，无法生成网格计划")
@@ -993,13 +985,19 @@ class SymbolTrader:
             # 2. 确定方向
             direction = 'bullish' # Default
             if self.latest_strategy:
-                market_state = str(self.latest_strategy.get('market_state', '')).lower()
-                pred = str(self.latest_strategy.get('short_term_prediction', '')).lower()
-                # 结合 Qwen 分析判断方向
-                if 'down' in market_state or 'bear' in pred or 'sell' in str(self.latest_strategy.get('action', '')).lower():
+                # 尝试从 market_structure_analysis 获取趋势
+                ms_analysis = self.latest_strategy.get('market_structure_analysis', {})
+                trend = ms_analysis.get('trend', 'neutral').lower()
+                
+                # 或者结合 Qwen 的其他输出来判断
+                if 'bear' in trend or 'down' in trend:
                     direction = 'bearish'
-                elif 'up' in market_state or 'bull' in pred or 'buy' in str(self.latest_strategy.get('action', '')).lower():
+                elif 'bull' in trend or 'up' in trend:
                     direction = 'bullish'
+                else:
+                    # 如果趋势不明，默认 bullish? 或者检查 entry_conditions
+                    # 如果是 Neutral，我们可能不应该部署 Grid，或者应该基于 Price Action
+                    pass
             
             logger.info(f"网格方向判定: {direction} (ATR: {atr:.5f})")
 
@@ -1014,12 +1012,12 @@ class SymbolTrader:
             # 提取 LLM 建议的动态网格间距 (Pips) 和 动态TP配置
             dynamic_step = None
             grid_level_tps = None
-            grid_levels_config = None # New: Support explicit grid levels from LLM
+            grid_levels_config = None 
             
             if self.latest_strategy:
                 pos_mgmt = self.latest_strategy.get('position_management', {})
                 if pos_mgmt:
-                    dynamic_step = pos_mgmt.get('recommended_grid_step_pips')
+                    dynamic_step = float(pos_mgmt.get('recommended_grid_step_pips', 0))
                     grid_level_tps = pos_mgmt.get('grid_level_tp_pips')
                     basket_tp = pos_mgmt.get('dynamic_basket_tp')
                     
@@ -1028,8 +1026,6 @@ class SymbolTrader:
                                 f"- 动态 Basket TP: ${basket_tp}\n"
                                 f"- 分层止盈配置: {grid_level_tps}")
                     
-                    # Check for explicit grid levels (from GOLD example)
-                    # "grid_levels": [ { "level": ... } ] inside "grid_params" or directly in pos_mgmt
                     grid_params = pos_mgmt.get('grid_params', {})
                     if grid_params and 'grid_levels' in grid_params:
                         grid_levels_config = grid_params['grid_levels']
@@ -1038,14 +1034,10 @@ class SymbolTrader:
                         grid_levels_config = pos_mgmt['grid_levels']
                         logger.info(f"Using Explicit Grid Levels from LLM (Count: {len(grid_levels_config)})")
 
-                    if grid_level_tps:
-                         logger.info(f"Using Dynamic Grid Level TPs: {grid_level_tps}")
             
             # Use explicit grid levels if available, otherwise fallback to auto-generation
             if grid_levels_config:
                 grid_orders = []
-                # Map LLM explicit levels to order format
-                # Example: {"level": 4588.0, "volume": 0.02, "sl": ..., "tp": ...}
                 for lvl in grid_levels_config:
                     try:
                         # Determine Order Type based on Level vs Current Price
@@ -1066,7 +1058,7 @@ class SymbolTrader:
                             grid_orders.append({
                                 'type': o_type,
                                 'price': l_price,
-                                'volume': l_vol, # Custom volume per level
+                                'volume': l_vol, 
                                 'tp': l_tp,
                                 'sl': l_sl
                             })
@@ -1080,12 +1072,10 @@ class SymbolTrader:
             if grid_orders:
                 logger.info(f"网格计划生成 {len(grid_orders)} 个挂单")
                 
-                # 计算一个基础手数 (Only for auto-gen, explicit uses its own)
+                # 计算一个基础手数
                 base_lot = self.lot_size
                 if suggested_lot and suggested_lot > 0:
                     base_lot = suggested_lot
-                
-                original_lot = self.lot_size
                 
                 for i, order in enumerate(grid_orders):
                     o_type = order['type']
@@ -1093,23 +1083,13 @@ class SymbolTrader:
                     o_tp = self._normalize_price(order.get('tp', 0.0))
                     o_sl = self._normalize_price(order.get('sl', 0.0))
                     
-                    # Use specific volume if provided (Explicit Levels), else use base_lot * multiplier logic (Auto)
-                    # For explicit levels, we put 'volume' in order dict above.
-                    # For auto-gen, generate_grid_plan usually returns simple dict, we need to check grid_strategy.py
-                    # Assuming auto-gen relies on self.lot_size * multiplier externally or internally.
-                    # Actually generate_grid_plan in typical implementation might not return volume?
-                    # Let's check: if 'volume' is in order, use it. Else use self.lot_size (which we set to base_lot)
-                    
                     vol_to_use = order.get('volume', base_lot)
-                    
-                    # Note: We can't easily change self.lot_size per iteration for auto-gen if it depends on internal state.
-                    # But assuming explicit levels have 'volume'.
                     
                     # 发送订单
                     self._send_order(o_type, o_price, sl=o_sl, tp=o_tp, volume=vol_to_use, comment=f"AI-Grid-{i+1}")
                     
                 logger.info("网格部署完成")
-                return # 结束本次 execute_trade
+                return 
             else:
                 logger.warning("网格计划为空，未执行任何操作")
                 return
