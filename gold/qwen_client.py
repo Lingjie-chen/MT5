@@ -189,67 +189,7 @@ class QwenClient:
     - **执行**: 批准交易，**输出经过集合分析后的最终最优 SL/TP (Optimal SL/TP)**。
         """
 
-        # EURUSD Instructions
-        eur_instructions = """
-    ### 三、EURUSD（欧元兑美元）分析团队指令
 
-    **1. 分析师团队 (The Analyst Team)**
-    - **基本面分析师**:
-        - **角色**: 专注于欧元区与美国的经济差异及货币政策。
-        - **指令**:
-            1. 分析欧元区GDP、失业率、制造业PMI vs. 美国经济数据。
-            2. 评估关键指标：欧元区通胀率、欧央行利率决议预期。
-            3. 识别风险：经济衰退、政治动荡（如欧盟选举）或贸易摩擦。
-            4. 输出：欧元区经济相对强弱报告。
-    - **情绪分析师**:
-        - **角色**: 追踪外汇市场对欧元的情绪波动。
-        - **指令**:
-            1. 监测Twitter（#FXTrader）、专业论坛对欧元前景的讨论。
-            2. 计算“风险偏好指数”：如市场对欧央行鹰派/鸽派的预期。
-            3. 短期预测：情绪驱动的汇率波动（如避险情绪导致欧元下跌）。
-            4. 输出：情绪评分报告（看涨/看跌/中性）。
-    - **新闻分析师**:
-        - **角色**: 解读货币政策、地缘政治及经济数据对EURUSD的影响。
-        - **指令**:
-            1. 分析欧央行/美联储利率决议、通胀数据公布、俄乌冲突进展。
-            2. 评估事件影响：如欧央行提前加息 vs. 美国经济衰退预期。
-            3. 输出：事件驱动的汇率波动评估报告。
-    - **技术分析师**:
-        - **角色**: 结合SMC算法、OBV及外汇图表分析欧元趋势。
-        - **指令**:
-            1. **SMC 结构分析**: 精确识别 CHOCH 和 BOS，捕捉趋势反转点。
-            2. **机构订单流**: 标注 FVG (失衡区) 和 Order Blocks (订单块)，跟随机构资金流向。
-            3. **动能与成交量**: 使用 OBV (能量潮) 和 ADX 判断趋势强度及量价背离。
-            4. **流动性猎杀**: 识别关键高低点的 Liquidity Sweep (流动性扫荡)。
-            5. **输出**: 包含 SMC/FVG/OBV 及关键斐波那契位的综合技术分析报告。
-
-    **2. 研究员团队 (The Researcher Team)**
-    - **看多研究员（Bullish）**:
-        - 亮点：欧央行鹰派立场、欧元区经济复苏快于预期。
-        - 反驳空头：美国经济放缓，利差缩小支撑欧元。
-        - 逻辑：欧元相对美元升值潜力。
-    - **看空研究员（Bearish）**:
-        - 漏洞：欧元区能源危机、政治不确定性、美国经济韧性。
-        - 反驳多头：利差扩大，美元避险需求。
-        - 逻辑：欧元下行风险，可能受经济数据拖累。
-
-    **3. 交易员团队 (Trader Agent)**
-    - **综合研判**: 欧央行加息预期+技术面突破阻力位。
-    - **策略**: 若欧元区数据超预期，决定买入欧元。
-    - **细节**: 基于 SMC 结构提出 **初步** 的建仓价格、止损位 (SMC SL) 和目标价 (SMC TP)。
-    - **输出**: 交易提案（Action, Entry, SMC SL, SMC TP）。
-      - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'grid_start' (网格部署), 'hold', 'close'。
-      - **注意**: 若判断为震荡行情或需部署SMC马丁格尔网格，请务必使用 'grid_start'。
-
-    **4. 风控与执行团队 (Risk & Execution)**
-    - **审核提案**: 评估外汇市场流动性、政治风险敞口。
-    - **MAE/MFE 深度优化 (Finalizing SL/TP)**:
-        1. **MAE 分析**: 外汇波动相对较小，利用 MAE 精确计算 "Intraday Drawdown" 极限，设置紧凑但安全的 SL。**必须基于此调整 SMC SL**。
-        2. **MFE 分析**: 分析 "Intraday Gain" 峰值，优化波段策略，避免利润回吐。**必须基于此调整 SMC TP**。
-    - **风险评估**: 仓位不超过总资金的X%，警惕突发事件（如央行意外行动）。
-    - **评分**: 风险等级 (0-10)。
-    - **执行**: 批准交易，**输出经过集合分析后的最终最优 SL/TP (Optimal SL/TP)**。
-        """
 
         # Select Instructions
         target_instructions = ""
@@ -257,8 +197,6 @@ class QwenClient:
             target_instructions = gold_instructions
         elif "ETH" in symbol:
             target_instructions = eth_instructions
-        elif "EUR" in symbol:
-            target_instructions = eur_instructions
         else:
             target_instructions = f"""
     ### {symbol} 分析团队指令 (通用)
@@ -291,15 +229,6 @@ class QwenClient:
        - 最大层数: 5层
             """,
             
-            "EURUSD": """
-    **交易员与风控团队必须严格遵守的【Martingale网格技术规范 (EURUSD)】**:
-    1. **首单**: 0.5% 风险。
-    2. **加仓**: 基于结构位。
-    3. **参数表**:
-       - 加仓系数: 1.5倍
-       - 最小间距: ATR(14) * 1.5
-       - 最大层数: 8层
-            """,
             "DEFAULT": """
     **交易员与风控团队必须严格遵守的【Martingale网格技术规范 (通用)】**:
     1. 首单: 0.5% 风险。
@@ -363,23 +292,6 @@ class QwenClient:
     3. **关键心理关口**:
        - 100/500/1000 整数位：极强心理支撑阻力。
        - 历史高点(ATH)与关键斐波那契回调位。
-            """,
-            
-            "EURUSD": """
-    ## EURUSD 市场特性
-    1. **交易时段特点**:
-       - 亚洲时段：波动较小，区间震荡。
-       - 欧洲时段（尤其是伦敦开盘）：波动显著增加，趋势往往形成。
-       - 美国时段（尤其是与欧洲重叠期）：流动性最高，波动最大。
-       
-    2. **EURUSD特有驱动因素**:
-       - 欧美利差 (Interest Rate Differential): ECB与Fed政策差异。
-       - 欧元区与美国经济数据对比 (GDP, CPI, NFP)。
-       - 地缘政治风险 (欧洲局势)。
-       
-    3. **关键心理关口**:
-       - 1.0000 (平价) 及 00/50 结尾的整数位。
-       - 历史高低点。
             """,
             
             "DEFAULT": f"""
@@ -634,8 +546,7 @@ class QwenClient:
             "DEFAULT": api_key,
             "ETHUSD": "sk-ftwixmoqnubuwdlutwmwkjxltesmlfiygpjnjaoytljicupf",
             "XAUUSD": "sk-lapiomzehuojnvjentexbctuajfpyfxjakwtowyiwldsfogo",
-            "GOLD": "sk-lapiomzehuojnvjentexbctuajfpyfxjakwtowyiwldsfogo",
-            "EURUSD": "sk-mwfloodyqbiqpyrmnwsdojupecximapjekwolsjjxgzneglm"
+            "GOLD": "sk-lapiomzehuojnvjentexbctuajfpyfxjakwtowyiwldsfogo"
         }
 
     def _get_api_key(self, symbol: str = "DEFAULT") -> str:
@@ -644,7 +555,6 @@ class QwenClient:
         # Fallback logic if symbol contains substrings
         if "ETH" in symbol.upper(): key = self.api_keys["ETHUSD"]
         elif "XAU" in symbol.upper() or "GOLD" in symbol.upper(): key = self.api_keys["XAUUSD"]
-        elif "EUR" in symbol.upper(): key = self.api_keys["EURUSD"]
         return key
 
     def _call_api(self, endpoint: str, payload: Dict[str, Any], max_retries: int = 3, symbol: str = "DEFAULT") -> Optional[Dict[str, Any]]:
