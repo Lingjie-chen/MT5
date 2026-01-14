@@ -1207,5 +1207,8 @@ class QwenClient:
         return max(0.0, min(1.0, default_kelly))
 
 
+def main():
+    print("QwenClient module loaded.")
+
 if __name__ == "__main__":
     main()
