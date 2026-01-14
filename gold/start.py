@@ -963,22 +963,7 @@ class SymbolTrader:
                 logger.warning("Grid Start 信号收到，但趋势不明 (Neutral)，跳过部署。")
             return
 
-        elif llm_action == 'grid_start':
-            logger.info(">>> 执行网格部署 (Grid Start) <<<")
-            
-            # 0. 清除现有挂单 (避免重复)
-            current_orders = mt5.orders_get(symbol=self.symbol)
-            if current_orders:
-                count_removed = 0
-                for o in current_orders:
-                    if o.magic == self.magic_number:
-                        req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
-                        mt5.order_send(req)
-                        count_removed += 1
-                if count_removed > 0:
-                    logger.info(f"已清除 {count_removed} 个旧挂单，准备部署新网格")
-            
-            # 1. 获取 ATR (用于网格间距)
+
             atr = self.last_atr if self.last_atr > 0 else (tick.ask * 0.005)
             
             if atr <= 0:
