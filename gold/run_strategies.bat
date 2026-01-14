@@ -17,6 +17,9 @@ timeout /t 1 /nobreak >nul
 echo Launching ETHUSD Strategy...
 start "Strategy - ETHUSD" run_bot_watchdog.bat ETHUSD
 
+echo Launching EURUSD Strategy...
+start "Strategy - EURUSD" run_bot_watchdog.bat EURUSD
+
 echo.
 echo ========================================================
 echo  All strategies have been launched in separate windows.
