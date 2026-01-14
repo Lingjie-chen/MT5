@@ -834,16 +834,13 @@ class SymbolTrader:
             
             # 增强：如果价格无效，尝试自动修复
             if price <= 0:
-                logger.warning(f"LLM 建议 Limit Buy 但未提供价格，尝试使用 ATR 自动计算")
-                # 获取 ATR
-                rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
-                if rates is not None and len(rates) > 14:
-                     df_temp = pd.DataFrame(rates)
-                     high_low = df_temp['high'] - df_temp['low']
-                     atr = high_low.rolling(14).mean().iloc[-1]
-                     if atr > 0:
-                        price = tick.ask - (atr * 0.5) # 默认在当前价格下方 0.5 ATR 处挂单
-                        logger.info(f"自动设定 Limit Buy 价格: {price:.2f} (Ask: {tick.ask}, ATR: {atr:.4f})")
+                # 使用 self.last_atr 作为回退
+                atr = self.last_atr if self.last_atr > 0 else (tick.ask * 0.005)
+                logger.warning(f"LLM 建议 Limit Buy 但未提供价格，尝试使用 ATR ({atr:.4f}) 自动计算")
+                
+                if atr > 0:
+                    price = tick.ask - (atr * 0.5) # 默认在当前价格下方 0.5 ATR 处挂单
+                    logger.info(f"自动设定 Limit Buy 价格: {price:.2f} (Ask: {tick.ask})")
             
             # 智能判断 Limit vs Stop
             if price > 0:
@@ -866,6 +863,8 @@ class SymbolTrader:
                     if price > max_price:
                          logger.warning(f"Limit Buy Price {price} too close to Ask {tick.ask}, adjusting to {max_price}")
                          price = self._normalize_price(max_price)
+            else:
+                logger.error("Limit Buy 失败: 无法确定价格")
                 
         elif llm_action in ['limit_sell', 'sell_limit', 'stop_sell', 'sell_stop']:
             # 检查现有 Limit 挂单
