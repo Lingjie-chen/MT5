@@ -916,13 +916,48 @@ class SymbolTrader:
                     if price < min_price:
                         logger.warning(f"Limit Sell Price {price} too close to Bid {tick.bid}, adjusting to {min_price}")
                         price = self._normalize_price(min_price)
+            else:
+                logger.error("Limit Sell 失败: 无法确定价格")
 
+        elif llm_action == 'grid_start':
+            # 网格部署逻辑
+            logger.info(">>> 执行网格部署 (Grid Start) <<<")
+            
+            # 0. 清除现有挂单 (避免重复)
+            current_orders = mt5.orders_get(symbol=self.symbol)
+            if current_orders:
+                count_removed = 0
+                for o in current_orders:
+                    if o.magic == self.magic_number:
+                        req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
+                        mt5.order_send(req)
+                        count_removed += 1
+                if count_removed > 0:
+                    logger.info(f"已清除 {count_removed} 个旧挂单，准备部署新网格")
+            
+            # 1. 获取 ATR (用于网格间距)
+            atr = self.last_atr if self.last_atr > 0 else (tick.ask * 0.005)
+            
+            if atr <= 0:
+                logger.warning("无法计算 ATR，无法生成网格计划")
+                return
 
-
-
-
-
-
+            # 2. 确定方向
+            direction = 'bullish' # Default
+            if self.latest_strategy:
+                # 尝试从 market_structure_analysis 获取趋势
+                ms_analysis = self.latest_strategy.get('market_structure_analysis', {})
+                trend = ms_analysis.get('trend', 'neutral').lower()
+                
+                # 或者结合 Qwen 的其他输出来判断
+                if 'bear' in trend or 'down' in trend:
+                    direction = 'bearish'
+                elif 'bull' in trend or 'up' in trend:
+                    direction = 'bullish'
+                else:
+                    pass
+            
+            logger.info(f"网格方向判定: {direction} (ATR: {atr:.5f})")
 
             # 3. 生成网格计划
             # 使用当前价格作为基准
