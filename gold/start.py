@@ -664,6 +664,14 @@ class SymbolTrader:
              logger.warning(f"Action mismatch detected! Signal={signal}, Action={llm_action}. Overriding Action to {signal}.")
              llm_action = signal
 
+        # Normalize Compound Actions (Reverse)
+        if llm_action == 'close_buy_open_sell':
+            logger.info("Action Normalized: close_buy_open_sell -> sell")
+            llm_action = 'sell'
+        elif llm_action == 'close_sell_open_buy':
+            logger.info("Action Normalized: close_sell_open_buy -> buy")
+            llm_action = 'buy'
+
         # 显式 MFE/MAE 止损止盈
         # LLM 应该返回具体的 sl_price 和 tp_price，或者 MFE/MAE 的百分比建议
         # 如果 LLM 提供了具体的 SL/TP 价格，优先使用
