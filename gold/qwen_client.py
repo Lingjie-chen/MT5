@@ -635,8 +635,8 @@ class QwenClient:
         self.api_keys = {
             "DEFAULT": api_key,
             "ETHUSD": "sk-ftwixmoqnubuwdlutwmwkjxltesmlfiygpjnjaoytljicupf",
-            "XAUUSD": "sk-lapiomzehuojnvjentexbctuajfpyfxjakwtowyiwldsfogo",
-            "GOLD": "sk-lapiomzehuojnvjentexbctuajfpyfxjakwtowyiwldsfogo"
+            "XAUUSD": "sk-mwfloodyqbiqpyrmnwsdojupecximapjekwolsjjxgzneglm",
+            "GOLD": "sk-mwfloodyqbiqpyrmnwsdojupecximapjekwolsjjxgzneglm"
         }
 
     def _get_api_key(self, symbol: str = "DEFAULT") -> str:
