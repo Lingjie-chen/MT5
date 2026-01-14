@@ -191,12 +191,75 @@ class QwenClient:
 
 
 
+
+        # EURUSD Instructions
+        eurusd_instructions = """
+    ### 三、EURUSD（欧元兑美元）分析团队指令
+
+    **1. 分析师团队 (The Analyst Team)**
+    - **基本面分析师**:
+        - **角色**: 专注于欧美两大经济体的货币政策差异与宏观数据。
+        - **指令**:
+            1. 重点对比美联储 (Fed) 与欧洲央行 (ECB) 的利率决议及政策声明。
+            2. 分析关键经济数据差异：非农就业 (NFP)、CPI/PCE 通胀数据、PMI 指数。
+            3. 关注欧元区核心国家 (德国、法国) 的经济健康度及政治稳定性。
+            4. 输出：欧美货币政策差异及经济强弱对比报告。
+    - **情绪分析师**:
+        - **角色**: 追踪市场对美元和欧元的投机情绪。
+        - **指令**:
+            1. 监测 COT 报告 (Commitment of Traders) 中的非商业持仓变化。
+            2. 分析美元指数 (DXY) 走势对 EURUSD 的直接压制或支撑。
+            3. 关注市场风险偏好 (Risk On/Off) 对融资货币 (Funding Currency) 的影响。
+            4. 输出：多空情绪评分及拥挤度评估。
+    - **新闻分析师**:
+        - **角色**: 即时解读央行官员讲话及突发地缘政治事件。
+        - **指令**:
+            1. 捕捉拉加德 (Lagarde) 或鲍威尔 (Powell) 的讲话鹰鸽倾向。
+            2. 评估俄乌冲突等欧洲地缘政治事件对欧元的冲击。
+            3. 输出：新闻事件对汇率的短期冲击评估。
+    - **技术分析师**:
+        - **角色**: 运用 SMC 和经典图表形态分析 EURUSD 走势。
+        - **指令**:
+            1. **SMC 结构分析**: 识别 M15/H1 的 BOS (结构破坏) 和 CHOCH (特性改变)。
+            2. **流动性识别**: 标注亚洲盘高低点 (Asian Range High/Low) 及午夜开盘价 (Midnight Open) 的流动性掠夺。
+            3. **关键时段**: 重点关注伦敦开盘 (London Open) 和纽约开盘 (NY Open) 的 Judas Swing (诱多/诱空)。
+            4. **输出**: 包含 SMC 结构、FVG、OB 及关键时段行为的技术分析报告。
+
+    **2. 研究员团队 (The Researcher Team)**
+    - **看多研究员（Bullish）**:
+        - 亮点：ECB 加息预期升温、美元见顶回落、欧元区经济数据超预期。
+        - 反驳空头：美联储暂停加息，利差缩窄利好欧元。
+        - 逻辑：估值修复，欧元有望反弹。
+    - **看空研究员（Bearish）**:
+        - 漏洞：欧元区衰退风险、能源危机隐忧、美元避险属性增强。
+        - 反驳多头：ECB 鸽派，美联储维持高利率更久 (Higher for Longer)。
+        - 逻辑：经济基本面差异支持美元走强。
+
+    **3. 交易员团队 (Trader Agent)**
+    - **综合研判**: 结合欧美利差、DXY 走势及 SMC 结构。
+    - **策略**: 若 DXY 遇阻回落且 EURUSD 完成流动性扫荡后出现 CHOCH，决定买入。
+    - **细节**: 基于 SMC 提出建仓价格、止损 (SMC SL) 和止盈 (SMC TP)。
+    - **输出**: 交易提案（Action, Entry, SMC SL, SMC TP）。
+      - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'grid_start', 'hold', 'close'。
+      - **注意**: 欧美时段重叠期波动最大，适合趋势交易；亚盘适合震荡网格。
+
+    **4. 风控与执行团队 (Risk & Execution)**
+    - **审核提案**: 确认非农/CPI 等重大数据发布前后的风险敞口。
+    - **MAE/MFE 深度优化 (Finalizing SL/TP)**:
+        1. **MAE 分析**: 欧美波动相对稳健，SL 需避开高频扫损区域，但无需像 Crypto 那样极度宽泛。
+        2. **MFE 分析**: 关注 1.0800, 1.1000 等整数关口的反应，适时止盈。
+    - **风险评估**: 单笔风险控制在 1-2%。
+    - **执行**: 批准交易，**输出经过集合分析后的最终最优 SL/TP (Optimal SL/TP)**。
+        """
+
         # Select Instructions
         target_instructions = ""
         if "XAU" in symbol or "GOLD" in symbol:
             target_instructions = gold_instructions
         elif "ETH" in symbol:
             target_instructions = eth_instructions
+        elif "EUR" in symbol:
+            target_instructions = eurusd_instructions
         else:
             target_instructions = f"""
     ### {symbol} 分析团队指令 (通用)
@@ -229,6 +292,16 @@ class QwenClient:
        - 最大层数: 5层
             """,
             
+            "EURUSD": """
+    **交易员与风控团队必须严格遵守的【Martingale网格技术规范 (EURUSD)】**:
+    1. **首单**: 0.5% - 1.0% 风险。
+    2. **加仓**: 基于 SMC 结构或固定 ATR 间距。
+    3. **参数表**:
+       - 加仓系数: 1.3 - 1.5倍
+       - 最小间距: ATR(14) * 1.2 (波动较黄金小)
+       - 最大层数: 6层
+            """,
+
             "DEFAULT": """
     **交易员与风控团队必须严格遵守的【Martingale网格技术规范 (通用)】**:
     1. 首单: 0.5% 风险。
@@ -294,6 +367,23 @@ class QwenClient:
        - 历史高点(ATH)与关键斐波那契回调位。
             """,
             
+            "EURUSD": """
+    ## EURUSD 市场特性
+    1. **交易时段特点**:
+       - **伦敦时段 (07:00 - 16:00 UTC)**: 交易量最大，趋势往往在此形成。
+       - **纽约时段 (12:00 - 21:00 UTC)**: 与伦敦重叠期 (12:00-16:00 UTC) 波动最剧烈。
+       - **亚洲时段**: 通常波动较小，以区间震荡为主。
+       
+    2. **主要驱动因素**:
+       - **欧美利差**: 美联储与欧洲央行的利率政策差异。
+       - **宏观数据**: 美国非农 (NFP)、CPI、GDP；欧元区 CPI、PMI。
+       - **避险情绪**: 风险厌恶时资金流向美元，利空 EURUSD。
+       
+    3. **关键心理关口**:
+       - 00 和 50 结尾的整数位 (如 1.0800, 1.0850)。
+       - 历史年度高低点。
+            """,
+
             "DEFAULT": f"""
     ## {symbol} 市场特性
     请根据该品种的历史波动特性、交易时段和驱动因素进行分析。
