@@ -870,9 +870,10 @@ class SymbolTrader:
                     )
             else:
                 logger.warning("Grid Start 信号收到，但趋势不明 (Neutral)，跳过部署。")
+                return
 
-            # 优先使用 limit_price (与 prompt 一致)，回退使用 entry_price
-            price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
+        # 优先使用 limit_price (与 prompt 一致)，回退使用 entry_price
+        price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
             
             # 增强：如果价格无效，尝试自动修复
             if price <= 0:
