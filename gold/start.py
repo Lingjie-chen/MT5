@@ -1493,7 +1493,6 @@ class SymbolTrader:
             # if not changed: ... pass
              
             if changed:
-                logger.info(f"更新持仓 #{pos.ticket}: SL={request['sl']:.2f}, TP={request['tp']:.2f}")
                 result = mt5.order_send(request)
                 if result.retcode != mt5.TRADE_RETCODE_DONE:
                     logger.error(f"持仓修改失败: {result.comment}")
