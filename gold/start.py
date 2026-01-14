@@ -964,30 +964,9 @@ class SymbolTrader:
             return
 
 
-            atr = self.last_atr if self.last_atr > 0 else (tick.ask * 0.005)
-            
-            if atr <= 0:
-                logger.warning("无法计算 ATR，无法生成网格计划")
-                return
 
-            # 2. 确定方向
-            direction = 'bullish' # Default
-            if self.latest_strategy:
-                # 尝试从 market_structure_analysis 获取趋势
-                ms_analysis = self.latest_strategy.get('market_structure_analysis', {})
-                trend = ms_analysis.get('trend', 'neutral').lower()
-                
-                # 或者结合 Qwen 的其他输出来判断
-                if 'bear' in trend or 'down' in trend:
-                    direction = 'bearish'
-                elif 'bull' in trend or 'up' in trend:
-                    direction = 'bullish'
-                else:
-                    # 如果趋势不明，默认 bullish? 或者检查 entry_conditions
-                    # 如果是 Neutral，我们可能不应该部署 Grid，或者应该基于 Price Action
-                    pass
-            
-            logger.info(f"网格方向判定: {direction} (ATR: {atr:.5f})")
+
+
 
             # 3. 生成网格计划
             # 使用当前价格作为基准
