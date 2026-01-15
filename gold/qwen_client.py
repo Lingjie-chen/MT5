@@ -625,7 +625,7 @@ class QwenClient:
         return full_prompt
 
     
-    def __init__(self, api_key: str, base_url: str = "https://api.chatanywhere.tech/v1", model: str = "gpt-5.2"):
+    def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "Qwen/Qwen3-VL-235B-A22B-Thinking"):
         """
         初始化Qwen客户端
         
@@ -658,7 +658,7 @@ class QwenClient:
         ethusd_url = os.getenv("ETHUSD_API_URL", "https://api.siliconflow.cn/v1")
         ethusd_model = os.getenv("ETHUSD_MODEL", "Qwen/Qwen3-VL-235B-A22B-Thinking")
         
-        # 默认配置 (Gold/XAUUSD 使用 ChatAnywhere)
+        # 默认配置 (Gold/XAUUSD 使用 SiliconFlow)
         default_config = {
             "api_key": api_key,
             "base_url": base_url,
