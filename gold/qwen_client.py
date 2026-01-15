@@ -625,14 +625,14 @@ class QwenClient:
         return full_prompt
 
     
-    def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "Qwen/Qwen2.5-72B-Instruct"):
+    def __init__(self, api_key: str, base_url: str = "https://api.chatanywhere.tech/v1", model: str = "gpt-5.2"):
         """
         初始化Qwen客户端
         
         Args:
             api_key (str): 硅基流动API密钥
-            base_url (str): API基础URL，默认为https://api.siliconflow.cn/v1
-            model (str): 使用的模型名称，默认为Qwen/Qwen2.5-72B-Instruct
+            base_url (str): API基础URL，默认为https://api.chatanywhere.tech/v1
+            model (str): 使用的模型名称，默认为gpt-5.2
         """
         self.api_key = api_key
         self.base_url = base_url
