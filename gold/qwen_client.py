@@ -648,9 +648,9 @@ class QwenClient:
         # API Key Mapping for Multi-Symbol Support
         self.api_keys = {
             "DEFAULT": api_key,
-            "ETHUSD": "sk-ddvtCEwHYMRhEhAqIeKbUJ9EjZmzOOgLuxbnh0Nn7GYo3UVW,",
-            "XAUUSD": "sk-ddvtCEwHYMRhEhAqIeKbUJ9EjZmzOOgLuxbnh0Nn7GYo3UVW,",
-            "GOLD": "sk-ddvtCEwHYMRhEhAqIeKbUJ9EjZmzOOgLuxbnh0Nn7GYo3UVW,"
+            "ETHUSD": "sk-ddvtCEwHYMRhEhAqIeKbUJ9EjZmzOOgLuxbnh0Nn7GYo3UVW",
+            "XAUUSD": "sk-ddvtCEwHYMRhEhAqIeKbUJ9EjZmzOOgLuxbnh0Nn7GYo3UVW",
+            "GOLD": "sk-ddvtCEwHYMRhEhAqIeKbUJ9EjZmzOOgLuxbnh0Nn7GYo3UVW"
         }
 
     def _get_api_key(self, symbol: str = "DEFAULT") -> str:
