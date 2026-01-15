@@ -412,6 +412,35 @@ class SymbolTrader:
                 logger.warning(f"可用保证金不足 ({margin_free:.2f})，强制最小手数")
                 return mt5.symbol_info(self.symbol).volume_min
 
+            # --- 0. 优先使用 LLM 建议的仓位 (LLM Suggestion) ---
+            # 策略要求: 不强制 0.01，优先采纳大模型基于资金分析的结果
+            if self.latest_strategy and 'position_size' in self.latest_strategy:
+                try:
+                    llm_lot = float(self.latest_strategy['position_size'])
+                    if llm_lot > 0:
+                        symbol_info = mt5.symbol_info(self.symbol)
+                        if symbol_info:
+                            # 简单的步长修正
+                            step = symbol_info.volume_step
+                            llm_lot = round(llm_lot / step) * step
+                            llm_lot = max(symbol_info.volume_min, min(llm_lot, symbol_info.volume_max))
+                            
+                            # 风险验证 (Risk Guardrail)
+                            # 估算: 1 Lot * 500 points * TickValue
+                            tick_val = symbol_info.trade_tick_value
+                            if not tick_val: tick_val = 1.0
+                            
+                            est_risk = llm_lot * 500.0 * tick_val
+                            max_risk = equity * 0.08 # 允许最大 8% 风险敞口 (比算法宽容，信任模型)
+                            
+                            if est_risk <= max_risk:
+                                logger.info(f"✅ 采用大模型建议仓位: {llm_lot} Lots (Est Risk: ${est_risk:.2f})")
+                                return llm_lot
+                            else:
+                                logger.warning(f"⚠️ 大模型建议仓位 {llm_lot} 风险过高 (Est ${est_risk:.2f} > ${max_risk:.2f})，回退至算法风控。")
+                except Exception as e:
+                    logger.warning(f"解析 LLM 仓位失败: {e}")
+
             # --- 1. 自适应基础风险 (Self-Adaptive Base Risk) ---
             # 基于近期胜率和盈亏比动态调整基础风险
             # 默认 2%
