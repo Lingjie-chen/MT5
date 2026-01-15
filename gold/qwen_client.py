@@ -653,7 +653,12 @@ class QwenClient:
         eurusd_url = os.getenv("EURUSD_API_URL", "https://api.siliconflow.cn/v1")
         eurusd_model = os.getenv("EURUSD_MODEL", "Qwen/Qwen3-VL-235B-A22B-Thinking")
         
-        # 默认配置 (Gold/XAUUSD/ETHUSD 使用 ChatAnywhere)
+        # 加载环境变量中的 ETHUSD 配置
+        ethusd_key = os.getenv("ETHUSD_API_KEY", api_key)
+        ethusd_url = os.getenv("ETHUSD_API_URL", "https://api.siliconflow.cn/v1")
+        ethusd_model = os.getenv("ETHUSD_MODEL", "Qwen/Qwen3-VL-235B-A22B-Thinking")
+        
+        # 默认配置 (Gold/XAUUSD 使用 ChatAnywhere)
         default_config = {
             "api_key": api_key,
             "base_url": base_url,
@@ -667,11 +672,17 @@ class QwenClient:
             "model": eurusd_model
         }
         
+        ethusd_config = {
+            "api_key": ethusd_key,
+            "base_url": ethusd_url,
+            "model": ethusd_model
+        }
+        
         self.symbol_configs = {
             "DEFAULT": default_config,
             "XAUUSD": default_config,
             "GOLD": default_config,
-            "ETHUSD": default_config, # 暂时也用默认
+            "ETHUSD": ethusd_config,
             "EURUSD": eurusd_config
         }
 
