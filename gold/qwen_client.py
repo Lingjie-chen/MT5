@@ -630,9 +630,9 @@ class QwenClient:
         初始化Qwen客户端
         
         Args:
-            api_key (str): 硅基流动API密钥
-            base_url (str): API基础URL，默认为https://api.chatanywhere.tech/v1
-            model (str): 使用的模型名称，默认为gpt-5.2
+            api_key (str): 默认 API 密钥 (用于 Gold/XAUUSD)
+            base_url (str): 默认 API 基础 URL
+            model (str): 默认模型名称
         """
         self.api_key = api_key
         self.base_url = base_url
@@ -645,34 +645,68 @@ class QwenClient:
         # 启用JSON模式，遵循ValueCell的实现
         self.enable_json_mode = True
 
-        # API Key Mapping for Multi-Symbol Support
-        self.api_keys = {
-            "DEFAULT": api_key,
-            "ETHUSD": "sk-ddvtCEwHYMRhEhAqIeKbUJ9EjZmzOOgLuxbnh0Nn7GYo3UVW",
-            "XAUUSD": "sk-ddvtCEwHYMRhEhAqIeKbUJ9EjZmzOOgLuxbnh0Nn7GYo3UVW",
-            "GOLD": "sk-ddvtCEwHYMRhEhAqIeKbUJ9EjZmzOOgLuxbnh0Nn7GYo3UVW"
+        # --- 多品种配置中心 (Multi-Symbol Configuration) ---
+        import os
+        
+        # 加载环境变量中的 EURUSD 配置
+        eurusd_key = os.getenv("EURUSD_API_KEY", api_key)
+        eurusd_url = os.getenv("EURUSD_API_URL", "https://api.siliconflow.cn/v1")
+        eurusd_model = os.getenv("EURUSD_MODEL", "Qwen/Qwen3-VL-235B-A22B-Thinking")
+        
+        # 默认配置 (Gold/XAUUSD/ETHUSD 使用 ChatAnywhere)
+        default_config = {
+            "api_key": api_key,
+            "base_url": base_url,
+            "model": model
+        }
+        
+        # 专用配置
+        eurusd_config = {
+            "api_key": eurusd_key,
+            "base_url": eurusd_url,
+            "model": eurusd_model
+        }
+        
+        self.symbol_configs = {
+            "DEFAULT": default_config,
+            "XAUUSD": default_config,
+            "GOLD": default_config,
+            "ETHUSD": default_config, # 暂时也用默认
+            "EURUSD": eurusd_config
         }
 
-    def _get_api_key(self, symbol: str = "DEFAULT") -> str:
-        """根据品种获取对应的 API Key"""
-        key = self.api_keys.get(symbol.upper(), self.api_keys["DEFAULT"])
-        # Fallback logic if symbol contains substrings
-        if "ETH" in symbol.upper(): key = self.api_keys["ETHUSD"]
-        elif "XAU" in symbol.upper() or "GOLD" in symbol.upper(): key = self.api_keys["XAUUSD"]
-        return key
+    def _get_config(self, symbol: str) -> Dict[str, str]:
+        """根据品种获取完整的配置 (Key, URL, Model)"""
+        symbol = symbol.upper()
+        if "EUR" in symbol:
+            return self.symbol_configs["EURUSD"]
+        elif "XAU" in symbol or "GOLD" in symbol:
+            return self.symbol_configs["XAUUSD"]
+        elif "ETH" in symbol:
+            return self.symbol_configs["ETHUSD"]
+        else:
+            return self.symbol_configs["DEFAULT"]
 
     def _call_api(self, endpoint: str, payload: Dict[str, Any], max_retries: int = 3, symbol: str = "DEFAULT") -> Optional[Dict[str, Any]]:
         """
-        调用Qwen API，支持重试机制和多品种 API Key 切换
+        调用Qwen API，支持重试机制和多品种配置动态切换
         """
-        url = f"{self.base_url}/{endpoint}"
+        # 1. 获取当前品种的特定配置
+        config = self._get_config(symbol)
+        current_api_key = config["api_key"]
+        current_base_url = config["base_url"]
+        current_model = config["model"]
         
-        # Determine correct API Key for this call
-        current_api_key = self._get_api_key(symbol)
+        # 2. 动态构建 URL 和 Headers
+        url = f"{current_base_url}/{endpoint}"
         
         headers = self.headers.copy()
         headers["Authorization"] = f"Bearer {current_api_key}"
         
+        # 3. 动态更新 payload 中的 model 字段 (如果存在)
+        if "model" in payload:
+            payload["model"] = current_model
+            
         # Create a session to manage settings
         session = requests.Session()
         session.trust_env = False # Disable environment proxies
@@ -680,18 +714,18 @@ class QwenClient:
         for retry in range(max_retries):
             response = None
             try:
-                # 增加超时时间到300秒，应对 SiliconFlow/DeepSeek 响应慢的问题
+                # 增加超时时间到300秒
                 response = session.post(url, headers=headers, json=payload, timeout=300)
                 
                 # 详细记录响应状态
-                logger.debug(f"API响应状态码: {response.status_code}, 模型: {self.model}, 重试: {retry+1}/{max_retries}")
+                logger.debug(f"API响应状态码: {response.status_code}, Symbol: {symbol}, 模型: {current_model}")
                 
                 # 处理不同状态码
                 if response.status_code == 401:
-                    logger.error(f"API认证失败，状态码: {response.status_code}，请检查API密钥是否正确")
+                    logger.error(f"API认证失败 ({symbol})，状态码: {response.status_code}")
                     return None
                 elif response.status_code == 403:
-                    logger.error(f"API访问被拒绝，状态码: {response.status_code}，请检查API密钥权限")
+                    logger.error(f"API访问被拒绝 ({symbol})，状态码: {response.status_code}")
                     return None
                 elif response.status_code == 429:
                     logger.warning(f"API请求频率过高，状态码: {response.status_code}，进入退避重试")
@@ -702,8 +736,9 @@ class QwenClient:
                 
                 # 解析响应并添加调试信息
                 response_json = response.json()
-                logger.info(f"API调用成功，状态码: {response.status_code}, 模型: {self.model}")
+                logger.info(f"API调用成功 [{symbol}], 状态码: {response.status_code}, 模型: {current_model}")
                 return response_json
+
             except requests.exceptions.ConnectionError as e:
                 logger.error(f"API连接失败 (重试 {retry+1}/{max_retries}): {e}")
                 logger.error(f"请求URL: {repr(url)}")
