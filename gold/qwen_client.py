@@ -649,27 +649,64 @@ class QwenClient:
         self.api_keys = {
             "DEFAULT": api_key,
             "ETHUSD": "sk-ftwixmoqnubuwdlutwmwkjxltesmlfiygpjnjaoytljicupf",
-            "XAUUSD": "sk-mwfloodyqbiqpyrmnwsdojupecximapjekwolsjjxgzneglm",
-            "GOLD": "sk-mwfloodyqbiqpyrmnwsdojupecximapjekwolsjjxgzneglm"
+            "XAUUSD": "sk-ddvtCEwHYMRhEhAqIeKbUJ9EjZmzOOgLuxbnh0Nn7GYo3UVW",
+            "GOLD": "sk-ddvtCEwHYMRhEhAqIeKbUJ9EjZmzOOgLuxbnh0Nn7GYo3UVW"
         }
 
-    def _get_api_key(self, symbol: str = "DEFAULT") -> str:
-        """根据品种获取对应的 API Key"""
-        key = self.api_keys.get(symbol.upper(), self.api_keys["DEFAULT"])
-        # Fallback logic if symbol contains substrings
-        if "ETH" in symbol.upper(): key = self.api_keys["ETHUSD"]
-        elif "XAU" in symbol.upper() or "GOLD" in symbol.upper(): key = self.api_keys["XAUUSD"]
-        return key
+        # API Config Mapping (Base URL & Model)
+        self.api_configs = {
+            "DEFAULT": {
+                "base_url": base_url, 
+                "model": model
+            },
+            "XAUUSD": {
+                "base_url": "https://api.chatanywhere.tech/v1",
+                "model": "gpt-5.2"
+            },
+            "GOLD": {
+                "base_url": "https://api.chatanywhere.tech/v1",
+                "model": "gpt-5.2"
+            }
+        }
+
+    def _get_symbol_config(self, symbol: str = "DEFAULT") -> Dict[str, str]:
+        """根据品种获取对应的 API 配置 (Key, URL, Model)"""
+        symbol_upper = symbol.upper()
+        
+        # Default config
+        config = {
+            "key": self.api_keys["DEFAULT"],
+            "base_url": self.api_configs["DEFAULT"]["base_url"],
+            "model": self.api_configs["DEFAULT"]["model"]
+        }
+        
+        # Match logic
+        if "XAU" in symbol_upper or "GOLD" in symbol_upper:
+            config["key"] = self.api_keys["XAUUSD"]
+            config["base_url"] = self.api_configs["XAUUSD"]["base_url"]
+            config["model"] = self.api_configs["XAUUSD"]["model"]
+        elif "ETH" in symbol_upper:
+            config["key"] = self.api_keys.get("ETHUSD", self.api_keys["DEFAULT"])
+            # ETH uses default URL/Model for now unless specified otherwise
+            
+        return config
 
     def _call_api(self, endpoint: str, payload: Dict[str, Any], max_retries: int = 3, symbol: str = "DEFAULT") -> Optional[Dict[str, Any]]:
         """
-        调用Qwen API，支持重试机制和多品种 API Key 切换
+        调用Qwen API，支持重试机制和多品种 API Key/URL/Model 切换
         """
-        url = f"{self.base_url}/{endpoint}"
+        # Determine correct API Config for this call
+        config = self._get_symbol_config(symbol)
+        current_api_key = config["key"]
+        current_base_url = config["base_url"]
+        current_model = config["model"]
         
-        # Determine correct API Key for this call
-        current_api_key = self._get_api_key(symbol)
+        url = f"{current_base_url}/{endpoint}"
         
+        # Dynamically update model in payload if present
+        if "model" in payload:
+            payload["model"] = current_model
+            
         headers = self.headers.copy()
         headers["Authorization"] = f"Bearer {current_api_key}"
         
