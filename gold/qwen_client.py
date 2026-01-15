@@ -1158,6 +1158,19 @@ class QwenClient:
         if response and "choices" in response:
             try:
                 message_content = response["choices"][0]["message"]["content"]
+                
+                # ChatAnywhere (GPT-5.2) might return an empty string if it hits a length limit or error
+                # Check for empty content or finish_reason="length"
+                finish_reason = response["choices"][0].get("finish_reason")
+                
+                if not message_content and finish_reason == "length":
+                    logger.error("API response truncated (empty content) due to length limit.")
+                    return self._get_default_decision("API响应被截断 (Length Limit)")
+                    
+                if not message_content:
+                    logger.error("API returned empty content.")
+                    return self._get_default_decision("API响应为空")
+
                 logger.info(f"收到模型响应: {message_content}")
                 
                 # 解析响应
