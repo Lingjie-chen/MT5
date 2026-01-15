@@ -625,14 +625,14 @@ class QwenClient:
         return full_prompt
 
     
-    def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "Qwen/Qwen3-VL-235B-A22B-Thinking"):
+    def __init__(self, api_key: str, base_url: str = "https://api.chatanywhere.tech", model: str = "gpt-5.1"):
         """
         初始化Qwen客户端
         
         Args:
             api_key (str): 硅基流动API密钥
-            base_url (str): API基础URL，默认为https://api.siliconflow.cn/v1
-            model (str): 使用的模型名称，默认为Qwen/Qwen3-VL-235B-A22B-Thinking
+            base_url (str): API基础URL，默认为https://api.chatanywhere.tech
+            model (str): 使用的模型名称，默认为gpt-5.1
         """
         self.api_key = api_key
         self.base_url = base_url
@@ -648,9 +648,9 @@ class QwenClient:
         # API Key Mapping for Multi-Symbol Support
         self.api_keys = {
             "DEFAULT": api_key,
-            "ETHUSD": "sk-ftwixmoqnubuwdlutwmwkjxltesmlfiygpjnjaoytljicupf",
-            "XAUUSD": "sk-mwfloodyqbiqpyrmnwsdojupecximapjekwolsjjxgzneglm",
-            "GOLD": "sk-mwfloodyqbiqpyrmnwsdojupecximapjekwolsjjxgzneglm"
+            "ETHUSD": "sk-ddvtCEwHYMRhEhAqIeKbUJ9EjZmzOOgLuxbnh0Nn7GYo3UVW,",
+            "XAUUSD": "sk-ddvtCEwHYMRhEhAqIeKbUJ9EjZmzOOgLuxbnh0Nn7GYo3UVW,",
+            "GOLD": "sk-ddvtCEwHYMRhEhAqIeKbUJ9EjZmzOOgLuxbnh0Nn7GYo3UVW,"
         }
 
     def _get_api_key(self, symbol: str = "DEFAULT") -> str:
