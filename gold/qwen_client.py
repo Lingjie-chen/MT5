@@ -6,6 +6,27 @@ from typing import Dict, Any, Optional, List
 import pandas as pd
 import numpy as np
 from datetime import datetime, date
+try:
+    from robust_json_parser import safe_parse_or_default
+except ImportError:
+    # 尝试包内导入
+    try:
+        from .robust_json_parser import safe_parse_or_default
+    except ImportError:
+        import logging
+        logging.getLogger(__name__).warning("Warning: robust_json_parser not found, please ensure it is in the same directory.")
+        # 定义一个简单的 fallback 防止 crash，虽然这不应该发生如果文件被正确创建
+        def safe_parse_or_default(text, required_keys=None, defaults=None, fallback=None):
+            import json
+            import re
+            try:
+                # 简易版 fallback
+                match = re.search(r'\{.*\}', text, re.DOTALL)
+                if match: return json.loads(match.group(0))
+                return json.loads(text)
+            except:
+                if fallback: return fallback
+                raise ValueError("JSON parsing failed (fallback implementation)")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
