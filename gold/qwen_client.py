@@ -1219,8 +1219,13 @@ class QwenClient:
         }
         
         # 启用JSON模式
-        if self.enable_json_mode:
+        # 特殊处理：ChatAnywhere 平台对 json_object 模式支持不稳定，尤其是 gpt-5.1
+        # 如果是 ChatAnywhere 且模型包含 gpt，禁用强制 JSON 模式，依赖 robust_json_parser
+        is_chatanywhere = "chatanywhere" in self._get_config(symbol)["base_url"]
+        if self.enable_json_mode and not is_chatanywhere:
             payload["response_format"] = {"type": "json_object"}
+        elif is_chatanywhere:
+            logger.info(f"[{symbol}] 检测到 ChatAnywhere API，禁用强制 response_format='json_object' 以提高兼容性")
         
         # 调用API (带应用层重试机制)
         max_app_retries = 3
