@@ -625,7 +625,7 @@ class QwenClient:
         return full_prompt
 
     
-    def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "Pro/zai-org/GLM-4.7"):
+    def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "Qwen/Qwen3-VL-235B-A22B-Thinking"):
         """
         初始化Qwen客户端
         
