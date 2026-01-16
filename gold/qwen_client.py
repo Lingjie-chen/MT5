@@ -729,14 +729,8 @@ class QwenClient:
         current_base_url = config["base_url"]
         current_model = config["model"]
         
-        # 2. 动态检测是否为 ChatAnywhere 并调整 Endpoint
-        # ChatAnywhere 推荐使用 /v1/responses (类似 Completions 但简化) 或标准的 /v1/chat/completions
-        # 如果 endpoint 是 "chat/completions" 且是 ChatAnywhere，我们尝试适配
+        # 2. 动态检测是否为 ChatAnywhere
         is_chatanywhere = "chatanywhere" in current_base_url
-        
-        # 如果是 ChatAnywhere 且是 Responses 接口，需要调整 payload 结构
-        # 但为了兼容性，我们先保留 chat/completions，除非明确指定切换
-        # 根据用户输入，ChatAnywhere 的 responses 接口参数为 {model, input}
         
         url = f"{current_base_url}/{endpoint}"
         
@@ -747,16 +741,14 @@ class QwenClient:
         if "model" in payload:
             payload["model"] = current_model
             
-        # ChatAnywhere 兼容性适配层
+        # ChatAnywhere 兼容性适配
         if is_chatanywhere:
-            # 移除 stream 参数
-            if "stream" in payload:
-                del payload["stream"]
-            
-            # 强制禁用 response_format 以避免空响应问题，尽管文档说支持
-            if "response_format" in payload:
-                logger.info(f"[{symbol}] ChatAnywhere: 强制移除 response_format 参数以确保稳定性")
-                del payload["response_format"]
+            # 确保 stream 显式设置为 False (如果未设置)
+            if "stream" not in payload:
+                payload["stream"] = False
+            # 依据文档，支持 response_format，不再强制移除
+            # 关键在于 Prompt 必须配合指示输出 JSON
+            pass
             
         # Create a session to manage settings
         session = requests.Session()
@@ -914,27 +906,14 @@ class QwenClient:
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": f"你是一位拥有20年经验的华尔街{symbol}交易员，精通SMC(Smart Money Concepts)和价格行为学。"},
+                {"role": "system", "content": f"你是一位拥有20年经验的华尔街{symbol}交易员，精通SMC(Smart Money Concepts)和价格行为学。IMPORTANT: You must output strictly valid JSON format only."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.3,
             "max_tokens": 1500,
-            "stream": False
+            "stream": False,
+            "response_format": {"type": "json_object"}
         }
-        
-        # 特殊处理：ChatAnywhere 平台对 json_object 模式支持不稳定
-        # 但根据最新文档，它是支持的。我们只在失败重试时考虑禁用它。
-        # 这里为了保持代码简洁，我们保留 response_format，但在 prompt 中明确要求 JSON。
-        is_chatanywhere = "chatanywhere" in self._get_config(symbol)["base_url"]
-        if not is_chatanywhere:
-            payload["response_format"] = {"type": "json_object"}
-        else:
-             # ChatAnywhere 文档声称支持 json_object，但也提到需要 Prompt 配合。
-             # 我们尝试启用它，如果失败，robust_json_parser 会处理。
-             # 但为了稳妥，我们在第一次调用时还是启用它（如果之前禁用是因为怀疑它导致空包）。
-             # 经过权衡，对于 analyze_market_structure 这种纯 JSON 任务，启用它是值得的风险。
-             # 如果遇到空包，_call_api 里的重试逻辑会处理。
-             payload["response_format"] = {"type": "json_object"}
         
         # 调用API (带应用层重试机制)
         max_app_retries = 3
