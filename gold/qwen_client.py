@@ -1010,16 +1010,14 @@ class QwenClient:
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "你是一位专注于价格行为和SMC策略的黄金交易专家。"},
+                {"role": "system", "content": "你是一位专注于价格行为和SMC策略的黄金交易专家。IMPORTANT: You must output strictly valid JSON format only."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.3,
-            "max_tokens": 800
+            "max_tokens": 800,
+            "stream": False,
+            "response_format": {"type": "json_object"}
         }
-        
-        # 特殊处理：ChatAnywhere 平台对 json_object 模式支持不稳定
-        # 恢复启用，依赖 _call_api 的重试和降级机制
-        payload["response_format"] = {"type": "json_object"}
         
         try:
             # 增加重试机制
@@ -1221,18 +1219,14 @@ class QwenClient:
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": f"你是一名专注于{symbol}交易的职业交易员，采用SMC(Smart Money Concepts)结合Martingale网格策略的复合交易系统。你完全自主进行市场分析和交易决策。"},
+                {"role": "system", "content": f"你是一名专注于{symbol}交易的职业交易员，采用SMC(Smart Money Concepts)结合Martingale网格策略的复合交易系统。你完全自主进行市场分析和交易决策。IMPORTANT: You must output strictly valid JSON format only."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.3,
             "max_tokens": 3000,
-            "stream": False
+            "stream": False,
+            "response_format": {"type": "json_object"}
         }
-        
-        # 启用JSON模式
-        # 恢复默认启用，ChatAnywhere 适配在 _call_api 内部处理
-        if self.enable_json_mode:
-            payload["response_format"] = {"type": "json_object"}
         
         # 调用API (带应用层重试机制)
         max_app_retries = 3
