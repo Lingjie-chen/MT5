@@ -746,9 +746,17 @@ class QwenClient:
                 response.raise_for_status()
                 
                 # 解析响应并添加调试信息
-                response_json = response.json()
-                logger.info(f"API调用成功 [{symbol}], 状态码: {response.status_code}, 模型: {current_model}")
-                return response_json
+                # 如果返回是文本字符串而不是 JSON，尝试解析
+                # SiliconFlow 的 DeepSeek-R1 有时返回的 content 可能包含 thinking process，需要处理
+                # 但这里是 `_call_api` 层面，通常返回标准的 OpenAI 格式 JSON
+                try:
+                    response_json = response.json()
+                    logger.info(f"API调用成功 [{symbol}], 状态码: {response.status_code}, 模型: {current_model}")
+                    return response_json
+                except json.JSONDecodeError:
+                    # 如果直接返回了内容字符串 (非标准API行为，但以防万一)
+                    logger.warning(f"API返回非JSON格式，尝试直接包装: {response.text[:100]}...")
+                    return {"choices": [{"message": {"content": response.text}}]}
 
             except requests.exceptions.ConnectionError as e:
                 logger.error(f"API连接失败 (重试 {retry+1}/{max_retries}): {e}")
@@ -1167,11 +1175,30 @@ class QwenClient:
         if response and "choices" in response:
             try:
                 message_content = response["choices"][0]["message"]["content"]
-                logger.info(f"收到模型响应: {message_content}")
                 
-                # 解析响应
-                trading_decision = json.loads(message_content)
+                # 清洗响应内容 (DeepSeek R1 可能返回 Markdown 代码块)
+                if message_content.startswith("```json"):
+                    message_content = message_content[7:]
+                if message_content.endswith("```"):
+                    message_content = message_content[:-3]
                 
+                message_content = message_content.strip()
+                
+                logger.info(f"收到模型响应 (Length: {len(message_content)})")
+                
+                # 尝试直接解析
+                try:
+                    trading_decision = json.loads(message_content)
+                except json.JSONDecodeError:
+                    # 如果内容为空或无法解析，尝试提取 JSON 部分
+                    logger.warning("直接解析失败，尝试提取 JSON")
+                    import re
+                    match = re.search(r'\{.*\}', message_content, re.DOTALL)
+                    if match:
+                        trading_decision = json.loads(match.group(0))
+                    else:
+                        raise ValueError("无法从响应中提取有效的 JSON")
+
                 if not isinstance(trading_decision, dict):
                     logger.error(f"Qwen响应格式错误 (期望dict, 实际{type(trading_decision)}): {trading_decision}")
                     return self._get_default_decision("响应格式错误")
