@@ -749,16 +749,13 @@ class QwenClient:
             
         # ChatAnywhere 兼容性适配层
         if is_chatanywhere:
-            # 移除可能不支持的参数
-            if "response_format" in payload:
-                del payload["response_format"]
+            # 移除 stream 参数，因为我们没有实现流式处理逻辑，且可能导致问题
             if "stream" in payload:
                 del payload["stream"]
                 
-            # 如果使用 responses 接口 (假设 endpoint 被修改)
-            # 这里我们保持 endpoint 不变，但在 _call_api 内部做判断
-            # 如果用户遇到 chat/completions 仍然为空，可能需要切换到 responses
-            pass
+            # ChatAnywhere 支持 response_format={"type": "json_object"}，我们保留它
+            # 文档明确支持：设置为{ "type": "json_object" }启用 JSON 模式
+            # 只要在 System Prompt 中包含 "json" 字样即可（我们的 prompt 已经包含了）
             
         # Create a session to manage settings
         session = requests.Session()
@@ -969,11 +966,18 @@ class QwenClient:
         }
         
         # 特殊处理：ChatAnywhere 平台对 json_object 模式支持不稳定
+        # 但根据最新文档，它是支持的。我们只在失败重试时考虑禁用它。
+        # 这里为了保持代码简洁，我们保留 response_format，但在 prompt 中明确要求 JSON。
         is_chatanywhere = "chatanywhere" in self._get_config(symbol)["base_url"]
         if not is_chatanywhere:
             payload["response_format"] = {"type": "json_object"}
         else:
-             logger.info(f"[{symbol}] 检测到 ChatAnywhere API (analyze_market_structure)，禁用 response_format='json_object'")
+             # ChatAnywhere 文档声称支持 json_object，但也提到需要 Prompt 配合。
+             # 我们尝试启用它，如果失败，robust_json_parser 会处理。
+             # 但为了稳妥，我们在第一次调用时还是启用它（如果之前禁用是因为怀疑它导致空包）。
+             # 经过权衡，对于 analyze_market_structure 这种纯 JSON 任务，启用它是值得的风险。
+             # 如果遇到空包，_call_api 里的重试逻辑会处理。
+             payload["response_format"] = {"type": "json_object"}
         
         # 调用API (带应用层重试机制)
         max_app_retries = 3
