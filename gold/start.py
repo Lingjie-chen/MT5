@@ -1474,11 +1474,7 @@ class SymbolTrader:
                 qwen_tp_provided = ai_exits.get('tp_price', 0) > 0
                 
                 # If Qwen didn't provide explicit values, skip dynamic update (User Request)
-                # 修改：对于 EURUSD 和 ETHUSD，强制跳过动态更新，防止自动移动
-                symbol_upper = symbol.upper()
-                if "EUR" in symbol_upper or "ETH" in symbol_upper:
-                    logger.info(f"[{symbol}] 用户指令：强制跳过 SL/TP 动态更新")
-                elif not qwen_sl_provided and not qwen_tp_provided:
+                if not qwen_sl_provided and not qwen_tp_provided:
                     logger.info("Qwen 未提供明确 SL/TP，跳过动态更新 (防止自动移动)")
                 else:
                     trade_dir = 'buy' if type_pos == mt5.POSITION_TYPE_BUY else 'sell'
