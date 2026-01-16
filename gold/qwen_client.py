@@ -650,8 +650,8 @@ class QwenClient:
         
         # 加载环境变量中的 EURUSD 配置
         eurusd_key = os.getenv("EURUSD_API_KEY", api_key)
-        eurusd_url = os.getenv("EURUSD_API_URL", "https://api.siliconflow.cn/v1")
-        eurusd_model = os.getenv("EURUSD_MODEL", "Qwen/Qwen3-VL-235B-A22B-Thinking")
+        eurusd_url = os.getenv("EURUSD_API_URL", "https://api.chatanywhere.org/v1")
+        eurusd_model = os.getenv("EURUSD_MODEL", "gpt-5.2")
         
         # 加载环境变量中的 ETHUSD 配置
         ethusd_key = os.getenv("ETHUSD_API_KEY", api_key)
