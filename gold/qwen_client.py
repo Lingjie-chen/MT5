@@ -746,9 +746,14 @@ class QwenClient:
             # 确保 stream 显式设置为 False (如果未设置)
             if "stream" not in payload:
                 payload["stream"] = False
-            # 依据文档，支持 response_format，不再强制移除
-            # 关键在于 Prompt 必须配合指示输出 JSON
-            pass
+                
+            # 强制移除 response_format
+            # 原因：ChatAnywhere (或其背后的 gpt-5.1 映射) 在启用 json_object 模式时极不稳定，
+            # 经常返回 HTTP 200 但 Content-Length 为 0 的空响应。
+            # 我们必须移除此参数，并完全依赖 Prompt 指令和 robust_json_parser 来提取 JSON。
+            if "response_format" in payload:
+                logger.info(f"[{symbol}] ChatAnywhere: 强制移除 response_format 以避免空响应问题")
+                del payload["response_format"]
             
         # Create a session to manage settings
         session = requests.Session()
