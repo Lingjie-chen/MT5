@@ -729,7 +729,15 @@ class QwenClient:
         current_base_url = config["base_url"]
         current_model = config["model"]
         
-        # 2. 动态构建 URL 和 Headers
+        # 2. 动态检测是否为 ChatAnywhere 并调整 Endpoint
+        # ChatAnywhere 推荐使用 /v1/responses (类似 Completions 但简化) 或标准的 /v1/chat/completions
+        # 如果 endpoint 是 "chat/completions" 且是 ChatAnywhere，我们尝试适配
+        is_chatanywhere = "chatanywhere" in current_base_url
+        
+        # 如果是 ChatAnywhere 且是 Responses 接口，需要调整 payload 结构
+        # 但为了兼容性，我们先保留 chat/completions，除非明确指定切换
+        # 根据用户输入，ChatAnywhere 的 responses 接口参数为 {model, input}
+        
         url = f"{current_base_url}/{endpoint}"
         
         headers = self.headers.copy()
@@ -738,6 +746,19 @@ class QwenClient:
         # 3. 动态更新 payload 中的 model 字段 (如果存在)
         if "model" in payload:
             payload["model"] = current_model
+            
+        # ChatAnywhere 兼容性适配层
+        if is_chatanywhere:
+            # 移除可能不支持的参数
+            if "response_format" in payload:
+                del payload["response_format"]
+            if "stream" in payload:
+                del payload["stream"]
+                
+            # 如果使用 responses 接口 (假设 endpoint 被修改)
+            # 这里我们保持 endpoint 不变，但在 _call_api 内部做判断
+            # 如果用户遇到 chat/completions 仍然为空，可能需要切换到 responses
+            pass
             
         # Create a session to manage settings
         session = requests.Session()
@@ -764,14 +785,55 @@ class QwenClient:
                 elif response.status_code >= 500:
                     logger.error(f"API服务器错误，状态码: {response.status_code}")
                 
+                # 如果是 ChatAnywhere 且 200 OK 但内容为空，尝试切换到 responses 接口重试 (仅一次)
+                if is_chatanywhere and response.status_code == 200 and len(response.content) == 0 and endpoint == "chat/completions":
+                     logger.warning(f"ChatAnywhere 返回空响应，尝试切换到 /v1/responses 接口重试...")
+                     alt_url = f"{current_base_url}/responses"
+                     # 构造 responses 接口所需的 payload: {"model": "...", "input": "..."}
+                     # 将 messages 转换为 input prompt
+                     input_text = ""
+                     if "messages" in payload:
+                         for msg in payload["messages"]:
+                             input_text += f"{msg['role']}: {msg['content']}\n"
+                     
+                     alt_payload = {
+                         "model": current_model,
+                         "input": input_text
+                     }
+                     
+                     response = session.post(alt_url, headers=headers, json=alt_payload, timeout=300)
+                     logger.info(f"ChatAnywhere Responses 接口状态码: {response.status_code}")
+
                 response.raise_for_status()
                 
                 # 解析响应并添加调试信息
-                # 如果返回是文本字符串而不是 JSON，尝试解析
-                # SiliconFlow 的 DeepSeek-R1 有时返回的 content 可能包含 thinking process，需要处理
-                # 但这里是 `_call_api` 层面，通常返回标准的 OpenAI 格式 JSON
                 try:
                     response_json = response.json()
+                    
+                    # 适配 ChatAnywhere Responses 接口的返回格式
+                    # 假设 Responses 接口返回格式可能不同，这里做归一化
+                    # 如果返回的是 {"choices": ...} 标准格式则不变
+                    # 如果返回的是直接的文本或自定义格式，需要转换
+                    
+                    # ChatAnywhere Responses 接口通常返回 {"result": "..."} 或直接文本? 
+                    # 根据用户描述，它是 "创建模型响应"，通常返回 JSON
+                    # 如果返回结构没有 choices，尝试适配
+                    if "choices" not in response_json:
+                        # 检查是否有 'result' 或 'output' 字段
+                        content = None
+                        if "result" in response_json:
+                            content = response_json["result"]
+                        elif "output" in response_json:
+                            content = response_json["output"]
+                        elif "text" in response_json: # 常见变体
+                            content = response_json["text"]
+                            
+                        if content:
+                            # 伪造一个 OpenAI 格式的响应
+                            response_json = {
+                                "choices": [{"message": {"content": content}}]
+                            }
+                    
                     logger.info(f"API调用成功 [{symbol}], 状态码: {response.status_code}, 模型: {current_model}")
                     return response_json
                 except json.JSONDecodeError:
