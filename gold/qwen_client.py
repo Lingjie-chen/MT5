@@ -1207,28 +1207,24 @@ class QwenClient:
                 
                 logger.info(f"收到模型响应 (Length: {len(message_content)})")
                 
-                # 尝试直接解析
-                try:
-                    trading_decision = json.loads(message_content)
-                except json.JSONDecodeError:
-                    # 如果内容为空或无法解析，尝试提取 JSON 部分
-                    logger.warning("直接解析失败，尝试提取 JSON")
-                    import re
-                    match = re.search(r'\{.*\}', message_content, re.DOTALL)
-                    if match:
-                        trading_decision = json.loads(match.group(0))
-                    else:
-                        raise ValueError("无法从响应中提取有效的 JSON")
-
-                if not isinstance(trading_decision, dict):
-                    logger.error(f"Qwen响应格式错误 (期望dict, 实际{type(trading_decision)}): {trading_decision}")
-                    return self._get_default_decision("响应格式错误")
-                
-                # 确保必要的字段存在
+                # 使用 robust_json_parser 进行稳健解析
                 required_fields = ['action', 'entry_conditions', 'exit_conditions', 'strategy_rationale', 'telegram_report', 'position_management']
-                for field in required_fields:
-                    if field not in trading_decision:
-                        trading_decision[field] = self._get_default_value(field)
+                defaults = {field: self._get_default_value(field) for field in required_fields}
+                
+                # 准备 fallback
+                fallback_decision = self._get_default_decision("解析失败或空响应，使用默认参数")
+                
+                # 调用解析
+                trading_decision = safe_parse_or_default(
+                    message_content,
+                    required_keys=required_fields,
+                    defaults=defaults,
+                    fallback=fallback_decision
+                )
+                
+                if not isinstance(trading_decision, dict):
+                    logger.warning(f"解析结果非字典，使用 fallback。")
+                    trading_decision = fallback_decision
                 
                 # 再次校验模型返回的 position_size，确保其存在且合法
                 if "position_size" not in trading_decision:
