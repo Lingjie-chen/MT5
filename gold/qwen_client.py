@@ -903,9 +903,15 @@ class QwenClient:
             ],
             "temperature": 0.3,
             "max_tokens": 1500,
-            "stream": False,
-            "response_format": {"type": "json_object"}
+            "stream": False
         }
+        
+        # 特殊处理：ChatAnywhere 平台对 json_object 模式支持不稳定
+        is_chatanywhere = "chatanywhere" in self._get_config(symbol)["base_url"]
+        if not is_chatanywhere:
+            payload["response_format"] = {"type": "json_object"}
+        else:
+             logger.info(f"[{symbol}] 检测到 ChatAnywhere API (analyze_market_structure)，禁用 response_format='json_object'")
         
         # 调用API (带应用层重试机制)
         max_app_retries = 3
@@ -1006,9 +1012,15 @@ class QwenClient:
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.3,
-            "max_tokens": 800,
-            "response_format": {"type": "json_object"}
+            "max_tokens": 800
         }
+        
+        # 特殊处理：ChatAnywhere 平台对 json_object 模式支持不稳定
+        is_chatanywhere = "chatanywhere" in self._get_config(symbol)["base_url"]
+        if not is_chatanywhere:
+            payload["response_format"] = {"type": "json_object"}
+        else:
+             logger.info(f"[{symbol}] 检测到 ChatAnywhere API (analyze_market_sentiment)，禁用 response_format='json_object'")
         
         try:
             # 增加重试机制
