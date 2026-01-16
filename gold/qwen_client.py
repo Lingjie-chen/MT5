@@ -1191,64 +1191,77 @@ class QwenClient:
         if self.enable_json_mode:
             payload["response_format"] = {"type": "json_object"}
         
-        # 调用API
-        response = self._call_api("chat/completions", payload, symbol=symbol)
-        if response and "choices" in response:
-            try:
-                message_content = response["choices"][0]["message"]["content"]
-                
-                # 清洗响应内容 (DeepSeek R1 可能返回 Markdown 代码块)
-                if message_content.startswith("```json"):
-                    message_content = message_content[7:]
-                if message_content.endswith("```"):
-                    message_content = message_content[:-3]
-                
-                message_content = message_content.strip()
-                
-                logger.info(f"收到模型响应 (Length: {len(message_content)})")
-                
-                # 使用 robust_json_parser 进行稳健解析
-                required_fields = ['action', 'entry_conditions', 'exit_conditions', 'strategy_rationale', 'telegram_report', 'position_management']
-                defaults = {field: self._get_default_value(field) for field in required_fields}
-                
-                # 准备 fallback
-                fallback_decision = self._get_default_decision("解析失败或空响应，使用默认参数")
-                
-                # 调用解析
-                trading_decision = safe_parse_or_default(
-                    message_content,
-                    required_keys=required_fields,
-                    defaults=defaults,
-                    fallback=fallback_decision
-                )
-                
-                if not isinstance(trading_decision, dict):
-                    logger.warning(f"解析结果非字典，使用 fallback。")
-                    trading_decision = fallback_decision
-                
-                # 再次校验模型返回的 position_size，确保其存在且合法
-                if "position_size" not in trading_decision:
-                    trading_decision["position_size"] = 0.01 # 默认值作为保底
-                else:
-                    # 限制范围，防止模型给出极端值
-                    try:
-                        size = float(trading_decision["position_size"])
-                        # 0.01 到 10.0 手之间 (根据资金规模调整，放宽上限以适应大资金)
-                        trading_decision["position_size"] = max(0.01, min(10.0, size))
-                    except (ValueError, TypeError):
-                        trading_decision["position_size"] = 0.01
+        # 调用API (带应用层重试机制)
+        max_app_retries = 3
+        for attempt in range(max_app_retries):
+            response = self._call_api("chat/completions", payload, symbol=symbol)
+            if response and "choices" in response:
+                try:
+                    message_content = response["choices"][0]["message"]["content"]
+                    
+                    # 检查内容是否为空
+                    if not message_content or len(message_content.strip()) == 0:
+                        logger.warning(f"收到空响应 (Attempt {attempt+1}/{max_app_retries})，尝试重试...")
+                        time.sleep(2) # 稍作等待
+                        continue
 
-                # 添加市场分析结果到决策中
-                trading_decision['market_analysis'] = market_analysis
-                
-                return trading_decision
-                
-            except json.JSONDecodeError as e:
-                logger.error(f"解析Qwen响应失败: {e}")
-                logger.error(f"原始响应: {response}")
-                return self._get_default_decision("解析失败，使用默认参数")
+                    # 清洗响应内容 (DeepSeek R1 可能返回 Markdown 代码块)
+                    if message_content.startswith("```json"):
+                        message_content = message_content[7:]
+                    if message_content.endswith("```"):
+                        message_content = message_content[:-3]
+                    
+                    message_content = message_content.strip()
+                    
+                    logger.info(f"收到模型响应 (Length: {len(message_content)})")
+                    
+                    # 使用 robust_json_parser 进行稳健解析
+                    required_fields = ['action', 'entry_conditions', 'exit_conditions', 'strategy_rationale', 'telegram_report', 'position_management']
+                    defaults = {field: self._get_default_value(field) for field in required_fields}
+                    
+                    # 准备 fallback
+                    fallback_decision = self._get_default_decision("解析失败或空响应，使用默认参数")
+                    
+                    # 调用解析
+                    trading_decision = safe_parse_or_default(
+                        message_content,
+                        required_keys=required_fields,
+                        defaults=defaults,
+                        fallback=fallback_decision
+                    )
+                    
+                    if not isinstance(trading_decision, dict):
+                        logger.warning(f"解析结果非字典，使用 fallback。")
+                        trading_decision = fallback_decision
+                    
+                    # 再次校验模型返回的 position_size，确保其存在且合法
+                    if "position_size" not in trading_decision:
+                        trading_decision["position_size"] = 0.01 # 默认值作为保底
+                    else:
+                        # 限制范围，防止模型给出极端值
+                        try:
+                            size = float(trading_decision["position_size"])
+                            # 0.01 到 10.0 手之间 (根据资金规模调整，放宽上限以适应大资金)
+                            trading_decision["position_size"] = max(0.01, min(10.0, size))
+                        except (ValueError, TypeError):
+                            trading_decision["position_size"] = 0.01
+
+                    # 添加市场分析结果到决策中
+                    trading_decision['market_analysis'] = market_analysis
+                    
+                    return trading_decision
+                    
+                except json.JSONDecodeError as e:
+                    logger.error(f"解析Qwen响应失败: {e}")
+                    logger.error(f"原始响应: {response}")
+                    # 如果是 JSON 格式错误，也可以选择重试，这里暂不重试
+                    return self._get_default_decision("解析失败，使用默认参数")
+            
+            # 如果 response 为空或结构不对，也重试
+            logger.warning(f"API返回无效响应 (Attempt {attempt+1}/{max_app_retries})，尝试重试...")
+            time.sleep(2)
         
-        return self._get_default_decision("API调用失败，使用默认参数")
+        return self._get_default_decision("API调用失败（多次重试无效），使用默认参数")
     
     def _get_default_decision(self, reason: str = "系统错误") -> Dict[str, Any]:
         """获取默认决策"""
