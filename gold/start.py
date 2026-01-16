@@ -2853,10 +2853,21 @@ class SymbolTrader:
                         # 构建消息
                         telegram_report = strategy.get('telegram_report', '')
                         
+                        # 获取当前使用的大模型名称 (从 QwenClient 配置中获取)
+                        current_model_name = "Unknown Model"
+                        try:
+                            # 通过 qwen_client 内部逻辑获取当前品种的配置
+                            # 这里我们需要访问私有方法 _get_config，或者假设 qwen_client 有公开接口
+                            # 由于 Python 没有严格私有，我们可以尝试调用 _get_config
+                            config = self.qwen_client._get_config(self.symbol)
+                            current_model_name = config.get("model", "Default")
+                        except Exception:
+                            current_model_name = self.qwen_client.model # Fallback to default
+
                         if telegram_report and len(telegram_report) > 50:
                             # 使用 Qwen 生成的专用 Telegram 报告
                             analysis_msg = (
-                                f"🤖 *AI Strategy Report (Qwen)*\n"
+                                f"🤖 *AI Strategy Report ({current_model_name})*\n"
                                 f"Symbol: `{self.symbol}` | TF: `{self.tf_name}`\n"
                                 f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
                                 f"{telegram_report}\n\n"
@@ -2871,7 +2882,7 @@ class SymbolTrader:
                         else:
                             # 备用：手动构建结构化消息
                             analysis_msg = (
-                                f"🤖 *AI Strategy Report (Qwen)*\n"
+                                f"🤖 *AI Strategy Report ({current_model_name})*\n"
                                 f"Symbol: `{self.symbol}` | TF: `{self.tf_name}`\n"
                                 f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
                                 
