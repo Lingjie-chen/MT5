@@ -907,14 +907,30 @@ class QwenClient:
             "response_format": {"type": "json_object"}
         }
         
-        response = self._call_api("chat/completions", payload, symbol=symbol)
-        if response and "choices" in response:
-            try:
-                content = response["choices"][0]["message"]["content"]
-                return json.loads(content)
-            except json.JSONDecodeError as e:
-                logger.error(f"解析市场结构分析失败: {e}")
-        
+        # 调用API (带应用层重试机制)
+        max_app_retries = 3
+        for attempt in range(max_app_retries):
+            response = self._call_api("chat/completions", payload, symbol=symbol)
+            if response and "choices" in response:
+                try:
+                    content = response["choices"][0]["message"]["content"]
+                    
+                    if not content or len(content.strip()) == 0:
+                        logger.warning(f"市场结构分析收到空响应 (Attempt {attempt+1}/{max_app_retries})，尝试重试...")
+                        time.sleep(2)
+                        continue
+
+                    # 稳健解析
+                    parsed_result = safe_parse_or_default(content, fallback=None)
+                    if parsed_result:
+                         return parsed_result
+                    
+                except Exception as e:
+                    logger.error(f"解析市场结构分析失败 (Attempt {attempt+1}/{max_app_retries}): {e}")
+            
+            time.sleep(1)
+
+        logger.error("市场结构分析失败，返回默认值")
         return {
             "market_structure": {
                 "trend": "neutral",
@@ -995,10 +1011,25 @@ class QwenClient:
         }
         
         try:
-            response = self._call_api("chat/completions", payload, symbol=symbol)
-            if response and "choices" in response:
-                content = response["choices"][0]["message"]["content"]
-                return json.loads(content)
+            # 增加重试机制
+            max_app_retries = 3
+            for attempt in range(max_app_retries):
+                response = self._call_api("chat/completions", payload, symbol=symbol)
+                if response and "choices" in response:
+                    content = response["choices"][0]["message"]["content"]
+                    
+                    if not content or len(content.strip()) == 0:
+                        logger.warning(f"情绪分析收到空响应 (Attempt {attempt+1}/{max_app_retries})，重试...")
+                        time.sleep(2)
+                        continue
+
+                    # 稳健解析
+                    parsed_result = safe_parse_or_default(content, fallback=None)
+                    if parsed_result:
+                        return parsed_result
+                
+                time.sleep(1)
+                
         except Exception as e:
             logger.error(f"Sentiment analysis failed: {e}")
         
