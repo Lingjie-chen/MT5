@@ -1475,7 +1475,6 @@ class SymbolTrader:
                 
                 # If Qwen didn't provide explicit values, skip dynamic update (User Request)
                 if not qwen_sl_provided and not qwen_tp_provided:
-                    logger.info("Qwen 未提供明确 SL/TP，跳过动态更新 (防止自动移动)")
                 else:
                     trade_dir = 'buy' if type_pos == mt5.POSITION_TYPE_BUY else 'sell'
                     
