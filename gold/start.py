@@ -3126,10 +3126,17 @@ class MultiSymbolBot:
 
     def initialize_mt5(self, account_index=1):
         """Global MT5 Initialization"""
-        # Load credentials from .env
-        account = 232809484
-        server = "Exness-MT5Real5"
-        password = "Clj568741230#"
+        # Account Configuration
+        if account_index == 2:
+             # Exness Account
+             account = 232809484
+             server = "Exness-MT5Real5"
+             password = "Clj568741230#"
+        else:
+             # Default to Ava (Account 1)
+             account = 89633982
+             server = "Ava-Real 1-MT5"
+             password = "Clj568741230#"
         
         logger.info(f"Connecting to MT5 Account {account_index}: {account} on {server}")
         
