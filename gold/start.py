@@ -3134,7 +3134,7 @@ class MultiSymbolBot:
 
 if __name__ == "__main__":
     # Default symbols
-    symbols = ["GOLD", "ETHUSD", "EURUSD"]
+    symbols = ["GOLD", "XAUUSDm", "ETHUSD","ETHUSDm","EURUSD","EURUSDm"]
     
     # Allow command line override (comma separated)
     if len(sys.argv) > 1:
