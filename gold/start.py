@@ -3129,15 +3129,27 @@ class MultiSymbolBot:
         self.mt5_interface = MT5Interface()
 
     def get_account_index(self, symbol):
-        """Determine account index based on symbol name"""
+        """
+        Determine account index based on symbol name.
+        Support optional 'SYMBOL:INDEX' format (e.g., 'EURUSD:1').
+        """
+        # Check for explicit index suffix
+        if ":" in symbol:
+            parts = symbol.split(":")
+            if len(parts) == 2 and parts[1].isdigit():
+                return int(parts[1])
+        
         s = symbol.upper()
+        # Ava Platform (Account 1)
         if "GOLD" in s or "XAU" in s:
-            return 1 # Ava
-        if "EURUSD" in s:
-            return 2 # Exness
+            return 1 
         if "ETHUSD" in s:
-            return 1 # Default to Ava/SiliconFlow
-        return 1 # Default
+            return 1
+        if "EURUSD" in s:
+            return 1
+            
+        # Default fallback
+        return 1
 
     def _resolve_symbol(self, base_symbol, account_index):
         """
@@ -3176,15 +3188,22 @@ class MultiSymbolBot:
             
         # --- Resolve Symbols and Assign Accounts ---
         self.symbol_configs = []
-        for s in self.symbols:
-            idx = self.get_account_index(s)
+        for raw_s in self.symbols:
+            # Parse symbol and index
+            if ":" in raw_s:
+                parts = raw_s.split(":")
+                s_name = parts[0]
+                idx = int(parts[1])
+            else:
+                s_name = raw_s
+                idx = self.get_account_index(s_name)
             
             # Ensure account is valid/reachable
             if not self.mt5_interface.initialize_account(idx):
-                logger.error(f"Could not initialize account {idx} for symbol {s}")
+                logger.error(f"Could not initialize account {idx} for symbol {s_name}")
                 continue
                 
-            resolved = self._resolve_symbol(s, idx)
+            resolved = self._resolve_symbol(s_name, idx)
             self.symbol_configs.append({
                 "symbol": resolved,
                 "account_index": idx
