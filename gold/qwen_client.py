@@ -646,7 +646,22 @@ class QwenClient:
         
         # Select Configs
         martingale_config = martingale_configs.get(symbol, martingale_configs["DEFAULT"])
+        if symbol not in martingale_configs:
+             if "XAU" in symbol or "GOLD" in symbol:
+                 martingale_config = martingale_configs["XAUUSD"]
+             elif "ETH" in symbol:
+                 martingale_config = martingale_configs["ETHUSD"]
+             elif "EUR" in symbol:
+                 martingale_config = martingale_configs["EURUSD"]
+
         market_spec = market_specs.get(symbol, market_specs["DEFAULT"])
+        if symbol not in market_specs:
+             if "XAU" in symbol or "GOLD" in symbol:
+                 market_spec = market_specs["XAUUSD"]
+             elif "ETH" in symbol:
+                 market_spec = market_specs["ETHUSD"]
+             elif "EUR" in symbol:
+                 market_spec = market_specs["EURUSD"]
         
         # Assemble
         full_prompt = f"{core_strategy}\n{martingale_config}\n{market_spec}\n{common_rules}"
