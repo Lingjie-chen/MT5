@@ -10,15 +10,15 @@ cd /d "%~dp0"
 :: 这样避免了在 start 命令中编写复杂的单行循环代码导致的语法错误
 :: -----------------------------------------------------------------------------
 
-echo Launching GOLD Strategy...
-start "Strategy - GOLD" run_bot_watchdog.bat GOLD
+echo Launching GOLD Strategy (Ava)...
+start "Strategy - GOLD (Ava)" run_bot_watchdog.bat GOLD --account 1
 timeout /t 1 /nobreak >nul
 
-echo Launching ETHUSD Strategy...
-start "Strategy - ETHUSD" run_bot_watchdog.bat ETHUSD
+echo Launching ETHUSD Strategy (Ava)...
+start "Strategy - ETHUSD (Ava)" run_bot_watchdog.bat ETHUSD --account 1
 
-echo Launching EURUSD Strategy...
-start "Strategy - EURUSD" run_bot_watchdog.bat EURUSD
+echo Launching EURUSD Strategy (Ava)...
+start "Strategy - EURUSD (Ava)" run_bot_watchdog.bat EURUSD --account 1
 
 echo.
 echo ========================================================
