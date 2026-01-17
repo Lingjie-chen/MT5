@@ -360,6 +360,12 @@ class QwenClient:
        - **Stop-Loss Optimization (MAE)**: Analyze `Maximum Adverse Excursion`. If trades frequently survive a drawdown of X pips, set SL > X to avoid stopping out before the move.
        - **Take-Profit Optimization (MFE)**: Analyze `Maximum Favorable Excursion`. If `Average MFE` >> `Average Profit`, use dynamic Trailing Stops to capture the full move.
        - **Basket TP**: Dynamically calculated based on volatility and MFE potential.
+    
+    5. **CandleSmoothing EMA 策略 (Strategy B)**:
+       - **核心逻辑**: 基于 EMA50 趋势过滤，结合 EMA20 High/Low 通道突破和 Heiken Ashi 蜡烛形态。
+       - **做多信号 (Buy)**: HA收盘价 > EMA20 High AND HA阳线 AND HA收盘价 > EMA50 AND EMA50上升趋势 AND 前一HA收盘价 < EMA50 (金叉)。
+       - **做空信号 (Sell)**: HA收盘价 < EMA20 Low AND HA阴线 AND HA收盘价 < EMA50 AND EMA50下降趋势 AND 前一HA收盘价 > EMA50 (死叉)。
+       - **权重**: 当此策略发出信号且与 SMC 结构方向一致时，置信度应显著提高。
         """
 
         # --- 3. 市场特性 (品种特定) ---

@@ -2176,6 +2176,85 @@ class SymbolTrader:
 
 
 
+    def analyze_ema_ha_strategy(self, df):
+        """
+        CandleSmoothing EMA Engine Strategy Implementation
+        Indicators: EMA 50 (Close), EMA 20 High, EMA 20 Low, Heiken Ashi
+        """
+        try:
+            if df is None or len(df) < 55:
+                return {"signal": "neutral", "reason": "Not enough data"}
+
+            # 1. Calculate Indicators
+            # EMA
+            ema_50 = df['close'].ewm(span=50, adjust=False).mean()
+            ema_20_high = df['high'].ewm(span=20, adjust=False).mean()
+            ema_20_low = df['low'].ewm(span=20, adjust=False).mean()
+
+            # Heiken Ashi (Manual Calculation)
+            ha_close = (df['open'] + df['high'] + df['low'] + df['close']) / 4
+            
+            # HA Open requires iteration or shifting
+            # Fast vectorized approximation or loop
+            # Since we only need the last few values for signal, we can calculate fully or just last few if we had prev state.
+            # But here we calculate for dataframe.
+            
+            ha_open = np.zeros(len(df))
+            ha_open[0] = (df['open'].iloc[0] + df['close'].iloc[0]) / 2
+            
+            # Using loop for correctness (HA Open depends on previous HA Open)
+            # This might be slightly slow for very large DF, but for 600 rows it's negligible
+            ha_close_values = ha_close.values
+            for i in range(1, len(df)):
+                ha_open[i] = (ha_open[i-1] + ha_close_values[i-1]) / 2
+            
+            ha_open = pd.Series(ha_open, index=df.index)
+            
+            # 2. Logic Implementation
+            # MQL Logic:
+            # buySignal = (haClose1 > ema20h_closed) && haBull1 && (haClose1 > ema50_closed) &&
+            #             trendBull && (haClosePrev < ema50_prev);
+            
+            # Python Indexing:
+            # -1: Current (Forming) -> Ignore for signal usually, or use if confirmed close
+            # MQL uses [1] (Last Closed) and [2] (Prev Closed)
+            # So we use .iloc[-2] and .iloc[-3]
+            
+            idx_1 = -2
+            idx_2 = -3
+            
+            ha_c_1 = ha_close.iloc[idx_1]
+            ha_o_1 = ha_open.iloc[idx_1]
+            ha_c_2 = ha_close.iloc[idx_2]
+            
+            ema_20_h_1 = ema_20_high.iloc[idx_1]
+            ema_20_l_1 = ema_20_low.iloc[idx_1]
+            
+            ema_50_1 = ema_50.iloc[idx_1]
+            ema_50_2 = ema_50.iloc[idx_2]
+            
+            # Conditions
+            ha_bull_1 = ha_c_1 > ha_o_1
+            trend_bull = ema_50_1 > ema_50_2
+            trend_bear = ema_50_1 < ema_50_2
+            
+            buy_signal = (ha_c_1 > ema_20_h_1) and ha_bull_1 and (ha_c_1 > ema_50_1) and \
+                         trend_bull and (ha_c_2 < ema_50_2)
+            
+            sell_signal = (ha_c_1 < ema_20_l_1) and (not ha_bull_1) and (ha_c_1 < ema_50_1) and \
+                          trend_bear and (ha_c_2 > ema_50_2)
+            
+            if buy_signal:
+                return {"signal": "buy", "reason": "EMA-HA Crossover Bullish"}
+            elif sell_signal:
+                return {"signal": "sell", "reason": "EMA-HA Crossover Bearish"}
+            
+            return {"signal": "neutral", "reason": "No Crossover"}
+            
+        except Exception as e:
+            logger.error(f"EMA-HA Analysis Failed: {e}")
+            return {"signal": "neutral", "reason": "Error"}
+
     def optimize_short_term_params(self):
         """
         Optimize short-term strategy parameters (RVGI+CCI, IFVG)
