@@ -68,7 +68,8 @@ class HybridOptimizer:
             "qwen": 1.5, 
             "crt": 0.8,
             "smc": 1.1,
-            "rvgi_cci": 0.6
+            "rvgi_cci": 0.6,
+            "ema_ha": 0.9
         }
         self.history = []
 
@@ -2826,6 +2827,16 @@ class SymbolTrader:
                         self.latest_strategy = strategy
                         self.last_llm_time = time.time()
                         
+                        # Update lot_size from Qwen Strategy
+                        if 'position_size' in strategy:
+                            try:
+                                qwen_lot = float(strategy['position_size'])
+                                if qwen_lot > 0:
+                                    self.lot_size = qwen_lot
+                                    logger.info(f"Updated lot size from Qwen: {self.lot_size}")
+                            except Exception as e:
+                                logger.error(f"Failed to update lot size: {e}")
+                        
                         # --- 参数自适应优化 (Feedback Loop) ---
                         param_updates = strategy.get('parameter_updates', {})
                         if param_updates:
@@ -2895,7 +2906,8 @@ class SymbolTrader:
                             "smc": smc_result['signal'],
                             "mtf": mtf_result['signal'],
                             "ifvg": ifvg_result['signal'],
-                            "rvgi_cci": rvgi_cci_result['signal']
+                            "rvgi_cci": rvgi_cci_result['signal'],
+                            "ema_ha": ema_ha_result['signal']
                         }
                         
                         # Combine Signals (Using HybridOptimizer just for weighting record)
