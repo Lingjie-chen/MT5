@@ -1722,6 +1722,16 @@ class SymbolTrader:
                             "mae": mae
                         })
                         
+                        # [NEW] Sync Performance Update to Master DB
+                        self.master_db_manager.update_trade_performance(ticket, {
+                            "result": "WIN" if total_profit > 0 else "LOSS",
+                            "close_price": close_price,
+                            "close_time": end_dt,
+                            "profit": total_profit,
+                            "mfe": mfe,
+                            "mae": mae
+                        })
+                        
                         logger.info(f"分析交易 #{ticket} 完成: MFE={mfe:.2f}%, MAE={mae:.2f}%, Profit={total_profit:.2f}")
 
         except Exception as e:
