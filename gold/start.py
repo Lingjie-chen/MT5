@@ -3126,97 +3126,75 @@ class MultiSymbolBot:
         self.traders = []
         self.is_running = False
         self.watcher = None
+        self.mt5_interface = MT5Interface()
 
-    def initialize_mt5(self, account_index=1):
-        """Global MT5 Initialization"""
-        # Load credentials from .env
-        account = int(os.getenv(f"MT5_ACCOUNT_{account_index}", 89633982))
-        server = os.getenv(f"MT5_SERVER_{account_index}", "Ava-Real 1-MT5")
-        password = os.getenv(f"MT5_PASSWORD_{account_index}", "Clj568741230#")
-        
-        # [NEW] Load specific MT5 Terminal Path
-        mt5_path = os.getenv(f"MT5_PATH_{account_index}")
-        
-        logger.info(f"Connecting to MT5 Account {account_index}: {account} on {server}")
-        if mt5_path:
-             logger.info(f"Using specific terminal path: {mt5_path}")
-        
-        # Initialize MT5
-        init_params = {
-            "login": account, 
-            "server": server, 
-            "password": password
-        }
-        if mt5_path and os.path.exists(mt5_path):
-            init_params["path"] = mt5_path
-            
-        if not mt5.initialize(**init_params):
-            err_code = mt5.last_error()
-            logger.error(f"MT5 初始化失败 (Account {account_index}), 错误码: {err_code}")
-            
-            # Fallback: Try initialize without credentials (uses last logged in account in Terminal)
-            if not mt5.initialize():
-                logger.error("MT5 默认初始化也失败")
-                return False
-        
-        # Check if login successful (login matches)
-        current_login = mt5.account_info().login
-        if current_login != account:
-             logger.warning(f"⚠️ 登录账户 ({current_login}) 与配置账户 ({account}) 不一致！")
-             logger.warning("请确保 MT5 终端已登录正确账户，或使用多个终端实例。")
-             
-        # Check algo trading status
-        term_info = mt5.terminal_info()
-        if not term_info.trade_allowed:
-            logger.warning("⚠️ 警告: 终端 '自动交易' (Algo Trading) 未开启！")
-            
-        logger.info(f"MT5 全局初始化成功，当前登录账户: {current_login}")
-        return True
+    def get_account_index(self, symbol):
+        """Determine account index based on symbol name"""
+        s = symbol.upper()
+        if "GOLD" in s or "XAU" in s:
+            return 1 # Ava
+        if "EURUSD" in s:
+            return 2 # Exness
+        if "ETHUSD" in s:
+            return 1 # Default to Ava/SiliconFlow
+        return 1 # Default
 
-    def _resolve_symbol(self, base_symbol):
+    def _resolve_symbol(self, base_symbol, account_index):
         """
-        自动识别不同平台的交易品种名称 (Exness/Ava/etc.)
-        例如: GOLD -> XAUUSDm, EURUSD -> EURUSDm
+        Resolve symbol variant on the specific account
         """
-        # 1. 尝试直接匹配
-        if mt5.symbol_info(base_symbol):
-            return base_symbol
-            
-        # 2. 常见变体映射
-        variants = []
-        base_upper = base_symbol.upper()
-        
-        if base_upper == "GOLD" or base_upper == "XAUUSD":
-            variants = ["XAUUSD", "XAUUSDm", "XAUUSDz", "XAUUSDk", "Gold", "Goldm", "XAUUSD.a", "XAUUSD.ecn"]
-        elif base_upper == "EURUSD":
-            variants = ["EURUSDm", "EURUSDz", "EURUSDk", "EURUSD.a", "EURUSD.ecn"]
-        elif base_upper == "ETHUSD":
-            variants = ["ETHUSDm", "ETHUSDz", "ETHUSDk", "ETHUSD.a", "ETHUSD.ecn"]
-        else:
-            # 通用后缀尝试
-            variants = [f"{base_symbol}m", f"{base_symbol}z", f"{base_symbol}k", f"{base_symbol}.a"]
-
-        for var in variants:
-            if mt5.symbol_info(var):
-                logger.info(f"✅ 自动识别品种: {base_symbol} -> {var}")
-                return var
+        # Context manager handles account switching
+        with self.mt5_interface.use_account(account_index):
+            # 1. Try direct match
+            if mt5.symbol_info(base_symbol):
+                return base_symbol
                 
-        logger.warning(f"⚠️ 未能自动识别品种变体: {base_symbol}, 将尝试使用原名")
-        return base_symbol
-
-    def start(self, account_index=1):
-        if not self.initialize_mt5(account_index):
-            logger.error("MT5 初始化失败，无法启动")
-            return
+            # 2. Common variants
+            variants = []
+            base_upper = base_symbol.upper()
             
-        # --- 自动解析品种名称 ---
-        resolved_symbols = []
+            if base_upper == "GOLD" or base_upper == "XAUUSD":
+                variants = ["XAUUSD", "XAUUSDm", "XAUUSDz", "XAUUSDk", "Gold", "Goldm", "XAUUSD.a", "XAUUSD.ecn"]
+            elif base_upper == "EURUSD":
+                variants = ["EURUSDm", "EURUSDz", "EURUSDk", "EURUSD.a", "EURUSD.ecn"]
+            elif base_upper == "ETHUSD":
+                variants = ["ETHUSDm", "ETHUSDz", "ETHUSDk", "ETHUSD.a", "ETHUSD.ecn"]
+            else:
+                variants = [f"{base_symbol}m", f"{base_symbol}z", f"{base_symbol}k", f"{base_symbol}.a"]
+
+            for var in variants:
+                if mt5.symbol_info(var):
+                    logger.info(f"✅ Resolved Symbol (Acc {account_index}): {base_symbol} -> {var}")
+                    return var
+                    
+            logger.warning(f"⚠️ Could not resolve variant for: {base_symbol} on Account {account_index}")
+            return base_symbol
+
+    def start(self, default_account_index=1):
+        # We don't do global initialization anymore.
+        # We initialize per symbol/account.
+            
+        # --- Resolve Symbols and Assign Accounts ---
+        self.symbol_configs = []
         for s in self.symbols:
-            resolved = self._resolve_symbol(s)
-            if resolved not in resolved_symbols:
-                resolved_symbols.append(resolved)
-        self.symbols = resolved_symbols
-        logger.info(f"最终交易品种列表: {self.symbols}")
+            idx = self.get_account_index(s)
+            
+            # Ensure account is valid/reachable
+            if not self.mt5_interface.initialize_account(idx):
+                logger.error(f"Could not initialize account {idx} for symbol {s}")
+                continue
+                
+            resolved = self._resolve_symbol(s, idx)
+            self.symbol_configs.append({
+                "symbol": resolved,
+                "account_index": idx
+            })
+            
+        if not self.symbol_configs:
+            logger.error("No valid symbols/accounts found. Exiting.")
+            return
+
+        logger.info(f"Final Trading Configuration: {self.symbol_configs}")
         # -----------------------
 
         # Start File Watcher
@@ -3228,15 +3206,22 @@ class MultiSymbolBot:
             logger.error(f"Failed to start FileWatcher: {e}")
 
         self.is_running = True
-        logger.info(f"🚀 Multi-Symbol Bot Started for: {self.symbols}")
+        logger.info(f"🚀 Multi-Symbol Bot Started")
 
         # Launch a thread for each symbol
-        for symbol in self.symbols:
+        for config in self.symbol_configs:
+            symbol = config["symbol"]
+            acc_idx = config["account_index"]
             try:
                 # Create and start a worker thread for this symbol
-                thread = threading.Thread(target=self._trader_worker, args=(symbol,), name=f"Thread-{symbol}", daemon=True)
+                thread = threading.Thread(
+                    target=self._trader_worker, 
+                    args=(symbol, acc_idx), 
+                    name=f"Thread-{symbol}-Acc{acc_idx}", 
+                    daemon=True
+                )
                 thread.start()
-                logger.info(f"Thread for {symbol} started.")
+                logger.info(f"Thread for {symbol} (Account {acc_idx}) started.")
             except Exception as e:
                 logger.error(f"Failed to start thread for {symbol}: {e}")
 
@@ -3254,29 +3239,32 @@ class MultiSymbolBot:
             self.is_running = False
             mt5.shutdown()
 
-    def _trader_worker(self, symbol):
+    def _trader_worker(self, symbol, account_index):
         """Worker function for each symbol thread"""
         try:
             # Initialize trader instance inside the thread
-            # NOTE: MT5 calls are thread-safe, but we need to ensure separate state
-            trader = SymbolTrader(symbol=symbol, timeframe=self.timeframe)
-            trader.initialize()
-            self.traders.append(trader) # Keep reference if needed
+            trader = SymbolTrader(symbol=symbol, timeframe=self.timeframe, account_index=account_index)
             
-            logger.info(f"[{symbol}] Worker Loop Started")
+            # Use context for initialization
+            with self.mt5_interface.use_account(account_index):
+                trader.initialize()
+                
+            self.traders.append(trader)
+            
+            logger.info(f"[{symbol}] Worker Loop Started on Account {account_index}")
             
             while self.is_running:
                 try:
+                    # process_tick calls self.mt5.* which handles locking/switching
                     trader.process_tick()
                 except Exception as e:
                     logger.error(f"[{symbol}] Process Error: {e}")
                 
-                # Independent sleep for this symbol's loop
-                # Adjust polling rate if needed
                 time.sleep(1) 
                 
         except Exception as e:
             logger.error(f"[{symbol}] Worker Thread Crash: {e}")
+
 
 if __name__ == "__main__":
     import argparse
