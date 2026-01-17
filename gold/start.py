@@ -426,19 +426,19 @@ class SymbolTrader:
                             llm_lot = round(llm_lot / step) * step
                             llm_lot = max(symbol_info.volume_min, min(llm_lot, symbol_info.volume_max))
                             
-                            # 风险验证 (Risk Guardrail)
-                            # 估算: 1 Lot * 500 points * TickValue
+                            # 风险验证 (Risk Guardrail) - 放宽限制以支持 AI 全权风控
+                            # 估算: 1 Lot * 500 points * TickValue (压力测试)
                             tick_val = symbol_info.trade_tick_value
                             if not tick_val: tick_val = 1.0
                             
                             est_risk = llm_lot * 500.0 * tick_val
-                            max_risk = equity * 0.08 # 允许最大 8% 风险敞口 (比算法宽容，信任模型)
+                            max_risk = equity * 0.25 # 允许最大 25% 账户权益的压力测试风险 (完全信任模型分析)
                             
                             if est_risk <= max_risk:
-                                logger.info(f"✅ 采用大模型建议仓位: {llm_lot} Lots (Est Risk: ${est_risk:.2f})")
+                                logger.info(f"✅ 采用大模型全权建议仓位: {llm_lot} Lots (AI Driven Risk)")
                                 return llm_lot
                             else:
-                                logger.warning(f"⚠️ 大模型建议仓位 {llm_lot} 风险过高 (Est ${est_risk:.2f} > ${max_risk:.2f})，回退至算法风控。")
+                                logger.warning(f"⚠️ 大模型建议仓位 {llm_lot} 极端风险过高 (StressTest ${est_risk:.2f} > ${max_risk:.2f})，触发熔断保护。")
                 except Exception as e:
                     logger.warning(f"解析 LLM 仓位失败: {e}")
 
