@@ -10,21 +10,18 @@ cd /d "%~dp0"
 :: 这样避免了在 start 命令中编写复杂的单行循环代码导致的语法错误
 :: -----------------------------------------------------------------------------
 
-echo Launching GOLD Strategy...
-start "Strategy - GOLD" run_bot_watchdog.bat GOLD
-timeout /t 1 /nobreak >nul
+echo Launching Account 1 Strategy (GOLD, ETHUSD, EURUSD)...
+start "Strategy - Account 1 (Ava)" run_bot_watchdog.bat GOLD,ETHUSD,EURUSD --account 1
+timeout /t 2 /nobreak >nul
 
-echo Launching ETHUSD Strategy...
-start "Strategy - ETHUSD" run_bot_watchdog.bat ETHUSD
-
-echo Launching EURUSD Strategy...
-start "Strategy - EURUSD" run_bot_watchdog.bat EURUSD
+echo Launching Account 2 Strategy (XAUUSDm, ETHUSDm, EURUSDm)...
+start "Strategy - Account 2 (Exness)" run_bot_watchdog.bat XAUUSDm,ETHUSDm,EURUSDm --account 2
 
 echo.
 echo ========================================================
-echo  All strategies have been launched in separate windows.
-echo  Each window runs 'run_bot_watchdog.bat' which handles
-echo  the auto-restart logic.
+echo  All strategies have been launched in 2 main windows.
+echo  Account 1: Ava (GOLD, ETHUSD, EURUSD)
+echo  Account 2: Exness (XAUUSDm, ETHUSDm, EURUSDm)
 echo ========================================================
 echo.
 pause

@@ -8,9 +8,9 @@ cd /d "%~dp0\.."
 :loop
 echo [%DATE% %TIME%] Starting Multi-Symbol AI Trading Bot...
 echo ---------------------------------------------------
-echo Supported Symbols: GOLD, ETHUSD
-echo Usage: run_bot_watchdog.bat [Symbol1,Symbol2,...]
-echo Default: GOLD, ETHUSD
+echo Supported Symbols: GOLD, ETHUSD, EURUSD, XAUUSDm, ETHUSDm, EURUSDm
+echo Usage: run_bot_watchdog.bat [Symbol1,Symbol2,...] [--account N]
+echo Default: GOLD, XAUUSDm, ETHUSD, ETHUSDm, EURUSD, EURUSDm
 echo ---------------------------------------------------
 
 :: Run as module, passing all arguments
