@@ -2427,28 +2427,42 @@ class SymbolTrader:
                         # If I closed with a SELL deal, I was Long (BUY).
                         pos_type = "BUY" if deal.type == mt5.DEAL_TYPE_SELL else "SELL"
                         
-                        cursor.execute('''
+                        insert_sql = '''
                             INSERT OR IGNORE INTO trades (ticket, symbol, action, volume, price, time, result, close_price, close_time, profit, mfe, mae)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ''', (
+                        '''
+                        insert_params = (
                             ticket, 
                             symbol, 
                             pos_type, 
                             deal.volume, 
                             0.0, # Open price unknown
-                            datetime.fromtimestamp(deal.time), # Approximate open time (actually this is close time)
+                            datetime.fromtimestamp(deal.time), # Approximate open time
                             'CLOSED',
                             deal.price,
                             datetime.fromtimestamp(deal.time),
                             profit,
-                            0.0, # MFE unknown without analysis
-                            0.0  # MAE unknown
-                        ))
+                            0.0, 
+                            0.0
+                        )
+                        
+                        # Sync to Local DB
+                        cursor.execute(insert_sql, insert_params)
+                        
+                        # [NEW] Sync to Master DB
+                        try:
+                            m_conn = self.master_db_manager._get_connection()
+                            m_cursor = m_conn.cursor()
+                            m_cursor.execute(insert_sql, insert_params)
+                            m_conn.commit()
+                        except Exception as e_master:
+                            logger.error(f"Failed to sync historical trade {ticket} to Master DB: {e_master}")
+                            
                         count += 1
             
             if count > 0:
                 self.db_manager.conn.commit()
-                logger.info(f"Synced {count} historical trades from MT5 to local DB.")
+                logger.info(f"Synced {count} historical trades from MT5 to local & master DB.")
                 
         except Exception as e:
             logger.error(f"Failed to sync account history: {e}")
