@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
 from file_watcher import FileWatcher
+from mt5_interface import MT5Interface, MT5Wrapper
 
 # Try importing MetaTrader5
 try:
@@ -102,7 +103,9 @@ class HybridOptimizer:
         return final_signal, final_score, self.weights
 
 class SymbolTrader:
-    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M15):
+    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M15, account_index=1):
+        self.mt5_interface = MT5Interface()
+        self.mt5 = MT5Wrapper(self.mt5_interface, account_index)
         self.symbol = symbol
         self.timeframe = timeframe
         self.tf_name = "M15"

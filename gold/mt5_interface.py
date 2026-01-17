@@ -106,3 +106,22 @@ class MT5AccountContext:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.interface.lock.release()
+
+class MT5Wrapper:
+    def __init__(self, interface, account_index):
+        self.interface = interface
+        self.idx = account_index
+    
+    def __getattr__(self, name):
+        # Delegate to the real mt5 module
+        attr = getattr(mt5, name)
+        
+        # If it's a function, wrap it with the context manager
+        if callable(attr):
+            def wrapper(*args, **kwargs):
+                with self.interface.use_account(self.idx):
+                    return attr(*args, **kwargs)
+            return wrapper
+        
+        # If it's a constant or property, return it directly
+        return attr
