@@ -204,7 +204,7 @@ class SymbolTrader:
         return True
 
     def get_market_data(self, num_candles=100):
-        """直接从 MT5 获取历史数据 (增强版)"""
+        """直接从 MT5 获取历史数据 (Exness 增强版)"""
         # 1. 基础尝试
         rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, num_candles)
         
@@ -213,20 +213,28 @@ class SymbolTrader:
             err = mt5.last_error()
             logger.warning(f"[{self.symbol}] 首次获取数据失败 ({err})")
             
-            # 尝试常见的后缀变体
             variants = []
-            base_symbol = self.symbol.replace('m', '').replace('z', '').replace('k', '') # 剥离后缀
             
-            # 变体列表: 原名, 原名+m, 原名-m, 原名+z, ...
-            if self.symbol.endswith('m'):
-                variants.append(self.symbol[:-1]) # XAUUSDm -> XAUUSD
-            else:
-                variants.append(self.symbol + "m") # XAUUSD -> XAUUSDm
+            # 基础剥离逻辑 (移除常见后缀)
+            base_symbol = self.symbol
+            # 移除 Exness 常见后缀: m, z, k, f, b, c
+            for suffix in ['m', 'z', 'k', 'f', 'b', 'c']:
+                 if base_symbol.endswith(suffix):
+                     base_symbol = base_symbol[:-1]
+                     break
+            
+            # 添加纯净版作为首选
+            variants.append(base_symbol)
+            
+            # 添加 Exness 全系后缀
+            exness_suffixes = ['m', 'z', 'k', 'f', 'b', 'c']
+            for s in exness_suffixes:
+                variants.append(f"{base_symbol}{s}")
             
             # 遍历尝试
             for var_sym in variants:
                 if mt5.symbol_select(var_sym, True):
-                    logger.info(f"💡 发现有效品种: {var_sym}，正在切换...")
+                    logger.info(f"💡 发现 Exness 有效品种: {var_sym}，正在自动修正并切换...")
                     self.symbol = var_sym # 永久更新当前实例的品种名
                     rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, num_candles)
                     if rates is not None and len(rates) > 0:
@@ -240,7 +248,7 @@ class SymbolTrader:
                 visible_names = [s.name for s in symbols]
                 logger.info(f"当前 Market Watch 可见品种 (前10个): {visible_names[:10]}")
                 if self.symbol not in visible_names:
-                    logger.warning(f"⚠️ '{self.symbol}' 不在可见列表中！")
+                    logger.warning(f"⚠️ '{self.symbol}' 不在可见列表中！请在 MT5 中右键 'Market Watch' -> 'Show All'")
             return None
             
         # 转换为 DataFrame
@@ -3189,8 +3197,9 @@ class MultiSymbolBot:
             logger.error(f"[{symbol}] Worker Thread Crash: {e}")
 
 if __name__ == "__main__":
-    # Default symbols for Exness (m-suffix)
-    symbols = ["XAUUSDm", "ETHUSDm", "EURUSDm"]
+    # Default symbols (Using Base Names for Auto-Detection)
+    # 脚本会自动尝试 XAUUSD, XAUUSDm, XAUUSDz, XAUUSDk 等 Exness 变体
+    symbols = ["XAUUSD", "ETHUSD", "EURUSD"]
     
     # Allow command line override (comma separated)
     if len(sys.argv) > 1:
