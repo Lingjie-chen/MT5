@@ -204,51 +204,11 @@ class SymbolTrader:
         return True
 
     def get_market_data(self, num_candles=100):
-        """直接从 MT5 获取历史数据 (Exness 增强版)"""
-        # 1. 基础尝试
+        """直接从 MT5 获取历史数据"""
         rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, num_candles)
         
-        # 2. 如果失败，尝试自动修正品种名称
         if rates is None or len(rates) == 0:
-            err = mt5.last_error()
-            logger.warning(f"[{self.symbol}] 首次获取数据失败 ({err})")
-            
-            variants = []
-            
-            # 基础剥离逻辑 (移除常见后缀)
-            base_symbol = self.symbol
-            # 移除 Exness 常见后缀: m, z, k, f, b, c
-            for suffix in ['m', 'z', 'k', 'f', 'b', 'c']:
-                 if base_symbol.endswith(suffix):
-                     base_symbol = base_symbol[:-1]
-                     break
-            
-            # 添加纯净版作为首选
-            variants.append(base_symbol)
-            
-            # 添加 Exness 全系后缀
-            exness_suffixes = ['m', 'z', 'k', 'f', 'b', 'c']
-            for s in exness_suffixes:
-                variants.append(f"{base_symbol}{s}")
-            
-            # 遍历尝试
-            for var_sym in variants:
-                if mt5.symbol_select(var_sym, True):
-                    logger.info(f"💡 发现 Exness 有效品种: {var_sym}，正在自动修正并切换...")
-                    self.symbol = var_sym # 永久更新当前实例的品种名
-                    rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, num_candles)
-                    if rates is not None and len(rates) > 0:
-                        break
-        
-        if rates is None or len(rates) == 0:
-            logger.error(f"[{self.symbol}] 最终无法获取 K 线数据。请检查 Market Watch 是否已选中该品种。")
-            # 打印所有可见品种，帮助调试
-            symbols = mt5.symbols_get(visible=True)
-            if symbols:
-                visible_names = [s.name for s in symbols]
-                logger.info(f"当前 Market Watch 可见品种 (前10个): {visible_names[:10]}")
-                if self.symbol not in visible_names:
-                    logger.warning(f"⚠️ '{self.symbol}' 不在可见列表中！请在 MT5 中右键 'Market Watch' -> 'Show All'")
+            logger.error("无法获取 K 线数据")
             return None
             
         # 转换为 DataFrame
@@ -3089,47 +3049,23 @@ class MultiSymbolBot:
 
     def initialize_mt5(self):
         """Global MT5 Initialization"""
-        # Exness 账户配置
+        # 尝试使用指定账户登录
         account = 232809484
         server = "Exness-MT5Real5"
-        password = "Clj56874230#"
+        password = "Clj568741230#"
         
-        # 策略 1: 优先尝试无参数初始化 (复用当前已打开且已登录的 MT5 终端)
-        # 这是解决 "Authorization failed" 最稳妥的方法：用户手动登录好，脚本直接用。
-        if mt5.initialize():
-            current_account = mt5.account_info().login
-            logger.info(f"MT5 已连接，当前登录账户: {current_account}")
-            
-            # 检查是否匹配
-            if current_account == account:
-                logger.info("✅ 账户匹配成功")
-                return True
-            else:
-                logger.warning(f"⚠️ 当前登录账户 ({current_account}) 与配置账户 ({account}) 不一致")
-                logger.warning("尝试切换账户...")
-                # 如果不匹配，才尝试使用账号密码登录
-                if not mt5.login(login=account, server=server, password=password):
-                    logger.error(f"❌ 切换账户失败, 错误码: {mt5.last_error()}")
-                    logger.error("请尝试在 MT5 终端中手动登录该账户并勾选'保存密码'")
-                    return False
-                else:
-                    logger.info(f"✅ 账户切换成功: {account}")
-                    return True
-        else:
-            # 策略 2: 如果无参数初始化失败 (MT5 未启动)，则尝试带路径启动 (如果有配置路径) 或带账号密码启动
-            logger.warning("无法连接现有 MT5 终端，尝试带参数启动...")
-            if not mt5.initialize(login=account, server=server, password=password):
-                err = mt5.last_error()
-                logger.error(f"❌ MT5 初始化失败, 错误码: {err}")
-                if err[0] == -6: # Authorization failed
-                    logger.error("💡 提示: 授权失败可能是因为 Server 名称不匹配或密码含特殊字符。建议先手动登录。")
+        if not mt5.initialize(login=account, server=server, password=password):
+            logger.error(f"MT5 初始化失败, 错误码: {mt5.last_error()}")
+            # 尝试不带账号初始化
+            if not mt5.initialize():
                 return False
-
+        
         # 检查终端状态
         term_info = mt5.terminal_info()
         if not term_info.trade_allowed:
             logger.warning("⚠️ 警告: 终端 '自动交易' (Algo Trading) 未开启！")
             
+        logger.info(f"MT5 全局初始化成功，账户: {mt5.account_info().login}")
         return True
 
     def start(self):
@@ -3197,9 +3133,8 @@ class MultiSymbolBot:
             logger.error(f"[{symbol}] Worker Thread Crash: {e}")
 
 if __name__ == "__main__":
-    # Default symbols (Using Base Names for Auto-Detection)
-    # 脚本会自动尝试 XAUUSD, XAUUSDm, XAUUSDz, XAUUSDk 等 Exness 变体
-    symbols = ["XAUUSD", "ETHUSD", "EURUSD"]
+    # Default symbols
+    symbols = ["GOLD", "XAUUSDm", "ETHUSD","ETHUSDm","EURUSD","EURUSDm"]
     
     # Allow command line override (comma separated)
     if len(sys.argv) > 1:

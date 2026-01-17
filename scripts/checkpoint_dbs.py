@@ -65,9 +65,9 @@ def run_checkpoints(base_dir):
     # Now includes separate DBs for each symbol
     dbs = [
         os.path.join(base_dir, 'crypto', 'crypto_trading.db'),
-        os.path.join(base_dir, 'gold', 'trading_data_XAUUSDm.db'),
-        os.path.join(base_dir, 'gold', 'trading_data_ETHUSDm.db'),
-        os.path.join(base_dir, 'gold', 'trading_data_EURUSDm.db')
+        os.path.join(base_dir, 'gold', 'trading_data_GOLD.db'),
+        os.path.join(base_dir, 'gold', 'trading_data_ETHUSD.db'),
+        os.path.join(base_dir, 'gold', 'trading_data_EURUSD.db')
     ]
 
     for db in dbs:
