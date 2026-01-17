@@ -3052,7 +3052,7 @@ class MultiSymbolBot:
         # 尝试使用指定账户登录
         account = 232809484
         server = "Exness-MT5Real5"
-        password = "Clj56874230#@!"
+        password = "Clj56874230#"
         
         if not mt5.initialize(login=account, server=server, password=password):
             logger.error(f"MT5 初始化失败, 错误码: {mt5.last_error()}")
