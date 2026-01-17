@@ -204,11 +204,43 @@ class SymbolTrader:
         return True
 
     def get_market_data(self, num_candles=100):
-        """直接从 MT5 获取历史数据"""
+        """直接从 MT5 获取历史数据 (增强版)"""
+        # 1. 基础尝试
         rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, num_candles)
         
+        # 2. 如果失败，尝试自动修正品种名称
         if rates is None or len(rates) == 0:
-            logger.error("无法获取 K 线数据")
+            err = mt5.last_error()
+            logger.warning(f"[{self.symbol}] 首次获取数据失败 ({err})")
+            
+            # 尝试常见的后缀变体
+            variants = []
+            base_symbol = self.symbol.replace('m', '').replace('z', '').replace('k', '') # 剥离后缀
+            
+            # 变体列表: 原名, 原名+m, 原名-m, 原名+z, ...
+            if self.symbol.endswith('m'):
+                variants.append(self.symbol[:-1]) # XAUUSDm -> XAUUSD
+            else:
+                variants.append(self.symbol + "m") # XAUUSD -> XAUUSDm
+            
+            # 遍历尝试
+            for var_sym in variants:
+                if mt5.symbol_select(var_sym, True):
+                    logger.info(f"💡 发现有效品种: {var_sym}，正在切换...")
+                    self.symbol = var_sym # 永久更新当前实例的品种名
+                    rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, num_candles)
+                    if rates is not None and len(rates) > 0:
+                        break
+        
+        if rates is None or len(rates) == 0:
+            logger.error(f"[{self.symbol}] 最终无法获取 K 线数据。请检查 Market Watch 是否已选中该品种。")
+            # 打印所有可见品种，帮助调试
+            symbols = mt5.symbols_get(visible=True)
+            if symbols:
+                visible_names = [s.name for s in symbols]
+                logger.info(f"当前 Market Watch 可见品种 (前10个): {visible_names[:10]}")
+                if self.symbol not in visible_names:
+                    logger.warning(f"⚠️ '{self.symbol}' 不在可见列表中！")
             return None
             
         # 转换为 DataFrame
