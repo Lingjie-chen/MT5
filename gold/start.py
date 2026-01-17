@@ -2601,6 +2601,10 @@ class SymbolTrader:
                             rvgi_cci_result = {"signal": "hold", "strength": 0, "reasons": []}
                         logger.info(f"RVGI+CCI 分析: {rvgi_cci_result['signal']} (Strength: {rvgi_cci_result['strength']})")
                         
+                        # --- 3.2.5.b CandleSmoothing EMA Strategy ---
+                        ema_ha_result = self.analyze_ema_ha_strategy(df)
+                        logger.info(f"EMA-HA 策略: {ema_ha_result['signal']}")
+
                         # --- 3.2.6 Grid Strategy Analysis ---
                         # Extract SMC and IFVG levels for Grid
                         smc_grid_data = {'ob': [], 'fvg': []}
@@ -2688,6 +2692,7 @@ class SymbolTrader:
                             "mtf": mtf_result['signal'], 
                             "ifvg": ifvg_result['signal'],
                             "rvgi_cci": rvgi_cci_result['signal'],
+                            "ema_ha": ema_ha_result['signal'],
                             "performance_stats": trade_stats
                         }
                         
