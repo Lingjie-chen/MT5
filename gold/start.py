@@ -3126,22 +3126,28 @@ class MultiSymbolBot:
 
     def initialize_mt5(self, account_index=1):
         """Global MT5 Initialization"""
-        # Account Configuration
-        if account_index == 2:
-             # Exness Account
-             account = 232809484
-             server = "Exness-MT5Real5"
-             password = "Clj568741230#"
-        else:
-             # Default to Ava (Account 1)
-             account = 89633982
-             server = "Ava-Real 1-MT5"
-             password = "Clj568741230#"
+        # Load credentials from .env
+        account = int(os.getenv(f"MT5_ACCOUNT_{account_index}", 89633982))
+        server = os.getenv(f"MT5_SERVER_{account_index}", "Ava-Real 1-MT5")
+        password = os.getenv(f"MT5_PASSWORD_{account_index}", "Clj568741230#")
+        
+        # [NEW] Load specific MT5 Terminal Path
+        mt5_path = os.getenv(f"MT5_PATH_{account_index}")
         
         logger.info(f"Connecting to MT5 Account {account_index}: {account} on {server}")
+        if mt5_path:
+             logger.info(f"Using specific terminal path: {mt5_path}")
         
         # Initialize MT5
-        if not mt5.initialize(login=account, server=server, password=password):
+        init_params = {
+            "login": account, 
+            "server": server, 
+            "password": password
+        }
+        if mt5_path and os.path.exists(mt5_path):
+            init_params["path"] = mt5_path
+            
+        if not mt5.initialize(**init_params):
             err_code = mt5.last_error()
             logger.error(f"MT5 初始化失败 (Account {account_index}), 错误码: {err_code}")
             
