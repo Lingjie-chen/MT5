@@ -2032,7 +2032,13 @@ class SymbolTrader:
         mae_sl_dist = atr * 1.5 
         
         try:
-             stats = self.db_manager.get_trade_performance_stats(limit=100)
+             # [NEW] Use Master DB for Collective Learning (Cross-Symbol Learning)
+             # Fetch more trades (200) to get better stats from all symbols
+             stats = self.master_db_manager.get_trade_performance_stats(limit=200)
+             if not stats:
+                 # Fallback to local DB if master is empty
+                 stats = self.db_manager.get_trade_performance_stats(limit=100)
+                 
              trades = []
              if isinstance(stats, list): trades = stats
              elif isinstance(stats, dict) and 'recent_trades' in stats: trades = stats['recent_trades']
@@ -2544,6 +2550,8 @@ class SymbolTrader:
                                     "symbol_pnl": symbol_pnl
                                 }
                                 self.db_manager.save_account_metrics(metrics)
+                                # [NEW] Sync Account Metrics to Master DB
+                                self.master_db_manager.save_account_metrics(metrics)
                         except Exception as e:
                             logger.error(f"Failed to save account metrics: {e}")
                         # ------------------------------
@@ -2926,6 +2934,23 @@ class SymbolTrader:
                         
                         # 保存分析结果到DB
                         self.db_manager.save_signal(self.symbol, self.tf_name, {
+                            "final_signal": final_signal,
+                            "strength": strength,
+                            "details": {
+                                "source": "Qwen_Solo",
+                                "reason": reason,
+                                "weights": weights,
+                                "signals": all_signals,
+                                "market_state": strategy.get('market_state', 'N/A'),
+                                "crt_reason": crt_result['reason'],
+                                "mtf_reason": mtf_result['reason'],
+                                "smc_structure": smc_result['structure'],
+                                "ifvg_reason": ", ".join(ifvg_result['reasons']) if ifvg_result['reasons'] else "N/A"
+                            }
+                        })
+
+                        # [NEW] Sync Signal to Master DB
+                        self.master_db_manager.save_signal(self.symbol, self.tf_name, {
                             "final_signal": final_signal,
                             "strength": strength,
                             "details": {
