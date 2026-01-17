@@ -2,6 +2,7 @@ import requests
 import json
 import logging
 import time
+import os
 from typing import Dict, Any, Optional, List
 import pandas as pd
 import numpy as np
@@ -759,11 +760,14 @@ class QwenClient:
         session = requests.Session()
         session.trust_env = False # Disable environment proxies
         
+        # 获取超时设置，默认为 300 秒
+        timeout = int(os.getenv("API_TIMEOUT", 300))
+        
         for retry in range(max_retries):
             response = None
             try:
-                # 增加超时时间到300秒
-                response = session.post(url, headers=headers, json=payload, timeout=300)
+                # 使用配置的超时时间
+                response = session.post(url, headers=headers, json=payload, timeout=timeout)
                 
                 # 详细记录响应状态
                 logger.debug(f"API响应状态码: {response.status_code}, Symbol: {symbol}, 模型: {current_model}")
@@ -799,6 +803,7 @@ class QwenClient:
             except requests.exceptions.Timeout as e:
                 logger.error(f"API请求超时 (重试 {retry+1}/{max_retries}): {e}")
                 logger.error(f"请求URL: {repr(url)}")
+                logger.error(f"当前超时设置: {timeout}秒. 可通过环境变量 'API_TIMEOUT' 增加此值")
                 logger.error("请检查网络连接和API服务响应时间")
             except requests.exceptions.HTTPError as e:
                 logger.error(f"API HTTP错误 (重试 {retry+1}/{max_retries}): {e}")
