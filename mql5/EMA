@@ -1,0 +1,381 @@
+//+------------------------------------------------------------------+
+//|                                   CandleSmoothing EMA Engine.mq5 |
+//|                              Copyright 2025, Christian Benjamin. |
+//|                          https://www.mql5.com/en/users/lynnchris |
+//+------------------------------------------------------------------+
+#property copyright "Copyright 2025, MetaQuotes Ltd."
+#property link      "https://www.mql5.com/en/users/lynnchris"
+#property version   "1.00"
+
+//--- input parameters
+input int EMA20_Period = 20;
+input int EMA50_Period = 50;
+input double ArrowOffsetPoints = 10;               // arrow offset in points
+input bool UseAlerts = true;                       // enable trade alerts
+input ENUM_TIMEFRAMES WorkTF = PERIOD_CURRENT;     // working timeframe
+input bool UseBuiltInHA = true;                    // use built-in Heikin Ashi
+input int DisplayBars = 100;                       // bars to display manual HA
+
+//--- runtime flags
+bool useBuiltInHA_flag = false;
+bool useManualHA_flag  = false;
+
+//--- indicator handles
+int handleEMA50 = INVALID_HANDLE;
+int handleEMA20H = INVALID_HANDLE;
+int handleEMA20L = INVALID_HANDLE;
+int handleHA     = INVALID_HANDLE;
+
+//--- runtime variables
+datetime lastClosedBarTime = 0;
+datetime lastBuyArrowTime  = 0;
+datetime lastSellArrowTime = 0;
+int lastSignalType         = 0;
+bool indicatorAdded        = false;
+bool emaAttached           = false;
+bool triedOnTickAdd        = false;
+
+//--- object name prefixes
+#define BUY_ARROW_PREFIX "EMA20HA_BUY_"
+#define SELL_ARROW_PREFIX "EMA20HA_SELL_"
+#define HA_CANDLE_PREFIX "HA_CANDLE_"
+
+//+------------------------------------------------------------------+
+//| Initialize EA                                                    |
+//+------------------------------------------------------------------+
+int OnInit()
+  {
+   bool isTester   = MQLInfoInteger(MQL_TESTER);
+   bool tryBuiltIn = UseBuiltInHA && !isTester;
+
+   useBuiltInHA_flag = tryBuiltIn;
+
+// EMA handles
+   handleEMA50 = iMA(_Symbol, WorkTF, EMA50_Period, 0, MODE_EMA, PRICE_CLOSE);
+   handleEMA20H = iMA(_Symbol, WorkTF, EMA20_Period, 0, MODE_EMA, PRICE_HIGH);
+   handleEMA20L = iMA(_Symbol, WorkTF, EMA20_Period, 0, MODE_EMA, PRICE_LOW);
+
+   if(handleEMA50 == INVALID_HANDLE || handleEMA20H == INVALID_HANDLE || handleEMA20L == INVALID_HANDLE)
+      return INIT_FAILED;
+
+// Attach EMAs visually
+   if(!isTester || MQLInfoInteger(MQL_VISUAL_MODE))
+      TryAttachEMAs();
+
+// Attach HA
+   if(tryBuiltIn)
+     {
+      string indicatorNames[] = {"Heiken Ashi", "Heiken_Ashi", "Heikin Ashi", "Heikin_Ashi"};
+      bool indicatorLoaded = false;
+
+      for(int i = 0; i < ArraySize(indicatorNames); i++)
+        {
+         handleHA = iCustom(_Symbol, WorkTF, indicatorNames[i]);
+         if(handleHA != INVALID_HANDLE)
+           {
+            indicatorLoaded = true;
+            break;
+           }
+        }
+
+      if(!indicatorLoaded)
+        {
+         useBuiltInHA_flag = false;
+         useManualHA_flag  = true;
+         DrawHACandles();
+        }
+      else
+        {
+         if(TryAttachHeikenAshi())
+           {
+            useBuiltInHA_flag = true;
+            useManualHA_flag  = false;
+           }
+         else
+           {
+            useBuiltInHA_flag = false;
+            useManualHA_flag  = true;
+            DrawHACandles();
+           }
+        }
+     }
+   else
+     {
+      useBuiltInHA_flag = false;
+      useManualHA_flag  = true;
+      DrawHACandles();
+     }
+
+// Store last closed bar time
+   datetime tms[];
+   ArraySetAsSeries(tms, true);
+   if(CopyTime(_Symbol, WorkTF, 0, 2, tms) > 0)
+      lastClosedBarTime = tms[1];
+
+   return INIT_SUCCEEDED;
+  }
+
+//+------------------------------------------------------------------+
+//| Attach EMA indicators                                            |
+//+------------------------------------------------------------------+
+void TryAttachEMAs()
+  {
+   if(emaAttached)
+      return;
+
+   long chart_id = ChartID();
+   if(chart_id == 0)
+      return;
+
+   ChartIndicatorAdd(chart_id, 0, handleEMA50);
+   ChartIndicatorAdd(chart_id, 0, handleEMA20H);
+   ChartIndicatorAdd(chart_id, 0, handleEMA20L);
+
+   emaAttached = true;
+  }
+
+//+------------------------------------------------------------------+
+//| Attach built-in Heikin Ashi                                      |
+//+------------------------------------------------------------------+
+bool TryAttachHeikenAshi()
+  {
+   if(indicatorAdded)
+      return true;
+
+   long chart_id = ChartID();
+   if(chart_id == 0)
+      return false;
+
+   if(ChartIndicatorAdd(chart_id, 0, handleHA))
+     {
+      indicatorAdded = true;
+      ChartRedraw(chart_id);
+      return true;
+     }
+   return false;
+  }
+
+//+------------------------------------------------------------------+
+//| Manual HA drawing routine                                        |
+//+------------------------------------------------------------------+
+void DrawHACandles()
+  {
+   if(MQLInfoInteger(MQL_TESTER) && !MQLInfoInteger(MQL_VISUAL_MODE))
+      return;
+
+   DeleteObjectsByPrefix(HA_CANDLE_PREFIX);
+
+   datetime tms[];
+   double op[], hi[], lo[], cl[];
+   ArraySetAsSeries(tms, true);
+   ArraySetAsSeries(op, true);
+   ArraySetAsSeries(hi, true);
+   ArraySetAsSeries(lo, true);
+   ArraySetAsSeries(cl, true);
+
+   int bars = MathMin(DisplayBars + 2, Bars(_Symbol, WorkTF));
+   if(CopyTime(_Symbol, WorkTF, 0, bars, tms) <= 1)
+      return;
+
+   CopyOpen(_Symbol, WorkTF, 0, bars, op);
+   CopyHigh(_Symbol, WorkTF, 0, bars, hi);
+   CopyLow(_Symbol, WorkTF, 0, bars, lo);
+   CopyClose(_Symbol, WorkTF, 0, bars, cl);
+
+   double haOpen = 0, haHigh = 0, haLow = 0, haClose = 0;
+   for(int i = bars - 2; i >= 0; i--)
+     {
+      haClose = (op[i] + hi[i] + lo[i] + cl[i]) / 4.0;
+      if(i == bars - 2)
+         haOpen = (op[i] + cl[i]) / 2.0;
+      else
+         haOpen = (haOpen + haClose) / 2.0;
+
+      haHigh = MathMax(haOpen, haClose);
+      haLow  = MathMin(haOpen, haClose);
+
+      string name = HA_CANDLE_PREFIX + IntegerToString(i);
+      color candleColor = (haClose > haOpen) ? clrGreen : clrRed;
+      if(ObjectCreate(0, name, OBJ_RECTANGLE, 0, tms[i], haHigh, tms[i + 1], haLow))
+        {
+         ObjectSetInteger(0, name, OBJPROP_COLOR, candleColor);
+         ObjectSetInteger(0, name, OBJPROP_BACK, true);
+         ObjectSetInteger(0, name, OBJPROP_FILL, true);
+         ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
+         ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+        }
+     }
+  }
+
+//+------------------------------------------------------------------+
+void DeleteObjectsByPrefix(string prefix)
+  {
+   int total = ObjectsTotal(0);
+   for(int i = total - 1; i >= 0; i--)
+     {
+      string name = ObjectName(0, i);
+      if(StringFind(name, prefix, 0) != -1)
+         ObjectDelete(0, name);
+     }
+  }
+
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+  {
+   if(handleHA     != INVALID_HANDLE)
+      IndicatorRelease(handleHA);
+   if(handleEMA50  != INVALID_HANDLE)
+      IndicatorRelease(handleEMA50);
+   if(handleEMA20H != INVALID_HANDLE)
+      IndicatorRelease(handleEMA20H);
+   if(handleEMA20L != INVALID_HANDLE)
+      IndicatorRelease(handleEMA20L);
+   DeleteObjectsByPrefix(HA_CANDLE_PREFIX);
+  }
+
+//+------------------------------------------------------------------+
+void OnTick()
+  {
+   static bool lastUseBuiltInHA = UseBuiltInHA;
+   if(UseBuiltInHA != lastUseBuiltInHA)
+     {
+      useBuiltInHA_flag = UseBuiltInHA && !MQLInfoInteger(MQL_TESTER);
+      lastUseBuiltInHA  = UseBuiltInHA;
+      if(useBuiltInHA_flag && handleHA == INVALID_HANDLE)
+         OnInit();
+     }
+
+   if(!indicatorAdded && !triedOnTickAdd && useBuiltInHA_flag && handleHA != INVALID_HANDLE)
+     {
+      if(TryAttachHeikenAshi())
+        {
+         useManualHA_flag = false;
+         DeleteObjectsByPrefix(HA_CANDLE_PREFIX);
+        }
+      else
+        {
+         useBuiltInHA_flag = false;
+         useManualHA_flag  = true;
+         DrawHACandles();
+        }
+      triedOnTickAdd = true;
+     }
+
+   datetime tms[];
+   ArraySetAsSeries(tms, true);
+   if(CopyTime(_Symbol, WorkTF, 0, 3, tms) <= 1)
+      return;
+
+   datetime lastClosed = tms[1];
+   if(lastClosed == lastClosedBarTime)
+      return;
+   lastClosedBarTime = lastClosed;
+
+   double op[], hi[], lo[], cl[];
+   ArraySetAsSeries(op, true);
+   ArraySetAsSeries(hi, true);
+   ArraySetAsSeries(lo, true);
+   ArraySetAsSeries(cl, true);
+   if(CopyOpen(_Symbol, WorkTF, 0, 3, op) <= 1)
+      return;
+
+   CopyHigh(_Symbol, WorkTF, 0, 3, hi);
+   CopyLow(_Symbol, WorkTF, 0, 3, lo);
+   CopyClose(_Symbol, WorkTF, 0, 3, cl);
+
+   double haClose1, haOpen1, haClosePrev;
+   double haCloseBuf[], haOpenBuf[];
+   ArraySetAsSeries(haCloseBuf, true);
+   ArraySetAsSeries(haOpenBuf, true);
+   bool haAvailable = false;
+
+   if(useBuiltInHA_flag && handleHA != INVALID_HANDLE)
+     {
+      if(CopyBuffer(handleHA, 3, 0, 3, haCloseBuf) > 1 &&
+         CopyBuffer(handleHA, 0, 0, 3, haOpenBuf) > 1)
+         haAvailable = true;
+     }
+
+   if(haAvailable && ArraySize(haCloseBuf) > 2)
+     {
+      haClose1     = haCloseBuf[1];
+      haOpen1      = haOpenBuf[1];
+      haClosePrev  = haCloseBuf[2];
+     }
+   else
+     {
+      haClose1    = (op[1] + hi[1] + lo[1] + cl[1]) / 4.0;
+      haClosePrev = (op[2] + hi[2] + lo[2] + cl[2]) / 4.0;
+      double haOpenPrev = (op[2] + cl[2]) / 2.0;
+      haOpen1     = (haOpenPrev + haClosePrev) / 2.0;
+     }
+
+   bool haBull1 = (haClose1 > haOpen1);
+
+   double ema50buf[], ema20hbuf[], ema20lbuf[];
+   ArraySetAsSeries(ema50buf, true);
+   ArraySetAsSeries(ema20hbuf, true);
+   ArraySetAsSeries(ema20lbuf, true);
+   if(CopyBuffer(handleEMA50, 0, 0, 3, ema50buf) <= 1)
+      return;
+
+   CopyBuffer(handleEMA20H, 0, 0, 3, ema20hbuf);
+   CopyBuffer(handleEMA20L, 0, 0, 3, ema20lbuf);
+
+   double ema50_closed = ema50buf[1];
+   double ema50_prev   = ema50buf[2];
+   double ema20h_closed = ema20hbuf[1];
+   double ema20l_closed = ema20lbuf[1];
+
+   bool trendBull = (ema50_closed > ema50_prev);
+   bool trendBear = (ema50_closed < ema50_prev);
+
+   bool buySignal  = (haClose1 > ema20h_closed) && haBull1 && (haClose1 > ema50_closed) &&
+                     trendBull && (haClosePrev < ema50_prev);
+
+   bool sellSignal = (haClose1 < ema20l_closed) && !haBull1 && (haClose1 < ema50_closed) &&
+                     trendBear && (haClosePrev > ema50_prev);
+
+   if(buySignal && lastSignalType != 1)
+     {
+      datetime sigTime = lastClosed;
+      double sigPrice  = lo[1] - ArrowOffsetPoints * _Point;
+      string name      = BUY_ARROW_PREFIX + IntegerToString((int)sigTime);
+      if(ObjectFind(0, name) == -1)
+        {
+         ObjectCreate(0, name, OBJ_ARROW, 0, sigTime, sigPrice);
+         ObjectSetInteger(0, name, OBJPROP_COLOR, clrLime);
+         ObjectSetInteger(0, name, OBJPROP_WIDTH, 2);
+         ObjectSetInteger(0, name, OBJPROP_ARROWCODE, 233);
+         if(UseAlerts)
+            Alert("BUY signal ", TimeToString(sigTime), " @", DoubleToString(sigPrice, _Digits));
+        }
+      lastSignalType = 1;
+     }
+   else
+      if(sellSignal && lastSignalType != -1)
+        {
+         datetime sigTime = lastClosed;
+         double sigPrice  = hi[1] + ArrowOffsetPoints * _Point;
+         string name      = SELL_ARROW_PREFIX + IntegerToString((int)sigTime);
+         if(ObjectFind(0, name) == -1)
+           {
+            ObjectCreate(0, name, OBJ_ARROW, 0, sigTime, sigPrice);
+            ObjectSetInteger(0, name, OBJPROP_COLOR, clrRed);
+            ObjectSetInteger(0, name, OBJPROP_WIDTH, 2);
+            ObjectSetInteger(0, name, OBJPROP_ARROWCODE, 234);
+            if(UseAlerts)
+               Alert("SELL signal ", TimeToString(sigTime), " @", DoubleToString(sigPrice, _Digits));
+           }
+         lastSignalType = -1;
+        }
+      else
+        {
+         lastSignalType = 0;
+        }
+
+   if(useManualHA_flag)
+      DrawHACandles();
+  }
+//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
