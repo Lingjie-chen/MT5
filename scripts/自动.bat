@@ -1,5 +1,5 @@
 @echo off
-title DB Checkpoint & Auto-Update Service (Multi-Account Support)
+title DB Checkpoint & Auto-Update Service
 color 0b
 
 :: Switch to project root
