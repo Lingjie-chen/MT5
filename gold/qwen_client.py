@@ -1411,7 +1411,10 @@ class QwenClient:
             "max_tokens": 10
         }
         
-        response = self._call_api("chat/completions", payload)
+        # 使用当前品种
+        symbol = market_data.get("symbol", "DEFAULT")
+        response = self._call_api("chat/completions", payload, symbol=symbol)
+        
         if response and "choices" in response:
             try:
                 strength = int(response["choices"][0]["message"]["content"].strip())
@@ -1449,7 +1452,8 @@ class QwenClient:
             "max_tokens": 10
         }
         
-        response = self._call_api("chat/completions", payload)
+        # 凯利公式通用，不需要特定 symbol，但为了调用 _call_api 保持一致性，传入 DEFAULT
+        response = self._call_api("chat/completions", payload, symbol="DEFAULT")
         if response and "choices" in response:
             try:
                 kelly = float(response["choices"][0]["message"]["content"].strip())
