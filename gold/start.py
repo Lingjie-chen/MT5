@@ -1336,6 +1336,26 @@ class SymbolTrader:
                 
             if response.status_code != 200:
                 logger.error(f"Telegram 发送失败: {response.text}")
+                # Fallback: Try sending as plain text if Markdown parsing fails
+                if response.status_code == 400 and "parse entities" in response.text:
+                    logger.warning("Markdown 解析失败，尝试以纯文本发送...")
+                    if "parse_mode" in data:
+                        del data["parse_mode"]
+                    try:
+                         # Retry without proxy first (or with proxy as before) - just keep logic simple
+                         # Re-use the same proxy logic
+                         try:
+                             response = requests.post(url, json=data, timeout=10, proxies=proxies)
+                         except:
+                             response = requests.post(url, json=data, timeout=10)
+                             
+                         if response.status_code == 200:
+                             logger.info("纯文本消息发送成功")
+                         else:
+                             logger.error(f"纯文本发送也失败: {response.text}")
+                    except Exception as e_retry:
+                        logger.error(f"重试发送失败: {e_retry}")
+
         except Exception as e:
             logger.error(f"Telegram 发送异常: {e}")
 

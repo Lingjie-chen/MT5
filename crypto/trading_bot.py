@@ -180,9 +180,22 @@ class CryptoTradingBot:
                 "https": "http://127.0.0.1:7890"
             }
             try:
-                requests.post(url, json=payload, timeout=10, proxies=proxies)
+                response = requests.post(url, json=payload, timeout=10, proxies=proxies)
             except:
-                requests.post(url, json=payload, timeout=10) # Retry without proxy
+                response = requests.post(url, json=payload, timeout=10) # Retry without proxy
+            
+            if response.status_code != 200:
+                logger.error(f"Telegram Send Failed: {response.text}")
+                # Fallback to plain text
+                if response.status_code == 400 and "parse" in response.text:
+                    if "parse_mode" in payload:
+                        del payload["parse_mode"]
+                    try:
+                        requests.post(url, json=payload, timeout=10)
+                        logger.info("Sent as plain text instead.")
+                    except Exception as e:
+                        logger.error(f"Plain text fallback failed: {e}")
+
         except Exception as e:
             logger.error(f"Error sending Telegram message: {e}")
 
