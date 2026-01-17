@@ -3062,9 +3062,9 @@ class MultiSymbolBot:
     def initialize_mt5(self, account_index=1):
         """Global MT5 Initialization"""
         # Load credentials from .env
-        account = int(os.getenv(f"MT5_ACCOUNT_{account_index}", 89633982))
-        server = os.getenv(f"MT5_SERVER_{account_index}", "Ava-Real 1-MT5")
-        password = os.getenv(f"MT5_PASSWORD_{account_index}", "Clj568741230#")
+        account = 232809484
+        server = "Exness-MT5Real5"
+        password = "Clj568741230#"
         
         logger.info(f"Connecting to MT5 Account {account_index}: {account} on {server}")
         
