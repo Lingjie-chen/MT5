@@ -684,7 +684,7 @@ class QwenClient:
         # 加载环境变量中的 ETHUSD 配置
         ethusd_key = os.getenv("ETHUSD_API_KEY", api_key)
         ethusd_url = os.getenv("ETHUSD_API_URL", "https://api.siliconflow.cn/v1")
-        ethusd_model = os.getenv("ETHUSD_MODEL", "Qwen/Qwen3-VL-235B-A22B-Thinking")
+        ethusd_model = os.getenv("ETHUSD_MODEL", "deepseek-ai/DeepSeek-V3.2")
         
         # 默认配置 (Gold/XAUUSD 使用 SiliconFlow GLM-4.7)
         default_config = {
