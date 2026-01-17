@@ -3186,17 +3186,19 @@ class MultiSymbolBot:
             logger.error(f"[{symbol}] Worker Thread Crash: {e}")
 
 if __name__ == "__main__":
-    # Default symbols
-    symbols = ["GOLD", "XAUUSDm", "ETHUSD","ETHUSDm","EURUSD","EURUSDm"]
+    import argparse
     
-    # Allow command line override (comma separated)
-    if len(sys.argv) > 1:
-        # Check if argument is a list of symbols or just one
-        arg = sys.argv[1]
-        if "," in arg:
-            symbols = [s.strip().upper() for s in arg.split(",")]
-        else:
-            symbols = [arg.upper()]
+    # Argument Parsing
+    parser = argparse.ArgumentParser(description="Multi-Symbol AI Trading Bot")
+    parser.add_argument("symbols", nargs="?", default="GOLD,ETHUSD,EURUSD", help="Comma separated symbols (e.g. GOLD,EURUSD)")
+    parser.add_argument("--account", type=int, default=1, help="Account Index from .env (1=Ava, 2=Exness)")
+    
+    args = parser.parse_args()
+    
+    # Parse Symbols
+    symbols = [s.strip().upper() for s in args.symbols.split(",")]
+    
+    logger.info(f"Starting Bot with Account {args.account} for symbols: {symbols}")
             
     bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M15)
-    bot.start()
+    bot.start(account_index=args.account)
