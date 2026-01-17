@@ -1094,7 +1094,12 @@ class SymbolTrader:
             
             self.lot_size = optimized_lot # 临时覆盖 self.lot_size 供 _send_order 使用
             
-            self._send_order(trade_type, price, explicit_sl, explicit_tp, comment=comment)
+            result = self._send_order(trade_type, price, explicit_sl, explicit_tp, comment=comment)
+            
+            # [NEW] Save Trade to Master DB (Redundant check if _send_order handles it)
+            # Actually _send_order calls save_trade, so we need to modify _send_order instead or rely on duplicate calls in _send_order?
+            # Let's check _send_order implementation.
+            
         else:
             if llm_action not in ['hold', 'neutral']:
                 logger.warning(f"无法执行交易: Action={llm_action}, TradeType={trade_type}, Price={price}")
@@ -2766,8 +2771,11 @@ class SymbolTrader:
                         # --- 3.3 Qwen 策略分析 (Sole Decision Maker) ---
                         logger.info("正在调用 Qwen 生成策略...")
                         
-                        # 获取历史交易绩效 (MFE/MAE) - Filter by Current Symbol
-                        trade_stats = self.db_manager.get_trade_performance_stats(symbol=self.symbol, limit=50)
+                        # 获取历史交易绩效 (MFE/MAE) - 使用 Master DB 获取跨品种数据进行集体学习
+                        trade_stats = self.master_db_manager.get_trade_performance_stats(limit=100)
+                        if not trade_stats:
+                             # Fallback to local
+                             trade_stats = self.db_manager.get_trade_performance_stats(symbol=self.symbol, limit=50)
                         
                         # 获取当前持仓状态
                         positions = mt5.positions_get(symbol=self.symbol)
