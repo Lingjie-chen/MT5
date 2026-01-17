@@ -3052,7 +3052,7 @@ class MultiSymbolBot:
         # Exness 账户配置
         account = 232809484
         server = "Exness-MT5Real5"
-        password = "Clj56874230#@!"
+        password = "Clj56874230#"
         
         # 策略 1: 优先尝试无参数初始化 (复用当前已打开且已登录的 MT5 终端)
         # 这是解决 "Authorization failed" 最稳妥的方法：用户手动登录好，脚本直接用。
