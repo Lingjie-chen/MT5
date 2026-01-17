@@ -17,23 +17,17 @@ except ImportError:
     print("Failed to import MetaTrader5, using mock data")
 
 class MT5DataProcessor:
-    def __init__(self, mt5_instance=None, auto_init=False):
+    def __init__(self):
         """Initialize the MT5 data processor"""
-        self.mt5 = mt5_instance if mt5_instance else mt5
         self.initialized = False
-        
-        # Only initialize if explicitly requested (e.g. standalone usage)
-        if auto_init and self.mt5 is not None:
+        if mt5 is not None:
             self.initialized = self._initialize_mt5()
-        elif self.mt5 is not None:
-            # Assume externally managed or available
-            self.initialized = True
 
     def _initialize_mt5(self):
         """Initialize MT5 connection"""
-        if self.mt5 is None:
+        if mt5 is None:
             return False
-        if not self.mt5.initialize():
+        if not mt5.initialize():
             print("Failed to initialize MT5")
             return False
         return True
@@ -53,7 +47,7 @@ class MT5DataProcessor:
         # Try to get real data if MT5 is available
         if self.initialized:
             try:
-                rates = self.mt5.copy_rates_range(symbol, timeframe, start_date, end_date)
+                rates = mt5.copy_rates_range(symbol, timeframe, start_date, end_date)
                 if rates is not None:
                     df = pd.DataFrame(rates)
                     df['time'] = pd.to_datetime(df['time'], unit='s')
