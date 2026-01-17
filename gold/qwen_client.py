@@ -1288,8 +1288,13 @@ class QwenClient:
                     )
                     
                     if not isinstance(trading_decision, dict):
-                        logger.warning(f"解析结果非字典，使用 fallback。")
-                        trading_decision = fallback_decision
+                        # 尝试自动修复：如果是列表且包含字典，提取第一个
+                        if isinstance(trading_decision, list) and len(trading_decision) > 0 and isinstance(trading_decision[0], dict):
+                            logger.info(f"解析结果为列表，自动提取第一个元素作为决策字典")
+                            trading_decision = trading_decision[0]
+                        else:
+                            logger.warning(f"解析结果非字典且无法修复 (Type: {type(trading_decision)})，使用 fallback。")
+                            trading_decision = fallback_decision
                     
                     # 再次校验模型返回的 position_size，确保其存在且合法
                     if "position_size" not in trading_decision:
