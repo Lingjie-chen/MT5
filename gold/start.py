@@ -3047,31 +3047,84 @@ class MultiSymbolBot:
         self.is_running = False
         self.watcher = None
 
-    def initialize_mt5(self):
+    def initialize_mt5(self, account_index=1):
         """Global MT5 Initialization"""
-        # 尝试使用指定账户登录
-        account = 232809484
-        server = "Exness-MT5Real5"
-        password = "Clj568741230#"
+        # Load credentials from .env
+        account = int(os.getenv(f"MT5_ACCOUNT_{account_index}", 89633982))
+        server = os.getenv(f"MT5_SERVER_{account_index}", "Ava-Real 1-MT5")
+        password = os.getenv(f"MT5_PASSWORD_{account_index}", "Clj568741230#")
         
+        logger.info(f"Connecting to MT5 Account {account_index}: {account} on {server}")
+        
+        # Initialize MT5
         if not mt5.initialize(login=account, server=server, password=password):
-            logger.error(f"MT5 初始化失败, 错误码: {mt5.last_error()}")
-            # 尝试不带账号初始化
+            err_code = mt5.last_error()
+            logger.error(f"MT5 初始化失败 (Account {account_index}), 错误码: {err_code}")
+            
+            # Fallback: Try initialize without credentials (uses last logged in account in Terminal)
             if not mt5.initialize():
+                logger.error("MT5 默认初始化也失败")
                 return False
         
-        # 检查终端状态
+        # Check if login successful (login matches)
+        current_login = mt5.account_info().login
+        if current_login != account:
+             logger.warning(f"⚠️ 登录账户 ({current_login}) 与配置账户 ({account}) 不一致！")
+             logger.warning("请确保 MT5 终端已登录正确账户，或使用多个终端实例。")
+             
+        # Check algo trading status
         term_info = mt5.terminal_info()
         if not term_info.trade_allowed:
             logger.warning("⚠️ 警告: 终端 '自动交易' (Algo Trading) 未开启！")
             
-        logger.info(f"MT5 全局初始化成功，账户: {mt5.account_info().login}")
+        logger.info(f"MT5 全局初始化成功，当前登录账户: {current_login}")
         return True
 
-    def start(self):
-        if not self.initialize_mt5():
+    def _resolve_symbol(self, base_symbol):
+        """
+        自动识别不同平台的交易品种名称 (Exness/Ava/etc.)
+        例如: GOLD -> XAUUSDm, EURUSD -> EURUSDm
+        """
+        # 1. 尝试直接匹配
+        if mt5.symbol_info(base_symbol):
+            return base_symbol
+            
+        # 2. 常见变体映射
+        variants = []
+        base_upper = base_symbol.upper()
+        
+        if base_upper == "GOLD" or base_upper == "XAUUSD":
+            variants = ["XAUUSD", "XAUUSDm", "XAUUSDz", "XAUUSDk", "Gold", "Goldm", "XAUUSD.a", "XAUUSD.ecn"]
+        elif base_upper == "EURUSD":
+            variants = ["EURUSDm", "EURUSDz", "EURUSDk", "EURUSD.a", "EURUSD.ecn"]
+        elif base_upper == "ETHUSD":
+            variants = ["ETHUSDm", "ETHUSDz", "ETHUSDk", "ETHUSD.a", "ETHUSD.ecn"]
+        else:
+            # 通用后缀尝试
+            variants = [f"{base_symbol}m", f"{base_symbol}z", f"{base_symbol}k", f"{base_symbol}.a"]
+
+        for var in variants:
+            if mt5.symbol_info(var):
+                logger.info(f"✅ 自动识别品种: {base_symbol} -> {var}")
+                return var
+                
+        logger.warning(f"⚠️ 未能自动识别品种变体: {base_symbol}, 将尝试使用原名")
+        return base_symbol
+
+    def start(self, account_index=1):
+        if not self.initialize_mt5(account_index):
             logger.error("MT5 初始化失败，无法启动")
             return
+            
+        # --- 自动解析品种名称 ---
+        resolved_symbols = []
+        for s in self.symbols:
+            resolved = self._resolve_symbol(s)
+            if resolved not in resolved_symbols:
+                resolved_symbols.append(resolved)
+        self.symbols = resolved_symbols
+        logger.info(f"最终交易品种列表: {self.symbols}")
+        # -----------------------
 
         # Start File Watcher
         try:
