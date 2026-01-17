@@ -121,6 +121,11 @@ class SymbolTrader:
         db_path = os.path.join(current_dir, db_filename)
         
         self.db_manager = DatabaseManager(db_path=db_path)
+        
+        # [NEW] 初始化主数据库 (Master DB) 用于数据汇总和集体学习
+        self.master_db_path = os.path.join(current_dir, "trading_data.db")
+        self.master_db_manager = DatabaseManager(db_path=self.master_db_path)
+        
         self.ai_factory = AIClientFactory()
         
         # Only Qwen as Sole Decision Maker
@@ -2498,6 +2503,9 @@ class SymbolTrader:
                             df_current.rename(columns={'tick_volume': 'volume'}, inplace=True)
                         
                         self.db_manager.save_market_data(df_current.copy(), self.symbol, self.tf_name)
+                        # [NEW] Sync to Master DB
+                        self.master_db_manager.save_market_data(df_current.copy(), self.symbol, self.tf_name)
+                        
                         self.last_realtime_save = time.time()
                         
                         # --- 实时保存账户信息 (新增) ---
