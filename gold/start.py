@@ -1610,7 +1610,7 @@ class SymbolTrader:
                     if result.retcode == mt5.TRADE_RETCODE_DONE:
                         logger.info(f"持仓修改成功 (Ticket: {pos.ticket})")
                         break
-                    elif result.retcode in [mt5.TRADE_RETCODE_NO_CONNECTION, mt5.TRADE_RETCODE_TIMEOUT, mt5.TRADE_RETCODE_TOO_MANY_REQUESTS]:
+                    elif result.retcode in [mt5.TRADE_RETCODE_CONNECTION, mt5.TRADE_RETCODE_TIMEOUT, mt5.TRADE_RETCODE_TOO_MANY_REQUESTS]:
                         logger.warning(f"持仓修改网络错误 ({result.comment})，等待重试... (Attempt {attempt+1}/{max_retries})")
                         time.sleep(2)
                     else:
