@@ -1302,7 +1302,6 @@ class QwenClient:
                             # 2. 如果没找到字典，尝试看是否是 JSON 字符串被包裹在列表中 ["{...}"]
                             if not found_dict and len(trading_decision) > 0 and isinstance(trading_decision[0], str):
                                 try:
-                                    import json
                                     # 尝试解析第一个字符串
                                     potential_dict = safe_parse_or_default(trading_decision[0], fallback=None)
                                     if isinstance(potential_dict, dict):
@@ -1312,7 +1311,7 @@ class QwenClient:
                                 except:
                                     pass
 
-                            if found_dict:
+                            if found_dict and isinstance(trading_decision, dict):
                                 # 补全默认值 (因为 robust_json_parser 对列表不应用 defaults)
                                 if defaults:
                                     for key, value in defaults.items():
