@@ -1179,21 +1179,31 @@ class QwenClient:
         ## 核心指令更新：动态仓位计算 (Dynamic Position Sizing)
         你必须根据以下因素，精确计算本次交易的 **position_size (Lots)**：
         1. **实时账户资金**: {current_market_data.get('account_info', {}).get('available_balance', 10000)} USD
-        2. **风险管理 (AI Driven Risk)**: 
+        2. **交易商特性与风险适配 (Broker Specifics)**:
+           - **Exness (高杠杆/低点差)**: 允许更激进的网格加仓和稍大的首单风险 (Risk% 可上浮 20%)。但需注意滑点。
+           - **AvaTrade (标准/监管严)**: 严格遵守标准风险模型，禁止过度激进。
+           - **合约规格**: 请务必确认当前品种 {symbol} 的合约大小 (Contract Size)。通常 XAUUSD=100, ETHUSD=1, EURUSD=100000。
+        3. **风险管理 (AI Driven Risk)**: 
            - **单笔风险**: **完全由你分析决定，不设固定限制**。
            - **建议范围**: 
              - 低置信度 / 逆势 / 震荡: 建议 0.5% - 1.0%
              - 中置信度 / 顺势 / 结构良好: 建议 1.0% - 3.0%
              - 高置信度 (Strong Buy/Sell) / 极佳SMC结构: 可提升至 3.0% - 5.0% 甚至更高（如果你认为机会极佳）。
            - **计算公式**: Position Size (Lots) = (Account Balance * Risk Percentage) / (Stop Loss Distance * Contract Size).
-           - **假设**: XAUUSD 标准合约大小为 100 (即价格波动 $1，1手盈亏 $100)。
-        3. **具体示例**:
+        4. **具体示例**:
            - 资金 $10,000, 风险 2% ($200). 止损距离 $4.
            - Lots = 200 / (4 * 100) = 0.50 Lots.
-        4. **市场情绪**: 结合 {market_analysis.get('sentiment_analysis', {}).get('sentiment', 'neutral')} 情绪调整。
+        5. **市场情绪**: 结合 {market_analysis.get('sentiment_analysis', {}).get('sentiment', 'neutral')} 情绪调整。
         
         **绝对不要**默认使用 0.01 手！必须基于资金量和你的分析信心计算。
         请给出一个精确到小数点后两位的数字 (例如 0.15, 0.50, 1.20)，并在 `strategy_rationale` 中详细解释计算逻辑。
+
+        ## 强制要求：明确的最优 SL/TP
+        无论 Action 是什么 (BUY/SELL/HOLD)，你 **必须** 在 `exit_conditions` 中返回明确的、最优的 `sl_price` 和 `tp_price`。
+        - **SL**: 基于最近的 SMC 结构失效位 (Invalidation Level) 或 MAE 统计。
+        - **TP**: 基于下一个流动性池 (Liquidity Pool) 或 MFE 统计。
+        - **严禁** 返回 0.0 或 null！
+
 
         ## 当前交易上下文
         
