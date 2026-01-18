@@ -1594,9 +1594,30 @@ class SymbolTrader:
             # if not changed: ... pass
              
             if changed:
-                result = mt5.order_send(request)
-                if result.retcode != mt5.TRADE_RETCODE_DONE:
-                    logger.error(f"持仓修改失败: {result.comment}")
+                # Retry mechanism for network issues
+                max_retries = 3
+                for attempt in range(max_retries):
+                    # Check connection first
+                    if not mt5.terminal_info().connected:
+                        logger.warning(f"检测到 MT5 未连接，尝试重新初始化... (Attempt {attempt+1})")
+                        if not mt5.initialize():
+                             logger.error("MT5 重新初始化失败")
+                             time.sleep(1)
+                             continue
+                    
+                    result = mt5.order_send(request)
+                    
+                    if result.retcode == mt5.TRADE_RETCODE_DONE:
+                        logger.info(f"持仓修改成功 (Ticket: {pos.ticket})")
+                        break
+                    elif result.retcode in [mt5.TRADE_RETCODE_NO_CONNECTION, mt5.TRADE_RETCODE_TIMEOUT, mt5.TRADE_RETCODE_TOO_MANY_REQUESTS]:
+                        logger.warning(f"持仓修改网络错误 ({result.comment})，等待重试... (Attempt {attempt+1}/{max_retries})")
+                        time.sleep(2)
+                    else:
+                        logger.error(f"持仓修改失败: {result.comment} (Retcode: {result.retcode})")
+                        break
+                else:
+                    logger.error("持仓修改多次重试均失败，放弃本次更新。")
             # 如果最新信号转为反向或中立，且强度足够，可以考虑提前平仓
             # 但 execute_trade 已经处理了反向开仓(会先平仓)。
             # 这里只处理: 信号变 Weak/Neutral 时的防御性平仓 (如果需要)
