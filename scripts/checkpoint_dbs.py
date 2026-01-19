@@ -135,7 +135,6 @@ def cleanup_local_dbs(base_dir):
         "crypto/crypto_trading.db"
     ]
     
-    import glob
     print("\n🧹 Checking for local DB cleanup (Remote-First Mode)...")
     
     deleted_count = 0
