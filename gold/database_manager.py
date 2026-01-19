@@ -170,6 +170,9 @@ class DatabaseManager:
             ))
             
             conn.commit()
+            
+            # [Remote Sync]
+            self.remote_storage.save_account_metrics(metrics)
         except sqlite3.OperationalError as e:
             if "database or disk is full" in str(e):
                 logger.warning(f"Database full error in save_account_metrics, attempting checkpoint: {e}")
@@ -278,6 +281,23 @@ class DatabaseManager:
             
             conn.commit()
             # conn.close()
+            
+            # [Remote Sync]
+            # Normalize signal data for remote storage
+            try:
+                remote_signal = {
+                    'symbol': symbol,
+                    'timeframe': timeframe,
+                    'final_signal': signal_data['final_signal'],
+                    'strength': signal_data['strength'],
+                    'source': 'Hybrid',
+                    'details': signal_data['details'],
+                    'timestamp': timestamp
+                }
+                self.remote_storage.save_signal(remote_signal)
+            except Exception as e_remote:
+                logger.warning(f"Failed to sync signal to remote: {e_remote}")
+                
         except Exception as e:
             logger.error(f"Failed to save signal: {e}")
 
