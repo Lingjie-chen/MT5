@@ -634,7 +634,7 @@ class QwenClient:
 
     **AI 最终决定 (Action Consistency)**:
     - 你的最终 `action` 字段必须与你在 `strategy_rationale` 和 `telegram_report` 中描述的交易计划完全一致。
-    - **严禁** 出现计划说 "买入" 但 Action 是 "HOLD" 的情况，反之亦然。
+    - **严禁** 出现计划说 "买入" 但 Action 是 "HOLD" 的情况，反之亦然。以及交易计划说“限价买入”，但Action 是 "Buy" 的情况
     - 如果需要反手，请确保 Action 明确指示 (如 "close_buy_open_sell")。
     
     **自我反思 (Self-Reflection)**:
