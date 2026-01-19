@@ -3,7 +3,7 @@ title AI Multi-Symbol Trading Bot (Gold/ETH)
 color 0a
 
 :: Switch to script directory's parent (project root)
-cd /d "%~dp0\.."
+cd /d "%~dp0\..\.."
 
 :loop
 echo [%DATE% %TIME%] Starting Multi-Symbol AI Trading Bot...
