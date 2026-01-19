@@ -2353,16 +2353,31 @@ class SymbolTrader:
             sell_signal = (ha_c_1 < ema_20_l_1) and (not ha_bull_1) and (ha_c_1 < ema_50_1) and \
                           trend_bear and (ha_c_2 > ema_50_2)
             
-            if buy_signal:
-                return {"signal": "buy", "reason": "EMA-HA Crossover Bullish"}
-            elif sell_signal:
-                return {"signal": "sell", "reason": "EMA-HA Crossover Bearish"}
+            result = {
+                "signal": "neutral",
+                "reason": "No Crossover",
+                "values": {
+                    "ema_50": ema_50_1,
+                    "ema_20_high": ema_20_h_1,
+                    "ema_20_low": ema_20_l_1,
+                    "ha_close": ha_c_1,
+                    "ha_open": ha_o_1,
+                    "trend": "bullish" if trend_bull else "bearish"
+                }
+            }
             
-            return {"signal": "neutral", "reason": "No Crossover"}
+            if buy_signal:
+                result["signal"] = "buy"
+                result["reason"] = "EMA-HA Crossover Bullish"
+            elif sell_signal:
+                result["signal"] = "sell"
+                result["reason"] = "EMA-HA Crossover Bearish"
+                
+            return result
             
         except Exception as e:
             logger.error(f"EMA-HA Analysis Failed: {e}")
-            return {"signal": "neutral", "reason": "Error"}
+            return {"signal": "neutral", "reason": "Error", "values": {}}
 
     def optimize_short_term_params(self):
         """
@@ -2902,7 +2917,7 @@ class SymbolTrader:
                             "mtf": mtf_result['signal'], 
                             "ifvg": ifvg_result['signal'],
                             "rvgi_cci": rvgi_cci_result['signal'],
-                            "ema_ha": ema_ha_result['signal'],
+                            "ema_ha": ema_ha_result, # Pass full result including values
                             "performance_stats": trade_stats
                         }
                         
