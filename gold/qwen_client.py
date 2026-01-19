@@ -627,6 +627,14 @@ class QwenClient:
        - 如果需要反手，请在 action 中输出 "close_buy_open_sell" 或 "close_sell_open_buy" (或者直接给出反向信号，并在理由中说明)。
     6. **GRID_START**: 预埋网格单 (Limit Orders) 在未来的OB/FVG位置。
     
+    **自我学习与适应 (Self-Learning & Adaptation)**:
+    - **数据源**: 你现在接收来自远程数据库 (Remote DB) 的实时历史交易数据 (`performance_stats`)。这是你过去的真实战绩。
+    - **动态修正**:
+        1. **胜率低 (Low Win Rate)**: 如果 `win_rate` < 40%，说明当前市场环境不适合你的默认策略。必须 **收紧入场条件** (只做 5-Star Setup) 并 **降低 Risk%**。
+        2. **盈亏比差 (Low Profit Factor)**: 如果 `profit_factor` < 1.0，说明止损太频繁或止盈太早。请参考 `avg_mae` 放宽 SL，或参考 `avg_mfe` 优化 TP。
+        3. **连败保护 (Loss Streak Protection)**: 如果最近 3 笔交易连续亏损，强制将本次 Risk% 减半，直到恢复盈利。
+    - **模式识别**: 检查 `recent_trades`。如果发现自己在类似的震荡行情中频繁止损，请在 `strategy_rationale` 中明确写出："识别到震荡洗盘模式，启动防御机制"。
+
     **一致性检查 (Consistency Check)**:
     - 请务必参考 `Previous Analysis` (上一次分析结果)。
     - 如果当前市场结构、SMC信号和趋势与上一次相比**没有显著变化**，请保持决策一致 (Maintain Consistency)。
@@ -636,12 +644,6 @@ class QwenClient:
     - 你的最终 `action` 字段必须与你在 `strategy_rationale` 和 `telegram_report` 中描述的交易计划完全一致。
     - **严禁** 出现计划说 "买入" 但 Action 是 "HOLD" 的情况，反之亦然。以及交易计划说“限价买入”，但Action 是 "Buy" 的情况
     - 如果需要反手，请确保 Action 明确指示 (如 "close_buy_open_sell")。
-    
-    **自我反思 (Self-Reflection)**:
-    - 请仔细检查 `performance_stats` (历史交易绩效)。
-    - 重点关注最近的亏损交易 (Profit < 0)。
-    - 如果发现当前的市场结构/信号与之前的亏损交易非常相似，请**拒绝开仓**或**降低风险**。
-    - 在 `strategy_rationale` 中注明："检测到类似历史亏损模式，执行风险规避"。
 
     输出要求：
     - **limit_price**: 挂单必填。
