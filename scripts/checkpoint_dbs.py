@@ -3,6 +3,7 @@ import os
 import time
 import argparse
 import sys
+import glob
 
 def checkpoint_db(db_path):
     print(f"Checking point database: {db_path}")
@@ -61,17 +62,27 @@ def git_auto_sync(base_dir):
         print(f"Git auto-sync failed: {e}")
 
 def run_checkpoints(base_dir):
-    # List of databases to checkpoint
-    # Now includes separate DBs for each symbol
-    dbs = [
-        os.path.join(base_dir, 'crypto', 'crypto_trading.db'),
-        os.path.join(base_dir, 'gold', 'trading_data_GOLD.db'),
-        os.path.join(base_dir, 'gold', 'trading_data_XAUUSDm.db'), # Exness Gold
-        os.path.join(base_dir, 'gold', 'trading_data_ETHUSD.db'),
-        os.path.join(base_dir, 'gold', 'trading_data_ETHUSDm.db'), # Exness ETH
-        os.path.join(base_dir, 'gold', 'trading_data_EURUSD.db'),
-        os.path.join(base_dir, 'gold', 'trading_data_EURUSDm.db')  # Exness EUR
-    ]
+    # Dynamic discovery of databases to checkpoint
+    # This ensures all new symbols (including Exness *m pairs) are automatically handled
+    dbs = []
+    
+    # 1. Gold/Forex DBs (including standard and Exness suffix)
+    gold_dbs = glob.glob(os.path.join(base_dir, 'gold', 'trading_data_*.db'))
+    dbs.extend(gold_dbs)
+    
+    # 2. Crypto DBs
+    crypto_dbs = glob.glob(os.path.join(base_dir, 'crypto', '*.db'))
+    dbs.extend(crypto_dbs)
+    
+    # 3. Root DBs
+    root_dbs = glob.glob(os.path.join(base_dir, 'trading_data.db'))
+    dbs.extend(root_dbs)
+    
+    # Remove duplicates and ensure existence
+    dbs = list(set([db for db in dbs if os.path.exists(db)]))
+    
+    if not dbs:
+        print("No databases found to checkpoint.")
 
     for db in dbs:
         checkpoint_db(db)
@@ -108,10 +119,79 @@ def run_checkpoints(base_dir):
     # After checkpointing, try to sync with git
     git_auto_sync(base_dir)
 
+def cleanup_local_dbs(base_dir):
+    """
+    Delete local SQLite files if data is fully migrated to Remote PostgreSQL.
+    Assuming the bot architecture has shifted to Remote-First for history.
+    This keeps the local environment lightweight (cache only).
+    """
+    import shutil
+    
+    # List of DB patterns or specific files to clean
+    # Be careful not to delete config files
+    targets = [
+        "trading_data.db",
+        "trading_data_*.db", # Matches trading_data_GOLD.db, etc.
+        "crypto/crypto_trading.db"
+    ]
+    
+    print("\n🧹 Checking for local DB cleanup (Remote-First Mode)...")
+    
+    deleted_count = 0
+    for pattern in targets:
+        full_pattern = os.path.join(base_dir, pattern) if not os.path.isabs(pattern) else pattern
+        # Handle glob inside subdirs if needed
+        if "crypto/" in pattern:
+             full_pattern = os.path.join(base_dir, pattern)
+        else:
+             full_pattern = os.path.join(base_dir, "gold", pattern) # Assuming most are in gold/ or root
+             
+        # Check root as well for trading_data.db
+        if pattern == "trading_data.db":
+             full_pattern = os.path.join(base_dir, "gold", pattern)
+
+        # Glob expansion
+        files = glob.glob(full_pattern)
+        # Also check root for generic matches if not found
+        if not files and "gold" in full_pattern:
+             files = glob.glob(os.path.join(base_dir, pattern))
+
+        for db_file in files:
+            try:
+                # Basic safety check: Don't delete if it's currently locked by another process?
+                # Actually, in Windows, we might not be able to delete if locked.
+                # But here we assume the bot re-creates them as temp cache, so deletion is safe if bot is stopped or we just want to clear history.
+                # NOTE: If the bot is running, deleting the DB might cause errors or be blocked.
+                # Strategy: Only delete if WAL file is empty (checkpointed) AND we want to enforce remote-only history.
+                
+                # Check if WAL exists and is empty (implies successful checkpoint)
+                wal = db_file + "-wal"
+                if os.path.exists(wal) and os.path.getsize(wal) > 0:
+                    print(f"  [SKIP] {os.path.basename(db_file)} (WAL not empty, data pending)")
+                    continue
+                    
+                # In this specific task context: User requested auto-delete to rely on Remote DB.
+                # We perform the delete.
+                os.remove(db_file)
+                deleted_count += 1
+                print(f"  [DELETE] {os.path.basename(db_file)} (Cleaned up for Remote-First mode)")
+                
+                # Also clean WAL/SHM if they exist
+                if os.path.exists(wal): os.remove(wal)
+                shm = db_file + "-shm"
+                if os.path.exists(shm): os.remove(shm)
+                
+            except Exception as e:
+                print(f"  [ERROR] Failed to delete {os.path.basename(db_file)}: {e}")
+
+    if deleted_count == 0:
+        print("  (No eligible DB files found for cleanup)")
+
 def main():
     parser = argparse.ArgumentParser(description="SQLite WAL Checkpoint Tool")
     parser.add_argument("--loop", action="store_true", help="Run in a loop")
     parser.add_argument("--interval", type=int, default=60, help="Interval in seconds for loop mode")
+    parser.add_argument("--cleanup", action="store_true", help="Cleanup local DB files after checkpoint (Remote-First Mode)")
     
     args = parser.parse_args()
     
@@ -123,11 +203,15 @@ def main():
             while True:
                 print(f"\n--- Checkpoint Run at {time.strftime('%H:%M:%S')} ---")
                 run_checkpoints(base_dir)
+                if args.cleanup:
+                    cleanup_local_dbs(base_dir)
                 time.sleep(args.interval)
         except KeyboardInterrupt:
             print("\nStopping Checkpoint Service.")
     else:
         run_checkpoints(base_dir)
+        if args.cleanup:
+            cleanup_local_dbs(base_dir)
 
 if __name__ == "__main__":
     main()

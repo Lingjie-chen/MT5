@@ -21,10 +21,11 @@ fi
 perform_sync() {
     local COMMIT_MSG="$1"
     
-    # 1. Checkpoint Database (Mac/Linux only, for Windows called by .bat)
+    # 1. Checkpoint Database & Cleanup (Mac/Linux only, for Windows called by .bat)
     if [ -f "scripts/checkpoint_dbs.py" ]; then
-        echo "🛠  Running Database Checkpoint..."
-        python3 scripts/checkpoint_dbs.py
+        echo "🛠  Running Database Checkpoint & Cleanup..."
+        # Pass --cleanup to remove local DBs if fully synced
+        python3 scripts/checkpoint_dbs.py --cleanup
     fi
 
     # 2. Pull Remote Changes

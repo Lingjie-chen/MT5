@@ -257,6 +257,9 @@ class DatabaseManager:
             
             conn.commit()
             # conn.close()
+            
+            # [Remote Sync]
+            self.remote_storage.save_market_data_batch(df.copy(), symbol, timeframe)
         except sqlite3.OperationalError as e:
             if "database or disk is full" in str(e):
                 logger.warning(f"Database full error in save_market_data, attempting checkpoint: {e}")
@@ -322,6 +325,9 @@ class DatabaseManager:
             
             conn.commit()
             # conn.close()
+            
+            # [Remote Sync]
+            self.remote_storage.save_trade(trade_data)
         except sqlite3.OperationalError as e:
             if "database or disk is full" in str(e):
                 logger.warning(f"Database full error in save_trade, attempting checkpoint: {e}")
@@ -356,6 +362,9 @@ class DatabaseManager:
             
             conn.commit()
             # conn.close()
+            
+            # [Remote Sync]
+            self.remote_storage.update_trade_performance(ticket, close_data)
         except sqlite3.OperationalError as e:
             if "database or disk is full" in str(e):
                 logger.warning(f"Database full error in update_trade_performance, attempting checkpoint: {e}")

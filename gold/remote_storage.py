@@ -82,3 +82,68 @@ class RemoteStorage:
         data = close_data.copy()
         data['ticket'] = ticket
         self._send_payload("trades/update", data)
+
+    def save_market_data_batch(self, df, symbol, timeframe):
+        """Send a batch of market data (candles) to remote DB"""
+        if not self.enabled or df.empty:
+            return
+
+        def task():
+            try:
+                endpoint = "market_data/batch"
+                url = f"{self.api_url}/{endpoint}"
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-API-Key": self.api_key
+                }
+                
+                # Convert DataFrame to list of dicts
+                # Assuming df index is timestamp
+                records = []
+                for index, row in df.iterrows():
+                    record = {
+                        "timestamp": index.isoformat() if isinstance(index, datetime) else str(index),
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "open": float(row['open']),
+                        "high": float(row['high']),
+                        "low": float(row['low']),
+                        "close": float(row['close']),
+                        "volume": float(row['volume'])
+                    }
+                    records.append(record)
+                
+                # Split into chunks if too large (e.g., 100 records per request)
+                chunk_size = 100
+                for i in range(0, len(records), chunk_size):
+                    chunk = records[i:i + chunk_size]
+                    response = requests.post(url, json=chunk, headers=headers, timeout=20)
+                    if response.status_code not in [200, 201]:
+                         logger.warning(f"Failed to send market data batch: {response.status_code}")
+            except Exception as e:
+                logger.error(f"Error sending market data batch: {e}")
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def get_trades(self, limit=100, symbol=None):
+        """Retrieve trades from remote DB (Synchronous call)"""
+        if not self.enabled:
+            return []
+            
+        try:
+            endpoint = f"trades?limit={limit}"
+            if symbol:
+                endpoint += f"&symbol={symbol}"
+                
+            url = f"{self.api_url}/{endpoint}"
+            headers = {"X-API-Key": self.api_key}
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.warning(f"Failed to get trades: {response.status_code}")
+                return []
+        except Exception as e:
+            logger.error(f"Error getting trades: {e}")
+            return []
