@@ -6,16 +6,34 @@ from datetime import datetime
 import json
 import logging
 
-# Configuration
-SQLITE_DB_PATH = "/Users/lenovo/tmp/quant_trading_strategy/gold/trading_data.db"
-# If you have symbol-specific DBs, you can add them to a list
-ADDITIONAL_DBS = [
-    "/Users/lenovo/tmp/quant_trading_strategy/gold/trading_data_GOLD.db",
-    "/Users/lenovo/tmp/quant_trading_strategy/gold/trading_data_ETHUSD.db",
-    "/Users/lenovo/tmp/quant_trading_strategy/gold/trading_data_EURUSD.db"
-]
+import glob
 
-POSTGRES_URL = "postgresql://postgres:password@localhost:5432/trading_bot"
+# Configuration
+# Use environment variable for Postgres URL if available
+POSTGRES_URL = os.getenv("POSTGRES_CONNECTION_STRING", "postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot")
+
+SQLITE_DB_PATH = "/Users/lenovo/tmp/quant_trading_strategy/gold/trading_data.db"
+
+def get_all_dbs():
+    base_dir = "/Users/lenovo/tmp/quant_trading_strategy"
+    dbs = []
+    
+    # 1. Gold/Forex DBs (including standard and Exness suffix)
+    gold_dbs = glob.glob(os.path.join(base_dir, 'gold', 'trading_data_*.db'))
+    dbs.extend(gold_dbs)
+    
+    # 2. Crypto DBs
+    crypto_dbs = glob.glob(os.path.join(base_dir, 'crypto', '*.db'))
+    dbs.extend(crypto_dbs)
+    
+    # 3. Root DBs
+    root_dbs = glob.glob(os.path.join(base_dir, 'trading_data.db'))
+    dbs.extend(root_dbs)
+    
+    # Remove duplicates and ensure existence
+    return list(set([db for db in dbs if os.path.exists(db)]))
+
+ADDITIONAL_DBS = [] # Will be populated dynamically in main or we can just use get_all_dbs() directly
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("Migration")
@@ -126,11 +144,13 @@ def main():
         logger.error(f"Failed to connect to PostgreSQL: {e}")
         return
 
-    # 2. Migrate Main DB
-    migrate_db(SQLITE_DB_PATH, pg_engine)
+    # 2. Migrate All Detected DBs
+    all_dbs = get_all_dbs()
+    if not all_dbs:
+        logger.warning("No databases found to migrate.")
+        return
 
-    # 3. Migrate Additional DBs (Symbol specific)
-    for db_path in ADDITIONAL_DBS:
+    for db_path in all_dbs:
         migrate_db(db_path, pg_engine)
     
     logger.info("Migration completed.")
