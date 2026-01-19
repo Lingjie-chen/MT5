@@ -136,8 +136,11 @@ class QwenClient:
     - **策略**: 若通胀超预期+技术面突破阻力位，决定买入黄金。
     - **细节**: 基于 SMC 结构提出 **初步** 的建仓价格、止损位 (SMC SL) 和目标价 (SMC TP)。
     - **输出**: 交易提案（Action, Entry, SMC SL, SMC TP）。
-      - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'grid_start' (网格部署), 'hold', 'close'。
-      - **注意**: 若判断为震荡行情或需部署SMC马丁格尔网格，请务必使用 'grid_start'。
+      - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'grid_start', 'hold', 'close'。
+      - **注意**: 
+        - **Market Order (市价单)**: 当 Action 为 'buy' 或 'sell' 时，系统将直接以当前市场价格成交。适用于确认突破或急需入场的情况。
+        - **Limit/Stop Order (挂单)**: 当 Action 为 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell' 时，系统将在指定价格挂单。适用于回调接多或突破确认。
+        - **Grid Start**: 若判断为震荡行情或需部署SMC马丁格尔网格，请务必使用 'grid_start'。
 
     **4. 风控与执行团队 (Risk & Execution)**
     - **审核提案**: 评估仓位规模是否符合风险敞口。
