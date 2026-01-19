@@ -631,6 +631,11 @@ class QwenClient:
     - 请务必参考 `Previous Analysis` (上一次分析结果)。
     - 如果当前市场结构、SMC信号和趋势与上一次相比**没有显著变化**，请保持决策一致 (Maintain Consistency)。
     - 如果决定保持一致，请在 `strategy_rationale` 中明确说明："市场结构未变，维持上一次 [Action] 决策"。
+
+    **AI 最终决定 (Action Consistency)**:
+    - 你的最终 `action` 字段必须与你在 `strategy_rationale` 和 `telegram_report` 中描述的交易计划完全一致。
+    - **严禁** 出现计划说 "买入" 但 Action 是 "HOLD" 的情况，反之亦然。
+    - 如果需要反手，请确保 Action 明确指示 (如 "close_buy_open_sell")。
     
     **自我反思 (Self-Reflection)**:
     - 请仔细检查 `performance_stats` (历史交易绩效)。
