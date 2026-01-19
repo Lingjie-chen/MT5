@@ -149,6 +149,7 @@ class SymbolTrader:
         self.signal_history = []
         self.last_optimization_time = 0
         self.last_realtime_save = 0
+        self.last_checkpoint_time = 0
         
         self.latest_strategy = None
         self.latest_signal = "neutral"
@@ -2604,10 +2605,16 @@ class SymbolTrader:
                 current_bar_time = rates[0]['time']
                 
                 # --- Real-time Data Update (Added for Dashboard) ---
-                # 每隔 3 秒保存一次当前正在形成的 K 线数据到数据库
+                # 每隔 10 秒保存一次当前正在形成的 K 线数据到数据库
                 # 这样 Dashboard 就可以看到实时价格跳动
-                if time.time() - self.last_realtime_save > 3:
+                if time.time() - self.last_realtime_save > 10:
                     try:
+                        # [Checkpoint] 每隔 5 分钟 (300秒) 执行一次 WAL Checkpoint
+                        if time.time() - self.last_checkpoint_time > 300:
+                            self.db_manager.perform_checkpoint()
+                            self.master_db_manager.perform_checkpoint()
+                            self.last_checkpoint_time = time.time()
+                            
                         df_current = pd.DataFrame(rates)
                         df_current['time'] = pd.to_datetime(df_current['time'], unit='s')
                         df_current.set_index('time', inplace=True)

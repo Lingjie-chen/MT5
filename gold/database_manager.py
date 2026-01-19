@@ -166,6 +166,11 @@ class DatabaseManager:
             ))
             
             conn.commit()
+        except sqlite3.OperationalError as e:
+            if "database or disk is full" in str(e):
+                logger.warning(f"Database full error in save_account_metrics, attempting checkpoint: {e}")
+                self.perform_checkpoint()
+            logger.error(f"Failed to save account metrics: {e}")
         except Exception as e:
             logger.error(f"Failed to save account metrics: {e}")
 
@@ -245,6 +250,11 @@ class DatabaseManager:
             
             conn.commit()
             # conn.close()
+        except sqlite3.OperationalError as e:
+            if "database or disk is full" in str(e):
+                logger.warning(f"Database full error in save_market_data, attempting checkpoint: {e}")
+                self.perform_checkpoint()
+            logger.error(f"Failed to save market data: {e}")
         except Exception as e:
             logger.error(f"Failed to save market data: {e}")
 
@@ -288,6 +298,11 @@ class DatabaseManager:
             
             conn.commit()
             # conn.close()
+        except sqlite3.OperationalError as e:
+            if "database or disk is full" in str(e):
+                logger.warning(f"Database full error in save_trade, attempting checkpoint: {e}")
+                self.perform_checkpoint()
+            logger.error(f"Failed to save trade: {e}")
         except Exception as e:
             logger.error(f"Failed to save trade: {e}")
 
