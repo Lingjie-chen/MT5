@@ -2879,10 +2879,25 @@ class SymbolTrader:
                         # --- 3.3 Qwen 策略分析 (Sole Decision Maker) ---
                         logger.info("正在调用 Qwen 生成策略...")
                         
-                        # 获取历史交易绩效 (MFE/MAE) - 使用 Master DB 获取跨品种数据进行集体学习
-                        trade_stats = self.master_db_manager.get_trade_performance_stats(limit=100)
+                        # 获取历史交易绩效 (MFE/MAE) - 优先尝试远程 PostgreSQL 数据库 (Self-Learning)
+                        trade_stats = []
+                        try:
+                            # 尝试从远程获取 (Remote Storage is initialized in DatabaseManager)
+                            if self.db_manager.remote_storage.enabled:
+                                logger.info("Fetching trade history from Remote PostgreSQL for Self-Learning...")
+                                remote_trades = self.db_manager.remote_storage.get_trades(limit=100)
+                                if remote_trades:
+                                    trade_stats = remote_trades
+                                    logger.info(f"Successfully loaded {len(trade_stats)} trades from Remote DB.")
+                        except Exception as e:
+                            logger.error(f"Failed to fetch remote trades: {e}")
+
                         if not trade_stats:
-                             # Fallback to local
+                            # Fallback to local Master DB
+                            trade_stats = self.master_db_manager.get_trade_performance_stats(limit=100)
+                        
+                        if not trade_stats:
+                             # Fallback to local Symbol DB
                              trade_stats = self.db_manager.get_trade_performance_stats(symbol=self.symbol, limit=50)
                         
                         # 获取当前持仓状态
