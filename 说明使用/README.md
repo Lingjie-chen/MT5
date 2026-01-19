@@ -15,8 +15,8 @@ Before starting, ensure you have the following installed:
 
 ### 2.1 Clone the Repository
 ```bash
-git clone <repository_url>
-cd quant_trading_strategy
+git clone https://github.com/Lingjie-chen/MT5.git
+cd MT5
 ```
 
 ### 2.2 Set up Virtual Environment
@@ -90,11 +90,11 @@ This server handles data ingestion and serves history to the bot.
 
 ```bash
 # Mac/Linux
-export POSTGRES_CONNECTION_STRING="postgresql://trading_user:your_secure_password@localhost:5432/trading_bot"
+export POSTGRES_CONNECTION_STRING="postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot"
 uvicorn gold.server.main:app --host 0.0.0.0 --port 8000 --reload
 
 # Windows (Command Prompt)
-set POSTGRES_CONNECTION_STRING=postgresql://trading_user:your_secure_password@localhost:5432/trading_bot
+set POSTGRES_CONNECTION_STRING=postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot
 uvicorn gold.server.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 

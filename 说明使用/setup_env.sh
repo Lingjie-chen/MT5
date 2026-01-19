@@ -28,10 +28,10 @@ pip install -r requirements.txt
 # 4. .env setup
 if [ ! -f ".env" ]; then
     echo "📝 Creating .env template..."
-    echo "POSTGRES_CONNECTION_STRING=postgresql://user:pass@localhost:5432/trading_bot" > .env
+    echo "POSTGRES_CONNECTION_STRING=postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot" > .env
     echo "SERVER_API_KEY=my_secret_key" >> .env
     echo "SILICONFLOW_API_KEY=your_key_here" >> .env
-    echo "⚠️  Please edit .env with your actual credentials!"
+    echo "⚠️  Please edit .env with your actual SILICONFLOW_API_KEY!"
 else
     echo "✅ .env file exists."
 fi
