@@ -611,16 +611,21 @@ class QwenClient:
     
     请做出最终决策 (Action):
     1. **HOLD**: 震荡无方向，或持仓浮亏但在网格间距内。**请务必检查并返回当前最优 SL/TP**。
-    2. **BUY / SELL**: 出现SMC信号，首单入场。
-    3. **ADD_BUY / ADD_SELL**: 逆势加仓。**仅当**：(a) 已有持仓且浮亏; (b) 价格到达下一个SMC支撑/阻力位; (c) 距离上一单有足够间距(>ATR)。
+    2. **BUY / SELL (Market Orders)**: 
+       - 含义: 立即以当前市场价格开仓。
+       - 适用场景: 价格已经到达SMC关键位并出现反应，或动能极强不愿错过机会。
+    3. **LIMIT_BUY / LIMIT_SELL / STOP_BUY / STOP_SELL (Pending Orders)**:
+       - 含义: 在 `entry_conditions` -> `limit_price` 指定的价格挂单。
+       - 适用场景: 等待价格回调至订单块(OB)或突破关键结构。
+    4. **ADD_BUY / ADD_SELL**: 逆势加仓。**仅当**：(a) 已有持仓且浮亏; (b) 价格到达下一个SMC支撑/阻力位; (c) 距离上一单有足够间距(>ATR)。
        - **动态仓位**: 必须在 `position_size` 中给出具体手数。逻辑：基于市场情绪、风险收益比分析，决定本次加仓是前单的 1.5倍 还是 2.0倍 (或中间值)。
-    4. **CLOSE**: 达到整体止盈目标，或SMC结构完全破坏(止损)。
+    5. **CLOSE**: 达到整体止盈目标，或SMC结构完全破坏(止损)。
        - **注意**: 如果决定CLOSE，请同时分析是否需要立即反手开仓(Reverse)。
        - 如果SMC结构发生了明确的反转(如CHOCH)，你应该在CLOSE的同时给出反向开仓信号(如 CLOSE_BUY -> SELL)。
        - 如果只是单纯离场观望，则仅输出CLOSE。
        - **Profit Estimate**: 必须在 `strategy_rationale` 和 `telegram_report` 中明确预估本次平仓的预计盈亏金额 (Estimated PnL)，并说明是基于 SMC 止损还是 MFE 止盈。
        - 如果需要反手，请在 action 中输出 "close_buy_open_sell" 或 "close_sell_open_buy" (或者直接给出反向信号，并在理由中说明)。
-    5. **GRID_START**: 预埋网格单 (Limit Orders) 在未来的OB/FVG位置。
+    6. **GRID_START**: 预埋网格单 (Limit Orders) 在未来的OB/FVG位置。
     
     **一致性检查 (Consistency Check)**:
     - 请务必参考 `Previous Analysis` (上一次分析结果)。
