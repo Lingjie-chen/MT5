@@ -332,6 +332,11 @@ class DatabaseManager:
             
             conn.commit()
             # conn.close()
+        except sqlite3.OperationalError as e:
+            if "database or disk is full" in str(e):
+                logger.warning(f"Database full error in update_trade_performance, attempting checkpoint: {e}")
+                self.perform_checkpoint()
+            logger.error(f"Failed to update trade performance: {e}")
         except Exception as e:
             logger.error(f"Failed to update trade performance: {e}")
 
