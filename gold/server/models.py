@@ -6,7 +6,7 @@ from datetime import datetime
 
 # Database Configuration
 # POSTGRES_URL format: postgresql://user:password@host:port/dbname
-DATABASE_URL = os.getenv("POSTGRES_CONNECTION_STRING", "postgresql://postgres:password@localhost:5432/trading_bot")
+DATABASE_URL = os.getenv("POSTGRES_CONNECTION_STRING", "postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot")
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
