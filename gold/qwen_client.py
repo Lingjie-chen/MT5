@@ -632,7 +632,7 @@ class QwenClient:
     - **动态修正**:
         1. **胜率低 (Low Win Rate)**: 如果 `win_rate` < 40%，说明当前市场环境不适合你的默认策略。必须 **收紧入场条件** (只做 5-Star Setup) 并 **降低 Risk%**。
         2. **盈亏比差 (Low Profit Factor)**: 如果 `profit_factor` < 1.0，说明止损太频繁或止盈太早。请参考 `avg_mae` 放宽 SL，或参考 `avg_mfe` 优化 TP。
-        3. **连败保护 (Loss Streak Protection)**: 如果最近 3 笔交易连续亏损，强制将本次 Risk% 减半，直到恢复盈利。
+        3. **连败保护 (Loss Streak Protection)**: 如果最近5笔交易连续亏损，强制将本次 Risk% 减半，直到恢复盈利。
     - **模式识别**: 检查 `recent_trades`。如果发现自己在类似的震荡行情中频繁止损，请在 `strategy_rationale` 中明确写出："识别到震荡洗盘模式，启动防御机制"。
 
     **一致性检查 (Consistency Check)**:
