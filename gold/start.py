@@ -431,6 +431,47 @@ class SymbolTrader:
                             llm_lot = round(llm_lot / step) * step
                             llm_lot = max(symbol_info.volume_min, min(llm_lot, symbol_info.volume_max))
                             
+                            # --- 真实保证金检查 (Broker Specific Margin Check) ---
+                            # 解决 Exness/AVA 等平台合约大小不同导致的 "No money" 错误
+                            try:
+                                tick = mt5.symbol_info_tick(self.symbol)
+                                if tick:
+                                    # 推断方向 (默认为 Buy，如果是 Sell 则调整)
+                                    action_str = str(self.latest_strategy.get('action', '')).lower()
+                                    is_sell = 'sell' in action_str
+                                    
+                                    calc_type = mt5.ORDER_TYPE_SELL if is_sell else mt5.ORDER_TYPE_BUY
+                                    calc_price = tick.bid if is_sell else tick.ask
+                                    
+                                    margin_required = mt5.order_calc_margin(calc_type, self.symbol, llm_lot, calc_price)
+                                    
+                                    if margin_required is not None:
+                                        # 检查资金是否足够 (保留 5% 缓冲)
+                                        if margin_required > (margin_free * 0.95):
+                                            logger.warning(f"⚠️ 资金不足 (Need ${margin_required:.2f}, Free ${margin_free:.2f}) for {llm_lot} lots. Exness/Ava info differs.")
+                                            
+                                            # 动态降级仓位
+                                            # Margin = Volume * ContractSize * Price / Leverage (Roughly)
+                                            # So Volume ~ Margin
+                                            margin_per_lot = margin_required / llm_lot
+                                            safe_margin = margin_free * 0.95
+                                            
+                                            if margin_per_lot > 0:
+                                                new_lot = safe_margin / margin_per_lot
+                                                # 再次修正步长
+                                                new_lot = round(new_lot / step) * step
+                                                new_lot = max(symbol_info.volume_min, new_lot)
+                                                
+                                                # 如果修正后仍然无法满足 (例如最小手数也买不起)，则只能由后续逻辑处理或保持最小
+                                                # 这里我们更新 llm_lot
+                                                if new_lot < llm_lot:
+                                                    logger.info(f"↘️ 根据账户资金自动调整仓位: {llm_lot} -> {new_lot}")
+                                                    llm_lot = new_lot
+                                    else:
+                                        logger.warning("无法计算保证金 (order_calc_margin returned None)")
+                            except Exception as e:
+                                logger.error(f"保证金检查异常: {e}")
+
                             # 风险验证 (Risk Guardrail) - 放宽限制以支持 AI 全权风控
                             # 估算: 1 Lot * 500 points * TickValue (压力测试)
                             tick_val = symbol_info.trade_tick_value
