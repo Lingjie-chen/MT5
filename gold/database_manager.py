@@ -4,11 +4,15 @@ import json
 from datetime import datetime
 import logging
 import os
+from .remote_storage import RemoteStorage
 
 logger = logging.getLogger("DatabaseManager")
 
 class DatabaseManager:
     def __init__(self, db_path="trading_data.db"):
+        # Initialize Remote Storage
+        self.remote_storage = RemoteStorage()
+        
         # 如果传入的是默认文件名（非绝对路径），将其转换为基于当前文件所在目录的绝对路径
         if not os.path.isabs(db_path):
             current_dir = os.path.dirname(os.path.abspath(__file__))
