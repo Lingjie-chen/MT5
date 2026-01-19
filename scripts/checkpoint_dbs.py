@@ -3,6 +3,7 @@ import os
 import time
 import argparse
 import sys
+import glob
 
 def checkpoint_db(db_path):
     print(f"Checking point database: {db_path}")
@@ -61,17 +62,27 @@ def git_auto_sync(base_dir):
         print(f"Git auto-sync failed: {e}")
 
 def run_checkpoints(base_dir):
-    # List of databases to checkpoint
-    # Now includes separate DBs for each symbol
-    dbs = [
-        os.path.join(base_dir, 'crypto', 'crypto_trading.db'),
-        os.path.join(base_dir, 'gold', 'trading_data_GOLD.db'),
-        os.path.join(base_dir, 'gold', 'trading_data_XAUUSDm.db'), # Exness Gold
-        os.path.join(base_dir, 'gold', 'trading_data_ETHUSD.db'),
-        os.path.join(base_dir, 'gold', 'trading_data_ETHUSDm.db'), # Exness ETH
-        os.path.join(base_dir, 'gold', 'trading_data_EURUSD.db'),
-        os.path.join(base_dir, 'gold', 'trading_data_EURUSDm.db')  # Exness EUR
-    ]
+    # Dynamic discovery of databases to checkpoint
+    # This ensures all new symbols (including Exness *m pairs) are automatically handled
+    dbs = []
+    
+    # 1. Gold/Forex DBs (including standard and Exness suffix)
+    gold_dbs = glob.glob(os.path.join(base_dir, 'gold', 'trading_data_*.db'))
+    dbs.extend(gold_dbs)
+    
+    # 2. Crypto DBs
+    crypto_dbs = glob.glob(os.path.join(base_dir, 'crypto', '*.db'))
+    dbs.extend(crypto_dbs)
+    
+    # 3. Root DBs
+    root_dbs = glob.glob(os.path.join(base_dir, 'trading_data.db'))
+    dbs.extend(root_dbs)
+    
+    # Remove duplicates and ensure existence
+    dbs = list(set([db for db in dbs if os.path.exists(db)]))
+    
+    if not dbs:
+        print("No databases found to checkpoint.")
 
     for db in dbs:
         checkpoint_db(db)
