@@ -77,4 +77,24 @@ class MarketData(Base):
     volume = Column(Float)
 
 def init_db():
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print("\n" + "="*50)
+        print("❌ CRITICAL DATABASE ERROR")
+        print("="*50)
+        print(f"Error Details: {e}")
+        print("-" * 50)
+        print("⚠️  DIAGNOSIS:")
+        print("The application failed to connect to the PostgreSQL database.")
+        if "UnicodeDecodeError" in str(e) or isinstance(e, UnicodeDecodeError):
+            print("The 'UnicodeDecodeError' indicates that PostgreSQL is likely NOT running,")
+            print("and the system returned a localized error message (e.g., in Chinese)")
+            print("that Python failed to decode as UTF-8.")
+        print("\n✅ ACTION REQUIRED:")
+        print("1. Ensure PostgreSQL is INSTALLED.")
+        print("2. Ensure the PostgreSQL service is RUNNING.")
+        print("3. Check your connection string in .env")
+        print("="*50 + "\n")
+        # Re-raise to stop startup if DB is critical
+        raise e
