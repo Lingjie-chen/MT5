@@ -214,7 +214,9 @@ def main():
     parser.add_argument("--reset", action="store_true", help="WARNING: Truncate Postgres tables before syncing (Fresh Start)")
     args = parser.parse_args()
 
-    base_dir = "/Users/lenovo/tmp/quant_trading_strategy" # Hardcoded based on user context
+    # Detect base dir dynamically
+    base_dir = project_root
+    logger.info(f"Base Directory: {base_dir}")
     
     # Initialize Managers
     git_manager = GitSyncManager(base_dir)
