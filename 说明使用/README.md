@@ -52,27 +52,50 @@ Open your terminal or SQL tool (like pgAdmin) and run:
 
 ```sql
 CREATE DATABASE trading_bot;
-CREATE USER trading_user WITH ENCRYPTED PASSWORD 'your_secure_password';
-GRANT ALL PRIVILEGES ON DATABASE trading_bot TO trading_user;
+CREATE USER chenlingjie WITH ENCRYPTED PASSWORD 'clj568741230';
+GRANT ALL PRIVILEGES ON DATABASE trading_bot TO chenlingjie;
 ```
 
 ### 3.3 Configure Environment Variables
 Create a `.env` file in the project root:
 
 ```ini
-# Database Connection (Format: postgresql://user:password@host:port/dbname)
-POSTGRES_CONNECTION_STRING=postgresql://trading_user:your_secure_password@localhost:5432/trading_bot
+# Database Connection
+POSTGRES_CONNECTION_STRING=postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot
 
 # API Keys
 SERVER_API_KEY=my_secret_key
 SILICONFLOW_API_KEY=your_siliconflow_api_key
-
-# Optional: Separate Keys for different symbols if needed
-# EURUSD_API_KEY=...
-# ETHUSD_API_KEY=...
 ```
 
-## 4. Data Migration (Optional)
+## 4. One-Click Setup (Quick Start)
+
+We have provided automation scripts to handle the entire setup process (virtual env, dependencies, .env file) in one go.
+
+### Mac/Linux
+```bash
+# Make the script executable
+chmod +x setup_env.sh
+
+# Run the setup script
+./setup_env.sh
+
+# Activate the environment
+source venv/bin/activate
+```
+
+### Windows
+```cmd
+# Run the setup script
+setup_env.bat
+
+# Activate the environment
+venv\Scripts\activate
+```
+
+Once the environment is activated, you are ready to run the system!
+
+## 5. Data Migration (Optional)
 
 If you have existing local SQLite data (`.db` files) that you want to migrate to the new remote PostgreSQL database:
 
