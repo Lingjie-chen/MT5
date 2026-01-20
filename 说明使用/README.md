@@ -104,24 +104,25 @@ python migrate_sqlite_to_postgres.py
 ```
 *This script automatically detects all `trading_data_*.db` files and uploads them to PostgreSQL.*
 
-## 5. Running the System
+## 6. Running the System
 
 The system consists of three main components:
 
-### 5.1 Backend API Server (FastAPI)
-This server handles data ingestion and serves history to the bot.
+### 6.1 Backend API Server (One-Click Start)
+This server handles data ingestion and serves history to the bot. We have provided a script to start it automatically.
 
+**Mac/Linux:**
 ```bash
-# Mac/Linux
-export POSTGRES_CONNECTION_STRING="postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot"
-uvicorn gold.server.main:app --host 0.0.0.0 --port 8000 --reload
-
-# Windows (Command Prompt)
-set POSTGRES_CONNECTION_STRING=postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot
-uvicorn gold.server.main:app --host 0.0.0.0 --port 8000 --reload
+./start_data_server.sh
 ```
 
-### 5.2 Trading Bot (Windows Only)
+**Windows:**
+```cmd
+start_data_server.bat
+```
+*This will start the FastAPI server on port 8000 and enable real-time sync to PostgreSQL.*
+
+### 6.2 Trading Bot (Windows Only)
 The core logic that interacts with MT5.
 
 ```cmd
@@ -129,7 +130,7 @@ python gold/start.py
 ```
 *Ensure MT5 terminal is running and "Algo Trading" is enabled.*
 
-### 5.3 Analysis Dashboard (Streamlit)
+### 6.3 Analysis Dashboard (Streamlit)
 Visual interface for monitoring performance.
 
 ```bash
