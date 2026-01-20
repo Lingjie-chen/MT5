@@ -123,9 +123,9 @@ start_system.bat
 
 **Mac/Linux:**
 ```bash
-./start_data_server.sh
+./start_system.sh
 ```
-*(Currently, Mac/Linux users should run the server script and sync script separately if needed, or use the provided shell script which handles the server part.)*
+*(This script unifies the server startup and the background sync service, just like on Windows.)*
 
 ### 6.2 Trading Bot (Windows Only)
 The core logic that interacts with MT5.
