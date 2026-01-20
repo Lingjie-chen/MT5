@@ -29,7 +29,7 @@ pip install -r requirements.txt
 :: 4. .env setup
 if not exist .env (
     echo 📝 Creating .env template...
-    echo POSTGRES_CONNECTION_STRING=postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot> .env
+    echo POSTGRES_CONNECTION_STRING=postgresql://postgres:password@localhost:5432/trading_bot> .env
     echo SERVER_API_KEY=my_secret_key>> .env
     echo POSTGRES_API_URL=http://127.0.0.1:8000/api>> .env
     echo SILICONFLOW_API_KEY=your_key_here>> .env
