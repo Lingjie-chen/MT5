@@ -16,6 +16,8 @@ fi
 echo "🟢 Activating virtual environment..."
 source venv/bin/activate
 
+
+
 # 2.5 Fix Git State (Auto-Commit & Lock Removal)
 echo "🛠️ Ensuring clean Git state..."
 # Kill any stale git processes that might be locking files
@@ -35,8 +37,6 @@ git commit -m "Auto-save trading_data.db on startup" || echo "Nothing to commit"
 # Ensure dependencies are installed (Fix for ModuleNotFoundError)
 echo "📦 Checking critical dependencies..."
 pip install sqlalchemy psycopg2-binary
-
-# 3. Auto Data Migration
 echo "🔄 Checking for local SQLite data to migrate..."
 python migrate_sqlite_to_postgres.py
 
