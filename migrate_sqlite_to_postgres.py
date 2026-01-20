@@ -2,14 +2,12 @@ import os
 import sys
 import logging
 import argparse
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
-# Add scripts folder to path to import the unified engine classes
-# (Assuming the user runs this from project root or the file location)
+# Add project root to path to allow importing from scripts package
 current_dir = os.path.dirname(os.path.abspath(__file__))
-scripts_dir = os.path.join(current_dir, 'scripts')
-if scripts_dir not in sys.path:
-    sys.path.append(scripts_dir)
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
 
 # Try to import from the enhanced checkpoint_dbs
 try:
