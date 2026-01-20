@@ -208,9 +208,8 @@ class DBSyncManager:
                 logger.error(f"DB: Failed to process {os.path.basename(db_path)}: {e}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Auto Sync & AI Reflection Engine")
+    parser = argparse.ArgumentParser(description="Auto Sync Engine")
     parser.add_argument("--interval", type=int, default=10, help="Sync interval in seconds")
-    parser.add_argument("--ai-interval", type=int, default=3600, help="AI Reflection interval in seconds")
     args = parser.parse_args()
 
     base_dir = "/Users/lenovo/tmp/quant_trading_strategy" # Hardcoded based on user context
