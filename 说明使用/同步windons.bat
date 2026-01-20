@@ -2,7 +2,8 @@
 :: One-Click Start for Auto Sync Engine (Windows)
 
 :: Ensure we are in the project root
-cd /d "%~dp0"
+:: Because this script is in "说明使用", we need to go up one level to project root
+cd /d "%~dp0\.."
 
 :: Add current directory to PYTHONPATH so python can find modules
 set PYTHONPATH=%PYTHONPATH%;%cd%

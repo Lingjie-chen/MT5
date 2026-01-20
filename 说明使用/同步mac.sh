@@ -2,7 +2,8 @@
 # One-Click Start for Auto Sync Engine (Mac/Linux)
 
 # Ensure we are in the project root
-cd "$(dirname "$0")"
+# Because this script is in "说明使用", we need to go up one level to project root
+cd "$(dirname "$0")/.."
 
 # Add current directory to PYTHONPATH so python can find modules
 export PYTHONPATH=$PYTHONPATH:$(pwd)
