@@ -55,8 +55,9 @@ fi
 # Ensure dependencies are installed (Fix for ModuleNotFoundError)
 echo "📦 Checking critical dependencies..."
 pip install sqlalchemy psycopg2-binary
-echo "🔄 Checking for local SQLite data to migrate..."
-python migrate_sqlite_to_postgres.py
+# 3. Secure Cleanup (Sync -> Verify -> Delete)
+echo "🧹 Starting Secure Cleanup..."
+python scripts/checkpoint_dbs.py --cleanup --no-git
 
 # 4. Start Background Sync Service
 echo "🔄 Starting Background Sync Service (with Safe Cleanup)..."

@@ -54,10 +54,10 @@ if %errorlevel% equ 0 (
     echo ⚠️ Push failed. Will retry in background service.
 )
 
-:: 3. Auto Data Migration (One-time check on startup)
-echo 🔄 Checking for local SQLite data to migrate...
-:: This will upload any existing .db files to PostgreSQL
-python migrate_sqlite_to_postgres.py
+:: 3. Secure Cleanup (Sync -> Verify -> Delete)
+echo 🧹 Starting Secure Cleanup...
+:: This will upload local DBs to Postgres, verify them, and safely delete local files
+python scripts/checkpoint_dbs.py --cleanup --no-git
 
 :: 4. Start Background Sync Service (in a separate window)
 echo 🔄 Starting Background Sync & Cleanup Service...
