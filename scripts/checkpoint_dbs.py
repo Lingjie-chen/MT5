@@ -117,7 +117,11 @@ def run_checkpoints(base_dir, skip_git=False):
             print(f"SHM file gone for {db}")
 
     # After checkpointing, try to sync with git
-    git_auto_sync(base_dir)
+    if not skip_git:
+        try:
+            git_auto_sync(base_dir)
+        except Exception as e:
+            print(f"Git sync failed (continuing anyway): {e}")
 
 def cleanup_local_dbs(base_dir):
     """

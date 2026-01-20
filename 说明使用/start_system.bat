@@ -28,7 +28,7 @@ python migrate_sqlite_to_postgres.py
 echo 🔄 Starting Background Sync & Cleanup Service...
 :: This script handles:
 ::   - Periodic DB Checkpoints (WAL merge)
-::   - Git Auto-Sync (Pull/Push)
+::   - Git Auto-Sync (Pull/Push) - automatically enabled
 ::   - Auto-Cleanup of local DBs after successful sync
 start "Background Sync Service" cmd /c "python scripts/checkpoint_dbs.py --loop --cleanup --interval 60"
 
