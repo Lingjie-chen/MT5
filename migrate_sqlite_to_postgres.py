@@ -54,7 +54,7 @@ def main():
             with pg_engine.connect() as conn:
                 for table in db_manager.tables_to_sync.keys():
                     logger.info(f"Truncating {table}...")
-                    conn.execute(f"TRUNCATE TABLE {table} CASCADE")
+                    conn.execute(text(f"TRUNCATE TABLE {table} CASCADE"))
         except Exception as e:
             logger.error(f"Failed to truncate tables: {e}")
             return
