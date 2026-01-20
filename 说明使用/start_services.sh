@@ -7,7 +7,8 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-cd "$SCRIPT_DIR" || exit 1
+# 切换到项目根目录（脚本父目录）
+cd "$SCRIPT_DIR/.." || exit 1
 
 echo -e "${BLUE}🚀 启动 Quant Trading 服务...${NC}"
 

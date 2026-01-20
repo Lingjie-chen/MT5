@@ -11,7 +11,7 @@ echo -e "${BLUE}🚀 开始一键安装和配置 Quant Trading 环境 (ARM64/App
 
 # 获取脚本所在目录的上一级目录（项目根目录）
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-PROJECT_ROOT="$SCRIPT_DIR"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_ROOT" || exit 1
 
 echo -e "${BLUE}📂 项目根目录: $PROJECT_ROOT${NC}"
