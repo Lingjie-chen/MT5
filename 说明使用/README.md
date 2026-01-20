@@ -108,20 +108,22 @@ python migrate_sqlite_to_postgres.py
 
 The system consists of three main components:
 
-### 6.1 Start All Services (Recommended)
-
-**Mac/Linux (ARM/Intel):**
-```bash
-# 启动 API Server, Dashboard 和 自动同步引擎
-./说明使用/start_services.sh
-```
+### 6.1 Start Auto-Sync Engine (Recommended)
+This engine handles **Git Sync**, **DB Sync**, and **Environment Setup** automatically.
 
 **Windows:**
 ```cmd
-# 启动 API Server, Dashboard 和 自动同步引擎
 说明使用\同步windons.bat
 ```
-*这将打开多个窗口分别运行各个服务。*
+*This script will:*
+1.  *Auto-detect and activate virtual environment.*
+2.  *Check if PostgreSQL port (5432) is active.*
+3.  *Start the background sync engine.*
+
+**Mac/Linux:**
+```bash
+bash 说明使用/同步mac.sh
+```
 
 ### 6.2 Trading Bot (Windows Only)
 The core logic that interacts with MT5.

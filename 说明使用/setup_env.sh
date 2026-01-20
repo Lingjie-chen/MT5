@@ -5,18 +5,6 @@ cd "$(dirname "$0")/.." || exit 1
 
 echo "🚀 Setting up Quant Trading Environment..."
 
-# ARM64/Apple Silicon 检测提示
-ARCH="$(uname -m)"
-if [[ "$ARCH" == "arm64" || "$ARCH" == "aarch64" ]]; then
-    echo -e "\033[1;33m⚠️  检测到 ARM64 架构 (Apple Silicon/Linux ARM)。\033[0m"
-    echo -e "\033[1;32m推荐使用专为 ARM 优化的安装脚本：\033[0m"
-    echo -e "   Run: \033[1m./说明使用/install_and_run.sh\033[0m"
-    echo -e "   或者: \033[1mbash install_and_run.sh\033[0m (如果在说明使用目录下)"
-    echo -e "按任意键继续使用当前旧脚本 (可能缺少 PostgreSQL 配置)，或 Ctrl+C 退出切换脚本..."
-    read -n 1 -s -r -t 10
-    echo
-fi
-
 # 1. Check Python
 if ! command -v python3 &> /dev/null; then
     echo "❌ Python 3 is not installed. Please install Python 3.10+"
