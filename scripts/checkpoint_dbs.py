@@ -14,10 +14,15 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("sync_service.log", mode='a')
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler("sync_service.log", mode='a', encoding='utf-8')
     ]
 )
+# Force stdout/stderr to use utf-8 to fix Windows console encoding issues
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+
 logger = logging.getLogger("CheckpointService")
 
 # Configuration
@@ -278,13 +283,28 @@ def cleanup_local_dbs(base_dir):
             # 2. Sync & Verify with Postgres
             if sync_and_verify_db(db_file, pg_engine):
                 # 3. Safe Delete
-                os.remove(db_file)
-                logger.info(f"  [DELETE] {os.path.basename(db_file)} (Safe cleanup completed)")
+                # Add retry mechanism for Windows file lock
+                max_retries = 3
+                for i in range(max_retries):
+                    try:
+                        os.remove(db_file)
+                        logger.info(f"  [DELETE] {os.path.basename(db_file)} (Safe cleanup completed)")
+                        break
+                    except OSError as e:
+                        if i < max_retries - 1:
+                            logger.warning(f"  Delete failed (locked?), retrying in 1s... ({i+1}/{max_retries})")
+                            time.sleep(1)
+                        else:
+                            raise e
                 
                 # Clean artifacts
-                if os.path.exists(wal): os.remove(wal)
+                if os.path.exists(wal): 
+                    try: os.remove(wal)
+                    except: pass
                 shm = db_file + "-shm"
-                if os.path.exists(shm): os.remove(shm)
+                if os.path.exists(shm): 
+                    try: os.remove(shm)
+                    except: pass
             else:
                 logger.warning(f"  [KEEP] {os.path.basename(db_file)} (Sync/Verify failed)")
 
