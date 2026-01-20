@@ -28,13 +28,24 @@ pip install -r requirements.txt
 # 4. .env setup
 if [ ! -f ".env" ]; then
     echo "📝 Creating .env template..."
-    echo "POSTGRES_CONNECTION_STRING=postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot" > .env
-    echo "SERVER_API_KEY=my_secret_key" >> .env
-    echo "POSTGRES_API_URL=http://127.0.0.1:8000/api" >> .env
-    echo "SILICONFLOW_API_KEY=your_key_here" >> .env
+    cat > .env << EOL
+POSTGRES_CONNECTION_STRING=postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot
+SERVER_API_KEY=my_secret_key
+POSTGRES_API_URL=http://127.0.0.1:8000/api
+SILICONFLOW_API_KEY=your_key_here
+EOL
     echo "⚠️  Please edit .env with your actual SILICONFLOW_API_KEY!"
 else
     echo "✅ .env file exists."
+fi
+
+# 5. Check PostgreSQL Status
+echo "🐘 Checking PostgreSQL status..."
+if nc -z localhost 5432 2>/dev/null; then
+    echo "✅ PostgreSQL is running on port 5432."
+else
+    echo "⚠️  PostgreSQL is NOT detected on port 5432."
+    echo "    Please ensure PostgreSQL is installed and running."
 fi
 
 echo "✨ Setup complete! To activate: source venv/bin/activate"
