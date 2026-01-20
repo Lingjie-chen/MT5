@@ -34,11 +34,30 @@ echo "💾 Auto-saving local DB changes..."
 git add gold/trading_data.db
 git commit -m "Auto-save trading_data.db on startup" || echo "Nothing to commit"
 
+# 2.6 Sync Code (Pull & Push)
+echo "🔄 Syncing with GitHub (Pull & Push)..."
+
+# PULL: Get remote updates
+echo "⬇️ Pulling latest code..."
+if ! git pull origin master; then
+    echo "⚠️ Standard pull failed. Attempting auto-resolve (Strategy: ours)..."
+    git pull --no-edit -s recursive -X ours origin master || echo "❌ Auto-resolve failed. Please resolve conflicts manually."
+fi
+
+# PUSH: Upload local changes (if any)
+echo "⬆️ Pushing local changes..."
+if git push origin master; then
+    echo "✅ Push successful."
+else
+    echo "⚠️ Push failed. Will retry in background service."
+fi
+
 # Ensure dependencies are installed (Fix for ModuleNotFoundError)
 echo "📦 Checking critical dependencies..."
 pip install sqlalchemy psycopg2-binary
-echo "🔄 Checking for local SQLite data to migrate..."
-python migrate_sqlite_to_postgres.py
+# 3. Secure Cleanup (Sync -> Verify -> Delete)
+echo "🧹 Starting Secure Cleanup..."
+python scripts/checkpoint_dbs.py --cleanup --no-git
 
 # 4. Start Background Sync Service
 echo "🔄 Starting Background Sync Service (with Safe Cleanup)..."

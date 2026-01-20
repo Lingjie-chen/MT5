@@ -257,12 +257,17 @@ def run_checkpoints(base_dir, skip_git=False):
     if not dbs:
         return
 
+    if not skip_git:
+        try:
+            git_auto_sync(base_dir)
+        except Exception as e:
+            print(f"Git sync failed (continuing anyway): {e}")
+
+    if not dbs:
+        return
+
     for db in dbs:
         checkpoint_db(db)
-        # WAL check logic omitted for brevity, checkpoint_db handles the action.
-
-    if not skip_git:
-        git_auto_sync(base_dir)
 
 def cleanup_local_dbs(base_dir):
     """
