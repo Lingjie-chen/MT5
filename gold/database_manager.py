@@ -391,16 +391,18 @@ class DatabaseManager:
 
     def get_trade_performance_stats(self, symbol=None, limit=50):
         """
-        Get recent trade performance statistics (MFE, MAE, Profit)
-        Optionally filter by symbol.
+        Get recent trade performance statistics (MFE, MAE, Profit).
+        Priority: Local DB -> Remote DB (Fallback)
         """
+        stats = []
         try:
+            # 1. Try Local DB first
             conn = self._get_connection()
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
             query = '''
-                SELECT profit, mfe, mae, action, volume 
+                SELECT profit, mfe, mae, action, volume, close_time 
                 FROM trades 
                 WHERE result = 'CLOSED' 
             '''
@@ -415,11 +417,50 @@ class DatabaseManager:
             
             cursor.execute(query, tuple(params))
             rows = cursor.fetchall()
+            stats = [dict(row) for row in rows]
             
-            return [dict(row) for row in rows]
         except Exception as e:
-            logger.error(f"Failed to get trade stats: {e}")
-            return []
+            logger.error(f"Failed to get trade stats locally: {e}")
+
+        # 2. Remote Fallback (If local is empty or insufficient)
+        if len(stats) < limit:
+            try:
+                logger.info(f"Local stats insufficient ({len(stats)}/{limit}), fetching from Remote DB...")
+                remote_trades = self.remote_storage.get_trades(limit=limit, symbol=symbol)
+                
+                # Convert remote format if necessary and deduplicate
+                # Remote usually returns full trade objects. We need specific fields.
+                # Assuming remote returns dicts with keys matching our schema.
+                for rt in remote_trades:
+                    if rt.get('result') == 'CLOSED':
+                        stats.append({
+                            'profit': rt.get('profit', 0),
+                            'mfe': rt.get('mfe', 0),
+                            'mae': rt.get('mae', 0),
+                            'action': rt.get('action'),
+                            'volume': rt.get('volume'),
+                            'close_time': rt.get('close_time')
+                        })
+                
+                # Deduplicate based on close_time might be hard if precision differs. 
+                # For now, if local was empty, we just use remote. 
+                # If mixed, we might prefer remote as source of truth if we trust it more.
+                # Simple strategy: If local is empty, use remote.
+                if not stats and remote_trades:
+                     stats = [
+                        {
+                            'profit': rt.get('profit', 0),
+                            'mfe': rt.get('mfe', 0),
+                            'mae': rt.get('mae', 0),
+                            'action': rt.get('action'),
+                            'volume': rt.get('volume')
+                        }
+                        for rt in remote_trades if rt.get('result') == 'CLOSED'
+                     ]
+            except Exception as re:
+                logger.error(f"Remote fetch failed: {re}")
+
+        return stats[:limit]
 
     def get_performance_metrics(self, symbol=None, limit=20):
         """
