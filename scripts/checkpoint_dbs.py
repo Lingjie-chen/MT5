@@ -27,12 +27,23 @@ def checkpoint_db(db_path):
 import subprocess
 
 def git_pull_updates(base_dir):
-    """Pull updates from remote repository"""
+    """Pull updates from remote repository with conflict resolution"""
     try:
         print("⬇️ Checking for remote updates...")
+        # Attempt 1: Standard pull
         subprocess.run(["git", "pull", "origin", "master"], cwd=base_dir, check=True)
+    except subprocess.CalledProcessError:
+        print("⚠️ Standard pull failed (conflict?). Attempting auto-resolve (Strategy: ours)...")
+        try:
+            # Attempt 2: Pull with 'ours' strategy (prefer local changes)
+            subprocess.run(["git", "pull", "--no-edit", "-s", "recursive", "-X", "ours", "origin", "master"], cwd=base_dir, check=True)
+            print("✅ Conflict resolved automatically.")
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Auto-resolve failed: {e}")
+            # Abort merge to return to clean state
+            subprocess.run(["git", "merge", "--abort"], cwd=base_dir, stderr=subprocess.DEVNULL)
     except Exception as e:
-        print(f"⚠️ Git pull failed: {e}")
+        print(f"⚠️ Git pull error: {e}")
 
 def git_auto_sync(base_dir):
     """Auto commit and push changes if databases have changed"""
