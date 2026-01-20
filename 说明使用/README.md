@@ -108,19 +108,24 @@ python migrate_sqlite_to_postgres.py
 
 The system consists of three main components:
 
-### 6.1 Backend API Server (One-Click Start)
-This server handles data ingestion and serves history to the bot. We have provided a script to start it automatically.
+### 6.1 Start System (One-Click)
+We have combined the Data Server and Auto-Sync service into a single script.
+
+**Windows:**
+```cmd
+start_system.bat
+```
+*This will:*
+1.  *Activate the virtual environment.*
+2.  *Migrate any existing local SQLite data to PostgreSQL.*
+3.  *Start the **Data Server** (FastAPI) for real-time data ingestion.*
+4.  *Launch a background service to periodically **checkpoint** local DBs and **clean them up** once data is safely uploaded.*
 
 **Mac/Linux:**
 ```bash
 ./start_data_server.sh
 ```
-
-**Windows:**
-```cmd
-start_data_server.bat
-```
-*This will start the FastAPI server on port 8000 and enable real-time sync to PostgreSQL.*
+*(Currently, Mac/Linux users should run the server script and sync script separately if needed, or use the provided shell script which handles the server part.)*
 
 ### 6.2 Trading Bot (Windows Only)
 The core logic that interacts with MT5.
