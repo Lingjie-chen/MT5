@@ -1,4 +1,5 @@
 @echo off
+setlocal
 title Quant Trading System (Data Server & Auto-Sync)
 color 0b
 
@@ -38,16 +39,16 @@ echo 🔄 Syncing with GitHub (Pull & Push)...
 
 :: PULL: Get remote updates
 echo ⬇️ Pulling latest code...
-git pull origin master
+call git pull origin master
 if %errorlevel% neq 0 (
     echo ⚠️ Standard pull failed. Attempting auto-resolve (Strategy: ours)...
-    git pull --no-edit -s recursive -X ours origin master
+    call git pull --no-edit -s recursive -X ours origin master
     if %errorlevel% neq 0 echo ❌ Auto-resolve failed. Please resolve conflicts manually.
 )
 
 :: PUSH: Upload local changes
 echo ⬆️ Pushing local changes...
-git push origin master
+call git push origin master
 if %errorlevel% equ 0 (
     echo ✅ Push successful.
 ) else (
@@ -65,7 +66,7 @@ echo 🔄 Starting Background Sync & Cleanup Service...
 ::   - Periodic DB Checkpoints (WAL merge)
 ::   - Git Auto-Sync (Pull/Push) - automatically enabled
 ::   - Auto-Cleanup of local DBs (Safe Mode: Syncs to Postgres -> Verifies -> Deletes)
-start "Background Sync Service" cmd /c "python scripts/checkpoint_dbs.py --loop --cleanup --interval 60"
+start "Background Sync Service" cmd /k "venv\Scripts\activate && python scripts/checkpoint_dbs.py --loop --cleanup --interval 60"
 
 :: 5. Start Data Server (Blocking Process)
 echo 🟢 Starting Data Server (FastAPI)...
