@@ -210,6 +210,8 @@ class DBSyncManager:
 def main():
     parser = argparse.ArgumentParser(description="Auto Sync Engine")
     parser.add_argument("--interval", type=int, default=10, help="Sync interval in seconds")
+    parser.add_argument("--once", action="store_true", help="Run sync once and exit (Migration mode)")
+    parser.add_argument("--reset", action="store_true", help="WARNING: Truncate Postgres tables before syncing (Fresh Start)")
     args = parser.parse_args()
 
     base_dir = "/Users/lenovo/tmp/quant_trading_strategy" # Hardcoded based on user context
@@ -228,6 +230,27 @@ def main():
 
     db_manager = DBSyncManager(base_dir, pg_engine)
     
+    # Handle Reset (Truncate)
+    if args.reset:
+        logger.warning("⚠️  RESET FLAG DETECTED. Truncating target tables in 5 seconds...")
+        time.sleep(5)
+        try:
+            with pg_engine.connect() as conn:
+                for table in db_manager.tables_to_sync.keys():
+                    logger.info(f"Truncating {table}...")
+                    conn.execute(text(f"TRUNCATE TABLE {table} CASCADE"))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to truncate tables: {e}")
+            return
+
+    if args.once:
+        logger.info("Running single sync pass...")
+        db_manager.sync_all()
+        git_manager.sync()
+        logger.info("Sync completed.")
+        return
+
     logger.info("🚀 Auto Sync Engine Started...")
     logger.info(f"   - Sync Interval: {args.interval}s")
 
