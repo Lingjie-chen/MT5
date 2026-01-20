@@ -18,12 +18,6 @@ project_root = os.path.dirname(current_dir)
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-try:
-    from gold.qwen_client import QwenClient
-except ImportError:
-    # Fallback or mock if running in an environment without the full codebase
-    QwenClient = None
-
 # Configure Logging
 logging.basicConfig(
     level=logging.INFO,
@@ -43,7 +37,6 @@ logger = logging.getLogger("AutoSyncEngine")
 
 # Configuration
 POSTGRES_URL = os.getenv("POSTGRES_CONNECTION_STRING", "postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot")
-QWEN_API_KEY = os.getenv("QWEN_API_KEY", "") # User needs to set this
 
 class GitSyncManager:
     """Handles auto-syncing of local files with GitHub"""
@@ -214,117 +207,6 @@ class DBSyncManager:
             except Exception as e:
                 logger.error(f"DB: Failed to process {os.path.basename(db_path)}: {e}")
 
-class AIReflectionManager:
-    """
-    Manages AI Self-Learning & Reflection.
-    Fetches historical data from Postgres -> Feeds to LLM -> Stores/Logs insights.
-    """
-    def __init__(self, pg_engine, api_key):
-        self.pg_engine = pg_engine
-        self.client = QwenClient(api_key=api_key) if QwenClient else None
-        self.last_reflection_time = 0
-        self.reflection_interval = 3600 # Run every hour by default
-
-    def fetch_history_stats(self, limit=100):
-        """Fetch recent trade history stats for AI analysis"""
-        try:
-            query = """
-                SELECT profit, mfe, mae, action, volume, close_time, symbol, result
-                FROM trades 
-                WHERE result = 'CLOSED' 
-                ORDER BY close_time DESC 
-                LIMIT :limit
-            """
-            with self.pg_engine.connect() as conn:
-                df = pd.read_sql_query(text(query), conn, params={"limit": limit})
-            
-            if df.empty:
-                return []
-            
-            return df.to_dict(orient='records')
-        except Exception as e:
-            logger.error(f"AI: Failed to fetch history: {e}")
-            return []
-
-    def perform_reflection(self):
-        if not self.client:
-            return
-
-        # Check interval
-        if time.time() - self.last_reflection_time < self.reflection_interval:
-            return
-
-        logger.info("AI: Starting Self-Optimization & Reflection cycle...")
-        
-        try:
-            # 1. Get Data
-            history = self.fetch_history_stats()
-            if not history:
-                logger.info("AI: No history to reflect on.")
-                return
-
-            # 2. Prepare Context
-            # We use a simplified context for the reflection task
-            # The optimize_strategy_logic method is designed for trading decisions, 
-            # but we can abuse it or call analyze_market_structure with a special prompt 
-            # if we want pure reflection.
-            # However, `optimize_strategy_logic` specifically has a "Self-Learning" section.
-            
-            # Let's create a dedicated Reflection Prompt here, 
-            # or simply use the client's existing capabilities.
-            # For this task, let's try to get a "Strategy Optimization Report".
-            
-            # We'll construct a mock "market_data" just to trigger the method, 
-            # but focus on passing `performance_stats`.
-            
-            mock_market_data = {"symbol": "XAUUSD", "price": 0} # Placeholder
-            
-            decision = self.client.optimize_strategy_logic(
-                market_structure_analysis={},
-                current_market_data=mock_market_data,
-                performance_stats=history
-            )
-            
-            # 3. Process Result
-            rationale = decision.get('strategy_rationale', '')
-            updates = decision.get('parameter_updates', {})
-            
-            logger.info(f"AI Reflection Completed.")
-            logger.info(f"Rationale: {rationale[:200]}...")
-            
-            # 4. Save Reflection to DB
-            self.save_reflection(rationale, updates)
-            
-            self.last_reflection_time = time.time()
-
-        except Exception as e:
-            logger.error(f"AI: Reflection failed: {e}")
-
-    def save_reflection(self, rationale, updates):
-        """Save the reflection result to Postgres"""
-        try:
-            # Create table if not exists
-            with self.pg_engine.connect() as conn:
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS ai_reflections (
-                        id SERIAL PRIMARY KEY,
-                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        rationale TEXT,
-                        suggested_updates JSONB
-                    )
-                """))
-                conn.commit()
-                
-                # Insert
-                conn.execute(text("""
-                    INSERT INTO ai_reflections (rationale, suggested_updates)
-                    VALUES (:rationale, :updates)
-                """), {"rationale": rationale, "updates": json.dumps(updates)})
-                conn.commit()
-                
-        except Exception as e:
-            logger.error(f"AI: Failed to save reflection to DB: {e}")
-
 def main():
     parser = argparse.ArgumentParser(description="Auto Sync & AI Reflection Engine")
     parser.add_argument("--interval", type=int, default=10, help="Sync interval in seconds")
@@ -347,12 +229,8 @@ def main():
 
     db_manager = DBSyncManager(base_dir, pg_engine)
     
-    ai_manager = AIReflectionManager(pg_engine, QWEN_API_KEY)
-    ai_manager.reflection_interval = args.ai_interval
-
     logger.info("🚀 Auto Sync Engine Started...")
     logger.info(f"   - Sync Interval: {args.interval}s")
-    logger.info(f"   - AI Reflection Interval: {args.ai_interval}s")
 
     last_git_sync = 0
     git_sync_interval = 300 # 5 minutes
@@ -366,9 +244,6 @@ def main():
             if time.time() - last_git_sync > git_sync_interval:
                 git_manager.sync()
                 last_git_sync = time.time()
-            
-            # 3. AI Reflection (Periodic)
-            ai_manager.perform_reflection()
             
             time.sleep(args.interval)
 
