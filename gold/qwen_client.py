@@ -1086,6 +1086,34 @@ class QwenClient:
         
         return {"sentiment": "neutral", "sentiment_score": 0.0, "reason": "Error", "trend_assessment": {"direction": "unknown", "strength": "weak"}}
 
+    def _get_historical_performance(self, symbol: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        从远程 PostgreSQL 获取该品种的历史交易数据，用于自我学习
+        """
+        try:
+            postgres_api_url = os.getenv("POSTGRES_API_URL")
+            if not postgres_api_url:
+                logger.warning("POSTGRES_API_URL 未设置，无法获取远程历史数据")
+                return []
+                
+            url = f"{postgres_api_url}/history"
+            # 假设后端API支持 symbol 和 limit 参数
+            params = {"symbol": symbol, "limit": limit}
+            
+            response = requests.get(url, params=params, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, list):
+                    logger.info(f"成功从远程DB获取 {len(data)} 条 {symbol} 历史交易记录")
+                    return data
+            else:
+                logger.warning(f"获取历史数据失败: {response.status_code} {response.text}")
+                
+        except Exception as e:
+            logger.error(f"获取远程历史数据异常: {e}")
+            
+        return []
+
     def optimize_strategy_logic(self, market_structure_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         黄金(XAUUSD)交易决策系统 - 基于SMC+Martingale策略
@@ -1102,6 +1130,14 @@ class QwenClient:
         Returns:
             Dict[str, Any]: 完整的交易决策
         """
+        # 获取当前品种
+        symbol = current_market_data.get("symbol", "XAUUSD")
+
+        # 0. 自动获取远程数据库历史 (Self-Learning Core)
+        # 如果调用方没有传入 performance_stats，则主动从远程DB拉取
+        if not performance_stats:
+            performance_stats = self._get_historical_performance(symbol, limit=50)
+
         # 首先进行市场结构分析 (如果传入的分析为空或只是占位符，则重新分析)
         market_analysis = market_structure_analysis
         if not market_analysis or len(market_analysis) < 3: # 简单的检查
