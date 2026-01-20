@@ -465,8 +465,9 @@ class DatabaseManager:
     def get_performance_metrics(self, symbol=None, limit=20):
         """
         计算近期交易的胜率和盈亏比，用于智能资金管理
-        Optionally filter by symbol.
+        支持从 Remote DB 获取数据进行计算
         """
+        profits = []
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -487,36 +488,45 @@ class DatabaseManager:
             cursor.execute(query, tuple(params))
             
             rows = cursor.fetchall()
-            if not rows:
-                return {"win_rate": 0.0, "profit_factor": 0.0, "consecutive_losses": 0}
-                
             profits = [r[0] for r in rows]
-            wins = [p for p in profits if p > 0]
-            losses = [p for p in profits if p <= 0]
-            
-            win_rate = len(wins) / len(profits) if profits else 0.0
-            
-            gross_profit = sum(wins)
-            gross_loss = abs(sum(losses))
-            profit_factor = gross_profit / gross_loss if gross_loss > 0 else (10.0 if gross_profit > 0 else 0.0)
-            
-            # 计算当前连败次数 (用于反马丁格尔或防御性减仓)
-            consecutive_losses = 0
-            for p in profits: # profits 是按时间倒序的
-                if p < 0:
-                    consecutive_losses += 1
-                else:
-                    break
-            
-            return {
-                "win_rate": win_rate,
-                "profit_factor": profit_factor,
-                "consecutive_losses": consecutive_losses
-            }
-            
+                
         except Exception as e:
-            logger.error(f"Failed to get performance metrics: {e}")
+            logger.error(f"Failed to get performance metrics locally: {e}")
+
+        # Remote Fallback
+        if not profits:
+            try:
+                # logger.info("Fetching metrics data from Remote DB...")
+                remote_trades = self.remote_storage.get_trades(limit=limit, symbol=symbol)
+                profits = [rt.get('profit', 0) for rt in remote_trades if rt.get('result') == 'CLOSED']
+            except Exception as re:
+                logger.error(f"Remote metrics fetch failed: {re}")
+
+        if not profits:
             return {"win_rate": 0.0, "profit_factor": 0.0, "consecutive_losses": 0}
+
+        wins = [p for p in profits if p > 0]
+        losses = [p for p in profits if p <= 0]
+        
+        win_rate = len(wins) / len(profits) if profits else 0.0
+        
+        gross_profit = sum(wins)
+        gross_loss = abs(sum(losses))
+        profit_factor = gross_profit / gross_loss if gross_loss > 0 else (10.0 if gross_profit > 0 else 0.0)
+        
+        # 计算当前连败次数
+        consecutive_losses = 0
+        for p in profits: 
+            if p < 0:
+                consecutive_losses += 1
+            else:
+                break
+        
+        return {
+            "win_rate": win_rate,
+            "profit_factor": profit_factor,
+            "consecutive_losses": consecutive_losses
+        }
 
     def get_open_trades(self):
         """Get all trades that are currently marked as OPEN in the database"""
