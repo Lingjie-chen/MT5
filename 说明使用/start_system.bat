@@ -20,7 +20,12 @@ if not exist venv (
 echo 🟢 Activating virtual environment...
 call venv\Scripts\activate
 
-:: 2.5 Fix Git State (Auto-Commit & Lock Removal)
+:: 2.1 Stop Existing Processes (Release DB Locks)
+echo 🧹 Stopping background Python processes to release file locks...
+taskkill /F /IM python.exe >nul 2>&1
+taskkill /F /IM uvicorn.exe >nul 2>&1
+
+:: 3. Fix Git State (Auto-Commit & Lock Removal)
 echo 🛠️ Ensuring clean Git state...
 :: Kill any stale git processes that might be locking files
 taskkill /F /IM git.exe >nul 2>&1
