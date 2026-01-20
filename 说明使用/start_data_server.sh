@@ -15,6 +15,10 @@ fi
 # Activate venv
 source venv/bin/activate
 
+# Optional: Auto Migrate SQLite to Postgres on startup
+echo "🔄 Checking for local data to migrate..."
+python migrate_sqlite_to_postgres.py
+
 # Start Server
 echo "🟢 Starting Uvicorn Server on http://0.0.0.0:8000..."
 echo "(Press Ctrl+C to stop)"
