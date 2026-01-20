@@ -142,18 +142,21 @@ Visual interface for monitoring performance.
 streamlit run dashboard.py
 ```
 
-## 6. Maintenance & Sync
+## 7. Maintenance & Sync
 
-### 6.1 Auto-Sync Scripts
-These scripts handle syncing code with GitHub and cleaning up local cache files once uploaded.
+### 7.1 Auto-Sync & System Startup
+The `start_system.bat` (Windows) script handles everything:
+1.  Starts the Data Server.
+2.  Runs a background service for:
+    *   **Git Auto-Sync**: Automatically pulls updates and pushes changes every 60s.
+    *   **DB Cleanup**: Automatically cleans local .db files once uploaded.
 
-*   **Windows**: Run `scripts\自动.bat`
-*   **Mac/Linux**: Run `bash scripts/auto_push.sh`
+You don't need to run any separate sync scripts.
 
-### 6.2 Local DB Cleanup
-The system automatically uploads data to PostgreSQL. Local `.db` files are cache-only. The sync scripts above will automatically delete local DB files if they are fully checkpointed, keeping the system lightweight.
+### 7.2 Local DB Cleanup
+The system automatically uploads data to PostgreSQL. Local `.db` files are cache-only. The system will automatically delete local DB files if they are fully checkpointed, keeping the system lightweight.
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 *   **Database Connection Error**: Check `POSTGRES_CONNECTION_STRING` in `.env` and ensure PostgreSQL service is active.
 *   **MT5 Not Found**: Ensure you are on Windows and MT5 is installed. On Mac, you can only run the Server and Dashboard.
