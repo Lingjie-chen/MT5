@@ -61,7 +61,7 @@ def git_auto_sync(base_dir):
     except Exception as e:
         print(f"Git auto-sync failed: {e}")
 
-def run_checkpoints(base_dir):
+def run_checkpoints(base_dir, skip_git=False):
     # Dynamic discovery of databases to checkpoint
     # This ensures all new symbols (including Exness *m pairs) are automatically handled
     dbs = []
@@ -192,6 +192,7 @@ def main():
     parser.add_argument("--loop", action="store_true", help="Run in a loop")
     parser.add_argument("--interval", type=int, default=60, help="Interval in seconds for loop mode")
     parser.add_argument("--cleanup", action="store_true", help="Cleanup local DB files after checkpoint (Remote-First Mode)")
+    parser.add_argument("--no-git", action="store_true", help="Skip Git auto-sync operations")
     
     args = parser.parse_args()
     
@@ -202,14 +203,14 @@ def main():
         try:
             while True:
                 print(f"\n--- Checkpoint Run at {time.strftime('%H:%M:%S')} ---")
-                run_checkpoints(base_dir)
+                run_checkpoints(base_dir, skip_git=args.no_git)
                 if args.cleanup:
                     cleanup_local_dbs(base_dir)
                 time.sleep(args.interval)
         except KeyboardInterrupt:
             print("\nStopping Checkpoint Service.")
     else:
-        run_checkpoints(base_dir)
+        run_checkpoints(base_dir, skip_git=args.no_git)
         if args.cleanup:
             cleanup_local_dbs(base_dir)
 
