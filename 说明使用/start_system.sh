@@ -41,7 +41,7 @@ echo "🔄 Checking for local SQLite data to migrate..."
 python migrate_sqlite_to_postgres.py
 
 # 4. Start Background Sync Service
-echo "🔄 Starting Background Sync & Cleanup Service..."
+echo "🔄 Starting Background Sync Service (with Safe Cleanup)..."
 # Run in background with nohup, redirect output to log
 nohup python scripts/checkpoint_dbs.py --loop --cleanup --interval 60 > sync_service.log 2>&1 &
 SYNC_PID=$!

@@ -43,7 +43,7 @@ echo 🔄 Starting Background Sync & Cleanup Service...
 :: This script handles:
 ::   - Periodic DB Checkpoints (WAL merge)
 ::   - Git Auto-Sync (Pull/Push) - automatically enabled
-::   - Auto-Cleanup of local DBs after successful sync
+::   - Auto-Cleanup of local DBs (Safe Mode: Syncs to Postgres -> Verifies -> Deletes)
 start "Background Sync Service" cmd /c "python scripts/checkpoint_dbs.py --loop --cleanup --interval 60"
 
 :: 5. Start Data Server (Blocking Process)

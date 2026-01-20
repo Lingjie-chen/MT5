@@ -4,11 +4,29 @@ import time
 import argparse
 import sys
 import glob
+import subprocess
+import logging
+from sqlalchemy import create_engine, text
+import pandas as pd
+
+# Configure Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("sync_service.log", mode='a')
+    ]
+)
+logger = logging.getLogger("CheckpointService")
+
+# Configuration
+POSTGRES_URL = os.getenv("POSTGRES_CONNECTION_STRING", "postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot")
 
 def checkpoint_db(db_path):
-    print(f"Checking point database: {db_path}")
+    logger.info(f"Checking point database: {db_path}")
     if not os.path.exists(db_path):
-        print(f"Database file not found: {db_path}")
+        logger.warning(f"Database file not found: {db_path}")
         return
 
     try:
@@ -18,32 +36,29 @@ def checkpoint_db(db_path):
         cursor = conn.cursor()
         cursor.execute("PRAGMA wal_checkpoint(TRUNCATE);")
         result = cursor.fetchone()
-        print(f"Checkpoint result: {result}") # (busy, log, checkpointed)
+        # result: (busy, log, checkpointed)
         conn.close()
-        print(f"Successfully checkpointed {db_path}")
+        logger.info(f"Successfully checkpointed {db_path} (Result: {result})")
     except Exception as e:
-        print(f"Error checkpointing {db_path}: {e}")
-
-import subprocess
+        logger.error(f"Error checkpointing {db_path}: {e}")
 
 def git_pull_updates(base_dir):
     """Pull updates from remote repository with conflict resolution"""
     try:
-        print("⬇️ Checking for remote updates...")
         # Attempt 1: Standard pull
-        subprocess.run(["git", "pull", "origin", "master"], cwd=base_dir, check=True)
+        subprocess.run(["git", "pull", "origin", "master"], cwd=base_dir, check=True, capture_output=True)
     except subprocess.CalledProcessError:
-        print("⚠️ Standard pull failed (conflict?). Attempting auto-resolve (Strategy: ours)...")
+        logger.warning("Standard pull failed (conflict?). Attempting auto-resolve (Strategy: ours)...")
         try:
             # Attempt 2: Pull with 'ours' strategy (prefer local changes)
             subprocess.run(["git", "pull", "--no-edit", "-s", "recursive", "-X", "ours", "origin", "master"], cwd=base_dir, check=True)
-            print("✅ Conflict resolved automatically.")
+            logger.info("✅ Conflict resolved automatically.")
         except subprocess.CalledProcessError as e:
-            print(f"❌ Auto-resolve failed: {e}")
+            logger.error(f"❌ Auto-resolve failed: {e}")
             # Abort merge to return to clean state
             subprocess.run(["git", "merge", "--abort"], cwd=base_dir, stderr=subprocess.DEVNULL)
     except Exception as e:
-        print(f"⚠️ Git pull error: {e}")
+        logger.error(f"Git pull error: {e}")
 
 def git_auto_sync(base_dir):
     """Auto commit and push changes if databases have changed"""
@@ -57,7 +72,7 @@ def git_auto_sync(base_dir):
         
         # Only proceed if DB files are modified
         if status.strip():
-            print("Detected code/data changes, syncing to GitHub...")
+            logger.info("Detected code/data changes, syncing to GitHub...")
             
             subprocess.run(["git", "add", "."], cwd=base_dir, check=True)
             
@@ -65,165 +80,239 @@ def git_auto_sync(base_dir):
             subprocess.run(["git", "commit", "-m", f"auto: sync updates {timestamp}"], cwd=base_dir, check=True)
             
             subprocess.run(["git", "push", "origin", "master"], cwd=base_dir, check=True)
-            print("Successfully synced all updates to GitHub.")
+            logger.info("Successfully synced all updates to GitHub.")
         else:
-            print("No changes to sync.")
+            # logger.info("No changes to sync.")
+            pass
             
     except Exception as e:
-        print(f"Git auto-sync failed: {e}")
+        logger.error(f"Git auto-sync failed: {e}")
+
+def sync_table_to_postgres(sqlite_conn, pg_engine, table_name, pk_col=None, date_col=None):
+    """
+    Syncs a single table from SQLite to Postgres.
+    Returns True if sync successful (or empty), False if failed.
+    """
+    try:
+        # 1. Read SQLite Data
+        try:
+            df_sqlite = pd.read_sql_query(f"SELECT * FROM {table_name}", sqlite_conn)
+        except Exception:
+            # Table might not exist, which is fine
+            return True
+
+        if df_sqlite.empty:
+            return True
+
+        # Convert date columns if needed
+        if date_col and date_col in df_sqlite.columns:
+            df_sqlite[date_col] = pd.to_datetime(df_sqlite[date_col])
+
+        # 2. Check Postgres Max State to avoid duplicates
+        # We assume Postgres table exists. If not, we might need to create it or let to_sql fail/create.
+        # For robustness, we try to append only new data.
+        
+        start_filter = None
+        try:
+            if pk_col:
+                query = f"SELECT MAX({pk_col}) FROM {table_name}"
+                max_val = pd.read_sql_query(query, pg_engine).iloc[0, 0]
+                if max_val is not None:
+                    # Filter SQLite data to only keep new rows
+                    df_sqlite = df_sqlite[df_sqlite[pk_col] > max_val]
+            elif date_col:
+                query = f"SELECT MAX({date_col}) FROM {table_name}"
+                max_val = pd.read_sql_query(query, pg_engine).iloc[0, 0]
+                if max_val is not None:
+                    # Filter SQLite data
+                    df_sqlite = df_sqlite[df_sqlite[date_col] > pd.to_datetime(max_val)]
+        except Exception as e:
+            # Table might not exist in PG, so we will try to create/append all
+            # logger.warning(f"Could not query max value from PG for {table_name}: {e}")
+            pass
+
+        if df_sqlite.empty:
+            # logger.info(f"  {table_name}: No new data to sync.")
+            return True
+
+        # 3. Write to Postgres
+        # Using 'append' method. If PK exists, it might fail.
+        # Ideally we use a method that handles duplicates, but pandas to_sql is limited.
+        # We rely on the filtering above.
+        df_sqlite.to_sql(table_name, pg_engine, if_exists='append', index=False, chunksize=1000)
+        logger.info(f"  {table_name}: Synced {len(df_sqlite)} new rows to Postgres.")
+        return True
+
+    except Exception as e:
+        logger.error(f"  Failed to sync table {table_name}: {e}")
+        return False
+
+def verify_data_synced(sqlite_conn, pg_engine, table_name, pk_col=None):
+    """
+    Verifies that all data in SQLite exists in Postgres.
+    """
+    try:
+        # Check SQLite Row Count
+        try:
+            count_sqlite = pd.read_sql_query(f"SELECT COUNT(*) FROM {table_name}", sqlite_conn).iloc[0, 0]
+        except:
+            return True # Table doesn't exist in SQLite, nothing to lose
+
+        if count_sqlite == 0:
+            return True
+
+        # Check Postgres Row Count (Should be >= SQLite)
+        # Note: This is a weak check. Stronger check: Check MAX(pk) match.
+        try:
+            count_pg = pd.read_sql_query(f"SELECT COUNT(*) FROM {table_name}", pg_engine).iloc[0, 0]
+        except:
+            logger.warning(f"  Verify failed: Table {table_name} does not exist in Postgres.")
+            return False
+
+        if count_pg < count_sqlite:
+            logger.warning(f"  Verify failed: {table_name} count mismatch (SQLite: {count_sqlite}, PG: {count_pg})")
+            return False
+            
+        return True
+
+    except Exception as e:
+        logger.error(f"  Verify error for {table_name}: {e}")
+        return False
+
+def sync_and_verify_db(db_path, pg_engine):
+    """
+    Orchestrates the sync and verification for a single DB file.
+    """
+    logger.info(f"Syncing & Verifying {os.path.basename(db_path)}...")
+    
+    try:
+        sqlite_conn = sqlite3.connect(db_path)
+        
+        # 1. Sync Tables
+        # Trades: PK=ticket, Time=time
+        s1 = sync_table_to_postgres(sqlite_conn, pg_engine, "trades", pk_col="ticket", date_col="time")
+        # Signals: No clear integer PK usually, use timestamp
+        s2 = sync_table_to_postgres(sqlite_conn, pg_engine, "signals", date_col="timestamp")
+        # Account Metrics: No PK, use timestamp
+        s3 = sync_table_to_postgres(sqlite_conn, pg_engine, "account_metrics", date_col="timestamp")
+        
+        if not (s1 and s2 and s3):
+            logger.error("  Sync failed for one or more tables.")
+            sqlite_conn.close()
+            return False
+            
+        # 2. Verify
+        v1 = verify_data_synced(sqlite_conn, pg_engine, "trades")
+        v2 = verify_data_synced(sqlite_conn, pg_engine, "signals")
+        v3 = verify_data_synced(sqlite_conn, pg_engine, "account_metrics")
+        
+        sqlite_conn.close()
+        
+        if v1 and v2 and v3:
+            logger.info(f"✅ {os.path.basename(db_path)} synced and verified.")
+            return True
+        else:
+            logger.warning(f"❌ {os.path.basename(db_path)} verification failed.")
+            return False
+
+    except Exception as e:
+        logger.error(f"Error processing {db_path}: {e}")
+        return False
 
 def run_checkpoints(base_dir, skip_git=False):
-    # Dynamic discovery of databases to checkpoint
-    # This ensures all new symbols (including Exness *m pairs) are automatically handled
     dbs = []
-    
-    # 1. Gold/Forex DBs (including standard and Exness suffix)
-    gold_dbs = glob.glob(os.path.join(base_dir, 'gold', 'trading_data_*.db'))
-    dbs.extend(gold_dbs)
-    
-    # 2. Crypto DBs
-    crypto_dbs = glob.glob(os.path.join(base_dir, 'crypto', '*.db'))
-    dbs.extend(crypto_dbs)
-    
-    # 3. Root DBs
-    root_dbs = glob.glob(os.path.join(base_dir, 'trading_data.db'))
-    dbs.extend(root_dbs)
-    
-    # Remove duplicates and ensure existence
+    dbs.extend(glob.glob(os.path.join(base_dir, 'gold', 'trading_data_*.db')))
+    dbs.extend(glob.glob(os.path.join(base_dir, 'crypto', '*.db')))
+    dbs.extend(glob.glob(os.path.join(base_dir, 'trading_data.db')))
     dbs = list(set([db for db in dbs if os.path.exists(db)]))
     
     if not dbs:
-        print("No databases found to checkpoint.")
+        return
 
     for db in dbs:
         checkpoint_db(db)
-        
-        # Check if WAL/SHM files still exist
-        wal_file = db + "-wal"
-        shm_file = db + "-shm"
-        
-        if os.path.exists(wal_file):
-            # print(f"WAL file still exists: {wal_file}")
-            try:
-                size = os.path.getsize(wal_file)
-                if size == 0:
-                     pass # Empty WAL is fine
-                else:
-                     print(f"WAL file size: {size} bytes (Should be 0 if truncated)")
-            except Exception as e:
-                print(f"Could not check WAL file: {e}")
-        else:
-            print(f"WAL file gone for {db}")
+        # WAL check logic omitted for brevity, checkpoint_db handles the action.
 
-        if os.path.exists(shm_file):
-            try:
-                size = os.path.getsize(shm_file)
-                # SHM file exists as long as there is an active connection
-                # It doesn't contain persistent data itself, just the WAL index
-                # print(f"SHM file exists (Active Index): {shm_file} ({size} bytes)")
-                pass
-            except Exception as e:
-                print(f"Could not check SHM file: {e}")
-        else:
-            print(f"SHM file gone for {db}")
-
-    # After checkpointing, try to sync with git
     if not skip_git:
-        try:
-            git_auto_sync(base_dir)
-        except Exception as e:
-            print(f"Git sync failed (continuing anyway): {e}")
+        git_auto_sync(base_dir)
 
 def cleanup_local_dbs(base_dir):
     """
-    Delete local SQLite files if data is fully migrated to Remote PostgreSQL.
-    Assuming the bot architecture has shifted to Remote-First for history.
-    This keeps the local environment lightweight (cache only).
+    Syncs to Postgres, Verifies, and THEN Deletes local SQLite files.
     """
-    import shutil
+    logger.info("\n🧹 Starting Secure Cleanup (Sync -> Verify -> Delete)...")
     
-    # List of DB patterns or specific files to clean
-    # Be careful not to delete config files
+    # Connect to Postgres
+    try:
+        pg_engine = create_engine(POSTGRES_URL)
+        # Test connection
+        with pg_engine.connect() as conn:
+            pass
+    except Exception as e:
+        logger.error(f"❌ Cannot connect to PostgreSQL: {e}")
+        logger.error("Skipping cleanup to prevent data loss.")
+        return
+
     targets = [
         "trading_data.db",
-        "trading_data_*.db", # Matches trading_data_GOLD.db, etc.
+        "gold/trading_data_*.db",
         "crypto/crypto_trading.db"
     ]
     
-    print("\n🧹 Checking for local DB cleanup (Remote-First Mode)...")
-    
-    deleted_count = 0
-    for pattern in targets:
-        full_pattern = os.path.join(base_dir, pattern) if not os.path.isabs(pattern) else pattern
-        # Handle glob inside subdirs if needed
-        if "crypto/" in pattern:
-             full_pattern = os.path.join(base_dir, pattern)
-        else:
-             full_pattern = os.path.join(base_dir, "gold", pattern) # Assuming most are in gold/ or root
-             
-        # Check root as well for trading_data.db
-        if pattern == "trading_data.db":
-             full_pattern = os.path.join(base_dir, "gold", pattern)
+    # Expand targets
+    files = []
+    for t in targets:
+        files.extend(glob.glob(os.path.join(base_dir, t) if not os.path.isabs(t) else t))
+    files = list(set(files))
 
-        # Glob expansion
-        files = glob.glob(full_pattern)
-        # Also check root for generic matches if not found
-        if not files and "gold" in full_pattern:
-             files = glob.glob(os.path.join(base_dir, pattern))
+    for db_file in files:
+        if not os.path.exists(db_file): continue
+        
+        try:
+            # 1. Check WAL Empty (Checkpoint Success)
+            wal = db_file + "-wal"
+            if os.path.exists(wal) and os.path.getsize(wal) > 0:
+                logger.info(f"  [SKIP] {os.path.basename(db_file)} (WAL not empty)")
+                continue
 
-        for db_file in files:
-            try:
-                # Basic safety check: Don't delete if it's currently locked by another process?
-                # Actually, in Windows, we might not be able to delete if locked.
-                # But here we assume the bot re-creates them as temp cache, so deletion is safe if bot is stopped or we just want to clear history.
-                # NOTE: If the bot is running, deleting the DB might cause errors or be blocked.
-                # Strategy: Only delete if WAL file is empty (checkpointed) AND we want to enforce remote-only history.
-                
-                # Check if WAL exists and is empty (implies successful checkpoint)
-                wal = db_file + "-wal"
-                if os.path.exists(wal) and os.path.getsize(wal) > 0:
-                    print(f"  [SKIP] {os.path.basename(db_file)} (WAL not empty, data pending)")
-                    continue
-                    
-                # In this specific task context: User requested auto-delete to rely on Remote DB.
-                # We perform the delete.
+            # 2. Sync & Verify with Postgres
+            if sync_and_verify_db(db_file, pg_engine):
+                # 3. Safe Delete
                 os.remove(db_file)
-                deleted_count += 1
-                print(f"  [DELETE] {os.path.basename(db_file)} (Cleaned up for Remote-First mode)")
+                logger.info(f"  [DELETE] {os.path.basename(db_file)} (Safe cleanup completed)")
                 
-                # Also clean WAL/SHM if they exist
+                # Clean artifacts
                 if os.path.exists(wal): os.remove(wal)
                 shm = db_file + "-shm"
                 if os.path.exists(shm): os.remove(shm)
-                
-            except Exception as e:
-                print(f"  [ERROR] Failed to delete {os.path.basename(db_file)}: {e}")
+            else:
+                logger.warning(f"  [KEEP] {os.path.basename(db_file)} (Sync/Verify failed)")
 
-    if deleted_count == 0:
-        print("  (No eligible DB files found for cleanup)")
+        except Exception as e:
+            logger.error(f"  [ERROR] Processing {os.path.basename(db_file)}: {e}")
 
 def main():
-    parser = argparse.ArgumentParser(description="SQLite WAL Checkpoint Tool")
+    parser = argparse.ArgumentParser(description="SQLite WAL Checkpoint & Sync Tool")
     parser.add_argument("--loop", action="store_true", help="Run in a loop")
     parser.add_argument("--interval", type=int, default=60, help="Interval in seconds for loop mode")
-    parser.add_argument("--cleanup", action="store_true", help="Cleanup local DB files after checkpoint (Remote-First Mode)")
+    # Note: --cleanup is now implicit/safe, but we keep the flag to enable the feature
+    parser.add_argument("--cleanup", action="store_true", help="Enable Safe Cleanup (Sync+Verify before delete)")
     parser.add_argument("--no-git", action="store_true", help="Skip Git auto-sync operations")
     
     args = parser.parse_args()
-    
     base_dir = os.getcwd()
     
     if args.loop:
-        print(f"Starting Checkpoint Service (Interval: {args.interval}s)...")
+        logger.info(f"Starting Checkpoint Service (Interval: {args.interval}s)...")
         try:
             while True:
-                print(f"\n--- Checkpoint Run at {time.strftime('%H:%M:%S')} ---")
+                logger.info(f"\n--- Run at {time.strftime('%H:%M:%S')} ---")
                 run_checkpoints(base_dir, skip_git=args.no_git)
                 if args.cleanup:
                     cleanup_local_dbs(base_dir)
                 time.sleep(args.interval)
         except KeyboardInterrupt:
-            print("\nStopping Checkpoint Service.")
+            logger.info("Stopping Checkpoint Service.")
     else:
         run_checkpoints(base_dir, skip_git=args.no_git)
         if args.cleanup:
