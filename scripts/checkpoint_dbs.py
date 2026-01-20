@@ -50,14 +50,37 @@ def checkpoint_db(db_path):
 def git_pull_updates(base_dir):
     """Pull updates from remote repository with conflict resolution"""
     try:
-        # Attempt 1: Standard pull
-        subprocess.run(["git", "pull", "origin", "master"], cwd=base_dir, check=True, capture_output=True)
-    except subprocess.CalledProcessError:
-        logger.warning("Standard pull failed (conflict?). Attempting auto-resolve (Strategy: ours)...")
+        # Before pulling, we MUST stash or commit local changes to DB files
+        # otherwise pull will fail with "overwrite" error.
+        # Strategy: Auto-commit local changes first, then pull --rebase (or merge)
+        
+        # 1. Check status
+        status = subprocess.check_output(["git", "status", "--porcelain"], cwd=base_dir).decode("utf-8")
+        if status.strip():
+            logger.info("Local changes detected before pull. Auto-committing to allow merge...")
+            subprocess.run(["git", "add", "."], cwd=base_dir, check=True)
+            timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+            subprocess.run(["git", "commit", "-m", f"auto: save local changes before pull {timestamp}"], cwd=base_dir, check=True)
+
+        # 2. Pull with rebase to apply our local commits on top of remote updates
+        # This is cleaner than merge for auto-sync bots
+        logger.info("⬇️ Pulling remote updates (with rebase)...")
+        subprocess.run(["git", "pull", "--rebase", "origin", "master"], cwd=base_dir, check=True, capture_output=True)
+        logger.info("✅ Pull successful.")
+
+    except subprocess.CalledProcessError as e:
+        logger.warning(f"Standard pull/rebase failed: {e}")
+        # If rebase fails, we might be in a detached state or conflict state.
+        # Attempt to abort rebase and fall back to strategy 'ours' merge
+        subprocess.run(["git", "rebase", "--abort"], cwd=base_dir, stderr=subprocess.DEVNULL)
+        
+        logger.warning("Attempting auto-resolve (Strategy: ours)...")
         try:
-            # Attempt 2: Pull with 'ours' strategy (prefer local changes)
+            # Attempt 3: Pull with 'ours' strategy (prefer local changes)
+            # We must fetch first if pull failed? pull does fetch.
+            # Use merge strategy X ours
             subprocess.run(["git", "pull", "--no-edit", "-s", "recursive", "-X", "ours", "origin", "master"], cwd=base_dir, check=True)
-            logger.info("✅ Conflict resolved automatically.")
+            logger.info("✅ Conflict resolved automatically (Strategy: Ours).")
         except subprocess.CalledProcessError as e:
             logger.error(f"❌ Auto-resolve failed: {e}")
             # Abort merge to return to clean state
