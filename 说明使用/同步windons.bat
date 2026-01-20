@@ -5,6 +5,18 @@
 :: Because this script is in "说明使用", we need to go up one level to project root
 cd /d "%~dp0\.."
 
+:: 0. Check Environment
+if not exist venv (
+    echo ⚠️  Virtual environment not found!
+    echo 🚀 Launching Setup Script first...
+    call "说明使用\setup_env.bat"
+)
+
+:: 1. Activate Virtual Environment
+if exist venv\Scripts\activate.bat (
+    call venv\Scripts\activate.bat
+)
+
 :: Add current directory to PYTHONPATH so python can find modules
 set PYTHONPATH=%PYTHONPATH%;%cd%
 

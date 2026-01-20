@@ -5,6 +5,17 @@
 # Because this script is in "说明使用", we need to go up one level to project root
 cd "$(dirname "$0")/.."
 
+# 0. Check/Setup Environment
+if [ ! -d "venv" ]; then
+    echo "⚠️  Virtual environment not found! Running setup..."
+    bash "说明使用/setup_env.sh"
+fi
+
+# 1. Activate Virtual Environment
+if [ -f "venv/bin/activate" ]; then
+    source venv/bin/activate
+fi
+
 # Add current directory to PYTHONPATH so python can find modules
 export PYTHONPATH=$PYTHONPATH:$(pwd)
 
