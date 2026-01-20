@@ -168,25 +168,25 @@ fi
 echo -e "\n${GREEN}🎉 安装完成！${NC}"
 echo -e "${YELLOW}您现在可以启动服务了。${NC}"
 
-read -p "是否立即启动 API 服务器和交易机器人? (y/n) " -n 1 -r
+echo -e "${YELLOW}注意: 交易机器人主程序 (gold/start.py) 依赖 MetaTrader5，仅支持 Windows 环境。${NC}"
+echo -e "${YELLOW}在 macOS/Linux ARM 上，您可以运行 API 服务器和 Dashboard 面板。${NC}"
+
+read -p "是否启动 API 服务器和 Dashboard? (y/n) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo -e "${BLUE}🚀 启动 API 服务器 (后台运行)...${NC}"
     
     # 启动 API Server
-    # 确保我们在项目根目录
-    # 使用 nohup 后台运行
     nohup uvicorn gold.server.main:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
     SERVER_PID=$!
     echo -e "${GREEN}✅ API 服务器已启动 (PID: $SERVER_PID)。日志在 server.log${NC}"
     
-    echo -e "${BLUE}🚀 启动交易机器人...${NC}"
-    # 这里假设启动入口是 gold/start.py 或者类似的，根据之前的 LS 结果
-    # 查看 LS 结果，有 gold/start.py
-    python gold/start.py
+    echo -e "${BLUE}🚀 启动 Dashboard...${NC}"
+    streamlit run dashboard.py
 else
     echo -e "您可以手动运行以下命令启动:"
     echo -e "1. 激活环境: ${YELLOW}source venv/bin/activate${NC}"
-    echo -e "2. 启动服务器: ${YELLOW}uvicorn gold.server.main:app --reload${NC}"
-    echo -e "3. 启动机器人: ${YELLOW}python gold/start.py${NC}"
+    echo -e "2. 启动服务器: ${YELLOW}uvicorn gold.server.main:app --host 0.0.0.0 --port 8000${NC}"
+    echo -e "3. 启动面板: ${YELLOW}streamlit run dashboard.py${NC}"
+    echo -e "4. (仅Windows) 启动机器人: ${YELLOW}python gold/start.py${NC}"
 fi
