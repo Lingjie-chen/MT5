@@ -11,6 +11,13 @@ set PYTHONPATH=%PYTHONPATH%;%cd%
 echo 🚀 Starting Auto Sync Engine...
 echo Logs will be written to auto_sync_engine.log
 
+:: Basic check for Postgres port (optional)
+netstat -an | find "5432" >nul
+if errorlevel 1 (
+    echo ⚠️  Warning: PostgreSQL port 5432 not detected.
+    echo    Please ensure your remote DB tunnel or local DB is active.
+)
+
 :: Run the engine
 python scripts\checkpoint_dbs.py
 
