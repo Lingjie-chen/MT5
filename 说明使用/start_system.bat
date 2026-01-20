@@ -19,6 +19,20 @@ if not exist venv (
 echo 🟢 Activating virtual environment...
 call venv\Scripts\activate
 
+:: 2.5 Fix Git State (Auto-Commit & Lock Removal)
+echo 🛠️ Ensuring clean Git state...
+:: Kill any stale git processes that might be locking files
+taskkill /F /IM git.exe >nul 2>&1
+:: Remove lock file if it exists
+if exist .git\index.lock (
+    echo 🗑️ Removing stale .git/index.lock...
+    del /F /Q .git\index.lock
+)
+:: Auto-commit to prevent overwrite errors
+echo 💾 Auto-saving local DB changes...
+git add gold/trading_data.db
+git commit -m "Auto-save trading_data.db on startup"
+
 :: 3. Auto Data Migration (One-time check on startup)
 echo 🔄 Checking for local SQLite data to migrate...
 :: This will upload any existing .db files to PostgreSQL
