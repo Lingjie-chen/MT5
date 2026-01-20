@@ -33,6 +33,27 @@ echo 💾 Auto-saving local DB changes...
 git add gold/trading_data.db
 git commit -m "Auto-save trading_data.db on startup"
 
+:: 2.6 Sync Code (Pull & Push)
+echo 🔄 Syncing with GitHub (Pull & Push)...
+
+:: PULL: Get remote updates
+echo ⬇️ Pulling latest code...
+git pull origin master
+if %errorlevel% neq 0 (
+    echo ⚠️ Standard pull failed. Attempting auto-resolve (Strategy: ours)...
+    git pull --no-edit -s recursive -X ours origin master
+    if %errorlevel% neq 0 echo ❌ Auto-resolve failed. Please resolve conflicts manually.
+)
+
+:: PUSH: Upload local changes
+echo ⬆️ Pushing local changes...
+git push origin master
+if %errorlevel% equ 0 (
+    echo ✅ Push successful.
+) else (
+    echo ⚠️ Push failed. Will retry in background service.
+)
+
 :: 3. Auto Data Migration (One-time check on startup)
 echo 🔄 Checking for local SQLite data to migrate...
 :: This will upload any existing .db files to PostgreSQL
