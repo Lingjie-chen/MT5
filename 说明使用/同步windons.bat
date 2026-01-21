@@ -42,6 +42,9 @@ python scripts\git_auto_resolve.py
 :: Auto-repair Database
 python scripts\db_auto_repair.py
 
+:: Auto-Archive (Upload to Cloud & GitHub, then clean local)
+python scripts\auto_archive.py
+
 :: Run the engine
 python scripts\checkpoint_dbs.py
 
