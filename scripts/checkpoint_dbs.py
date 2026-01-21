@@ -257,6 +257,7 @@ class DBSyncManager:
         try:
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
+            # TRUNCATE ensures that -wal and -shm files are reset (merged into .db)
             cursor.execute("PRAGMA wal_checkpoint(TRUNCATE);")
             conn.close()
             return True
