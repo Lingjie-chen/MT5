@@ -90,6 +90,10 @@ def main():
             # Kill locks before moving
             kill_locking_processes(db_path)
             
+            # Check if file exists (might have been deleted by auto_archive run in parallel)
+            if not os.path.exists(db_path):
+                continue
+
             shutil.move(db_path, dest_path)
             logger.info(f"📦 Archived {filename} -> {new_name}")
             archived_files.append(dest_path)

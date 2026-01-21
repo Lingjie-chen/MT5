@@ -422,7 +422,49 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to get trade stats locally: {e}")
 
-        # 2. Remote Fallback (If local is empty or insufficient)
+        # 2. Archived Data Fallback (Local Archive)
+        if len(stats) < limit:
+            try:
+                import glob
+                project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                archive_dir = os.path.join(project_root, "archived_data")
+                archive_files = sorted(glob.glob(os.path.join(archive_dir, "trading_data_*.db")), reverse=True)
+                
+                for db_file in archive_files:
+                    if len(stats) >= limit: break
+                    try:
+                        conn_archive = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True)
+                        conn_archive.row_factory = sqlite3.Row
+                        cursor_archive = conn_archive.cursor()
+                        
+                        # Use same query as local
+                        query_arch = '''
+                            SELECT profit, mfe, mae, action, volume, close_time 
+                            FROM trades 
+                            WHERE result = 'CLOSED' 
+                        '''
+                        params_arch = []
+                        if symbol:
+                            query_arch += " AND symbol = ? "
+                            params_arch.append(symbol)
+                        
+                        query_arch += " ORDER BY close_time DESC LIMIT ?"
+                        params_arch.append(limit - len(stats))
+                        
+                        cursor_archive.execute(query_arch, tuple(params_arch))
+                        rows_arch = cursor_archive.fetchall()
+                        conn_archive.close()
+                        
+                        if rows_arch:
+                            logger.info(f"Loaded {len(rows_arch)} trades from archive: {os.path.basename(db_file)}")
+                            stats.extend([dict(row) for row in rows_arch])
+                            
+                    except Exception as ea:
+                        logger.warning(f"Failed to read archive {os.path.basename(db_file)}: {ea}")
+            except Exception as e_arch:
+                logger.error(f"Archive fetch failed: {e_arch}")
+
+        # 3. Remote Fallback (Postgres)
         if len(stats) < limit:
             try:
                 logger.info(f"Local stats insufficient ({len(stats)}/{limit}), fetching from Remote DB...")
@@ -493,8 +535,39 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to get performance metrics locally: {e}")
 
+        # Archived Fallback
+        if len(profits) < limit:
+            try:
+                import glob
+                project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                archive_dir = os.path.join(project_root, "archived_data")
+                archive_files = sorted(glob.glob(os.path.join(archive_dir, "trading_data_*.db")), reverse=True)
+                
+                for db_file in archive_files:
+                    if len(profits) >= limit: break
+                    try:
+                        conn_archive = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True)
+                        cursor_archive = conn_archive.cursor()
+                        
+                        query_arch = "SELECT profit FROM trades WHERE result = 'CLOSED'"
+                        params_arch = []
+                        if symbol:
+                            query_arch += " AND symbol = ?"
+                            params_arch.append(symbol)
+                        query_arch += " ORDER BY close_time DESC LIMIT ?"
+                        params_arch.append(limit - len(profits))
+                        
+                        cursor_archive.execute(query_arch, tuple(params_arch))
+                        rows_arch = cursor_archive.fetchall()
+                        conn_archive.close()
+                        
+                        if rows_arch:
+                            profits.extend([r[0] for r in rows_arch])
+                    except: pass
+            except: pass
+
         # Remote Fallback
-        if not profits:
+        if len(profits) < limit:
             try:
                 # logger.info("Fetching metrics data from Remote DB...")
                 remote_trades = self.remote_storage.get_trades(limit=limit, symbol=symbol)
