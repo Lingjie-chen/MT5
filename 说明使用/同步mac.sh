@@ -45,5 +45,8 @@ echo "Logs will be written to auto_sync_engine.log"
 # Auto-resolve Git conflicts
 python3 scripts/git_auto_resolve.py
 
+# Auto-repair Database
+python3 scripts\db_auto_repair.py
+
 # Run the engine
 python3 scripts/checkpoint_dbs.py

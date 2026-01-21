@@ -39,6 +39,9 @@ echo Logs will be written to auto_sync_engine.log
 :: Auto-resolve Git conflicts
 python scripts\git_auto_resolve.py
 
+:: Auto-repair Database
+python scripts\db_auto_repair.py
+
 :: Run the engine
 python scripts\checkpoint_dbs.py
 
