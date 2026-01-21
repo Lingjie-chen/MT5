@@ -2,116 +2,121 @@ import os
 import sys
 import shutil
 import logging
+import psutil
 import time
-import subprocess
 from datetime import datetime
-from sqlalchemy import create_engine
+import subprocess
 
 # Add project root to path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(current_dir)
-if project_root not in sys.path:
-    sys.path.append(project_root)
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import DBSyncManager from checkpoint_dbs
-try:
-    from scripts.checkpoint_dbs import DBSyncManager, POSTGRES_URL
-except ImportError:
-    # Handle case where scripts module might not be directly importable
-    sys.path.append(os.path.join(project_root, 'scripts'))
-    from checkpoint_dbs import DBSyncManager, POSTGRES_URL
+from scripts.checkpoint_dbs import DBSyncManager, GitSyncManager, POSTGRES_URL
+from sqlalchemy import create_engine
 
-# Configure Logging
+# Setup Logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - AutoArchiver - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 logger = logging.getLogger("AutoArchiver")
 
-def git_push_archive(archive_dir, files):
-    """Commit and push archived files to GitHub"""
+def kill_locking_processes(file_path):
+    """Attempt to find and kill processes locking the file (Windows specific)"""
+    logger.info(f"🔪 Attempting to kill processes locking {os.path.basename(file_path)}...")
     try:
-        # 1. Add files
-        subprocess.run(["git", "add", archive_dir], cwd=project_root, check=True)
-        
-        # 2. Commit
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        msg = f"archive: backup trading data {timestamp}"
-        subprocess.run(["git", "commit", "-m", msg], cwd=project_root, check=True)
-        
-        # 3. Push
-        logger.info("Pushing archive to GitHub...")
-        result = subprocess.run(["git", "push", "origin", "master"], cwd=project_root, capture_output=True, text=True)
-        if result.returncode == 0:
-            logger.info("✅ Archive pushed to GitHub successfully.")
-        else:
-            logger.warning(f"⚠️ Git Push failed: {result.stderr}")
-            
+        current_pid = os.getpid()
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                if proc.info['pid'] == current_pid:
+                    continue
+                    
+                if proc.info['name'] and 'python' in proc.info['name'].lower():
+                    cmdline = proc.info.get('cmdline', [])
+                    if cmdline:
+                        cmd_str = ' '.join(cmdline)
+                        # Be specific about what we kill
+                        if 'gold' in cmd_str or 'checkpoint_dbs' in cmd_str or 'uvicorn' in cmd_str:
+                            logger.info(f"   Terminating process {proc.info['pid']} ({cmd_str[:50]}...)")
+                            proc.terminate()
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                pass
+        time.sleep(2)
     except Exception as e:
-        logger.error(f"Git operation failed: {e}")
+        logger.warning(f"⚠️ Failed to kill locking processes: {e}")
 
 def main():
     logger.info("Starting Auto-Archive Process...")
     
-    # 1. Initialize Postgres Connection
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    # 1. Connect to Postgres
     try:
         pg_engine = create_engine(POSTGRES_URL)
-        # Test connection
         with pg_engine.connect() as conn:
             pass
         logger.info("✅ Connected to PostgreSQL.")
     except Exception as e:
-        logger.error(f"❌ Cannot connect to Postgres: {e}")
-        logger.warning("Skipping archive to prevent data loss (Postgres sync required).")
+        logger.error(f"Fatal: Cannot connect to Postgres: {e}")
         return
 
     # 2. Sync to Postgres
-    sync_manager = DBSyncManager(project_root, pg_engine)
     logger.info("Syncing local data to PostgreSQL...")
+    db_manager = DBSyncManager(base_dir, pg_engine)
     try:
-        sync_manager.sync_all()
+        db_manager.sync_all()
         logger.info("✅ Data sync completed.")
     except Exception as e:
-        logger.error(f"❌ Data sync failed: {e}")
-        return
-
-    # 3. Archive Local Files
-    archive_dir = os.path.join(project_root, "archived_data")
+        logger.error(f"Sync failed: {e}")
+    
+    # 3. Archive & Clean Local
+    archive_dir = os.path.join(base_dir, "archived_data")
     if not os.path.exists(archive_dir):
         os.makedirs(archive_dir)
-
-    # Define files to archive
-    db_files = sync_manager.get_dbs()
-    archived_files = []
-
-    if not db_files:
-        logger.info("No database files found to archive.")
-        return
-
+        
+    dbs = db_manager.get_dbs()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    for db_path in db_files:
+    
+    archived_files = []
+    
+    for db_path in dbs:
         try:
             filename = os.path.basename(db_path)
-            # Create archive name: trading_data_20260121_120000.db
-            name, ext = os.path.splitext(filename)
-            new_name = f"{name}_{timestamp}{ext}"
+            new_name = f"{os.path.splitext(filename)[0]}_{timestamp}.db"
             dest_path = os.path.join(archive_dir, new_name)
             
-            # Move file
-            shutil.move(db_path, dest_path)
-            logger.info(f"📦 Archived: {filename} -> {new_name}")
-            archived_files.append(dest_path)
+            # Kill locks before moving
+            kill_locking_processes(db_path)
             
+            shutil.move(db_path, dest_path)
+            logger.info(f"📦 Archived {filename} -> {new_name}")
+            archived_files.append(dest_path)
         except Exception as e:
             logger.error(f"Failed to archive {db_path}: {e}")
 
-    # 4. Push to GitHub
-    if archived_files:
-        git_push_archive(archive_dir, archived_files)
-        logger.info("🎉 Archive process finished. Local DBs cleared.")
-    else:
+    if not archived_files:
         logger.info("Nothing to archive.")
+        return
+
+    # 4. Push to GitHub using GitSyncManager
+    try:
+        logger.info("Syncing changes to GitHub...")
+        git_manager = GitSyncManager(base_dir)
+        
+        # Ensure we are on master (basic check)
+        subprocess.run(["git", "checkout", "master"], cwd=base_dir, stderr=subprocess.DEVNULL)
+        
+        # Pull (will auto-commit the file moves)
+        git_manager.pull_updates()
+        
+        # Push
+        git_manager.push_updates()
+        
+        logger.info("✅ Successfully pushed to GitHub.")
+    except Exception as e:
+        logger.error(f"Git sync failed: {e}")
 
 if __name__ == "__main__":
     main()
