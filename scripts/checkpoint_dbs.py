@@ -389,6 +389,18 @@ def main():
 
     if args.once:
         logger.info("Running single sync pass...")
+        
+        # --- NEW: Merge Archives to Main DB ---
+        try:
+            spec = importlib.util.spec_from_file_location("merge_archives", os.path.join(base_dir, "scripts", "merge_archives.py"))
+            if spec and spec.loader:
+                merge_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(merge_module)
+                merge_module.merge_archives_to_main(base_dir)
+        except Exception as e:
+            logger.warning(f"Archive Merge Failed: {e}")
+        # --------------------------------------
+
         db_manager.sync_all()
         if not args.no_git:
             git_manager.sync()
