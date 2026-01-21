@@ -73,25 +73,22 @@ def resolve_conflicts():
         
         if files_to_add:
             print(f"📦 Preserving local files: {files_to_add}")
-            # Checkout ours for these files to be sure (if they exist locally)
             for f in files_to_add:
-                # If file exists locally, we want to keep it. 
-                # git checkout --ours might fail if it was deleted by us, but here it's deleted by them.
-                # simpler: git add forces the current working tree version to be staged.
                 if os.path.exists(f):
                     run_git_cmd(["git", "add", f])
-                else:
-                    # If we deleted it, but they modified it, and we want to keep deletion?
-                    # Or if they deleted it, and we modified it?
-                    # The user intent is usually "Keep my running data".
-                    # If file is missing, maybe restore it?
-                    pass
             
             # Commit
             print("💾 Committing resolution...")
             run_git_cmd(["git", "commit", "-m", "Auto-resolve: Keep local files"])
             print("✅ Conflicts resolved.")
-            
+
+    elif "deleted by them" in status:
+         # Specific catch for when "Unmerged paths" header might be missing or different
+         print("⚠️  'Deleted by them' conflict detected (Modify/Delete). Resolving...")
+         run_git_cmd(["git", "add", "."])
+         run_git_cmd(["git", "commit", "-m", "Auto-resolve: Keep local (Modify/Delete)"])
+         print("✅ Resolved.")
+
     elif "rebase in progress" in status:
         print("⚠️  Git Rebase in progress detected.")
         run_git_cmd(["git", "rebase", "--abort"])

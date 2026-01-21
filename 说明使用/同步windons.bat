@@ -39,6 +39,14 @@ echo Logs will be written to auto_sync_engine.log
 :: Auto-resolve Git conflicts
 python scripts\git_auto_resolve.py
 
+:: Fix "modify/delete" conflicts (Remote deleted, Local modified -> Keep Local)
+git status | findstr "deleted by them" > nul
+if %errorlevel% equ 0 (
+    echo ⚠️ Conflict "deleted by them" detected. Keeping local files...
+    git add .
+    git commit -m "auto: resolve modify/delete conflict"
+)
+
 :: Auto-repair Database
 python scripts\db_auto_repair.py
 
