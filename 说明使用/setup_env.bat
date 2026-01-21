@@ -31,7 +31,7 @@ if not exist .env (
     echo 📝 Creating .env template...
     (
         echo POSTGRES_CONNECTION_STRING=postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot
-        echo SERVER_API_KEY=my_secret_key
+        echo SERVER_API_KEY=clj568741230
         echo POSTGRES_API_URL=http://127.0.0.1:8000/api
         echo SILICONFLOW_API_KEY=your_key_here
     ) > .env
