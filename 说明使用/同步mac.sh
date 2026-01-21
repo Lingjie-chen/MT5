@@ -18,6 +18,13 @@ fi
 # Add current directory to PYTHONPATH
 export PYTHONPATH=$PYTHONPATH:$(pwd)
 
+# --- Fix Git State (Auto-Unlock) ---
+if [ -f ".git/index.lock" ]; then
+    echo "🗑️ Removing stale .git/index.lock..."
+    rm -f .git/index.lock
+fi
+# -----------------------------------
+
 echo "==================================================="
 echo "   Quant Trading System - Auto Sync Engine"
 echo "==================================================="

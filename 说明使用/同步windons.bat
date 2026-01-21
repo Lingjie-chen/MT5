@@ -14,6 +14,13 @@ call venv\Scripts\activate.bat
 :: Add current dir to PYTHONPATH
 set PYTHONPATH=%PYTHONPATH%;%cd%
 
+:: --- Fix Git State (Auto-Unlock) ---
+if exist .git\index.lock (
+    echo 🗑️ Removing stale .git/index.lock...
+    del /F /Q .git\index.lock
+)
+:: -----------------------------------
+
 echo ===================================================
 echo Quant Trading System Startup
 echo ===================================================
