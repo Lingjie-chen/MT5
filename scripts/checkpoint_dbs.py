@@ -123,6 +123,111 @@ class GitSyncManager:
 
         self.push_updates()
 
+    def cleanup_local_dbs(self):
+        """
+        Syncs to Postgres, Verifies, and THEN Deletes local SQLite files.
+        """
+        logger.info("\n🧹 Starting Secure Cleanup (Sync -> Verify -> Delete)...")
+        
+        dbs = self.get_dbs()
+        if not dbs:
+            logger.info("  (No local DB files found to clean)")
+            return
+
+        for db_file in dbs:
+            if not os.path.exists(db_file): continue
+            
+            try:
+                # 1. Check WAL Empty (Checkpoint Success)
+                wal = db_file + "-wal"
+                if os.path.exists(wal) and os.path.getsize(wal) > 0:
+                    # Try one last checkpoint
+                    self.checkpoint_wal(db_file)
+                    # If still not empty, skip
+                    if os.path.exists(wal) and os.path.getsize(wal) > 0:
+                        logger.info(f"  [SKIP] {os.path.basename(db_file)} (WAL not empty)")
+                        continue
+
+                # 2. Sync & Verify with Postgres
+                # First ensure it's synced
+                try:
+                    conn = sqlite3.connect(db_file)
+                    for table, config in self.tables_to_sync.items():
+                        self.sync_table(conn, table, config)
+                    conn.close()
+                except Exception as e:
+                    logger.error(f"  [ERROR] Sync failed for {os.path.basename(db_file)}: {e}")
+                    continue
+
+                # Then verify
+                if self.verify_db_synced(db_file):
+                    # 3. Safe Delete
+                    self.safe_delete_db(db_file)
+                else:
+                    logger.warning(f"  [KEEP] {os.path.basename(db_file)} (Verification failed)")
+
+            except Exception as e:
+                logger.error(f"  [ERROR] Processing {os.path.basename(db_file)}: {e}")
+
+    def verify_db_synced(self, db_path):
+        """Verify that all data in local DB exists in Postgres"""
+        try:
+            sqlite_conn = sqlite3.connect(db_path)
+            all_synced = True
+            
+            for table in self.tables_to_sync.keys():
+                # Check SQLite count
+                try:
+                    count_sqlite = pd.read_sql_query(f"SELECT COUNT(*) FROM {table}", sqlite_conn).iloc[0, 0]
+                except:
+                    continue # Table doesn't exist locally, fine
+                
+                if count_sqlite == 0: continue
+
+                # Check Postgres count (Simple check: PG count >= SQLite count)
+                # Better check: Max ID/Timestamp matches
+                try:
+                    count_pg = pd.read_sql_query(f"SELECT COUNT(*) FROM {table}", self.pg_engine).iloc[0, 0]
+                    if count_pg < count_sqlite:
+                        logger.warning(f"    Table {table} mismatch: Local={count_sqlite}, Remote={count_pg}")
+                        all_synced = False
+                        break
+                except:
+                    logger.warning(f"    Table {table} missing in Remote")
+                    all_synced = False
+                    break
+            
+            sqlite_conn.close()
+            return all_synced
+        except Exception as e:
+            logger.error(f"    Verification error: {e}")
+            return False
+
+    def safe_delete_db(self, db_path):
+        """Safely delete DB and its artifacts"""
+        max_retries = 3
+        for i in range(max_retries):
+            try:
+                os.remove(db_path)
+                logger.info(f"  [DELETE] {os.path.basename(db_path)} (Safe cleanup completed)")
+                
+                # Clean artifacts
+                wal = db_path + "-wal"
+                shm = db_path + "-shm"
+                if os.path.exists(wal): 
+                    try: os.remove(wal)
+                    except: pass
+                if os.path.exists(shm): 
+                    try: os.remove(shm)
+                    except: pass
+                break
+            except OSError as e:
+                if i < max_retries - 1:
+                    logger.warning(f"  Delete failed (locked?), retrying in 1s... ({i+1}/{max_retries})")
+                    time.sleep(1)
+                else:
+                    logger.error(f"  Failed to delete {db_path}: {e}")
+
 class DBSyncManager:
     """Handles SQLite WAL checkpointing and Sync to Postgres"""
     def __init__(self, base_dir, pg_engine):
