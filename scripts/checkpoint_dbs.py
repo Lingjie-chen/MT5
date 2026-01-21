@@ -350,6 +350,7 @@ def main():
     parser.add_argument("--once", action="store_true", help="Run sync once and exit (Migration mode)")
     parser.add_argument("--cleanup", action="store_true", help="Enable Safe Cleanup (Sync+Verify before delete)")
     parser.add_argument("--no-git", action="store_true", help="Skip Git auto-sync operations")
+    parser.add_argument("--reset", action="store_true", help="WARNING: Truncate Postgres tables before syncing (Fresh Start)")
     
     args = parser.parse_args()
 
