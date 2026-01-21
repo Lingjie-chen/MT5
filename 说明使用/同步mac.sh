@@ -2,7 +2,6 @@
 # One-Click Start for Auto Sync Engine (Mac/Linux)
 
 # Ensure we are in the project root
-# Because this script is in "说明使用", we need to go up one level to project root
 cd "$(dirname "$0")/.."
 
 # 0. Check/Setup Environment
@@ -16,18 +15,25 @@ if [ -f "venv/bin/activate" ]; then
     source venv/bin/activate
 fi
 
-# Add current directory to PYTHONPATH so python can find modules
+# Add current directory to PYTHONPATH
 export PYTHONPATH=$PYTHONPATH:$(pwd)
+
+echo "==================================================="
+echo "   Quant Trading System - Auto Sync Engine"
+echo "==================================================="
+
+# 2. Check PostgreSQL
+echo "🐘 Checking PostgreSQL connection..."
+if nc -z localhost 5432 2>/dev/null; then
+    echo "✅ PostgreSQL is running on port 5432."
+else
+    echo "❌ ERROR: PostgreSQL is NOT running on port 5432."
+    echo "   Please start your database server and try again."
+    echo "   (If using a remote DB, ensure the tunnel is active at localhost:5432)"
+fi
 
 echo "🚀 Starting Auto Sync Engine..."
 echo "Logs will be written to auto_sync_engine.log"
-
-# Check if PostgreSQL service is running (optional, basic check)
-# Assuming typical port 5432
-if ! nc -z localhost 5432 2>/dev/null; then
-    echo "⚠️  Warning: PostgreSQL does not seem to be listening on port 5432."
-    echo "    Please ensure your remote DB tunnel or local DB is active."
-fi
 
 # Run the engine
 python3 scripts/checkpoint_dbs.py

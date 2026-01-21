@@ -29,14 +29,20 @@ pip install -r requirements.txt
 :: 4. .env setup
 if not exist .env (
     echo 📝 Creating .env template...
-    echo POSTGRES_CONNECTION_STRING=postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot> .env
-    echo SERVER_API_KEY=my_secret_key>> .env
-    echo POSTGRES_API_URL=http://127.0.0.1:8000/api>> .env
-    echo SILICONFLOW_API_KEY=your_key_here>> .env
+    (
+        echo POSTGRES_CONNECTION_STRING=postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot
+        echo SERVER_API_KEY=my_secret_key
+        echo POSTGRES_API_URL=http://127.0.0.1:8000/api
+        echo SILICONFLOW_API_KEY=your_key_here
+    ) > .env
     echo ⚠️  Please edit .env with your actual SILICONFLOW_API_KEY!
 ) else (
     echo ✅ .env file exists.
 )
+
+:: 5. Check PostgreSQL
+echo 🐘 Checking PostgreSQL status...
+powershell -Command "if (Test-NetConnection -ComputerName localhost -Port 5432 -InformationLevel Quiet) { Write-Host '✅ PostgreSQL is running on port 5432.' -ForegroundColor Green } else { Write-Host '⚠️  PostgreSQL is NOT detected on port 5432.' -ForegroundColor Yellow }"
 
 echo ✨ Setup complete! To activate: venv\Scripts\activate
 pause

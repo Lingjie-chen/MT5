@@ -18,6 +18,11 @@ echo ===================================================
 echo Quant Trading System Startup
 echo ===================================================
 
+:: Check PostgreSQL
+echo [Checking PostgreSQL...]
+powershell -Command "if (Test-NetConnection -ComputerName localhost -Port 5432 -InformationLevel Quiet) { Write-Host '✅ PostgreSQL is running on port 5432.' -ForegroundColor Green } else { Write-Host '❌ PostgreSQL is NOT running on port 5432.' -ForegroundColor Red; Write-Host '   Please ensure local DB or Tunnel is active.' -ForegroundColor Yellow }"
+
+echo.
 echo [1/2] Starting API Server...
 start "Quant API Server" cmd /k "call venv\Scripts\activate.bat && python -m uvicorn gold.server.main:app --host 0.0.0.0 --port 8000 --reload"
 

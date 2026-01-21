@@ -30,7 +30,7 @@ source venv/bin/activate
 
 **Windows:**
 ```cmd
-python -m venv venv
+python -m venv venv 
 venv\Scripts\activate
 ```
 
@@ -108,24 +108,22 @@ python migrate_sqlite_to_postgres.py
 
 The system consists of three main components:
 
-### 6.1 Start System (One-Click)
-We have combined the Data Server and Auto-Sync service into a single script.
+### 6.1 Start Auto-Sync Engine (Recommended)
+This engine handles **Git Sync**, **DB Sync**, and **Environment Setup** automatically.
 
 **Windows:**
 ```cmd
-start_system.bat
+说明使用\同步windons.bat
 ```
-*This will:*
-1.  *Activate the virtual environment.*
-2.  *Migrate any existing local SQLite data to PostgreSQL.*
-3.  *Start the **Data Server** (FastAPI) for real-time data ingestion.*
-4.  *Launch a background service to periodically **checkpoint** local DBs and **clean them up** once data is safely uploaded.*
+*This script will:*
+1.  *Auto-detect and activate virtual environment.*
+2.  *Check if PostgreSQL port (5432) is active.*
+3.  *Start the background sync engine.*
 
 **Mac/Linux:**
 ```bash
-./start_system.sh
+bash 说明使用/同步mac.sh
 ```
-*(This script unifies the server startup and the background sync service, just like on Windows.)*
 
 ### 6.2 Trading Bot (Windows Only)
 The core logic that interacts with MT5.
@@ -145,11 +143,9 @@ streamlit run dashboard.py
 ## 7. Maintenance & Sync
 
 ### 7.1 Auto-Sync & System Startup
-The `start_system.bat` (Windows) script handles everything:
-1.  Starts the Data Server.
-2.  Runs a background service for:
-    *   **Git Auto-Sync**: Automatically pulls updates and pushes changes every 60s.
-    *   **DB Cleanup**: Automatically cleans local .db files once uploaded.
+The `同步windons.bat` (Windows) or `同步mac.sh` (Mac) scripts handle everything:
+1.  **Git Auto-Sync**: Automatically pulls updates and pushes changes every 60s.
+2.  **DB Sync**: Automatically syncs local SQLite data to remote PostgreSQL.
 
 You don't need to run any separate sync scripts.
 
