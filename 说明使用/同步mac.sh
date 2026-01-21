@@ -55,5 +55,9 @@ fi
 # Auto-repair Database
 python3 scripts\db_auto_repair.py
 
+# 3. Backup PostgreSQL to GitHub
+echo "📦 Backing up PostgreSQL data to GitHub..."
+python3 scripts/backup_postgres.py
+
 # Run the engine
 python3 scripts/checkpoint_dbs.py

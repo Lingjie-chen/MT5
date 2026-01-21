@@ -50,6 +50,10 @@ if %errorlevel% equ 0 (
 :: Auto-repair Database
 python scripts\db_auto_repair.py
 
+:: 3. Backup PostgreSQL to GitHub
+echo 📦 Backing up PostgreSQL data to GitHub...
+python scripts\backup_postgres.py
+
 :: Run the engine
 python scripts\checkpoint_dbs.py
 
