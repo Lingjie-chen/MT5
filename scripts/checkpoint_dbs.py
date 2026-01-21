@@ -11,6 +11,17 @@ from datetime import datetime
 from sqlalchemy import create_engine, text, inspect
 import pandas as pd
 import numpy as np
+import importlib.util
+
+# Try to import git_auto_resolve
+try:
+    from scripts import git_auto_resolve
+except ImportError:
+    # If run directly from scripts folder
+    try:
+        import git_auto_resolve
+    except ImportError:
+        git_auto_resolve = None
 
 # Adjust path to allow importing from gold package
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -61,7 +72,14 @@ class GitSyncManager:
             
             if result.returncode != 0:
                 logger.warning(f"Git: Pull failed: {result.stderr}")
-                # Try aborting rebase
+                
+                # Attempt auto-resolve if available
+                if git_auto_resolve:
+                    logger.info("Git: Attempting auto-resolution via git_auto_resolve...")
+                    git_auto_resolve.fix_git_state()
+                    git_auto_resolve.resolve_conflicts()
+                
+                # Try aborting rebase just in case
                 subprocess.run(["git", "rebase", "--abort"], cwd=self.base_dir, stderr=subprocess.DEVNULL)
                 # Fallback: Merge strategy 'ours'
                 logger.info("Git: Attempting merge (strategy: ours)...")

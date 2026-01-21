@@ -27,6 +27,12 @@ echo [1/2] Starting API Server...
 start "Quant API Server" cmd /k "call venv\Scripts\activate.bat && python -m uvicorn gold.server.main:app --host 0.0.0.0 --port 8000 --reload"
 
 echo [2/2] Starting Auto Sync Engine...
+echo Logs will be written to auto_sync_engine.log
+
+:: Auto-resolve Git conflicts
+python scripts\git_auto_resolve.py
+
+:: Run the engine
 python scripts\checkpoint_dbs.py
 
 pause

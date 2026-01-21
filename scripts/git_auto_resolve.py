@@ -5,72 +5,108 @@ import shutil
 
 def run_git_cmd(args):
     try:
-        result = subprocess.run(args, capture_output=True, text=True, check=True)
+        # Check if git is available
+        if shutil.which("git") is None:
+            return "Git not found"
+            
+        result = subprocess.run(args, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            return f"Error: {result.stderr.strip()}"
         return result.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        return e.stderr.strip()
+    except Exception as e:
+        return str(e)
 
-def fix_git_lock():
-    lock_file = os.path.join(".git", "index.lock")
-    if os.path.exists(lock_file):
-        print(f"⚠️  Found stale git lock file: {lock_file}")
+def force_delete_path(path):
+    if os.path.exists(path):
+        print(f"⚠️  Removing stuck path: {path}")
         try:
-            os.remove(lock_file)
-            print("✅ Deleted stale lock file.")
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+            print("✅ Removed.")
         except Exception as e:
-            print(f"❌ Failed to delete lock file: {e}")
+            print(f"❌ Failed to remove {path}: {e}")
+
+def fix_git_state():
+    print("🔧 Checking Git state...")
+    
+    # 1. Remove lock file
+    force_delete_path(os.path.join(".git", "index.lock"))
+    
+    # 2. Check for stuck rebase directories
+    rebase_merge = os.path.join(".git", "rebase-merge")
+    rebase_apply = os.path.join(".git", "rebase-apply")
+    
+    if os.path.exists(rebase_merge) or os.path.exists(rebase_apply):
+        print("⚠️  Stuck rebase directory detected.")
+        # Try abort first
+        res = run_git_cmd(["git", "rebase", "--abort"])
+        if "Error" in res or os.path.exists(rebase_merge):
+            print("🛑 Abort failed or directory persists. Forcing cleanup...")
+            force_delete_path(rebase_merge)
+            force_delete_path(rebase_apply)
 
 def resolve_conflicts():
-    print("🔧 Checking for Git conflicts...")
-    
     # 1. Check status
     status = run_git_cmd(["git", "status"])
+    print(status)
     
-    if "Unmerged paths" in status or "deleted by them" in status:
+    if "Unmerged paths" in status or "deleted by them" in status or "both modified" in status:
         print("⚠️  Conflicts detected! Attempting auto-resolution...")
         
         # Strategy: Always keep local DB files
         # Get list of unmerged files
         lines = status.split('\n')
-        db_files = []
-        for line in lines:
-            if "deleted by them:" in line or "both modified:" in line:
-                parts = line.split(':')
-                if len(parts) > 1:
-                    fname = parts[-1].strip()
-                    if fname.endswith('.db'):
-                        db_files.append(fname)
+        files_to_add = []
         
-        if db_files:
-            print(f"📦 Preserving local DB files: {db_files}")
-            # Add them to stage (this keeps the local version in 'deleted by them' case)
-            run_git_cmd(["git", "add"] + db_files)
+        for line in lines:
+            # Parse conflict lines
+            # Example: "        deleted by them: gold/trading_data.db"
+            # Example: "        both modified:   gold/trading_data.db"
+            parts = line.split(':')
+            if len(parts) >= 2 and ("deleted by them" in line or "both modified" in line or "modified" in line):
+                fname = parts[-1].strip()
+                # We prioritize DB files and specific config scripts
+                if fname.endswith('.db') or fname.endswith('.bat') or fname.endswith('.sh'):
+                    files_to_add.append(fname)
+        
+        if files_to_add:
+            print(f"📦 Preserving local files: {files_to_add}")
+            # Checkout ours for these files to be sure (if they exist locally)
+            for f in files_to_add:
+                # If file exists locally, we want to keep it. 
+                # git checkout --ours might fail if it was deleted by us, but here it's deleted by them.
+                # simpler: git add forces the current working tree version to be staged.
+                if os.path.exists(f):
+                    run_git_cmd(["git", "add", f])
+                else:
+                    # If we deleted it, but they modified it, and we want to keep deletion?
+                    # Or if they deleted it, and we modified it?
+                    # The user intent is usually "Keep my running data".
+                    # If file is missing, maybe restore it?
+                    pass
             
             # Commit
             print("💾 Committing resolution...")
-            run_git_cmd(["git", "commit", "-m", "Auto-resolve: Keep local DB files"])
+            run_git_cmd(["git", "commit", "-m", "Auto-resolve: Keep local files"])
             print("✅ Conflicts resolved.")
-        else:
-            print("ℹ️  No DB conflicts found. If there are code conflicts, manual intervention might be needed.")
             
     elif "rebase in progress" in status:
         print("⚠️  Git Rebase in progress detected.")
-        print("🛑 Aborting rebase to restore stability...")
         run_git_cmd(["git", "rebase", "--abort"])
-        print("✅ Rebase aborted.")
         
     elif "Merge" in status and "You have unmerged paths" in status:
-        # Catch-all for other merge states
         print("⚠️  Merge state detected.")
         run_git_cmd(["git", "commit", "--no-edit"]) 
 
     else:
-        print("✅ No conflicts detected.")
+        print("✅ No active conflicts detected.")
 
 if __name__ == "__main__":
     # Ensure we are in root
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     os.chdir(root_dir)
     
-    fix_git_lock()
+    fix_git_state()
     resolve_conflicts()
