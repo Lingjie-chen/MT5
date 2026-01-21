@@ -123,13 +123,14 @@ class GitSyncManager:
 
         self.push_updates()
 
-    def cleanup_local_dbs(self):
+    def cleanup_local_dbs(self, db_manager):
         """
         Syncs to Postgres, Verifies, and THEN Deletes local SQLite files.
+        Using DBSyncManager for DB operations.
         """
         logger.info("\n🧹 Starting Secure Cleanup (Sync -> Verify -> Delete)...")
         
-        dbs = self.get_dbs()
+        dbs = db_manager.get_dbs()
         if not dbs:
             logger.info("  (No local DB files found to clean)")
             return
@@ -142,7 +143,7 @@ class GitSyncManager:
                 wal = db_file + "-wal"
                 if os.path.exists(wal) and os.path.getsize(wal) > 0:
                     # Try one last checkpoint
-                    self.checkpoint_wal(db_file)
+                    db_manager.checkpoint_wal(db_file)
                     # If still not empty, skip
                     if os.path.exists(wal) and os.path.getsize(wal) > 0:
                         logger.info(f"  [SKIP] {os.path.basename(db_file)} (WAL not empty)")
@@ -152,15 +153,15 @@ class GitSyncManager:
                 # First ensure it's synced
                 try:
                     conn = sqlite3.connect(db_file)
-                    for table, config in self.tables_to_sync.items():
-                        self.sync_table(conn, table, config)
+                    for table, config in db_manager.tables_to_sync.items():
+                        db_manager.sync_table(conn, table, config)
                     conn.close()
                 except Exception as e:
                     logger.error(f"  [ERROR] Sync failed for {os.path.basename(db_file)}: {e}")
                     continue
 
                 # Then verify
-                if self.verify_db_synced(db_file):
+                if self.verify_db_synced(db_file, db_manager):
                     # 3. Safe Delete
                     self.safe_delete_db(db_file)
                 else:
@@ -169,13 +170,13 @@ class GitSyncManager:
             except Exception as e:
                 logger.error(f"  [ERROR] Processing {os.path.basename(db_file)}: {e}")
 
-    def verify_db_synced(self, db_path):
+    def verify_db_synced(self, db_path, db_manager):
         """Verify that all data in local DB exists in Postgres"""
         try:
             sqlite_conn = sqlite3.connect(db_path)
             all_synced = True
             
-            for table in self.tables_to_sync.keys():
+            for table in db_manager.tables_to_sync.keys():
                 # Check SQLite count
                 try:
                     count_sqlite = pd.read_sql_query(f"SELECT COUNT(*) FROM {table}", sqlite_conn).iloc[0, 0]
@@ -187,7 +188,7 @@ class GitSyncManager:
                 # Check Postgres count (Simple check: PG count >= SQLite count)
                 # Better check: Max ID/Timestamp matches
                 try:
-                    count_pg = pd.read_sql_query(f"SELECT COUNT(*) FROM {table}", self.pg_engine).iloc[0, 0]
+                    count_pg = pd.read_sql_query(f"SELECT COUNT(*) FROM {table}", db_manager.pg_engine).iloc[0, 0]
                     if count_pg < count_sqlite:
                         logger.warning(f"    Table {table} mismatch: Local={count_sqlite}, Remote={count_pg}")
                         all_synced = False
@@ -347,7 +348,9 @@ def main():
     parser = argparse.ArgumentParser(description="Auto Sync Engine")
     parser.add_argument("--interval", type=int, default=10, help="Sync interval in seconds")
     parser.add_argument("--once", action="store_true", help="Run sync once and exit (Migration mode)")
-    parser.add_argument("--reset", action="store_true", help="WARNING: Truncate Postgres tables before syncing (Fresh Start)")
+    parser.add_argument("--cleanup", action="store_true", help="Enable Safe Cleanup (Sync+Verify before delete)")
+    parser.add_argument("--no-git", action="store_true", help="Skip Git auto-sync operations")
+    
     args = parser.parse_args()
 
     # Detect base dir dynamically
@@ -385,7 +388,10 @@ def main():
     if args.once:
         logger.info("Running single sync pass...")
         db_manager.sync_all()
-        git_manager.sync()
+        if not args.no_git:
+            git_manager.sync()
+        if args.cleanup:
+            git_manager.cleanup_local_dbs(db_manager)
         logger.info("Sync completed.")
         return
 
@@ -395,6 +401,9 @@ def main():
     last_git_sync = 0
     git_sync_interval = 300 # 5 minutes
 
+    if args.cleanup:
+        git_manager.cleanup_local_dbs(db_manager)
+
     try:
         while True:
             # 1. DB Sync (High Frequency)
@@ -402,8 +411,13 @@ def main():
             
             # 2. Git Sync (Low Frequency)
             if time.time() - last_git_sync > git_sync_interval:
-                git_manager.sync()
+                if not args.no_git:
+                    git_manager.sync()
                 last_git_sync = time.time()
+            
+            # 3. Cleanup (if enabled)
+            if args.cleanup:
+                git_manager.cleanup_local_dbs(db_manager)
             
             time.sleep(args.interval)
 
