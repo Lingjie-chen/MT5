@@ -9,14 +9,6 @@ __pycache__/
 *.log
 logs/
 
-# 数据文件和缓存
-*.csv
-*.json
-*.pkl
-*.h5
-*.feather
-cache/
-data/
 
 # SQLite 临时文件
 *.db-shm
@@ -39,7 +31,6 @@ reports/
 .idea/
 
 # 操作系统文件
-.DS_Store
 Thumbs.db
 
 # 临时文件
