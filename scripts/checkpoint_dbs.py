@@ -108,6 +108,16 @@ class GitSyncManager:
 
     def sync(self):
         self.pull_updates()
+
+        # --- NEW: Auto-Backup Postgres to GitHub ---
+        try:
+            from scripts.backup_postgres import backup_postgres_to_csv
+            # Run backup (it handles git push internally)
+            backup_postgres_to_csv()
+        except Exception as e:
+            logger.warning(f"Postgres Backup Failed: {e}")
+        # -------------------------------------------
+
         self.push_updates()
 
 class DBSyncManager:
