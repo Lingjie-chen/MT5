@@ -53,7 +53,7 @@ if git status | grep -q "deleted by them"; then
 fi
 
 # Auto-repair Database
-python3 scripts\db_auto_repair.py
+python3 scripts/db_auto_repair.py
 
 # 3. Backup PostgreSQL to GitHub
 echo "📦 Backing up PostgreSQL data to GitHub..."
