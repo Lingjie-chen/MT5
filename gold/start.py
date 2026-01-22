@@ -2789,18 +2789,16 @@ class SymbolTrader:
     def calculate_smart_basket_tp(self, llm_tp, atr, market_regime, smc_data, current_positions):
         """
         结合 LLM 建议、市场波动率 (ATR)、市场结构 (SMC) 和风险状态计算最终的 Dynamic Basket TP
+        [Updated]: Support Scalping Mode (Low TP)
         """
         if not current_positions:
-            return llm_tp if llm_tp else 100.0
+            return llm_tp if llm_tp else 10.0 # Default to 10.0 for scalping
             
         # 1. 基础值: LLM 建议 (权重最高，因为包含了宏观和综合判断)
-        base_tp = float(llm_tp) if llm_tp and float(llm_tp) > 0 else 100.0
+        base_tp = float(llm_tp) if llm_tp and float(llm_tp) > 0 else 10.0
         
         # 2. 波动率约束 (ATR Constraint)
-        # 最小 TP 应该至少覆盖 3 倍 ATR 的波动，否则容易被噪音止盈
-        # 假设 1 Lot, ATR=2.0 (200 points) -> Value = $200 approx for Gold? No.
-        # ATR 是价格差。如果持仓量大，ATR 对应的金额也大。
-        # 我们这里估算: Basket TP (USD) >= Total Lots * ATR_Points * TickValue * Multiplier
+        # [Scalping Mode]: If LLM suggests small TP (<= 20), we relax ATR constraints to allow quick exits.
         
         total_volume = sum([p['volume'] for p in current_positions])
         symbol_info = mt5.symbol_info(self.symbol)
@@ -2811,7 +2809,8 @@ class SymbolTrader:
         # ATR Value = ATR / Point * TickValue * Volume
         atr_value_total = (atr / point) * tick_value * total_volume
         
-        min_tp_volatility = atr_value_total * 2.0 # 至少赚取 2倍 ATR 的波动价值
+        # Default Volatility Floor
+        min_tp_volatility = atr_value_total * 1.0 # Reduced from 2.0 to 1.0 for scalping
         
         # 3. 市场体制修正 (Regime Correction)
         regime_multiplier = 1.0
@@ -2820,29 +2819,23 @@ class SymbolTrader:
         elif market_regime == 'ranging':
             regime_multiplier = 0.8 # 震荡中缩小目标
             
-        # 4. SMC 阻力位修正 (SMC Resistance Cap)
-        # 如果是做多，TP 不应超过最近的 Bearish OB 太多
-        # 如果是做空，TP 不应超过最近的 Bullish OB 太多
-        # 这里简化处理：如果 LLM 给出的 TP 对应的盈利价格远超最近阻力位，则保守下调
+        # 4. Calculation
+        # If Base TP is small (Scalping), prioritize Base TP
+        if base_tp <= 20.0:
+            final_tp = base_tp * regime_multiplier
+            # Soft floor: ensure at least spread coverage (approx $2 per lot for Gold?)
+            # Let's say min $5 absolute
+            final_tp = max(final_tp, 5.0)
+        else:
+            # Standard Mode
+            tech_tp = min_tp_volatility
+            final_tp = (base_tp * 0.7) + (tech_tp * 0.3)
+            final_tp *= regime_multiplier
+            # Hard floor
+            final_tp = max(final_tp, min_tp_volatility)
+            final_tp = max(final_tp, 10.0) 
         
-        # 计算混合 TP
-        # 逻辑: 加权平均
-        # 70% LLM, 30% Volatility-based
-        # 且应用 Regime Multiplier
-        
-        tech_tp = min_tp_volatility
-        
-        # 如果 LLM 值异常小 (小于 ATR 价值)，可能是保守或错误，取较大值
-        # 如果 LLM 值异常大，可能是贪婪，取加权
-        
-        final_tp = (base_tp * 0.7) + (tech_tp * 0.3)
-        final_tp *= regime_multiplier
-        
-        # 5. 硬性下限
-        final_tp = max(final_tp, min_tp_volatility)
-        final_tp = max(final_tp, 10.0) # 绝对最小值 10 USD
-        
-        logger.info(f"Smart Basket TP Calc: Base(LLM)={base_tp:.2f}, ATR_Val={tech_tp:.2f}, Regime={market_regime} -> Final={final_tp:.2f}")
+        logger.info(f"Smart Basket TP Calc: Base(LLM)={base_tp:.2f}, ATR_Val={atr_value_total:.2f}, Regime={market_regime} -> Final={final_tp:.2f}")
         return final_tp
 
     def process_tick(self):
