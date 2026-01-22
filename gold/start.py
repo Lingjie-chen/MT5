@@ -1696,75 +1696,75 @@ class SymbolTrader:
                 allow_update = True # Enabled per User Request (Dynamic AI Update)
                 
                 if allow_update and has_new_params:
-                # 使用 calculate_optimized_sl_tp 进行统一计算和验证
-                ai_exits = strategy_params.get('exit_conditions', {})
-                
-                # Check if Qwen provided explicit SL/TP
-                qwen_sl_provided = ai_exits.get('sl_price', 0) > 0
-                qwen_tp_provided = ai_exits.get('tp_price', 0) > 0
-                
-                # If Qwen didn't provide explicit values, skip dynamic update (User Request)
-                if not qwen_sl_provided and not qwen_tp_provided:
-                    logger.info("Qwen 未提供明确 SL/TP，跳过动态更新 (防止自动移动)")
-                else:
-                    trade_dir = 'buy' if type_pos == mt5.POSITION_TYPE_BUY else 'sell'
+                    # 使用 calculate_optimized_sl_tp 进行统一计算和验证
+                    ai_exits = strategy_params.get('exit_conditions', {})
                     
-                    opt_sl, opt_tp = self.calculate_optimized_sl_tp(trade_dir, current_price, atr, market_context=None, ai_exit_conds=ai_exits)
+                    # Check if Qwen provided explicit SL/TP
+                    qwen_sl_provided = ai_exits.get('sl_price', 0) > 0
+                    qwen_tp_provided = ai_exits.get('tp_price', 0) > 0
                     
-                    opt_sl = self._normalize_price(opt_sl)
-                    opt_tp = self._normalize_price(opt_tp)
-                    
-                    if opt_sl > 0:
-                        diff_sl = abs(opt_sl - sl)
+                    # If Qwen didn't provide explicit values, skip dynamic update (User Request)
+                    if not qwen_sl_provided and not qwen_tp_provided:
+                        logger.info("Qwen 未提供明确 SL/TP，跳过动态更新 (防止自动移动)")
+                    else:
+                        trade_dir = 'buy' if type_pos == mt5.POSITION_TYPE_BUY else 'sell'
                         
-                        # --- [Requirement]: "自动优化配置，移动，不是动态移动" (Auto Optimize & Move, but NOT Dynamic) ---
-                        should_update_sl = False
+                        opt_sl, opt_tp = self.calculate_optimized_sl_tp(trade_dir, current_price, atr, market_context=None, ai_exit_conds=ai_exits)
                         
-                        if sl == 0:
-                            # 1. Initial Setting (Must be optimized)
-                            should_update_sl = True
-                            logger.info(f"Setting Initial SL (Optimized): {opt_sl:.2f}")
-                        else:
-                            # 2. Existing Position Update (Smart Move)
-                            # Only update if the new SL is a "Strategic Adjustment" provided by AI
-                            # Filter out small noise (Dynamic Trailing) to ensure it's not "Dynamic/Mechanical"
-                            # Threshold: 20 points (2 pips) to be considered a structural shift
-                            is_significant_change = diff_sl > point * 20
+                        opt_sl = self._normalize_price(opt_sl)
+                        opt_tp = self._normalize_price(opt_tp)
+                        
+                        if opt_sl > 0:
+                            diff_sl = abs(opt_sl - sl)
                             
-                            # Direction check:
-                            # Ideally, SL should move to reduce risk (Trade Direction).
-                            # Buy: New SL > Old SL (Move Up)
-                            # Sell: New SL < Old SL (Move Down)
-                            is_risk_reduction = False
-                            if type_pos == mt5.POSITION_TYPE_BUY and opt_sl > sl: is_risk_reduction = True
-                            if type_pos == mt5.POSITION_TYPE_SELL and opt_sl < sl: is_risk_reduction = True
+                            # --- [Requirement]: "自动优化配置，移动，不是动态移动" (Auto Optimize & Move, but NOT Dynamic) ---
+                            should_update_sl = False
                             
-                            if is_significant_change and is_risk_reduction:
+                            if sl == 0:
+                                # 1. Initial Setting (Must be optimized)
                                 should_update_sl = True
-                                logger.info(f"Smart Strategic SL Move: {sl:.2f} -> {opt_sl:.2f} (Reducing Risk)")
+                                logger.info(f"Setting Initial SL (Optimized): {opt_sl:.2f}")
+                            else:
+                                # 2. Existing Position Update (Smart Move)
+                                # Only update if the new SL is a "Strategic Adjustment" provided by AI
+                                # Filter out small noise (Dynamic Trailing) to ensure it's not "Dynamic/Mechanical"
+                                # Threshold: 20 points (2 pips) to be considered a structural shift
+                                is_significant_change = diff_sl > point * 20
+                                
+                                # Direction check:
+                                # Ideally, SL should move to reduce risk (Trade Direction).
+                                # Buy: New SL > Old SL (Move Up)
+                                # Sell: New SL < Old SL (Move Down)
+                                is_risk_reduction = False
+                                if type_pos == mt5.POSITION_TYPE_BUY and opt_sl > sl: is_risk_reduction = True
+                                if type_pos == mt5.POSITION_TYPE_SELL and opt_sl < sl: is_risk_reduction = True
+                                
+                                if is_significant_change and is_risk_reduction:
+                                    should_update_sl = True
+                                    logger.info(f"Smart Strategic SL Move: {sl:.2f} -> {opt_sl:.2f} (Reducing Risk)")
+                                
+                                # If widening SL, we generally ignore unless it's a critical correction, 
+                                # but to be safe and "Fixed" in spirit of risk control, we prioritize risk reduction.
                             
-                            # If widening SL, we generally ignore unless it's a critical correction, 
-                            # but to be safe and "Fixed" in spirit of risk control, we prioritize risk reduction.
+                            valid_sl = True
+                            if type_pos == mt5.POSITION_TYPE_BUY and (current_price - opt_sl < stop_level_dist): valid_sl = False
+                            if type_pos == mt5.POSITION_TYPE_SELL and (opt_sl - current_price < stop_level_dist): valid_sl = False
+                            
+                            if should_update_sl and valid_sl:
+                                request['sl'] = opt_sl
+                                changed = True
                         
-                        valid_sl = True
-                        if type_pos == mt5.POSITION_TYPE_BUY and (current_price - opt_sl < stop_level_dist): valid_sl = False
-                        if type_pos == mt5.POSITION_TYPE_SELL and (opt_sl - current_price < stop_level_dist): valid_sl = False
-                        
-                        if should_update_sl and valid_sl:
-                            request['sl'] = opt_sl
-                            changed = True
-                    
 
-                    if opt_tp > 0:
-                        diff_tp = abs(opt_tp - tp)
-                        valid_tp = True
-                        if type_pos == mt5.POSITION_TYPE_BUY and (opt_tp - current_price < stop_level_dist): valid_tp = False
-                        if type_pos == mt5.POSITION_TYPE_SELL and (current_price - opt_tp < stop_level_dist): valid_tp = False
-                        
-                        if valid_tp and diff_tp > point * 30:
-                            request['tp'] = opt_tp
-                            changed = True
-                            logger.info(f"AI/Stats 更新 TP: {tp:.2f} -> {opt_tp:.2f}")
+                        if opt_tp > 0:
+                            diff_tp = abs(opt_tp - tp)
+                            valid_tp = True
+                            if type_pos == mt5.POSITION_TYPE_BUY and (opt_tp - current_price < stop_level_dist): valid_tp = False
+                            if type_pos == mt5.POSITION_TYPE_SELL and (current_price - opt_tp < stop_level_dist): valid_tp = False
+                            
+                            if valid_tp and diff_tp > point * 30:
+                                request['tp'] = opt_tp
+                                changed = True
+                                logger.info(f"AI/Stats 更新 TP: {tp:.2f} -> {opt_tp:.2f}")
 
                 # 如果没有明确价格，但有 ATR 倍数建议 (兼容旧逻辑或备用)，则计算
                 # REMOVED/SKIPPED to enforce "No Dynamic Movement"
@@ -1895,6 +1895,10 @@ class SymbolTrader:
                 # 简单逻辑: 如果盈利 > 0 且信号消失，落袋为安?
                 # 或者依靠 SL/TP 自然离场。
                 pass
+        except Exception as e:
+            logger.error(f"Error in manage_positions: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     def analyze_closed_trades(self):
         """
