@@ -688,6 +688,14 @@ class QwenClient:
          - **逻辑**: 当利润锁定触发后，系统会将虚拟止损线设置在 `Current_Max_Profit_Level - (Value * ATR)` 的位置。
          - **要求**: 必须确保止损线至少位于保本线之上 (Break-Even)。
 
+    **交易周期优化 (Timeframe Optimization)**:
+    - 你必须分析当前市场的波动特性 (ATR, Liquidity) 和你的策略意图 (Scalping vs Trending)。
+    - **输出**: 在 `parameter_updates` -> `optimal_timeframe` 中推荐最优的执行周期 (M1, M5, M15, M30, H1, H4)。
+    - **逻辑**: 
+      - 如果是高频刷单 (Scalping)，推荐 **M1** 或 **M5**。
+      - 如果是稳健的趋势跟踪，推荐 **M15** 或 **H1**。
+      - 你的推荐将直接改变机器人的 K 线获取和信号检测频率。
+
     ## 市场分析要求   請以JSON格式返回结果，包含以下字段：
     - action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell", "grid_start", "close_buy_open_sell", "close_sell_open_buy")
     - entry_conditions: dict ("limit_price": float)
@@ -696,7 +704,7 @@ class QwenClient:
     - position_size: float
     - leverage: int
     - signal_strength: int
-    - parameter_updates: dict
+    - parameter_updates: dict ("grid_settings": dict, "smc_atr_threshold": float, "optimal_timeframe": str)
     - strategy_rationale: str (中文)
     - market_structure_analysis: dict (包含多时间框架分析)
     - smc_signals_identified: list (识别的SMC信号)
