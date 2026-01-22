@@ -1333,9 +1333,29 @@ class SymbolTrader:
         elif type_str == "stop_buy":
             order_type = mt5.ORDER_TYPE_BUY_STOP
             action = mt5.TRADE_ACTION_PENDING
+            
+            # --- Stop Buy Validation Fix (Error 10015) ---
+            # Stop Buy price MUST be > Ask
+            # Ensure price includes StopsLevel buffer
+            min_price = mt5.symbol_info_tick(self.symbol).ask + stops_level
+            if price <= min_price:
+                logger.warning(f"Stop Buy Price {price:.2f} <= Min {min_price:.2f}. Auto-Correcting to Min + Buffer.")
+                price = min_price + (point * 10)
+                price = self._normalize_price(price)
+            # ---------------------------------------------
+            
         elif type_str == "stop_sell":
             order_type = mt5.ORDER_TYPE_SELL_STOP
             action = mt5.TRADE_ACTION_PENDING
+            
+            # --- Stop Sell Validation Fix ---
+            # Stop Sell price MUST be < Bid
+            max_price = mt5.symbol_info_tick(self.symbol).bid - stops_level
+            if price >= max_price:
+                logger.warning(f"Stop Sell Price {price:.2f} >= Max {max_price:.2f}. Auto-Correcting to Max - Buffer.")
+                price = max_price - (point * 10)
+                price = self._normalize_price(price)
+            # --------------------------------
             
         request = {
             "action": action,
