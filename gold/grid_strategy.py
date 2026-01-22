@@ -53,33 +53,47 @@ class KalmanGridStrategy:
 
     def _load_config(self):
         """Load configuration based on symbol"""
-        # Default Configs
+        # Default Configs - High Frequency Scalping Mode
+        # [User Request]: "Grid Basket TP can be small (5-10 USD), High Lot Size, High Frequency"
         default_config = {
-            "grid_step_points": 300,
+            "grid_step_points": 300, # 300 points = $3 (Gold)
             "max_grid_steps": 10,
             "lot_type": 'GEOMETRIC',
             "lot_multiplier": 1.5,
+            # TP Steps - Reduced for Scalping
             "tp_steps": {
-                1: 3.0, 2: 6.0, 3: 10.0, 4: 15.0, 5: 25.0,
+                1: 5.0, 2: 8.0, 3: 12.0, 4: 18.0, 5: 25.0,
                 6: 35.0, 7: 45.0, 8: 55.0, 9: 65.0
             },
-            "global_tp": 100.0
+            # Global Basket TP - Reduced for Scalping
+            "global_tp": 10.0 # Default fallback, LLM can override
         }
         
         # ETHUSD Config
         eth_config = {
-            "grid_step_points": 2000, # Approx 20.00 USD (Assuming point=0.01)
-            "max_grid_steps": 5,      # Aligned with Gold Logic
+            "grid_step_points": 2000, 
+            "max_grid_steps": 5,
             "lot_type": 'GEOMETRIC',
-            "lot_multiplier": 1.2,    # Conservative for Crypto
+            "lot_multiplier": 1.2,
             "tp_steps": {
                 1: 10.0, 2: 25.0, 3: 45.0, 4: 75.0, 5: 120.0
             },
-            "global_tp": 200.0
+            "global_tp": 20.0
         }
         
-        # XAUUSD Config (same as default but explicit)
-        xau_config = default_config.copy()
+        # XAUUSD Config (High Frequency Scalping)
+        xau_config = {
+            "grid_step_points": 200, # Tighter grid for HFT (200 pts = $2)
+            "max_grid_steps": 15,    # More steps allowed
+            "lot_type": 'GEOMETRIC',
+            "lot_multiplier": 1.5,   # Aggressive scaling
+            "tp_steps": {
+                # Quick Scalps: $5, $8, $12...
+                1: 5.0, 2: 8.0, 3: 12.0, 4: 18.0, 5: 25.0,
+                6: 35.0, 7: 45.0, 8: 55.0, 9: 65.0, 10: 80.0
+            },
+            "global_tp": 10.0 # Target $10 quick profit
+        }
         
         # Select Config
         config = default_config
