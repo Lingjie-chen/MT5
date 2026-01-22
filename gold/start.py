@@ -957,15 +957,15 @@ class SymbolTrader:
                 
                 if price > tick.ask:
                     trade_type = "stop_buy" # 价格高于当前价 -> 突破买入
-                    # Buy Stop must be >= Ask + StopLevel
-                    min_price = tick.ask + stop_level
+                    # Buy Stop must be >= Ask + StopLevel + Buffer
+                    min_price = tick.ask + stop_level + (symbol_info.point * 10)
                     if price < min_price:
                         logger.warning(f"Stop Buy Price {price} too close to Ask {tick.ask}, adjusting to {min_price}")
                         price = self._normalize_price(min_price)
                 else:
                     trade_type = "limit_buy" # 价格低于当前价 -> 回调买入
-                    # Buy Limit must be <= Ask - StopLevel
-                    max_price = tick.ask - stop_level
+                    # Buy Limit must be <= Ask - StopLevel - Buffer
+                    max_price = tick.ask - stop_level - (symbol_info.point * 10)
                     if price > max_price:
                          logger.warning(f"Limit Buy Price {price} too close to Ask {tick.ask}, adjusting to {max_price}")
                          price = self._normalize_price(max_price)
@@ -998,15 +998,15 @@ class SymbolTrader:
 
                 if price < tick.bid:
                     trade_type = "stop_sell" # 价格低于当前价 -> 突破卖出
-                    # Sell Stop must be <= Bid - StopLevel
-                    max_price = tick.bid - stop_level
+                    # Sell Stop must be <= Bid - StopLevel - Buffer
+                    max_price = tick.bid - stop_level - (symbol_info.point * 10)
                     if price > max_price:
                         logger.warning(f"Stop Sell Price {price} too close to Bid {tick.bid}, adjusting to {max_price}")
                         price = self._normalize_price(max_price)
                 else:
                     trade_type = "limit_sell" # 价格高于当前价 -> 反弹卖出
-                    # Sell Limit must be >= Bid + StopLevel
-                    min_price = tick.bid + stop_level
+                    # Sell Limit must be >= Bid + StopLevel + Buffer
+                    min_price = tick.bid + stop_level + (symbol_info.point * 10)
                     if price < min_price:
                         logger.warning(f"Limit Sell Price {price} too close to Bid {tick.bid}, adjusting to {min_price}")
                         price = self._normalize_price(min_price)
