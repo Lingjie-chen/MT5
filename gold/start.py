@@ -3285,37 +3285,42 @@ class MultiSymbolBot:
         if base_upper == "XUAUSD" or base_upper == "XUAUSDM":
              base_upper = "XAUUSD"
         
-        # 0. Check if Exness account is detected (Server name contains 'Exness')
-        # This helps in prioritizing 'm' suffixes
+        # 0. Check if Exness or Ava account is detected
         is_exness = False
+        is_ava = False
         try:
             acc_info = mt5.account_info()
-            if acc_info and "Exness" in acc_info.server:
-                is_exness = True
-                logger.info(f"Detected Exness Account: {acc_info.server}. Prioritizing 'm' suffix.")
+            if acc_info:
+                 if "Exness" in acc_info.server:
+                    is_exness = True
+                    logger.info(f"Detected Exness Account: {acc_info.server}. Prioritizing 'm' suffix.")
+                 elif "Ava" in acc_info.server:
+                    is_ava = True
+                    logger.info(f"Detected Ava Account: {acc_info.server}. Prioritizing 'GOLD' and Standard Symbols.")
         except:
             pass
 
         # 1. 尝试直接匹配 (仅当不是 Exness 或确实存在且可见时)
         # Exness 上 EURUSD 可能存在但不可见/不可交易，所以我们即使匹配了也要继续找更合适的后缀
-        # 除非它是可见的
         
         direct_match = mt5.symbol_info(base_upper)
         if direct_match:
              # If visible, it might be usable. But on Exness, prefer suffix.
-             if not is_exness or (direct_match.visible and not base_upper.endswith('m')):
-                 # It's visible and we are not strictly enforcing 'm' yet, or it is standard.
-                 # But let's keep searching for a better match if on Exness
-                 pass
+             if is_exness and not base_upper.endswith('m') and not direct_match.visible:
+                 pass # Skip direct match if it's Exness and hidden
              else:
-                 pass
+                 pass # Use direct match or continue
 
         # 2. 常见变体映射
         variants = []
         
         # 针对特定品种的已知映射
         if base_upper == "GOLD" or base_upper == "XAUUSD":
-            variants = ["XAUUSD", "XAUUSDm", "XAUUSDz", "XAUUSDk", "Gold", "GOLD", "Goldm", "XAUUSD.a", "XAUUSD.ecn"]
+            if is_ava:
+                # Ava Specific Priority: GOLD is usually the main symbol
+                variants = ["GOLD", "Gold", "XAUUSD", "XAUUSD.a"]
+            else:
+                variants = ["XAUUSD", "XAUUSDm", "XAUUSDz", "XAUUSDk", "Gold", "GOLD", "Goldm", "XAUUSD.a", "XAUUSD.ecn"]
         elif base_upper == "EURUSD":
             variants = ["EURUSDm", "EURUSDz", "EURUSDk", "EURUSD.a", "EURUSD.ecn"]
         elif base_upper == "ETHUSD":
@@ -3329,10 +3334,13 @@ class MultiSymbolBot:
         variants.extend([f"{base_upper}m", f"{base_upper}z", f"{base_upper}k", f"{base_upper}.a", f"{base_upper}.ecn"])
         
         # Add base_upper itself to variants (at the end or beginning depending on preference)
-        # On Exness, we want suffix first.
-        if not is_exness:
+        if is_ava:
+             # For Ava, Standard symbol is king (e.g. EURUSD, ETHUSD)
+             variants.insert(0, base_upper)
+        elif not is_exness:
             variants.insert(0, base_upper)
         else:
+            # Exness puts standard last
             variants.append(base_upper)
             
         # 4. Search in All Symbols (Heavy operation, but done once at startup)
