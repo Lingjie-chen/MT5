@@ -3753,13 +3753,21 @@ class MultiSymbolBot:
             # Initialize trader instance inside the thread
             # NOTE: MT5 calls are thread-safe, but we need to ensure separate state
             trader = SymbolTrader(symbol=symbol, timeframe=self.timeframe)
-            trader.initialize()
+            if not trader.initialize():
+                logger.error(f"[{symbol}] Trader initialization failed. Stopping worker thread.")
+                return
+
             self.traders.append(trader) # Keep reference if needed
             
             logger.info(f"[{symbol}] Worker Loop Started")
             
             while self.is_running:
                 try:
+                    if not mt5.terminal_info().connected:
+                         logger.warning(f"[{symbol}] MT5 Disconnected, waiting...")
+                         time.sleep(5)
+                         continue
+                         
                     trader.process_tick()
                 except Exception as e:
                     logger.error(f"[{symbol}] Process Error: {e}")
