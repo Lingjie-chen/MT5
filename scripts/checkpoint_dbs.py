@@ -54,20 +54,60 @@ class GitSyncManager:
     def __init__(self, base_dir):
         self.base_dir = base_dir
 
+    def sync_code_only(self):
+        """Sync ONLY code files (exclude .db), high frequency"""
+        try:
+            # 1. Add all files
+            subprocess.run(["git", "add", "."], cwd=self.base_dir, check=False)
+            
+            # 2. Unstage Database files (Keep them for full sync later)
+            # Using wildcards for root and subdirectories
+            # Note: Git pathspec allows '**' for recursive matching
+            subprocess.run(["git", "reset", "HEAD", "**/*.db"], cwd=self.base_dir, check=False, stderr=subprocess.DEVNULL)
+            # Fallback for simple shells if needed, but git handles **
+            
+            # 3. Check for staged changes
+            status = subprocess.check_output(["git", "diff", "--cached", "--name-only"], cwd=self.base_dir).decode("utf-8")
+            
+            if status.strip():
+                logger.info("Git (Code): Local code changes detected. Syncing...")
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+                subprocess.run(["git", "commit", "-m", f"auto: code update {timestamp}"], cwd=self.base_dir, check=True)
+                
+                # Pull & Push
+                self.pull_and_push()
+            else:
+                # Even if no local changes, pull remote code updates
+                # Optimization: Only pull if some time passed? Or always?
+                # For "Real-time", maybe just check remote?
+                # Let's do a lightweight fetch/pull check
+                self.pull_and_push(only_pull_if_needed=True)
+
+        except Exception as e:
+            logger.error(f"Git Code Sync Error: {e}")
+
+    def pull_and_push(self, only_pull_if_needed=False):
+        """Helper to Pull (Rebase) then Push"""
+        try:
+            # Pull
+            subprocess.run(["git", "pull", "--rebase", "origin", "master"], cwd=self.base_dir, capture_output=True, check=False)
+            # Push
+            subprocess.run(["git", "push", "origin", "master"], cwd=self.base_dir, capture_output=True, check=False)
+        except Exception as e:
+             logger.error(f"Git Pull/Push Error: {e}")
+
     def pull_updates(self):
-        """Pull updates with rebase, auto-committing local changes if needed"""
+        """Full Sync: Pull updates with rebase, auto-committing ALL local changes"""
         try:
             # 1. Check for local changes
             status = subprocess.check_output(["git", "status", "--porcelain"], cwd=self.base_dir).decode("utf-8")
             if status.strip():
-                logger.info("Git: Local changes detected. Auto-committing...")
+                logger.info("Git (Full): Local changes detected. Auto-committing...")
                 subprocess.run(["git", "add", "."], cwd=self.base_dir, check=True)
                 timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-                subprocess.run(["git", "commit", "-m", f"auto: save local changes {timestamp}"], cwd=self.base_dir, check=True)
+                subprocess.run(["git", "commit", "-m", f"auto: full sync {timestamp}"], cwd=self.base_dir, check=True)
 
             # 2. Pull (Rebase)
-            # logger.info("Git: Pulling updates...")
-            # Capture output to avoid spamming console unless error
             result = subprocess.run(["git", "pull", "--rebase", "origin", "master"], cwd=self.base_dir, capture_output=True, text=True)
             
             if result.returncode != 0:
@@ -423,24 +463,36 @@ def main():
     logger.info("🚀 Auto Sync Engine Started...")
     logger.info(f"   - Sync Interval: {args.interval}s")
 
-    last_git_sync = 0
-    git_sync_interval = 300 # 5 minutes
+    last_full_git_sync = 0
+    full_git_sync_interval = 300 # 5 minutes
+    
+    last_code_sync = 0
+    code_sync_interval = 30 # 30 seconds (High freq for code)
 
     if args.cleanup:
         git_manager.cleanup_local_dbs(db_manager)
 
     try:
         while True:
+            current_time = time.time()
+
             # 1. DB Sync (High Frequency)
             db_manager.sync_all()
             
-            # 2. Git Sync (Low Frequency)
-            if time.time() - last_git_sync > git_sync_interval:
-                if not args.no_git:
+            if not args.no_git:
+                # 2. Code Sync (Real-time)
+                if current_time - last_code_sync > code_sync_interval:
+                    # logger.debug("Running Code Sync...")
+                    git_manager.sync_code_only()
+                    last_code_sync = current_time
+
+                # 3. Full Git Sync (Low Frequency)
+                if current_time - last_full_git_sync > full_git_sync_interval:
+                    logger.info("Running Full Git Sync (Including DBs)...")
                     git_manager.sync()
-                last_git_sync = time.time()
+                    last_full_git_sync = current_time
             
-            # 3. Cleanup (if enabled)
+            # 4. Cleanup (if enabled)
             if args.cleanup:
                 git_manager.cleanup_local_dbs(db_manager)
             

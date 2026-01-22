@@ -34,6 +34,10 @@ class KalmanGridStrategy:
         self.bb_deviation = 2.0
         
         self.dynamic_global_tp = None # Store AI recommended TP
+        self.lock_profit_trigger = None # Store AI recommended Lock Trigger
+        self.trailing_stop_config = None # Store AI recommended Trailing Config
+        self.basket_lock_level = None # Fixed lock level once triggered
+        self.max_basket_profit = 0.0 # Track max profit for current basket
         
         # State
         self.last_long_price = 0.0
@@ -298,28 +302,34 @@ class KalmanGridStrategy:
         return orders
 
     # ... (Rest of existing methods: check_basket_tp, update_config, _update_positions_state) ...
-    def check_basket_tp(self, positions):
+    def check_basket_tp(self, positions, current_atr=None):
         """
-        Check if total profit exceeds threshold.
+        Check if total profit exceeds threshold or hits lock profit logic.
+        current_atr: Passed from main loop for dynamic calculations
         Returns: True (should close all), False
         """
         total_profit = 0.0
         count = 0
+        total_volume = 0.0
+        
         for pos in positions:
             if pos.magic == self.magic_number:
                 commission = getattr(pos, 'commission', 0.0)
                 swap = getattr(pos, 'swap', 0.0)
                 total_profit += pos.profit + swap + commission
                 count += 1
+                total_volume += pos.volume
         
-        if count == 0: return False
-        
-        # Determine Target TP
-        # Priority: 
-        # 1. AI Dynamic Basket TP (if available)
-        # 2. Step-based TP (from config)
-        # 3. Global TP (fallback)
-        
+        if count == 0: 
+            self.max_basket_profit = 0.0 # Reset
+            self.basket_lock_level = None # Reset Fixed Lock
+            return False
+            
+        # Update Max Profit
+        if total_profit > self.max_basket_profit:
+            self.max_basket_profit = total_profit
+            
+        # --- 1. Regular Basket TP ---
         target_tp = self.global_tp # Default fallback
         
         if self.dynamic_global_tp is not None and self.dynamic_global_tp > 0:
@@ -332,13 +342,102 @@ class KalmanGridStrategy:
             logger.info(f"Grid Basket TP Reached: Profit {total_profit:.2f} >= Target {target_tp} (AI Dynamic: {self.dynamic_global_tp})")
             return True
             
+        # --- 2. Profit Locking Logic (Trailing Stop for Basket) ---
+        # Requirement: "Fully dynamic based on AI recommendation"
+        
+        effective_trigger = 9999.0 # Default inactive
+        
+        if self.lock_profit_trigger is not None and self.lock_profit_trigger > 0:
+             effective_trigger = self.lock_profit_trigger
+        else:
+             effective_trigger = 10.0
+        
+        if self.max_basket_profit >= effective_trigger:
+            # We are in locking mode
+            
+            # --- Requirement: "对于止损不要移动止损了，固定止损" ---
+            # But Updated Requirement: "希望它像台阶一样（每上一个台阶固定一次），那是 Step Stop"
+            
+            # Logic:
+            # 1. Calculate the 'Ideal' Lock Level based on current Max Profit (Dynamic)
+            # 2. If 'Ideal' > 'Current Fixed Lock', Update 'Current Fixed Lock' (Step Up)
+            # 3. Never Step Down
+            
+            # --- Dynamic Calculation (Ideal Lock) ---
+            lock_ratio = 0.7 # Default 70%
+            dynamic_sl_profit_dist = 0.0
+            
+            if self.trailing_stop_config:
+                t_type = self.trailing_stop_config.get('type', 'atr_distance')
+                t_value = float(self.trailing_stop_config.get('value', 2.0))
+                
+                if t_type == 'atr_distance' and current_atr is not None and current_atr > 0:
+                     contract_size = 100.0 if "XAU" in self.symbol or "GOLD" in self.symbol else 1.0
+                     if "ETH" in self.symbol: contract_size = 1.0
+                     if "EUR" in self.symbol: contract_size = 100000.0
+                     
+                     dynamic_sl_profit_dist = current_atr * t_value * total_volume * contract_size
+                     
+                elif t_type == 'fixed_pips':
+                     pip_val = 0.01 * 10 # 0.1
+                     if "XAU" in self.symbol: pip_val = 0.1
+                     
+                     price_dist = t_value * pip_val
+                     contract_size = 100.0 if "XAU" in self.symbol else 1.0
+                     dynamic_sl_profit_dist = price_dist * total_volume * contract_size
+            
+            # Calculate Current Ideal Lock Level
+            ideal_lock = 0.0
+            
+            if dynamic_sl_profit_dist > 0:
+                # Logic: Locked = CurrentProfit - Distance
+                ideal_lock = self.max_basket_profit - dynamic_sl_profit_dist
+            else:
+                # Ratio Logic
+                surplus = max(0.0, self.max_basket_profit - effective_trigger)
+                ideal_lock = effective_trigger + (surplus * lock_ratio)
+            
+            # --- Constraints ---
+            min_break_even = 2.0
+            ideal_lock = max(ideal_lock, min_break_even)
+            
+            # Minimum floor is the trigger itself
+            ideal_lock = max(ideal_lock, effective_trigger)
+            
+            # --- Step Logic ---
+            # If we don't have a lock yet, set it.
+            if self.basket_lock_level is None:
+                self.basket_lock_level = ideal_lock
+                logger.info(f"Grid Profit Lock ACTIVATED: Step Lock Level set at {self.basket_lock_level:.2f} (Trigger: {effective_trigger})")
+            else:
+                # If new ideal is higher, step up
+                # Optional: Add a 'step_size' to avoid micro-updates? 
+                # For now, we update if it improves by at least $1.0 or just strictly >
+                if ideal_lock > self.basket_lock_level:
+                    old_lock = self.basket_lock_level
+                    self.basket_lock_level = ideal_lock
+                    logger.info(f"Grid Profit Lock STEP UP: {old_lock:.2f} -> {self.basket_lock_level:.2f} (Peak: {self.max_basket_profit:.2f})")
+
+            # Check against the STEPPED lock level
+            if total_profit <= self.basket_lock_level:
+                logger.info(f"Grid Profit Lock Triggered: Profit {total_profit:.2f} <= Step Lock {self.basket_lock_level:.2f}")
+                return True
+                
         return False
 
-    def update_dynamic_params(self, basket_tp=None):
+    def update_dynamic_params(self, basket_tp=None, lock_trigger=None, trailing_config=None):
         """Update dynamic parameters from AI analysis"""
         if basket_tp is not None and basket_tp > 0:
             self.dynamic_global_tp = float(basket_tp)
             logger.info(f"Updated Dynamic Basket TP: {self.dynamic_global_tp}")
+            
+        if lock_trigger is not None and lock_trigger > 0:
+            self.lock_profit_trigger = float(lock_trigger)
+            logger.info(f"Updated Dynamic Lock Trigger: {self.lock_profit_trigger}")
+            
+        if trailing_config is not None and isinstance(trailing_config, dict):
+            self.trailing_stop_config = trailing_config
+            logger.info(f"Updated Dynamic Trailing Config: {self.trailing_stop_config}")
 
     def update_config(self, params):
         if not params: return

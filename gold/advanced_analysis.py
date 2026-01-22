@@ -793,7 +793,7 @@ class TimeframeVisualAnalyzer:
     Uses Moving Averages alignment to simulate visual trend confirmation
     """
     def __init__(self):
-        self.timeframes = {"M15": mt5.TIMEFRAME_M15, "H1": mt5.TIMEFRAME_H1, "H4": mt5.TIMEFRAME_H4}
+        self.timeframes = {"M5": mt5.TIMEFRAME_M5, "M15": mt5.TIMEFRAME_M15, "H1": mt5.TIMEFRAME_H1}
         
     def analyze(self, symbol, current_time):
         trends = {}; alignment_score = 0
@@ -871,7 +871,7 @@ class MTFAnalyzer:
         except: return 0
     def update_zones(self, symbol):
         try:
-            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M15, 0, 500)
+            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 500)
             if rates is None or len(rates) < 50: return
             self.demand_zones = []; self.supply_zones = []
             tr_sum = 0

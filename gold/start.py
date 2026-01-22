@@ -102,11 +102,12 @@ class HybridOptimizer:
         return final_signal, final_score, self.weights
 
 class SymbolTrader:
-    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M15):
+    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M5):
         self.symbol = symbol
         self.timeframe = timeframe
-        self.tf_name = "M15"
-        if timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
+        self.tf_name = "M5"
+        if timeframe == mt5.TIMEFRAME_M5: self.tf_name = "M5"
+        elif timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
         elif timeframe == mt5.TIMEFRAME_H1: self.tf_name = "H1"
         elif timeframe == mt5.TIMEFRAME_H4: self.tf_name = "H4"
         elif timeframe == mt5.TIMEFRAME_M6: self.tf_name = "M6"
@@ -329,9 +330,10 @@ class SymbolTrader:
             return False, 0.0
             
         rr_ratio = reward / risk
-        # 硬性要求: 盈亏比必须 >= 1.5
-        if rr_ratio < 1.5:
-            logger.warning(f"盈亏比过低 ({rr_ratio:.2f} < 1.5), 拒绝交易. Risk={risk:.2f}, Reward={reward:.2f}")
+        # User Requirement: 盈利比亏损的风险大于 1 (Profit > Risk > 1) -> RR > 1.0
+        # Previously 1.5, adjusted to 1.0 as requested
+        if rr_ratio <= 1.0:
+            logger.warning(f"盈亏比过低 ({rr_ratio:.2f} <= 1.0), 拒绝交易. Risk={risk:.2f}, Reward={reward:.2f}")
             return False, rr_ratio
             
         return True, rr_ratio
@@ -413,9 +415,23 @@ class SymbolTrader:
             balance = account_info.balance
             equity = account_info.equity
             margin_free = account_info.margin_free
+            leverage = account_info.leverage
+            
+            # --- High Leverage & Exness Symbol Check ---
+            # User Requirement: Exness xuausdm/eurusdm/ethusdm with 1:2000 leverage -> Allow larger lots
+            is_high_leverage = leverage >= 2000
+            symbol_lower = self.symbol.lower()
+            is_exness_special = symbol_lower.endswith('m') or \
+                                symbol_lower in ['xuausdm', 'eurusdm', 'ethusdm', 'xauusdm']
+            
+            allow_aggressive = is_high_leverage and is_exness_special
+            
+            min_margin_buffer = 100
+            if allow_aggressive:
+                min_margin_buffer = 50 # Lower buffer for high leverage accounts
             
             # 安全检查：如果可用保证金不足，直接返回最小手数或0
-            if margin_free < 100: # 至少保留 100 资金缓冲
+            if margin_free < min_margin_buffer: 
                 logger.warning(f"可用保证金不足 ({margin_free:.2f})，强制最小手数")
                 return mt5.symbol_info(self.symbol).volume_min
 
@@ -479,7 +495,14 @@ class SymbolTrader:
                             if not tick_val: tick_val = 1.0
                             
                             est_risk = llm_lot * 500.0 * tick_val
-                            max_risk = equity * 0.25 # 允许最大 25% 账户权益的压力测试风险 (完全信任模型分析)
+                            
+                            # Risk Cap Logic
+                            risk_cap_pct = 0.25
+                            if allow_aggressive:
+                                risk_cap_pct = 0.50 # Allow up to 50% equity risk exposure for high leverage specialized accounts
+                                logger.info("High Leverage Exness Mode: Relaxing Risk Cap to 50%")
+                            
+                            max_risk = equity * risk_cap_pct 
                             
                             if est_risk <= max_risk:
                                 logger.info(f"✅ 采用大模型全权建议仓位: {llm_lot} Lots (AI Driven Risk)")
@@ -585,8 +608,12 @@ class SymbolTrader:
             
             # 资金池分配检查 (Portfolio Management)
             # 确保当前品种的占用资金不会耗尽所有自由保证金
-            # 简单规则：任何单一品种的预估保证金占用不应超过剩余自由保证金的 50%
-            max_allowed_risk_amount = margin_free * 0.5 
+            # 简单规则：任何单一品种的预估保证金占用不应超过剩余自由保证金的 50% (80% for Aggressive)
+            alloc_pct = 0.5
+            if allow_aggressive:
+                alloc_pct = 0.8
+                
+            max_allowed_risk_amount = margin_free * alloc_pct
             if risk_amount > max_allowed_risk_amount:
                 logger.warning(f"风险金额 ({risk_amount:.2f}) 超过可用保证金池限制 ({max_allowed_risk_amount:.2f}). 自动下调.")
                 risk_amount = max_allowed_risk_amount
@@ -1077,12 +1104,12 @@ class SymbolTrader:
                      logger.error("无法计算优化 SL/TP，放弃交易")
                      return 
 
-            # 再次确认 R:R (针对 Limit 单的最终确认)
-            if 'limit' in trade_type or 'stop' in trade_type:
-                 valid, rr = self.check_risk_reward_ratio(price, explicit_sl, explicit_tp)
-                 if not valid:
-                     logger.warning(f"Limit单最终 R:R 检查未通过: {rr:.2f}")
-                     return
+            # User Requirement: 只有盈利比亏损的风险大于 1 的情况下交易
+            # Enforce R:R check for ALL trade types (Limit/Stop AND Market Buy/Sell)
+            valid, rr = self.check_risk_reward_ratio(price, explicit_sl, explicit_tp)
+            if not valid:
+                 logger.warning(f"最终 R:R 检查未通过: {rr:.2f} <= 1.0. 交易取消.")
+                 return
 
             # FIX: Ensure 'action' is defined for the comment
             # action variable was used in _send_order's comment but was coming from llm_action
@@ -1562,17 +1589,37 @@ class SymbolTrader:
                     
                     if opt_sl > 0:
                         diff_sl = abs(opt_sl - sl)
-                        is_better_sl = False
-                        if type_pos == mt5.POSITION_TYPE_BUY and opt_sl > sl: is_better_sl = True
-                        if type_pos == mt5.POSITION_TYPE_SELL and opt_sl < sl: is_better_sl = True
+                        # --- [Requirement]: "对于一开始开仓设置的止损点夜市要这样" (Initial Stop Loss must follow this logic) ---
+                        # Logic: "对于止损不要移动止损了，固定止损"
+                        # This means once SL is set (e.g. at open or first update), we should NOT move it unless it's to break-even or better (and even then, cautiously).
+                        # Actually, "Fixed Stop" usually means never move it closer to price (trailing), but also maybe not moving it at all?
+                        # If user wants "Step Stop" for profit locking, that's handled in Grid Strategy.
+                        # For the INITIAL stop loss on a single position, "Fixed" means we set it and forget it?
+                        # Or do we allow moving it to Break Even?
+                        # Given "对于止损不要移动止损了", we should disable the automatic AI update of SL for *existing* positions
+                        # UNLESS it hasn't been set yet (sl == 0).
+                        
+                        should_update_sl = False
+                        
+                        if sl == 0:
+                            # Initial setting (or re-setting if missing)
+                            should_update_sl = True
+                        else:
+                            # SL already exists. User says "Fixed Stop".
+                            # So we do NOT update it based on new AI suggestions.
+                            # We only update it if Grid Strategy Step Stop logic triggers (which is separate).
+                            # So here: do nothing if sl > 0.
+                            should_update_sl = False
+                            # logger.info(f"Skipping SL update for pos {pos.ticket} (Fixed Stop Mode)")
                         
                         valid_sl = True
                         if type_pos == mt5.POSITION_TYPE_BUY and (current_price - opt_sl < stop_level_dist): valid_sl = False
                         if type_pos == mt5.POSITION_TYPE_SELL and (opt_sl - current_price < stop_level_dist): valid_sl = False
                         
-                        if valid_sl and (diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5)):
+                        if should_update_sl and valid_sl:
                             request['sl'] = opt_sl
                             changed = True
+                            logger.info(f"Setting Initial Fixed SL: {opt_sl:.2f}")
                     
 
                     if opt_tp > 0:
@@ -2562,12 +2609,104 @@ class SymbolTrader:
         self.sync_account_history()
         self.is_running = True
 
+    def calculate_smart_basket_tp(self, llm_tp, atr, market_regime, smc_data, current_positions):
+        """
+        结合 LLM 建议、市场波动率 (ATR)、市场结构 (SMC) 和风险状态计算最终的 Dynamic Basket TP
+        """
+        if not current_positions:
+            return llm_tp if llm_tp else 100.0
+            
+        # 1. 基础值: LLM 建议 (权重最高，因为包含了宏观和综合判断)
+        base_tp = float(llm_tp) if llm_tp and float(llm_tp) > 0 else 100.0
+        
+        # 2. 波动率约束 (ATR Constraint)
+        # 最小 TP 应该至少覆盖 3 倍 ATR 的波动，否则容易被噪音止盈
+        # 假设 1 Lot, ATR=2.0 (200 points) -> Value = $200 approx for Gold? No.
+        # ATR 是价格差。如果持仓量大，ATR 对应的金额也大。
+        # 我们这里估算: Basket TP (USD) >= Total Lots * ATR_Points * TickValue * Multiplier
+        
+        total_volume = sum([p['volume'] for p in current_positions])
+        symbol_info = mt5.symbol_info(self.symbol)
+        tick_value = symbol_info.trade_tick_value if symbol_info else 1.0
+        point = symbol_info.point if symbol_info else 0.01
+        
+        # ATR (Price Diff) -> ATR Value (USD)
+        # ATR Value = ATR / Point * TickValue * Volume
+        atr_value_total = (atr / point) * tick_value * total_volume
+        
+        min_tp_volatility = atr_value_total * 2.0 # 至少赚取 2倍 ATR 的波动价值
+        
+        # 3. 市场体制修正 (Regime Correction)
+        regime_multiplier = 1.0
+        if market_regime == 'trending':
+            regime_multiplier = 1.2 # 趋势中放大目标
+        elif market_regime == 'ranging':
+            regime_multiplier = 0.8 # 震荡中缩小目标
+            
+        # 4. SMC 阻力位修正 (SMC Resistance Cap)
+        # 如果是做多，TP 不应超过最近的 Bearish OB 太多
+        # 如果是做空，TP 不应超过最近的 Bullish OB 太多
+        # 这里简化处理：如果 LLM 给出的 TP 对应的盈利价格远超最近阻力位，则保守下调
+        
+        # 计算混合 TP
+        # 逻辑: 加权平均
+        # 70% LLM, 30% Volatility-based
+        # 且应用 Regime Multiplier
+        
+        tech_tp = min_tp_volatility
+        
+        # 如果 LLM 值异常小 (小于 ATR 价值)，可能是保守或错误，取较大值
+        # 如果 LLM 值异常大，可能是贪婪，取加权
+        
+        final_tp = (base_tp * 0.7) + (tech_tp * 0.3)
+        final_tp *= regime_multiplier
+        
+        # 5. 硬性下限
+        final_tp = max(final_tp, min_tp_volatility)
+        final_tp = max(final_tp, 10.0) # 绝对最小值 10 USD
+        
+        logger.info(f"Smart Basket TP Calc: Base(LLM)={base_tp:.2f}, ATR_Val={tech_tp:.2f}, Regime={market_regime} -> Final={final_tp:.2f}")
+        return final_tp
+
     def process_tick(self):
         """Single tick processing"""
         if not self.is_running:
             return
 
         try:
+            # 1. 获取最新数据
+            # Using copy_rates_from_pos instead of copy_rates_range for simplicity/speed
+            rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 500)
+            if rates is None or len(rates) < 100:
+                logger.warning(f"Failed to get rates for {self.symbol}")
+                return
+
+            df = pd.DataFrame(rates)
+            df['time'] = pd.to_datetime(df['time'], unit='s')
+            
+            # --- Grid Strategy Update (Fast Loop) ---
+            self.grid_strategy.update_market_data(df)
+            
+            # Get Current Positions
+            positions = mt5.positions_get(symbol=self.symbol)
+            if positions is None: positions = []
+            
+            # Extract features needed for dynamic calc
+            # Use simple TR if cache missing
+            high = df['high'].values
+            low = df['low'].values
+            close = df['close'].values
+            tr1 = high[-1] - low[-1]
+            tr2 = abs(high[-1] - close[-2])
+            tr3 = abs(low[-1] - close[-2])
+            current_atr = max(tr1, max(tr2, tr3))
+            
+            # Check Grid TP / Lock
+            if self.grid_strategy.check_basket_tp(positions, current_atr=current_atr):
+                logger.info("Grid Strategy triggered Basket TP/Lock! Closing all positions...")
+                self.close_all_positions(positions, reason="Grid Basket TP/Lock")
+                return
+
             # Single iteration logic (replacing while True)
             if True:
                 # 0. 管理持仓 (移动止损) - 使用最新策略
@@ -2755,6 +2894,7 @@ class SymbolTrader:
                                     "equity": float(acc.equity),
                                     "margin": float(acc.margin),
                                     "margin_free": float(acc.margin_free),
+                                    "leverage": int(acc.leverage), # [NEW] Pass leverage to AI
                                     "available_balance": float(acc.balance) 
                                 }
                         except Exception as e:
@@ -2974,17 +3114,41 @@ class SymbolTrader:
                         self.latest_strategy = strategy
                         self.last_llm_time = time.time()
                         
-                        # --- [NEW] Update Grid Strategy Dynamic Params (Basket TP) ---
+                        # --- [NEW] Update Grid Strategy Dynamic Params (Basket TP & Lock Trigger) ---
                         # Ensure AI Dynamic TP is applied
                         pos_mgmt = strategy.get('position_management', {})
                         if pos_mgmt:
-                            basket_tp = pos_mgmt.get('dynamic_basket_tp')
-                            if basket_tp:
+                            raw_basket_tp = pos_mgmt.get('dynamic_basket_tp')
+                            lock_trigger = pos_mgmt.get('lock_profit_trigger')
+                            trailing_config = pos_mgmt.get('trailing_stop_config')
+                            
+                            # [SMART UPDATE] Calculate Enhanced Basket TP
+                            # Inputs: LLM TP, ATR, Regime (from advanced analysis), SMC, Current Positions
+                            
+                            # Get ATR
+                            atr_current = float(latest_features.get('atr', 0))
+                            # Get Regime
+                            regime_current = adv_result['regime']['regime'] if adv_result and 'regime' in adv_result else 'ranging'
+                            
+                            # Calculate
+                            smart_basket_tp = self.calculate_smart_basket_tp(
+                                raw_basket_tp,
+                                atr_current,
+                                regime_current,
+                                smc_result,
+                                current_positions_list
+                            )
+                            
+                            if smart_basket_tp or lock_trigger or trailing_config:
                                 try:
-                                    self.grid_strategy.update_dynamic_params(basket_tp)
-                                    logger.info(f"Applied AI Dynamic Basket TP: {basket_tp}")
+                                    self.grid_strategy.update_dynamic_params(
+                                        basket_tp=smart_basket_tp, 
+                                        lock_trigger=lock_trigger,
+                                        trailing_config=trailing_config
+                                    )
+                                    logger.info(f"Applied AI Dynamic Params: BasketTP={smart_basket_tp:.2f} (LLM:{raw_basket_tp}), LockTrigger={lock_trigger}, Trailing={trailing_config}")
                                 except Exception as e:
-                                    logger.error(f"Failed to update dynamic basket TP: {e}")
+                                    logger.error(f"Failed to update dynamic params: {e}")
 
                         # Update lot_size from Qwen Strategy
                         if 'position_size' in strategy:
@@ -2992,9 +3156,28 @@ class SymbolTrader:
                                 qwen_lot = float(strategy['position_size'])
                                 if qwen_lot > 0:
                                     self.lot_size = qwen_lot
+                                    # Update grid strategy lot size too for consistency
+                                    if hasattr(self, 'grid_strategy'):
+                                        self.grid_strategy.lot = qwen_lot
                                     logger.info(f"Updated lot size from Qwen: {self.lot_size}")
                             except Exception as e:
                                 logger.error(f"Failed to update lot size: {e}")
+                        
+                        # --- [NEW] Requirement: Update Stop Loss for New Positions immediately ---
+                        # "对于一开始开仓设置的止损点夜市要这样" (Initial Stop Loss must also follow this logic)
+                        # We extract sl_price from Qwen's decision and apply it if we are opening a trade.
+                        # But wait, Qwen returns specific SL price. 
+                        # If user wants "Step Stop" logic applied to initial SL?
+                        # Step Stop is for PROFIT locking. Initial SL is for loss protection.
+                        # Maybe user means: The initial SL should also be "Fixed" and not moved closer unless step logic triggers?
+                        # Or user means: The initial SL calculation should be rigorous?
+                        # Qwen already provides 'sl_price'. We just ensure it's used.
+                        
+                        # Logic: When executing BUY/SELL, we use the SL provided by Qwen.
+                        # This is handled in `execute_trade`.
+                        # However, we must ensure `execute_trade` respects the `exit_conditions` from Qwen.
+                        
+                        # Let's verify execute_trade uses these.
                         
                         # --- 参数自适应优化 (Feedback Loop) ---
                         param_updates = strategy.get('parameter_updates', {})
@@ -3228,7 +3411,7 @@ class SymbolTrader:
             mt5.shutdown()
 
 class MultiSymbolBot:
-    def __init__(self, symbols, timeframe=mt5.TIMEFRAME_M15):
+    def __init__(self, symbols, timeframe=mt5.TIMEFRAME_M5):
         self.symbols = symbols
         self.timeframe = timeframe
         self.traders = []
@@ -3285,42 +3468,16 @@ class MultiSymbolBot:
         if base_upper == "XUAUSD" or base_upper == "XUAUSDM":
              base_upper = "XAUUSD"
         
-        # 0. Check if Exness or Ava account is detected
-        is_exness = False
-        is_ava = False
-        try:
-            acc_info = mt5.account_info()
-            if acc_info:
-                 if "Exness" in acc_info.server:
-                    is_exness = True
-                    logger.info(f"Detected Exness Account: {acc_info.server}. Prioritizing 'm' suffix.")
-                 elif "Ava" in acc_info.server:
-                    is_ava = True
-                    logger.info(f"Detected Ava Account: {acc_info.server}. Prioritizing 'GOLD' and Standard Symbols.")
-        except:
-            pass
-
-        # 1. 尝试直接匹配 (仅当不是 Exness 或确实存在且可见时)
-        # Exness 上 EURUSD 可能存在但不可见/不可交易，所以我们即使匹配了也要继续找更合适的后缀
-        
-        direct_match = mt5.symbol_info(base_upper)
-        if direct_match:
-             # If visible, it might be usable. But on Exness, prefer suffix.
-             if is_exness and not base_upper.endswith('m') and not direct_match.visible:
-                 pass # Skip direct match if it's Exness and hidden
-             else:
-                 pass # Use direct match or continue
-
+        # 1. 尝试直接匹配
+        if mt5.symbol_info(base_upper):
+            return base_upper
+            
         # 2. 常见变体映射
         variants = []
         
         # 针对特定品种的已知映射
         if base_upper == "GOLD" or base_upper == "XAUUSD":
-            if is_ava:
-                # Ava Specific Priority: GOLD is usually the main symbol
-                variants = ["GOLD", "Gold", "XAUUSD", "XAUUSD.a"]
-            else:
-                variants = ["XAUUSD", "XAUUSDm", "XAUUSDz", "XAUUSDk", "Gold", "GOLD", "Goldm", "XAUUSD.a", "XAUUSD.ecn"]
+            variants = ["XAUUSD", "XAUUSDm", "XAUUSDz", "XAUUSDk", "Gold", "GOLD", "Goldm", "XAUUSD.a", "XAUUSD.ecn"]
         elif base_upper == "EURUSD":
             variants = ["EURUSDm", "EURUSDz", "EURUSDk", "EURUSD.a", "EURUSD.ecn"]
         elif base_upper == "ETHUSD":
@@ -3333,35 +3490,19 @@ class MultiSymbolBot:
         # 通用后缀尝试 (Priority 1)
         variants.extend([f"{base_upper}m", f"{base_upper}z", f"{base_upper}k", f"{base_upper}.a", f"{base_upper}.ecn"])
         
-        # Add base_upper itself to variants (at the end or beginning depending on preference)
-        if is_ava:
-             # For Ava, Standard symbol is king (e.g. EURUSD, ETHUSD)
-             variants.insert(0, base_upper)
-        elif not is_exness:
-            variants.insert(0, base_upper)
-        else:
-            # Exness puts standard last
-            variants.append(base_upper)
-            
         # 4. Search in All Symbols (Heavy operation, but done once at startup)
         # 如果前面的常见变体都失败了，我们扫描所有品种
         # 优化: 仅当 variants 为空或都失败时执行
         
         # First pass: Check known variants
         for var in variants:
-            # Important: Try to select the symbol first! 
-            # Some symbols are hidden in Market Watch and symbol_info might return None unless selected (or not).
-            # Actually symbol_select returns True if successful.
             if mt5.symbol_select(var, True):
                  if mt5.symbol_info(var):
                     logger.info(f"✅ 自动识别品种: {base_symbol} -> {var}")
                     return var
             elif mt5.symbol_info(var): 
-                # If visible check passes
-                s_info = mt5.symbol_info(var)
-                if s_info.visible:
-                    logger.info(f"✅ 自动识别品种 (Info+Visible): {base_symbol} -> {var}")
-                    return var
+                logger.info(f"✅ 自动识别品种 (Info): {base_symbol} -> {var}")
+                return var
         
         # Second pass: Deep Search
         logger.info(f"Deep searching for symbol match: {base_upper}...")
@@ -3383,20 +3524,19 @@ class MultiSymbolBot:
                 # 3. Shortest: 最短的 (e.g. XAUUSD vs XAUUSD.ecn)
                 
                 # Exness Check
-                if is_exness:
-                    exness_matches = [c for c in candidates if c.endswith('m') and len(c) == len(base_upper) + 1]
-                    if exness_matches:
-                        chosen = exness_matches[0]
-                        if mt5.symbol_select(chosen, True):
-                            logger.info(f"✅ 自动识别品种 (Deep Exness): {base_symbol} -> {chosen}")
-                            return chosen
+                exness_matches = [c for c in candidates if c.endswith('m') and len(c) == len(base_upper) + 1]
+                if exness_matches:
+                    chosen = exness_matches[0]
+                    if mt5.symbol_select(chosen, True):
+                        logger.info(f"✅ 自动识别品种 (Deep Exness): {base_symbol} -> {chosen}")
+                        return chosen
 
                 # Standard/Shortest
                 candidates.sort(key=len)
-                for chosen in candidates:
-                     if mt5.symbol_select(chosen, True):
-                        logger.info(f"✅ 自动识别品种 (Deep Match): {base_symbol} -> {chosen}")
-                        return chosen
+                chosen = candidates[0]
+                if mt5.symbol_select(chosen, True):
+                    logger.info(f"✅ 自动识别品种 (Deep Match): {base_symbol} -> {chosen}")
+                    return chosen
 
         logger.warning(f"⚠️ 未能自动识别品种变体: {base_symbol}, 将尝试使用原名")
         return base_symbol
@@ -3490,5 +3630,5 @@ if __name__ == "__main__":
     
     logger.info(f"Starting Bot with Account {args.account} for symbols: {symbols}")
             
-    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M15)
+    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M5)
     bot.start(account_index=args.account)

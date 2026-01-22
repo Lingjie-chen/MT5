@@ -67,7 +67,7 @@ class QwenClient:
     
     你的核心策略架构：**SMC + Martingale Grid (马丁网格)**
     
-    **关键规则：你的交易周期为 15分钟 (M15)。你必须结合 1小时 (H1) 和 4小时 (H4) 的大周期趋势来制定 M15 的入场决策。**
+    **关键规则：你的交易周期为 5分钟 (M5)。你必须结合 15分钟 (M15) 和 1小时 (H1) 的大周期趋势来制定 M5 的入场决策。**
 
     **交易节奏控制 (Trend Cycle Control)**:
     - **拒绝频繁交易**: 不需要每根K线都交易。
@@ -76,9 +76,9 @@ class QwenClient:
     - **新一轮分析**: 只有在当前趋势明确结束（平仓）后，才开始寻找下一波大的趋势机会。在趋势延续期间，不要试图捕捉每一个微小的回调。
 
     1. **SMC (Smart Money Concepts) - 入场与方向**:
-       - **方向判断**: 依据 H1/H4 确定主趋势，在 M15 寻找结构破坏(BOS)或特性改变(CHoch)。
-       - **关键区域**: 重点关注 M15 和 H1 的订单块(Order Block)和失衡区(FVG)。
-       - **CRT (Candle Range Theory)**: 确认关键位置的 M15 K线反应(如Pinbar, Engulfing)。
+       - **方向判断**: 依据 M15/H1 确定主趋势，在 M5 寻找结构破坏(BOS)或特性改变(CHoch)。
+       - **关键区域**: 重点关注 M5 和 M15 的订单块(Order Block)和失衡区(FVG)。
+       - **CRT (Candle Range Theory)**: 确认关键位置的 M5 K线反应(如Pinbar, Engulfing)。
        - **CCI/RVGI**: 辅助确认超买超卖和动量背离。
 
      你现在不是单一的交易员，而是一个由 **四大核心团队** 组成的 **"Alpha-Qwen 机构级交易委员会"**。
@@ -356,7 +356,7 @@ class QwenClient:
     1. **SMC 核心**: 所有的入场和加仓必须基于 **SMC (Smart Money Concepts)** —— 寻找 订单块(OB)、失衡区(FVG)、结构破坏(BOS) 和 特性改变(CHOCH)。
     2. **高级算法验证**: 必须结合 **OBV (能量潮)** 确认成交量支持，并关注 **Liquidity Sweep (流动性扫荡)**。
     3. **趋势控制**: 
-       - M15 为执行周期，必须服从 H1/H4 趋势。
+       - M5 为执行周期，必须服从 M15/H1 趋势。
        - 只有在确认趋势反转或SMC结构破坏时才平仓。
        - **网格策略**: 当市场处于震荡或需左侧挂单时，使用 'grid_start' Action，系统将自动生成基于 ATR 和 SMC 阻力位的网格挂单。
     4. **动态风控 (MAE/MFE Optimization Protocol)**: 
@@ -463,6 +463,11 @@ class QwenClient:
            - `Dynamic_Basket_TP` = `Base_Target` * `Sentiment_Multiplier` * `Structure_Multiplier` (并用 Avg_MFE 做校验)
          - **拒绝固定值**: 严禁使用固定的数值 (如 50.0)！必须是经过上述逻辑计算后的结果。
          - **更新指令**: 在 `position_management` -> `dynamic_basket_tp` 中返回计算后的数值。
+       - **Lock Profit Trigger (Profit Locking)**:
+         - **定义**: 当 Basket 整体利润达到此数值时，启动强制利润锁定机制 (Trailing Stop for Basket)。
+         - **逻辑**: 如果利润达到此阈值，系统将锁定大部分利润 (如 60%)，防止利润回撤。
+         - **最小值**: 必须 >= 10.0 USD。
+         - **更新指令**: 在 `position_management` -> `lock_profit_trigger` 中返回计算后的数值。
 
     ## 市场分析要求
     
@@ -472,7 +477,7 @@ class QwenClient:
     1. **时间框架层级分析**
        - **H4 (4小时)**: 确定长期趋势方向 (Trend Bias) 和主要支撑阻力。
        - **H1 (1小时)**: 确定中期市场结构 (Structure) 和关键流动性池。
-       - **M15 (15分钟)**: **执行周期**。寻找精确的入场触发信号 (Trigger)。
+       - **M5 (5分钟)**: **执行周期**。寻找精确的入场触发信号 (Trigger)。
     
     2. **市场结构识别**
        - 明确标注当前更高级别时间框架的趋势方向（牛市、熊市、盘整）
@@ -517,7 +522,7 @@ class QwenClient:
     你必须明确回答以下问题：
     
     1. H4/H1 趋势是什么方向？
-    2. M15 是否出现了符合 H4/H1 趋势的结构？
+    2. M5 是否出现了符合 H1/M15 趋势的结构？
     3. 最近的价格行为显示了什么意图？
     4. 流动性分布暗示了什么方向偏好？
     
@@ -556,7 +561,7 @@ class QwenClient:
     **平仓 (CLOSE) 的极严格标准**:
     - **不要轻易平仓**！除非你对趋势反转有 **100% 的信心**。
     - **必须满足的平仓条件**:
-        1. **结构破坏 (Structure Break)**: M15 级别发生了明确的 **BOS** (反向突破) 或 **CHOCH** (特性改变)。
+        1. **结构破坏 (Structure Break)**: M5 级别发生了明确的 **BOS** (反向突破) 或 **CHOCH** (特性改变)。
         2. **形态确认**: 出现了教科书级别的反转形态 (如双顶/双底、头肩顶/底)，且伴随成交量验证。
         3. **信心十足**: 如果只是普通的回调或震荡，**坚决持有 (HOLD)**。只有在确认趋势已经彻底终结时才平仓。
     
@@ -649,15 +654,27 @@ class QwenClient:
     - **limit_price**: 挂单必填。
     - **sl_price / tp_price**: **完全由你决定**。请务必根据多周期分析给出明确的数值，不要依赖系统默认。**即使 Action 是 HOLD，也必须提供当前最优的 SL/TP (或者维持原值)。**
     - **position_size**: 根据每个交易交易品种给出具体的资金比例。
-    - **strategy_rationale**: 用**中文**详细解释：SMC结构分析(M15/H1/H4) -> 为什么选择该方向 -> 马丁加仓计划/止盈计划 -> 参考的MAE/MFE数据。
+    - **strategy_rationale**: 用**中文**详细解释：SMC结构分析(M5/H1/H4) -> 为什么选择该方向 -> 马丁加仓计划/止盈计划 -> 参考的MAE/MFE数据。
     - **grid_level_tp_pips**: 针对马丁网格，请给出**每一层**网格单的最优止盈距离(Pips)。例如 [30, 25, 20, 15, 10]。越深层的单子通常TP越小以求快速离场。
-    - **dynamic_basket_tp**: (重要) 请给出一个具体的美元数值 (例如 50.0, 120.5)，作为当前网格整体止盈目标。需综合考虑 MAE/MFE 和 SMC 结构。
-    
-    請以JSON格式返回结果，包含以下字段：
+    - **dynamic_basket_tp**: (非常重要) 请给出一个具体的美元数值 (例如 50.0, 120.5)，作为当前网格整体止盈目标。
+        - **必须综合考虑**:
+          1. **市场波动率 (ATR)**: 波动大则 TP 相应增大。
+          2. **市场体制**: 趋势行情可以贪婪，震荡行情必须保守。
+          3. **SMC 结构**: TP 不应超过最近的主要阻力位/订单块。
+          4. **MFE 历史数据**: 参考过去类似行情的最大浮盈。
+          - 你的输出将作为基础值，与系统内部算法(ATR/SMC)进行加权融合，计算最终 TP。
+    - **lock_profit_trigger**: 利润锁定触发值 (USD)。建议设置为 Basket TP 的 70% 左右。
+    - **trailing_stop_config**: (NEW) 利润锁定后的移动止损配置。
+         - `type`: "atr_distance" (推荐, 动态适应波动) 或 "fixed_pips" (固定点数)
+         - `value`: 如果是 "atr_distance"，请输入 ATR 倍数 (如 2.0); 如果是 "fixed_pips"，请输入点数 (如 300)。
+         - **逻辑**: 当利润锁定触发后，系统会将虚拟止损线设置在 `Current_Max_Profit_Level - (Value * ATR)` 的位置。
+         - **要求**: 必须确保止损线至少位于保本线之上 (Break-Even)。
+
+    ## 市场分析要求   請以JSON格式返回结果，包含以下字段：
     - action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell", "grid_start", "close_buy_open_sell", "close_sell_open_buy")
     - entry_conditions: dict ("limit_price": float)
     - exit_conditions: dict ("sl_price": float, "tp_price": float)
-    - position_management: dict ("martingale_multiplier": float, "grid_step_logic": str, "recommended_grid_step_pips": float, "grid_level_tp_pips": list[float], "dynamic_basket_tp": float)
+    - position_management: dict ("martingale_multiplier": float, "grid_step_logic": str, "recommended_grid_step_pips": float, "grid_level_tp_pips": list[float], "dynamic_basket_tp": float, "lock_profit_trigger": float, "trailing_stop_config": dict)
     - position_size: float
     - leverage: int
     - signal_strength: int
@@ -1429,7 +1446,8 @@ class QwenClient:
                 "grid_step_logic": "ATR_based",
                 "recommended_grid_step_pips": 20,
                 "grid_level_tp_pips": [30, 25, 20, 15, 10],
-                "dynamic_basket_tp": 50.0
+                "dynamic_basket_tp": 50.0,
+                "trailing_stop_config": {"type": "atr_distance", "value": 2.0}
             },
             'position_size': 0.01,
             'leverage': 1,
