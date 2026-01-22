@@ -1807,6 +1807,52 @@ class SymbolTrader:
                 #         if type_pos == mt5.POSITION_TYPE_BUY and (suggested_tp - current_price < stop_level_dist): valid = False
                 #         if type_pos == mt5.POSITION_TYPE_SELL and (current_price - suggested_tp < stop_level_dist): valid = False
                 #         
+                        if valid_tp and diff_tp > point * 30:
+                            request['tp'] = opt_tp
+                            changed = True
+                            logger.info(f"AI/Stats 更新 TP: {tp:.2f} -> {opt_tp:.2f}")
+
+                # 如果没有明确价格，但有 ATR 倍数建议 (兼容旧逻辑或备用)，则计算
+                # REMOVED/SKIPPED to enforce "No Dynamic Movement"
+                # elif new_sl_multiplier > 0 or new_tp_multiplier > 0:
+                #     # DEBUG: Replaced logic
+                #     current_sl_dist = atr * new_sl_multiplier
+                #     current_tp_dist = atr * new_tp_multiplier
+                #     
+                #     suggested_sl = 0.0
+                #     suggested_tp = 0.0
+                #     
+                #     if type_pos == mt5.POSITION_TYPE_BUY:
+                #         suggested_sl = current_price - current_sl_dist
+                #         suggested_tp = current_price + current_tp_dist
+                #     elif type_pos == mt5.POSITION_TYPE_SELL:
+                #         suggested_sl = current_price + current_sl_dist
+                #         suggested_tp = current_price - current_tp_dist
+                #     
+                #     # Normalize
+                #     suggested_sl = self._normalize_price(suggested_sl)
+                #     suggested_tp = self._normalize_price(suggested_tp)
+                #
+                #     # 仅当差异显著时更新
+                #     if suggested_sl > 0:
+                #         diff_sl = abs(suggested_sl - sl)
+                #         is_better_sl = False
+                #         if type_pos == mt5.POSITION_TYPE_BUY and suggested_sl > sl: is_better_sl = True
+                #         if type_pos == mt5.POSITION_TYPE_SELL and suggested_sl < sl: is_better_sl = True
+                #         
+                #         valid = True
+                #         if type_pos == mt5.POSITION_TYPE_BUY and (current_price - suggested_sl < stop_level_dist): valid = False
+                #         if type_pos == mt5.POSITION_TYPE_SELL and (suggested_sl - current_price < stop_level_dist): valid = False
+                #         
+                #         if valid and (diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5)):
+                #             request['sl'] = suggested_sl
+                #             changed = True
+                #     
+                #     if suggested_tp > 0 and abs(suggested_tp - tp) > point * 30:
+                #         valid = True
+                #         if type_pos == mt5.POSITION_TYPE_BUY and (suggested_tp - current_price < stop_level_dist): valid = False
+                #         if type_pos == mt5.POSITION_TYPE_SELL and (current_price - suggested_tp < stop_level_dist): valid = False
+                #         
                 #         if valid:
                 #             request['tp'] = suggested_tp
                 #             changed = True
