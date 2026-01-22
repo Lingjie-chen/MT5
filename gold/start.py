@@ -3280,29 +3280,116 @@ class MultiSymbolBot:
         自动识别不同平台的交易品种名称 (Exness/Ava/etc.)
         例如: GOLD -> XAUUSDm, EURUSD -> EURUSDm
         """
-        # 1. 尝试直接匹配
-        if mt5.symbol_info(base_symbol):
-            return base_symbol
-            
+        # Handle User Typos or Aliases
+        base_upper = base_symbol.upper()
+        if base_upper == "XUAUSD" or base_upper == "XUAUSDM":
+             base_upper = "XAUUSD"
+        
+        # 0. Check if Exness account is detected (Server name contains 'Exness')
+        # This helps in prioritizing 'm' suffixes
+        is_exness = False
+        try:
+            acc_info = mt5.account_info()
+            if acc_info and "Exness" in acc_info.server:
+                is_exness = True
+                logger.info(f"Detected Exness Account: {acc_info.server}. Prioritizing 'm' suffix.")
+        except:
+            pass
+
+        # 1. 尝试直接匹配 (仅当不是 Exness 或确实存在且可见时)
+        # Exness 上 EURUSD 可能存在但不可见/不可交易，所以我们即使匹配了也要继续找更合适的后缀
+        # 除非它是可见的
+        
+        direct_match = mt5.symbol_info(base_upper)
+        if direct_match:
+             # If visible, it might be usable. But on Exness, prefer suffix.
+             if not is_exness or (direct_match.visible and not base_upper.endswith('m')):
+                 # It's visible and we are not strictly enforcing 'm' yet, or it is standard.
+                 # But let's keep searching for a better match if on Exness
+                 pass
+             else:
+                 pass
+
         # 2. 常见变体映射
         variants = []
-        base_upper = base_symbol.upper()
         
+        # 针对特定品种的已知映射
         if base_upper == "GOLD" or base_upper == "XAUUSD":
-            variants = ["XAUUSD", "XAUUSDm", "XAUUSDz", "XAUUSDk", "Gold", "Goldm", "XAUUSD.a", "XAUUSD.ecn"]
+            variants = ["XAUUSD", "XAUUSDm", "XAUUSDz", "XAUUSDk", "Gold", "GOLD", "Goldm", "XAUUSD.a", "XAUUSD.ecn"]
         elif base_upper == "EURUSD":
             variants = ["EURUSDm", "EURUSDz", "EURUSDk", "EURUSD.a", "EURUSD.ecn"]
         elif base_upper == "ETHUSD":
             variants = ["ETHUSDm", "ETHUSDz", "ETHUSDk", "ETHUSD.a", "ETHUSD.ecn"]
+        
+        # 3. 动态扫描 (Dynamic Scanning for Platform Specifics)
+        # 获取所有可用交易品种，寻找最匹配的
+        # 适用于未知品种或复杂后缀
+        
+        # 通用后缀尝试 (Priority 1)
+        variants.extend([f"{base_upper}m", f"{base_upper}z", f"{base_upper}k", f"{base_upper}.a", f"{base_upper}.ecn"])
+        
+        # Add base_upper itself to variants (at the end or beginning depending on preference)
+        # On Exness, we want suffix first.
+        if not is_exness:
+            variants.insert(0, base_upper)
         else:
-            # 通用后缀尝试
-            variants = [f"{base_symbol}m", f"{base_symbol}z", f"{base_symbol}k", f"{base_symbol}.a"]
-
+            variants.append(base_upper)
+            
+        # 4. Search in All Symbols (Heavy operation, but done once at startup)
+        # 如果前面的常见变体都失败了，我们扫描所有品种
+        # 优化: 仅当 variants 为空或都失败时执行
+        
+        # First pass: Check known variants
         for var in variants:
-            if mt5.symbol_info(var):
-                logger.info(f"✅ 自动识别品种: {base_symbol} -> {var}")
-                return var
+            # Important: Try to select the symbol first! 
+            # Some symbols are hidden in Market Watch and symbol_info might return None unless selected (or not).
+            # Actually symbol_select returns True if successful.
+            if mt5.symbol_select(var, True):
+                 if mt5.symbol_info(var):
+                    logger.info(f"✅ 自动识别品种: {base_symbol} -> {var}")
+                    return var
+            elif mt5.symbol_info(var): 
+                # If visible check passes
+                s_info = mt5.symbol_info(var)
+                if s_info.visible:
+                    logger.info(f"✅ 自动识别品种 (Info+Visible): {base_symbol} -> {var}")
+                    return var
+        
+        # Second pass: Deep Search
+        logger.info(f"Deep searching for symbol match: {base_upper}...")
+        all_symbols = mt5.symbols_get()
+        if all_symbols:
+            # Sort by name length to find shortest match (usually standard) or specific suffix?
+            # Prefer suffixes like 'm' or 'z' or '.a' if they contain the base name
+            
+            candidates = []
+            for s in all_symbols:
+                if base_upper in s.name.upper():
+                    candidates.append(s.name)
+            
+            if candidates:
+                # 智能选择最佳匹配
+                # 优先规则: 
+                # 1. Exness 偏好: 'm' 结尾 (e.g. XAUUSDm)
+                # 2. Standard: 完全匹配
+                # 3. Shortest: 最短的 (e.g. XAUUSD vs XAUUSD.ecn)
                 
+                # Exness Check
+                if is_exness:
+                    exness_matches = [c for c in candidates if c.endswith('m') and len(c) == len(base_upper) + 1]
+                    if exness_matches:
+                        chosen = exness_matches[0]
+                        if mt5.symbol_select(chosen, True):
+                            logger.info(f"✅ 自动识别品种 (Deep Exness): {base_symbol} -> {chosen}")
+                            return chosen
+
+                # Standard/Shortest
+                candidates.sort(key=len)
+                for chosen in candidates:
+                     if mt5.symbol_select(chosen, True):
+                        logger.info(f"✅ 自动识别品种 (Deep Match): {base_symbol} -> {chosen}")
+                        return chosen
+
         logger.warning(f"⚠️ 未能自动识别品种变体: {base_symbol}, 将尝试使用原名")
         return base_symbol
 
