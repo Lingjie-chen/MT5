@@ -1589,28 +1589,35 @@ class SymbolTrader:
                     
                     if opt_sl > 0:
                         diff_sl = abs(opt_sl - sl)
-                        # --- [Requirement]: "对于一开始开仓设置的止损点夜市要这样" (Initial Stop Loss must follow this logic) ---
-                        # Logic: "对于止损不要移动止损了，固定止损"
-                        # This means once SL is set (e.g. at open or first update), we should NOT move it unless it's to break-even or better (and even then, cautiously).
-                        # Actually, "Fixed Stop" usually means never move it closer to price (trailing), but also maybe not moving it at all?
-                        # If user wants "Step Stop" for profit locking, that's handled in Grid Strategy.
-                        # For the INITIAL stop loss on a single position, "Fixed" means we set it and forget it?
-                        # Or do we allow moving it to Break Even?
-                        # Given "对于止损不要移动止损了", we should disable the automatic AI update of SL for *existing* positions
-                        # UNLESS it hasn't been set yet (sl == 0).
                         
+                        # --- [Requirement]: "自动优化配置，移动，不是动态移动" (Auto Optimize & Move, but NOT Dynamic) ---
                         should_update_sl = False
                         
                         if sl == 0:
-                            # Initial setting (or re-setting if missing)
+                            # 1. Initial Setting (Must be optimized)
                             should_update_sl = True
+                            logger.info(f"Setting Initial SL (Optimized): {opt_sl:.2f}")
                         else:
-                            # SL already exists. User says "Fixed Stop".
-                            # So we do NOT update it based on new AI suggestions.
-                            # We only update it if Grid Strategy Step Stop logic triggers (which is separate).
-                            # So here: do nothing if sl > 0.
-                            should_update_sl = False
-                            # logger.info(f"Skipping SL update for pos {pos.ticket} (Fixed Stop Mode)")
+                            # 2. Existing Position Update (Smart Move)
+                            # Only update if the new SL is a "Strategic Adjustment" provided by AI
+                            # Filter out small noise (Dynamic Trailing) to ensure it's not "Dynamic/Mechanical"
+                            # Threshold: 20 points (2 pips) to be considered a structural shift
+                            is_significant_change = diff_sl > point * 20
+                            
+                            # Direction check:
+                            # Ideally, SL should move to reduce risk (Trade Direction).
+                            # Buy: New SL > Old SL (Move Up)
+                            # Sell: New SL < Old SL (Move Down)
+                            is_risk_reduction = False
+                            if type_pos == mt5.POSITION_TYPE_BUY and opt_sl > sl: is_risk_reduction = True
+                            if type_pos == mt5.POSITION_TYPE_SELL and opt_sl < sl: is_risk_reduction = True
+                            
+                            if is_significant_change and is_risk_reduction:
+                                should_update_sl = True
+                                logger.info(f"Smart Strategic SL Move: {sl:.2f} -> {opt_sl:.2f} (Reducing Risk)")
+                            
+                            # If widening SL, we generally ignore unless it's a critical correction, 
+                            # but to be safe and "Fixed" in spirit of risk control, we prioritize risk reduction.
                         
                         valid_sl = True
                         if type_pos == mt5.POSITION_TYPE_BUY and (current_price - opt_sl < stop_level_dist): valid_sl = False
@@ -1619,7 +1626,6 @@ class SymbolTrader:
                         if should_update_sl and valid_sl:
                             request['sl'] = opt_sl
                             changed = True
-                            logger.info(f"Setting Initial Fixed SL: {opt_sl:.2f}")
                     
 
                     if opt_tp > 0:
