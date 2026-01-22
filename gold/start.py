@@ -199,9 +199,21 @@ class SymbolTrader:
             return False
         
         # 确认交易品种存在
+        # 尝试选中以确保它在 Market Watch 中
+        if not mt5.symbol_select(self.symbol, True):
+             logger.error(f"[{self.symbol}] 无法选中交易品种 (mt5.symbol_select 失败)")
+             # 尝试再次查找
+             all_syms = mt5.symbols_get(self.symbol)
+             if not all_syms:
+                 logger.error(f"[{self.symbol}] 交易品种不存在于服务器")
+                 return False
+             else:
+                 logger.info(f"[{self.symbol}] 交易品种存在于服务器，但无法 Select (可能已隐藏或达到上限?)")
+                 return False
+
         symbol_info = mt5.symbol_info(self.symbol)
         if symbol_info is None:
-            logger.error(f"[{self.symbol}] 找不到交易品种")
+            logger.error(f"[{self.symbol}] 找不到交易品种信息 (symbol_info is None)")
             return False
             
         if not symbol_info.visible:
