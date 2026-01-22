@@ -1766,8 +1766,7 @@ class SymbolTrader:
                                 changed = True
                                 logger.info(f"AI/Stats 更新 TP: {tp:.2f} -> {opt_tp:.2f}")
 
-                # 如果没有明确价格，但有 ATR 倍数建议 (兼容旧逻辑或备用)，则计算
-                # REMOVED/SKIPPED to enforce "No Dynamic Movement"
+
                 # elif new_sl_multiplier > 0 or new_tp_multiplier > 0:
                 #     # DEBUG: Replaced logic
                 #     current_sl_dist = atr * new_sl_multiplier
