@@ -3784,7 +3784,7 @@ if __name__ == "__main__":
     
     # Argument Parsing
     parser = argparse.ArgumentParser(description="Multi-Symbol AI Trading Bot")
-    parser.add_argument("symbols", nargs="?", default="GOLD,ETHUSD,EURUSD", help="Comma separated symbols (e.g. GOLD,EURUSD)")
+    parser.add_argument("symbols", nargs="?", default="XAUUSD,ETHUSD,EURUSD", help="Comma separated symbols (e.g. XAUUSD,EURUSD)")
     parser.add_argument("--account", type=int, default=1, help="Account Index from .env (1=Ava, 2=Exness)")
     
     args = parser.parse_args()
