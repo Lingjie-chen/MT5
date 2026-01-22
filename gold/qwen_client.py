@@ -637,6 +637,14 @@ class QwenClient:
        - 如果需要反手，请在 action 中输出 "close_buy_open_sell" 或 "close_sell_open_buy" (或者直接给出反向信号，并在理由中说明)。
     6. **GRID_START**: 预埋网格单 (Limit Orders) 在未来的OB/FVG位置。
     
+    **反手交易 (Reversal) 的终极确认**:
+    - **严禁轻易 Reversal**: 除非你对趋势彻底反转有 **100% 的数学级确认**。
+    - **Reversal 必须满足的条件**:
+        1. **结构完全破坏**: H1 级别发生了明确的 CHOCH，且伴随强劲的动能 K 线。
+        2. **量化验证**: 结合高级算法 (EMA/HA/OBV) 和《量化交易策略》中的反转形态识别。
+        3. **情绪与趋势共振**: 市场情绪指标必须与反转方向一致。
+        4. **确认后再执行**: 不要预测反转，要等待反转确认。
+    
     **自我学习与适应 (Self-Learning & Adaptation)**:
     - **数据源**: 你现在接收来自远程数据库 (Remote DB) 的实时历史交易数据 (`performance_stats`)。这是你过去的真实战绩。
     - **动态修正**:
