@@ -1804,7 +1804,10 @@ class SymbolTrader:
             # --- 2. 兜底移动止损 (Trailing Stop) ---
             # 已禁用，仅依赖 AI 更新
             # if not changed: ... pass
-             
+            
+            # [FIX]: Initialize 'changed' to False at the start of the loop
+            # This logic was moved inside the loop but 'changed' initialization might be missing in some paths
+            
             if changed:
                 # Retry mechanism for network issues
                 max_retries = 3
