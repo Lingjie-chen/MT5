@@ -1770,17 +1770,7 @@ class SymbolTrader:
 
 
                 #     
-                #     suggested_sl = 0.0
-                #     suggested_tp = 0.0
-                #     
-                #     if type_pos == mt5.POSITION_TYPE_BUY:
-                #         suggested_sl = current_price - current_sl_dist
-                #         suggested_tp = current_price + current_tp_dist
-                #     elif type_pos == mt5.POSITION_TYPE_SELL:
-                #         suggested_sl = current_price + current_sl_dist
-                #         suggested_tp = current_price - current_tp_dist
-                #     
-                #     # Normalize
+
                 #     suggested_sl = self._normalize_price(suggested_sl)
                 #     suggested_tp = self._normalize_price(suggested_tp)
                 #
