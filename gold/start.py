@@ -1781,10 +1781,7 @@ class SymbolTrader:
 
 
                 #         
-                        if valid_tp and diff_tp > point * 30:
-                            request['tp'] = opt_tp
-                            changed = True
-                            logger.info(f"AI/Stats 更新 TP: {tp:.2f} -> {opt_tp:.2f}")
+
 
 
             
