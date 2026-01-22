@@ -3471,7 +3471,7 @@ class SymbolTrader:
             mt5.shutdown()
 
 class MultiSymbolBot:
-    def __init__(self, symbols, timeframe=mt5.TIMEFRAME_M5):
+    def __init__(self, symbols, timeframe=mt5.TIMEFRAME_M10):
         self.symbols = symbols
         self.timeframe = timeframe
         self.traders = []
@@ -3690,5 +3690,5 @@ if __name__ == "__main__":
     
     logger.info(f"Starting Bot with Account {args.account} for symbols: {symbols}")
             
-    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M5)
+    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M10)
     bot.start(account_index=args.account)
