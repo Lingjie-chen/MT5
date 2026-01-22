@@ -221,7 +221,8 @@ class SymbolTrader:
         rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, num_candles)
         
         if rates is None or len(rates) == 0:
-            logger.error("无法获取 K 线数据")
+            err = mt5.last_error()
+            logger.error(f"无法获取 K 线数据 ({self.symbol}). 错误码: {err}")
             return None
             
         # 转换为 DataFrame
