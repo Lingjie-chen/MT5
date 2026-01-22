@@ -801,21 +801,11 @@ class SymbolTrader:
 
         # 显式 MFE/MAE 止损止盈
         # LLM 应该返回具体的 sl_price 和 tp_price，或者 MFE/MAE 的百分比建议
-        # 如果 LLM 提供了具体的 SL/TP 价格，优先使用
-        explicit_sl = None
-        explicit_tp = None
+        # [Requirement] Remove all TP/SL settings, fully rely on LLM for exits
+        explicit_sl = 0.0
+        explicit_tp = 0.0
         
-        if self.latest_strategy:
-            explicit_sl = self.latest_strategy.get('sl')
-            explicit_tp = self.latest_strategy.get('tp')
-        
-        # 如果没有具体价格，回退到 sl_tp_params (通常也是 LLM 生成的)
-        if explicit_sl is None and sl_tp_params:
-             explicit_sl = sl_tp_params.get('sl_price')
-        if explicit_tp is None and sl_tp_params:
-             explicit_tp = sl_tp_params.get('tp_price')
-
-        logger.info(f"执行逻辑: Action={llm_action}, Signal={signal}, Explicit SL={explicit_sl}, TP={explicit_tp}")
+        logger.info(f"执行逻辑: Action={llm_action}, Signal={signal}, Explicit SL=0.0 (LLM Only), TP=0.0 (LLM Only)")
 
         # --- 2. 持仓管理 (已开仓状态) ---
         added_this_cycle = False

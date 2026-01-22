@@ -270,15 +270,9 @@ class KalmanGridStrategy:
             
             for i, lvl in enumerate(levels):
                 # Calculate TP for this level
+                # [Requirement] Remove all TP/SL settings, fully rely on LLM for exits
                 tp_price = 0.0
-                if grid_level_tps and len(grid_level_tps) > 0:
-                    # Use specific TP if available, else last available
-                    tp_pips = grid_level_tps[i] if i < len(grid_level_tps) else grid_level_tps[-1]
-                    tp_price = lvl + (tp_pips * 10 * point)
-                else:
-                    # Default: ATR * 2 or global config
-                    tp_price = lvl + (atr * 2.0)
-                    
+                
                 orders.append({'type': 'limit_buy', 'price': lvl, 'tp': tp_price})
                 
         elif trend_direction == 'bearish':
@@ -290,13 +284,9 @@ class KalmanGridStrategy:
                 
             for i, lvl in enumerate(levels):
                 # Calculate TP for this level
+                # [Requirement] Remove all TP/SL settings, fully rely on LLM for exits
                 tp_price = 0.0
-                if grid_level_tps and len(grid_level_tps) > 0:
-                    tp_pips = grid_level_tps[i] if i < len(grid_level_tps) else grid_level_tps[-1]
-                    tp_price = lvl - (tp_pips * 10 * point)
-                else:
-                    tp_price = lvl - (atr * 2.0)
-                    
+                
                 orders.append({'type': 'limit_sell', 'price': lvl, 'tp': tp_price})
                 
         return orders
