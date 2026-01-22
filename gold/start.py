@@ -1125,7 +1125,33 @@ class SymbolTrader:
             comment = f"AI-{action_str}"
             
             # --- 动态仓位计算 ---
-            if suggested_lot and suggested_lot > 0:
+            if "limit" in llm_action or "stop" in llm_action:
+                 # 针对限价单/止损单，重新计算仓位，因为 Risk Distance 必须基于 limit_price 计算
+                 logger.info(f"重新计算限价单仓位 (Price: {price:.2f}, SL: {explicit_sl:.2f})...")
+                 
+                 # 准备 SMC 上下文
+                 market_ctx = {}
+                 if self.latest_strategy and 'details' in self.latest_strategy:
+                      market_ctx['smc'] = {'structure': self.latest_strategy['details'].get('smc_structure')}
+                 
+                 # MFE/MAE
+                 trade_stats = self.db_manager.get_trade_performance_stats(limit=50)
+                 mfe_mae_ratio = 1.0
+                 if trade_stats and 'avg_mfe' in trade_stats and 'avg_mae' in trade_stats:
+                    if abs(trade_stats['avg_mae']) > 0:
+                        mfe_mae_ratio = trade_stats['avg_mfe'] / abs(trade_stats['avg_mae'])
+                        
+                 optimized_lot = self.calculate_dynamic_lot(
+                    strength,
+                    market_context=market_ctx,
+                    mfe_mae_ratio=mfe_mae_ratio,
+                    ai_signals=None, # not strictly needed for size calc here
+                    specific_entry_price=price,
+                    specific_sl_price=explicit_sl
+                 )
+                 logger.info(f"限价单优化仓位: {optimized_lot} Lots")
+
+            elif suggested_lot and suggested_lot > 0:
                 optimized_lot = suggested_lot
                 logger.info(f"使用预计算的建议手数: {optimized_lot}")
             else:
