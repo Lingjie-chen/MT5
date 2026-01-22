@@ -1767,10 +1767,8 @@ class SymbolTrader:
                                 logger.info(f"AI/Stats 更新 TP: {tp:.2f} -> {opt_tp:.2f}")
 
 
-                # elif new_sl_multiplier > 0 or new_tp_multiplier > 0:
-                #     # DEBUG: Replaced logic
-                #     current_sl_dist = atr * new_sl_multiplier
-                #     current_tp_dist = atr * new_tp_multiplier
+
+
                 #     
                 #     suggested_sl = 0.0
                 #     suggested_tp = 0.0
