@@ -380,6 +380,9 @@ class QwenClient:
               - **必须参考** `performance_stats` 中的 `avg_mfe` (平均最大有利偏移)。
               - **Basket TP 上限** = (Position Size * Contract Size * Avg_MFE_Points * 0.8)。不要设定超过历史平均表现太多的不切实际目标。
               - **Basket TP 下限** = 能够覆盖交易成本 (Spread + Swap + Commission) 的最小利润。
+           5. **量化书籍优化**: 
+              - 引入 Kelly Criterion (凯利公式) 思想，在胜率高时允许更大的 TP 以最大化几何增长。
+              - 参考《交易系统的胜算》中的 "Expectancy" (期望值) 概念，确保 (WinRate * AvgWin) > (LossRate * AvgLoss)。
          - **计算公式参考**:
            - `Base_Target` = (ATR * Position_Size * Contract_Size)
            - `Sentiment_Multiplier`: 0.5 (Weak) to 2.0 (Strong)
@@ -391,6 +394,7 @@ class QwenClient:
          - **定义**: 当 Basket 整体利润达到此数值时，启动强制利润锁定机制 (Trailing Stop for Basket)。
          - **逻辑**: 如果利润达到此阈值，系统将锁定大部分利润 (如 60%)，防止利润回撤。
          - **最小值**: 必须 >= 10.0 USD。
+         - **量化优化**: Trigger 值应设置为 `Dynamic_Basket_TP` 的 60%-75%，这是一个经典的 Pareto Principle (二八定律) 在交易中的应用，即捕捉 80% 的趋势利润。
          - **更新指令**: 在 `position_management` -> `lock_profit_trigger` 中返回计算后的数值。
 
     5. **CandleSmoothing EMA 策略 (Strategy B)**:
