@@ -3411,6 +3411,24 @@ class SymbolTrader:
                                 # 2. Grid Strategy 参数
                                 if 'grid_settings' in param_updates:
                                     self.grid_strategy.update_config(param_updates['grid_settings'])
+                                    
+                                # 3. [NEW] Trading Timeframe Parameter (Dynamic Cycle Optimization)
+                                # Check if LLM recommends a different trading timeframe
+                                if 'optimal_timeframe' in param_updates:
+                                    new_tf_str = param_updates['optimal_timeframe'].upper()
+                                    new_tf = None
+                                    
+                                    if new_tf_str == "M1": new_tf = mt5.TIMEFRAME_M1
+                                    elif new_tf_str == "M5": new_tf = mt5.TIMEFRAME_M5
+                                    elif new_tf_str == "M15": new_tf = mt5.TIMEFRAME_M15
+                                    elif new_tf_str == "M30": new_tf = mt5.TIMEFRAME_M30
+                                    elif new_tf_str == "H1": new_tf = mt5.TIMEFRAME_H1
+                                    elif new_tf_str == "H4": new_tf = mt5.TIMEFRAME_H4
+                                    
+                                    if new_tf is not None and new_tf != self.timeframe:
+                                        logger.info(f"🔄 AI 动态调整交易周期: {self.tf_name} -> {new_tf_str}")
+                                        self.timeframe = new_tf
+                                        self.tf_name = new_tf_str
                                      
                             except Exception as e:
                                 logger.error(f"参数动态更新失败: {e}")
