@@ -1638,6 +1638,8 @@ class SymbolTrader:
                 if pos.magic != self.magic_number:
                     continue
                     
+                changed = False # [FIX] Initialize 'changed' for each position loop
+                
                 symbol = pos.symbol
                 type_pos = pos.type # 0: Buy, 1: Sell
                 price_open = pos.price_open
