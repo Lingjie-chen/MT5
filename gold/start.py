@@ -2488,8 +2488,10 @@ class SymbolTrader:
         """
         logger.info("Running Short-Term Parameter Optimization (WOAm)...")
         
-        # 1. Get Data (Last 500 M15 candles)
-        df = self.get_market_data(500)
+        # 1. Get Data (Last 500 M10 candles) [Changed from M15 to M10 if available, but MT5 standard is M10/M15? MT5 has M10.]
+        # User request: "改成交易周期 10 分钟" (Change trading timeframe to 10 minutes)
+        # We need to ensure we request TIMEFRAME_M10
+        df = self.get_market_data(500) # This uses self.timeframe which we will update
         if df is None or len(df) < 200:
             return
 
