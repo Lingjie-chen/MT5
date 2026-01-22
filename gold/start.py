@@ -403,10 +403,30 @@ class SymbolTrader:
                 
         return True
 
-    def calculate_dynamic_lot(self, strength, market_context=None, mfe_mae_ratio=None, ai_signals=None):
+    def cancel_pending_orders(self):
+        """Cancel all pending orders for this symbol and magic number"""
+        try:
+            orders = mt5.orders_get(symbol=self.symbol)
+            if orders:
+                for o in orders:
+                    if o.magic == self.magic_number:
+                        logger.info(f"取消挂单 #{o.ticket} ({o.type})")
+                        req = {
+                            "action": mt5.TRADE_ACTION_REMOVE,
+                            "order": o.ticket
+                        }
+                        result = mt5.order_send(req)
+                        if result.retcode != mt5.TRADE_RETCODE_DONE:
+                             logger.warning(f"取消挂单失败: {result.comment}")
+        except Exception as e:
+            logger.error(f"Error canceling pending orders: {e}")
+
+    def calculate_dynamic_lot(self, strength, market_context=None, mfe_mae_ratio=None, ai_signals=None, specific_entry_price=None, specific_sl_price=None):
         """
         智能资金管理核心:
         结合 AI 信心、市场结构、历史绩效、算法共振、账户状态进行自适应仓位计算
+        :param specific_entry_price: 用于限价单的准确入场价
+        :param specific_sl_price: 用于限价单的准确止损价
         """
         try:
             account_info = mt5.account_info()
