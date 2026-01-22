@@ -3219,6 +3219,34 @@ class SymbolTrader:
                         # --- 3.3 Qwen 策略分析 (Sole Decision Maker) ---
                         logger.info("正在调用 Qwen 生成策略...")
                         
+                        # Prepare Market Snapshot for AI
+                        # [USER REQUEST]: "交易周期也完全交给大模型来分析，结合所有的专业的量化交易书籍，同时对于多周期是 5 分钟，15 分钟，1 小时来进行专业多周期分析"
+                        
+                        # 1. Get Multi-Timeframe Data
+                        mtf_data = self.get_multi_timeframe_data()
+                        
+                        market_snapshot = {
+                            "symbol": self.symbol,
+                            "time": str(df.index[-1]),
+                            "current_price": float(close[-1]),
+                            "ohlcv": {
+                                "open": float(df['open'].iloc[-1]),
+                                "high": float(df['high'].iloc[-1]),
+                                "low": float(df['low'].iloc[-1]),
+                                "close": float(close[-1]),
+                                "volume": float(df['volume'].iloc[-1]) if 'volume' in df else 0
+                            },
+                            "features": latest_features,
+                            "account_info": {
+                                 "balance": mt5.account_info().balance,
+                                 "equity": mt5.account_info().equity,
+                                 "margin_free": mt5.account_info().margin_free,
+                                 "available_balance": mt5.account_info().margin_free # Assuming free margin is what we can use
+                            },
+                            "open_orders": [], # Populated later if needed
+                            "multi_tf_data": mtf_data # [NEW] Inject MTF Data
+                        }
+
                         # 获取历史交易绩效 (MFE/MAE) - 优先尝试远程 PostgreSQL 数据库 (Self-Learning)
                         trade_stats = []
                         try:
