@@ -1771,15 +1771,10 @@ class SymbolTrader:
 
                 #     
 
-                #     suggested_sl = self._normalize_price(suggested_sl)
-                #     suggested_tp = self._normalize_price(suggested_tp)
+
                 #
-                #     # 仅当差异显著时更新
-                #     if suggested_sl > 0:
-                #         diff_sl = abs(suggested_sl - sl)
-                #         is_better_sl = False
-                #         if type_pos == mt5.POSITION_TYPE_BUY and suggested_sl > sl: is_better_sl = True
-                #         if type_pos == mt5.POSITION_TYPE_SELL and suggested_sl < sl: is_better_sl = True
+
+
                 #         
                 #         valid = True
                 #         if type_pos == mt5.POSITION_TYPE_BUY and (current_price - suggested_sl < stop_level_dist): valid = False
