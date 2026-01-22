@@ -351,7 +351,7 @@ class QwenClient:
         tech_specs = martingale_configs.get(symbol, martingale_configs["DEFAULT"])
         
         # --- 4. 共同执行规则 ---
-            common_rules = """
+        common_rules = """
     ## 共同执行规则 (All Teams Must Follow)
     1. **SMC 核心**: 所有的入场和加仓必须基于 **SMC (Smart Money Concepts)** —— 寻找 订单块(OB)、失衡区(FVG)、结构破坏(BOS) 和 特性改变(CHOCH)。
     2. **高级算法验证**: 必须结合 **OBV (能量潮)** 确认成交量支持，并关注 **Liquidity Sweep (流动性扫荡)**。
@@ -468,7 +468,7 @@ class QwenClient:
     common_rules = """
     core_strategy = f"""
     ### 一、大趋势分析框架 (Multi-Timeframe)
-    你必须从多时间框架分析整体市场结构 (查看提供的 `multi_tf_data`)：
+    你必须从多时间框架分析整体市场结构 (查看提供的 `multi_tf_data`):
     
     1. **时间框架层级分析**
        - **H4 (4小时)**: 确定长期趋势方向 (Trend Bias) 和主要支撑阻力。
