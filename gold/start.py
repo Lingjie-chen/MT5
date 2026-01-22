@@ -2834,7 +2834,8 @@ class SymbolTrader:
             
             rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 500)
             if rates is None or len(rates) < 100:
-                logger.warning(f"Failed to get rates for {self.symbol}")
+                err = mt5.last_error()
+                logger.warning(f"Failed to get rates for {self.symbol}. Error: {err}, Rates: {len(rates) if rates is not None else 'None'}")
                 return
 
             df = pd.DataFrame(rates)
