@@ -188,11 +188,19 @@ class SymbolTrader:
         return True
 
     def check_mt5_connection(self):
-        """检查 MT5 连接状态"""
+        """检查 MT5 连接状态并尝试重连"""
+        # 1. 尝试初始化 (如果 IPC 断开，需要重新初始化)
+        if not mt5.initialize():
+            logger.error(f"MT5 重新初始化失败, Error: {mt5.last_error()}")
+            return False
+
         # 检查终端状态
         term_info = mt5.terminal_info()
         if term_info is None:
-            logger.error("无法获取终端信息")
+            logger.error("无法获取终端信息 (IPC Connection Lost?)")
+            # 尝试强制关闭再重启初始化 (极端的重连)
+            # mt5.shutdown() 
+            # mt5.initialize()
             return False
             
         if not term_info.trade_allowed:
@@ -205,10 +213,12 @@ class SymbolTrader:
         # 确认交易品种存在
         symbol_info = mt5.symbol_info(self.symbol)
         if symbol_info is None:
-            logger.error(f"[{self.symbol}] 找不到交易品种")
-            return False
+            # 尝试重新 Select
+            if not mt5.symbol_select(self.symbol, True):
+                 logger.error(f"[{self.symbol}] 找不到交易品种且无法选中")
+                 return False
             
-        if not symbol_info.visible:
+        if symbol_info and not symbol_info.visible:
             logger.info(f"[{self.symbol}] 交易品种不可见，尝试选中")
             if not mt5.symbol_select(self.symbol, True):
                 logger.error(f"[{self.symbol}] 无法选中交易品种")
@@ -2877,8 +2887,14 @@ class SymbolTrader:
                 err = mt5.last_error()
                 logger.warning(f"Failed to get rates for {self.symbol}. Error: {err}, Rates: {len(rates) if rates is not None else 'None'}")
                 
-                # Try to check connection
-                self.check_mt5_connection()
+                # Try to check connection and RECOVER
+                if err[0] == -10004 or "IPC" in str(err) or "No connection" in str(err):
+                     logger.warning("Detected IPC/Connection Error. Attempting to re-initialize MT5...")
+                     mt5.shutdown()
+                     time.sleep(1)
+                     self.initialize() # Re-run full initialization
+                else:
+                     self.check_mt5_connection()
                 return
 
             df = pd.DataFrame(rates)
