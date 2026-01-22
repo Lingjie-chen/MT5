@@ -1493,7 +1493,7 @@ class SymbolTrader:
         except Exception as e:
             logger.error(f"Telegram 发送异常: {e}")
 
-    def manage_positions(self, signal=None, strategy_params=None):
+    def manage_positions(self, signal="neutral", strategy_params=None):
         """
         根据最新分析结果管理持仓:
         1. Grid Strategy Logic (Basket TP, Adding Positions)
@@ -1501,68 +1501,59 @@ class SymbolTrader:
         3. 执行移动止损 (Trailing Stop)
         4. 检查是否需要平仓 (非反转情况，例如信号转弱)
         """
-        positions = mt5.positions_get(symbol=self.symbol)
-        if positions is None or len(positions) == 0:
-            return
-
-        # --- Grid Strategy Logic ---
-        # 1. Check Basket TP
-        if self.grid_strategy.check_basket_tp(positions):
-            logger.info("Grid Strategy: Basket TP Reached. Closing ALL positions.")
-            for pos in positions:
-                if pos.magic == self.magic_number:
-                    self.close_position(pos, comment="Grid Basket TP")
-            return
-
-        # 2. Check Grid Add (Only if allowed by LLM)
-        # 增加 LLM 权限控制: 默认允许，但如果 LLM 明确禁止 (allow_grid=False)，则暂停加仓
-        allow_grid = True
-        if self.latest_strategy and isinstance(self.latest_strategy, dict):
-            # 检查是否有 'grid_settings' 且其中有 'allow_add'
-            grid_settings = self.latest_strategy.get('parameter_updates', {}).get('grid_settings', {})
-            if 'allow_add' in grid_settings:
-                allow_grid = bool(grid_settings['allow_add'])
-        
-        tick = mt5.symbol_info_tick(self.symbol)
-        if tick and allow_grid:
-            current_price_check = tick.bid # Use Bid for price check approximation
-            action, lot = self.grid_strategy.check_grid_add(positions, current_price_check)
-            if action:
-                logger.info(f"Grid Strategy Trigger: {action} Lot={lot}")
-                trade_type = "buy" if action == 'add_buy' else "sell"
-                price = tick.ask if trade_type == 'buy' else tick.bid
-                
-                # Dynamic Add TP Logic
-                add_tp = 0.0
-                if self.latest_strategy:
-                     pos_mgmt = self.latest_strategy.get('position_management', {})
-                     grid_tps = pos_mgmt.get('grid_level_tp_pips')
-                     if grid_tps:
-                         # Determine level index
-                         current_count = self.grid_strategy.long_pos_count if trade_type == 'buy' else self.grid_strategy.short_pos_count
-                         # Use specific TP if available
-                         tp_pips = grid_tps[current_count] if current_count < len(grid_tps) else grid_tps[-1]
-                         
-                         point = mt5.symbol_info(self.symbol).point
-                         if trade_type == 'buy':
-                             add_tp = price + (tp_pips * 10 * point)
-                         else:
-                             add_tp = price - (tp_pips * 10 * point)
-                         
-                         logger.info(f"Dynamic Add TP: {add_tp} ({tp_pips} pips)")
-
-                self._send_order(trade_type, price, 0.0, add_tp, comment=f"Grid: {action}")
-                # Don't return, allow SL/TP update for existing positions
-
-    def manage_positions(self, current_signal="neutral", strategy_params=None):
-        """
-        Manage open positions: Trailing Stop & AI Dynamic Updates
-        Also handles "Smart Stop" logic to prevent premature stop-out
-        """
         try:
             positions = mt5.positions_get(symbol=self.symbol)
-            if not positions:
+            if positions is None or len(positions) == 0:
                 return
+
+            # --- Grid Strategy Logic ---
+            # 1. Check Basket TP
+            if self.grid_strategy.check_basket_tp(positions):
+                logger.info("Grid Strategy: Basket TP Reached. Closing ALL positions.")
+                for pos in positions:
+                    if pos.magic == self.magic_number:
+                        self.close_position(pos, comment="Grid Basket TP")
+                return
+
+            # 2. Check Grid Add (Only if allowed by LLM)
+            # 增加 LLM 权限控制: 默认允许，但如果 LLM 明确禁止 (allow_grid=False)，则暂停加仓
+            allow_grid = True
+            if self.latest_strategy and isinstance(self.latest_strategy, dict):
+                # 检查是否有 'grid_settings' 且其中有 'allow_add'
+                grid_settings = self.latest_strategy.get('parameter_updates', {}).get('grid_settings', {})
+                if 'allow_add' in grid_settings:
+                    allow_grid = bool(grid_settings['allow_add'])
+            
+            tick = mt5.symbol_info_tick(self.symbol)
+            if tick and allow_grid:
+                current_price_check = tick.bid # Use Bid for price check approximation
+                action, lot = self.grid_strategy.check_grid_add(positions, current_price_check)
+                if action:
+                    logger.info(f"Grid Strategy Trigger: {action} Lot={lot}")
+                    trade_type = "buy" if action == 'add_buy' else "sell"
+                    price = tick.ask if trade_type == 'buy' else tick.bid
+                    
+                    # Dynamic Add TP Logic
+                    add_tp = 0.0
+                    if self.latest_strategy:
+                         pos_mgmt = self.latest_strategy.get('position_management', {})
+                         grid_tps = pos_mgmt.get('grid_level_tp_pips')
+                         if grid_tps:
+                             # Determine level index
+                             current_count = self.grid_strategy.long_pos_count if trade_type == 'buy' else self.grid_strategy.short_pos_count
+                             # Use specific TP if available
+                             tp_pips = grid_tps[current_count] if current_count < len(grid_tps) else grid_tps[-1]
+                             
+                             point = mt5.symbol_info(self.symbol).point
+                             if trade_type == 'buy':
+                                 add_tp = price + (tp_pips * 10 * point)
+                             else:
+                                 add_tp = price - (tp_pips * 10 * point)
+                             
+                             logger.info(f"Dynamic Add TP: {add_tp} ({tp_pips} pips)")
+
+                    self._send_order(trade_type, price, 0.0, add_tp, comment=f"Grid: {action}")
+                    # Don't return, allow SL/TP update for existing positions
 
             symbol_info = mt5.symbol_info(self.symbol)
             if not symbol_info: return
@@ -1575,6 +1566,7 @@ class SymbolTrader:
             current_ask = current_tick.ask
             
             # --- Trailing Stop Configuration (Default) ---
+
             # 20 pips activation, 10 pips step
             ts_activation = 200 * point 
             ts_step = 50 * point
