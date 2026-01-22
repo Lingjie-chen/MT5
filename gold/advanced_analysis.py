@@ -793,7 +793,7 @@ class TimeframeVisualAnalyzer:
     Uses Moving Averages alignment to simulate visual trend confirmation
     """
     def __init__(self):
-        self.timeframes = {"M5": mt5.TIMEFRAME_M5, "M15": mt5.TIMEFRAME_M15, "H1": mt5.TIMEFRAME_H1}
+        self.timeframes = {"M10": mt5.TIMEFRAME_M10, "M15": mt5.TIMEFRAME_M15, "H1": mt5.TIMEFRAME_H1}
         
     def analyze(self, symbol, current_time):
         trends = {}; alignment_score = 0
