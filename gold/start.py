@@ -1776,15 +1776,9 @@ class SymbolTrader:
 
 
                 #         
-                #         valid = True
-                #         if type_pos == mt5.POSITION_TYPE_BUY and (current_price - suggested_sl < stop_level_dist): valid = False
-                #         if type_pos == mt5.POSITION_TYPE_SELL and (suggested_sl - current_price < stop_level_dist): valid = False
+
                 #         
-                #         if valid and (diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5)):
-                #             request['sl'] = suggested_sl
-                #             changed = True
-                #     
-                #     if suggested_tp > 0 and abs(suggested_tp - tp) > point * 30:
+
                 #         valid = True
                 #         if type_pos == mt5.POSITION_TYPE_BUY and (suggested_tp - current_price < stop_level_dist): valid = False
                 #         if type_pos == mt5.POSITION_TYPE_SELL and (current_price - suggested_tp < stop_level_dist): valid = False
