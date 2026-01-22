@@ -236,6 +236,41 @@ class SymbolTrader:
         
         return df
 
+    def get_multi_timeframe_data(self, num_candles=50):
+        """获取多周期数据 (M5, M15, H1)"""
+        timeframes = {
+            "M5": mt5.TIMEFRAME_M5,
+            "M15": mt5.TIMEFRAME_M15,
+            "H1": mt5.TIMEFRAME_H1
+        }
+        
+        mtf_data = {}
+        for tf_name, tf_const in timeframes.items():
+            rates = mt5.copy_rates_from_pos(self.symbol, tf_const, 0, num_candles)
+            if rates is not None and len(rates) > 0:
+                df = pd.DataFrame(rates)
+                df['time'] = pd.to_datetime(df['time'], unit='s')
+                # 只保留最近几根 K 线的数据摘要，减少 Token 消耗
+                # 转换为字典列表
+                last_candles = df.tail(5).to_dict(orient='records') 
+                # 简化数据，只保留关键字段
+                simplified_candles = []
+                for c in last_candles:
+                    simplified_candles.append({
+                        "time": str(c['time']),
+                        "open": c['open'],
+                        "high": c['high'],
+                        "low": c['low'],
+                        "close": c['close'],
+                        "volume": c.get('tick_volume', 0)
+                    })
+                mtf_data[tf_name] = simplified_candles
+            else:
+                mtf_data[tf_name] = []
+                logger.warning(f"Failed to get MTF data for {tf_name}")
+                
+        return mtf_data
+
     def get_position_stats(self, pos):
         """
         计算持仓的 MFE (最大潜在收益) 和 MAE (最大潜在亏损)
