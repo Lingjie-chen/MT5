@@ -1554,75 +1554,148 @@ class SymbolTrader:
                 self._send_order(trade_type, price, 0.0, add_tp, comment=f"Grid: {action}")
                 # Don't return, allow SL/TP update for existing positions
 
-        # 获取 ATR 用于计算移动止损距离 (动态调整)
-        rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
-        atr = 0.0
-        if rates is not None and len(rates) > 14:
-            df_temp = pd.DataFrame(rates)
-            high_low = df_temp['high'] - df_temp['low']
-            atr = high_low.rolling(14).mean().iloc[-1]
+    def manage_positions(self, current_signal="neutral", strategy_params=None):
+        """
+        Manage open positions: Trailing Stop & AI Dynamic Updates
+        Also handles "Smart Stop" logic to prevent premature stop-out
+        """
+        try:
+            positions = mt5.positions_get(symbol=self.symbol)
+            if not positions:
+                return
+
+            symbol_info = mt5.symbol_info(self.symbol)
+            if not symbol_info: return
             
-        if atr <= 0:
-            return # 无法计算 ATR，跳过
+            point = symbol_info.point
+            stop_level_dist = symbol_info.trade_stops_level * point
+            
+            current_tick = mt5.symbol_info_tick(self.symbol)
+            current_bid = current_tick.bid
+            current_ask = current_tick.ask
+            
+            # --- Trailing Stop Configuration (Default) ---
+            # 20 pips activation, 10 pips step
+            ts_activation = 200 * point 
+            ts_step = 50 * point
+            
+            # Use AI Config if available
+            if strategy_params:
+                pos_mgmt = strategy_params.get('position_management', {})
+                ts_config = pos_mgmt.get('trailing_stop_config', {})
+                if ts_config:
+                    if ts_config.get('type') == 'fixed_pips':
+                        val = ts_config.get('value', 200)
+                        ts_activation = val * point
+                    elif ts_config.get('type') == 'atr_distance':
+                        # Dynamic based on ATR (Need recent ATR)
+                        pass
 
-        trailing_dist = atr * 1.5 # 默认移动止损距离
-        
-        # 如果有策略参数，尝试解析最新的 SL/TP 设置
-        new_sl_multiplier = 1.5
-        new_tp_multiplier = 2.5
-        has_new_params = False
-        
-        if strategy_params:
-            exit_cond = strategy_params.get('exit_conditions')
-            if exit_cond:
-                new_sl_multiplier = exit_cond.get('sl_atr_multiplier', 1.5)
-                new_tp_multiplier = exit_cond.get('tp_atr_multiplier', 2.5)
-                has_new_params = True
-
-        symbol_info = mt5.symbol_info(self.symbol)
-        if not symbol_info:
-            return
-        point = symbol_info.point
-        stop_level_dist = symbol_info.trade_stops_level * point
-
-        # 遍历所有持仓，独立管理
-        for pos in positions:
-            if pos.magic != self.magic_number:
-                continue
+            # 获取 ATR 用于计算移动止损距离 (动态调整)
+            rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+            atr = 0.0
+            if rates is not None and len(rates) > 14:
+                df_temp = pd.DataFrame(rates)
+                high_low = df_temp['high'] - df_temp['low']
+                atr = high_low.rolling(14).mean().iloc[-1]
                 
-            symbol = pos.symbol
-            type_pos = pos.type # 0: Buy, 1: Sell
-            price_open = pos.price_open
-            sl = pos.sl
-            tp = pos.tp
-            current_price = pos.price_current
+            if atr > 0:
+                # Fallback to ATR-based if not configured
+                if not strategy_params:
+                    ts_activation = atr * 1.5
+                    ts_step = atr * 0.5
+
+            # 如果有策略参数，尝试解析最新的 SL/TP 设置
+            new_sl_multiplier = 1.5
+            new_tp_multiplier = 2.5
+            has_new_params = False
             
-            # 针对每个订单独立计算最优 SL/TP
-            # 如果是挂单成交后的新持仓，或者老持仓，都统一处理
-            
-            request = {
-                "action": mt5.TRADE_ACTION_SLTP,
-                "symbol": symbol,
-                "position": pos.ticket,
-                "sl": sl,
-                "tp": tp
-            }
-            
-            changed = False
-            
-            # --- 1. 基于最新策略更新 SL/TP (全量覆盖更新) ---
-            # 策略调整: 恢复 AI 驱动的持仓参数更新逻辑
-            # 但不使用机械式的 Trailing Stop，而是依赖 LLM 的 MFE/MAE 分析给出的新点位
-            
-            # [Manual Override Protection]
-            # 检查用户是否手动修改了 SL/TP
-            # 我们假设机器人上次设置的 SL/TP 应该与当前持仓的一致
-            # 如果差异很大且不是 0，说明用户手动干预了
-            # 为了简化，我们设定规则: 只有当 AI 建议的新 SL/TP 明显优于当前设置，或者当前设置明显偏离风险控制时才强制更新
-            
-            allow_update = True # Enabled per User Request (Dynamic AI Update)
-            
-            if allow_update and has_new_params:
+            if strategy_params:
+                exit_cond = strategy_params.get('exit_conditions')
+                if exit_cond:
+                    new_sl_multiplier = exit_cond.get('sl_atr_multiplier', 1.5)
+                    new_tp_multiplier = exit_cond.get('tp_atr_multiplier', 2.5)
+                    has_new_params = True
+
+            # 遍历所有持仓，独立管理
+            for pos in positions:
+                if pos.magic != self.magic_number:
+                    continue
+                    
+                symbol = pos.symbol
+                type_pos = pos.type # 0: Buy, 1: Sell
+                price_open = pos.price_open
+                sl = pos.sl
+                tp = pos.tp
+                
+                # --- 1. Trailing Stop Logic (Lock Profit) ---
+                new_sl = sl
+                trailed = False
+                
+                if type_pos == mt5.POSITION_TYPE_BUY:
+                    current_price = current_bid
+                    profit_points = current_price - price_open
+                    
+                    # If profit > activation, move SL to BreakEven + Step
+                    if profit_points > ts_activation:
+                        target_sl = current_price - ts_activation # Trail behind price
+                        
+                        # Only move SL UP
+                        if target_sl > sl:
+                            # Ensure we don't violate StopLevel
+                            if (current_price - target_sl) > stop_level_dist:
+                                new_sl = target_sl
+                                trailed = True
+                                
+                elif type_pos == mt5.POSITION_TYPE_SELL:
+                    current_price = current_ask
+                    profit_points = price_open - current_price
+                    
+                    if profit_points > ts_activation:
+                        target_sl = current_price + ts_activation # Trail above price
+                        
+                        # Only move SL DOWN
+                        if (sl == 0) or (target_sl < sl):
+                            if (target_sl - current_price) > stop_level_dist:
+                                new_sl = target_sl
+                                trailed = True
+                
+                # Apply Trailing Stop if changed
+                if trailed and abs(new_sl - sl) > point:
+                    new_sl = self._normalize_price(new_sl)
+                    req = {
+                        "action": mt5.TRADE_ACTION_SLTP,
+                        "position": pos.ticket,
+                        "sl": new_sl,
+                        "tp": tp
+                    }
+                    if mt5.order_send(req).retcode == mt5.TRADE_RETCODE_DONE:
+                        logger.info(f"Trailing Stop Triggered #{pos.ticket}: SL {sl} -> {new_sl}")
+                        continue # Skip AI update if we just trailed
+                
+                request = {
+                    "action": mt5.TRADE_ACTION_SLTP,
+                    "symbol": symbol,
+                    "position": pos.ticket,
+                    "sl": sl,
+                    "tp": tp
+                }
+                
+                changed = False
+                
+                # --- 2. 基于最新策略更新 SL/TP (全量覆盖更新) ---
+                # 策略调整: 恢复 AI 驱动的持仓参数更新逻辑
+                # 但不使用机械式的 Trailing Stop，而是依赖 LLM 的 MFE/MAE 分析给出的新点位
+                
+                # [Manual Override Protection]
+                # 检查用户是否手动修改了 SL/TP
+                # 我们假设机器人上次设置的 SL/TP 应该与当前持仓的一致
+                # 如果差异很大且不是 0，说明用户手动干预了
+                # 为了简化，我们设定规则: 只有当 AI 建议的新 SL/TP 明显优于当前设置，或者当前设置明显偏离风险控制时才强制更新
+                
+                allow_update = True # Enabled per User Request (Dynamic AI Update)
+                
+                if allow_update and has_new_params:
                 # 使用 calculate_optimized_sl_tp 进行统一计算和验证
                 ai_exits = strategy_params.get('exit_conditions', {})
                 
