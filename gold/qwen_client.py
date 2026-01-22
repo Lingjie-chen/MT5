@@ -360,16 +360,44 @@ class QwenClient:
        - 只有在确认趋势反转或SMC结构破坏时才平仓。
        - **网格策略**: 当市场处于震荡或需左侧挂单时，使用 'grid_start' Action，系统将自动生成基于 ATR 和 SMC 阻力位的网格挂单。
     4. **动态风控 (MAE/MFE Optimization Protocol)**: 
-       - **Stop-Loss Optimization (MAE)**: Analyze `Maximum Adverse Excursion`. If trades frequently survive a drawdown of X pips, set SL > X to avoid stopping out before the move.
-       - **Take-Profit Optimization (MFE)**: Analyze `Maximum Favorable Excursion`. If `Average MFE` >> `Average Profit`, use dynamic Trailing Stops to capture the full move.
-       - **Basket TP**: Dynamically calculated based on volatility and MFE potential.
-    
+       - **智能配置 (Smart Configuration)**: 开仓时，SL 和 TP 必须结合 **市场趋势情绪 (Sentiment)**、**MAE (最大不利偏移)**、**MFE (最大有利偏移)** 以及所有高级算法进行自动优化配置。
+       - **智能移动 (Smart Strategic Move)**: 
+         - **拒绝动态移动 (No Dynamic/Mechanical Trailing)**: 严禁使用基于固定点数的机械式移动止损。
+         - **仅限结构性调整**: 只有当市场结构发生重大变化（如新的支撑/阻力形成、SMC 结构破坏）或情绪发生根本性逆转时，才允许移动 SL/TP。
+         - **MAE/MFE 驱动**: 
+             - **SL**: 如果历史 MAE 显示当前波动率增加，可适当调整 SL 以避免被噪音扫损（但在保本后只能向更有利方向移动）。
+             - **TP**: 根据实时 MFE 预测，如果动能衰竭，提前移动 TP 锁定利润。
+       - **Basket TP 动态实时配置 (Real-time Dynamic Basket TP)**:
+         - **核心要求**: 对于每个品种的网格 Basket TP (整体止盈)，必须根据以下所有维度进行综合分析和自我学习，给出一个**最优的美元数值**：
+           1. **市场情绪 (Sentiment)**: 如果情绪极度乐观(Bullish)且方向做多，大幅上调 Basket TP；反之则保守。
+           2. **结构趋势 (Structure)**: 顺势交易(Following Trend)目标更高；逆势/震荡(Range/Counter)目标更低。
+           3. **高级算法 (Algo Metrics)**: 
+              - 参考 `technical_signals` 中的 **EMA/HA** 数据。
+              - 如果价格远离 EMA 50 (乖离率高)，预期会有回归，TP 应保守。
+              - 如果 EMA 50 强劲倾斜且 HA 连续同色，TP 应激进。
+           4. **历史绩效 (Self-Learning)**: 
+              - **必须参考** `performance_stats` 中的 `avg_mfe` (平均最大有利偏移)。
+              - **Basket TP 上限** = (Position Size * Contract Size * Avg_MFE_Points * 0.8)。不要设定超过历史平均表现太多的不切实际目标。
+              - **Basket TP 下限** = 能够覆盖交易成本 (Spread + Swap + Commission) 的最小利润。
+         - **计算公式参考**:
+           - `Base_Target` = (ATR * Position_Size * Contract_Size)
+           - `Sentiment_Multiplier`: 0.5 (Weak) to 2.0 (Strong)
+           - `Structure_Multiplier`: 0.8 (Range) to 1.5 (Trend)
+           - `Dynamic_Basket_TP` = `Base_Target` * `Sentiment_Multiplier` * `Structure_Multiplier` (并用 Avg_MFE 做校验)
+         - **拒绝固定值**: 严禁使用固定的数值 (如 50.0)！必须是经过上述逻辑计算后的结果。
+         - **更新指令**: 在 `position_management` -> `dynamic_basket_tp` 中返回计算后的数值。
+       - **Lock Profit Trigger (Profit Locking)**:
+         - **定义**: 当 Basket 整体利润达到此数值时，启动强制利润锁定机制 (Trailing Stop for Basket)。
+         - **逻辑**: 如果利润达到此阈值，系统将锁定大部分利润 (如 60%)，防止利润回撤。
+         - **最小值**: 必须 >= 10.0 USD。
+         - **更新指令**: 在 `position_management` -> `lock_profit_trigger` 中返回计算后的数值。
+
     5. **CandleSmoothing EMA 策略 (Strategy B)**:
        - **核心逻辑**: 基于 EMA50 趋势过滤，结合 EMA20 High/Low 通道突破和 Heiken Ashi 蜡烛形态。
        - **做多信号 (Buy)**: HA收盘价 > EMA20 High AND HA阳线 AND HA收盘价 > EMA50 AND EMA50上升趋势 AND 前一HA收盘价 < EMA50 (金叉)。
        - **做空信号 (Sell)**: HA收盘价 < EMA20 Low AND HA阴线 AND HA收盘价 < EMA50 AND EMA50下降趋势 AND 前一HA收盘价 > EMA50 (死叉)。
        - **权重**: 当此策略发出信号且与 SMC 结构方向一致时，置信度应显著提高。
-        """
+    """
 
         # --- 3. 市场特性 (品种特定) ---
         market_specs = {
@@ -437,39 +465,7 @@ class QwenClient:
             """
         }
 
-        # --- 4. 风险控制与通用规则 (通用) ---
-        common_rules = """
-    3. **动态波段风控 (Dynamic Swing Risk Control)**:
-       - **SL/TP 实时优化**: 必须实时评估当前的 SL (止损) 和 TP (止盈) 是否适应最新的市场结构。
-       - **MFE/MAE 深度应用**:
-         - **TP (Take Profit)**: 结合 MFE (最大有利偏移) 和 SMC 流动性池。如果市场动能强劲，应推大 TP 以捕捉波段利润；如果动能衰竭，应收紧 TP。
-         - **SL (Stop Loss)**: 结合 MAE (最大不利偏移) 和 SMC 失效位。如果市场波动率 (ATR) 变大，应适当放宽 SL 以防被噪音扫损；如果结构紧凑，应收紧 SL。
-       - **Basket TP 动态实时配置 (Real-time Dynamic Basket TP)**:
-         - **核心要求**: 对于每个品种的网格 Basket TP (整体止盈)，必须根据以下所有维度进行综合分析和自我学习，给出一个**最优的美元数值**：
-           1. **市场情绪 (Sentiment)**: 如果情绪极度乐观(Bullish)且方向做多，大幅上调 Basket TP；反之则保守。
-           2. **结构趋势 (Structure)**: 顺势交易(Following Trend)目标更高；逆势/震荡(Range/Counter)目标更低。
-           3. **高级算法 (Algo Metrics)**: 
-              - 参考 `technical_signals` 中的 **EMA/HA** 数据。
-              - 如果价格远离 EMA 50 (乖离率高)，预期会有回归，TP 应保守。
-              - 如果 EMA 50 强劲倾斜且 HA 连续同色，TP 应激进。
-           4. **历史绩效 (Self-Learning)**: 
-              - **必须参考** `performance_stats` 中的 `avg_mfe` (平均最大有利偏移)。
-              - **Basket TP 上限** = (Position Size * Contract Size * Avg_MFE_Points * 0.8)。不要设定超过历史平均表现太多的不切实际目标。
-              - **Basket TP 下限** = 能够覆盖交易成本 (Spread + Swap + Commission) 的最小利润。
-         - **计算公式参考**:
-           - `Base_Target` = (ATR * Position_Size * Contract_Size)
-           - `Sentiment_Multiplier`: 0.5 (Weak) to 2.0 (Strong)
-           - `Structure_Multiplier`: 0.8 (Range) to 1.5 (Trend)
-           - `Dynamic_Basket_TP` = `Base_Target` * `Sentiment_Multiplier` * `Structure_Multiplier` (并用 Avg_MFE 做校验)
-         - **拒绝固定值**: 严禁使用固定的数值 (如 50.0)！必须是经过上述逻辑计算后的结果。
-         - **更新指令**: 在 `position_management` -> `dynamic_basket_tp` 中返回计算后的数值。
-       - **Lock Profit Trigger (Profit Locking)**:
-         - **定义**: 当 Basket 整体利润达到此数值时，启动强制利润锁定机制 (Trailing Stop for Basket)。
-         - **逻辑**: 如果利润达到此阈值，系统将锁定大部分利润 (如 60%)，防止利润回撤。
-         - **最小值**: 必须 >= 10.0 USD。
-         - **更新指令**: 在 `position_management` -> `lock_profit_trigger` 中返回计算后的数值。
 
-    ## 市场分析要求
     
     ### 一、大趋势分析框架 (Multi-Timeframe)
     你必须从多时间框架分析整体市场结构 (查看提供的 `multi_tf_data`)：
