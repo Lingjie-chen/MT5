@@ -7,6 +7,15 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
+
+# Add current and parent directory to sys.path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
 from file_watcher import FileWatcher
 
 # Try importing MetaTrader5
@@ -29,11 +38,6 @@ logger = logging.getLogger("WindowsBot")
 
 # Load Environment Variables
 load_dotenv()
-
-# Add current directory to sys.path to ensure local imports work
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
 
 # Import Local Modules
 try:
