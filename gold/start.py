@@ -102,11 +102,12 @@ class HybridOptimizer:
         return final_signal, final_score, self.weights
 
 class SymbolTrader:
-    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M5):
+    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M10): # Changed Default to M10
         self.symbol = symbol
         self.timeframe = timeframe
-        self.tf_name = "M5"
+        self.tf_name = "M10"
         if timeframe == mt5.TIMEFRAME_M5: self.tf_name = "M5"
+        elif timeframe == mt5.TIMEFRAME_M10: self.tf_name = "M10" # Added M10 Name
         elif timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
         elif timeframe == mt5.TIMEFRAME_H1: self.tf_name = "H1"
         elif timeframe == mt5.TIMEFRAME_H4: self.tf_name = "H4"
@@ -2732,6 +2733,9 @@ class SymbolTrader:
         try:
             # 1. 获取最新数据
             # Using copy_rates_from_pos instead of copy_rates_range for simplicity/speed
+            # [User Request]: "改成交易周期 10 分钟" -> self.timeframe should be TIMEFRAME_M10
+            # Ensure we are using the correct timeframe property
+            
             rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 500)
             if rates is None or len(rates) < 100:
                 logger.warning(f"Failed to get rates for {self.symbol}")
