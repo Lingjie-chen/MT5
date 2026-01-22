@@ -64,11 +64,13 @@ class QwenClient:
         # --- 1. 核心策略架构 (通用) ---
         core_strategy = f"""
     作为{symbol}交易的唯一核心决策大脑，你全权负责基于SMC(Smart Money Concepts)和Martingale(马丁格尔)策略的交易执行。
+    你拥有所有**专业量化交易书籍**的知识库（如《打开量化投资的黑箱》、《主动投资组合管理》、《海龟交易法则》等）。
     
-    你的核心策略架构：**SMC + Martingale Grid (马丁网格)**
+    你的核心策略架构：**SMC + Martingale Grid (马丁网格) + Multi-Timeframe Quant Analysis (多周期量化分析)**
     
-    **关键规则：你的交易周期为 10分钟 (M10)。你必须结合 15分钟 (M15) 和 1小时 (H1) 的大周期趋势来制定 M10 的入场决策。**
-
+    **关键规则：你必须结合 5分钟 (M5), 15分钟 (M15), 1小时 (H1) 的数据进行专业的全周期分析。**
+    **交易周期的选择完全由你决定**。虽然执行可能在某一周期，但你的决策必须是基于 M5/M15/H1 的综合研判。
+    
     **交易节奏控制 (Trend Cycle Control)**:
     - **拒绝频繁交易**: 不需要每根K线都交易。
     - **趋势跟随模式**: 当持有仓位时，你的核心任务是**持有 (HOLD)**，直到趋势结束。
@@ -76,13 +78,14 @@ class QwenClient:
     - **新一轮分析**: 只有在当前趋势明确结束（平仓）后，才开始寻找下一波大的趋势机会。在趋势延续期间，不要试图捕捉每一个微小的回调。
 
     1. **SMC (Smart Money Concepts) - 入场与方向**:
-       - **方向判断**: 依据 M15/H1 确定主趋势，在 M10 寻找结构破坏(BOS)或特性改变(CHoch)。
-       - **关键区域**: 重点关注 M10 和 M15 的订单块(Order Block)和失衡区(FVG)。
-       - **CRT (Candle Range Theory)**: 确认关键位置的 M10 K线反应(如Pinbar, Engulfing)。
+       - **多周期共振**: M15/H1 确定主趋势，M5 寻找精确入场点。
+       - **方向判断**: 依据 M15/H1 确定主趋势，在 M5/M15 寻找结构破坏(BOS)或特性改变(CHoch)。
+       - **关键区域**: 重点关注 M5, M15, H1 的订单块(Order Block)和失衡区(FVG)。
+       - **CRT (Candle Range Theory)**: 确认关键位置的 K线反应(如Pinbar, Engulfing)。
        - **CCI/RVGI**: 辅助确认超买超卖和动量背离。
 
-     你现在不是单一的交易员，而是一个由 **四大核心团队** 组成的 **"Alpha-Qwen 机构级交易委员会"**。
-     你的每一次决策，必须经过这四个团队的 **深度辩论与协作** 才能产出。
+    你现在不是单一的交易员，而是一个由 **四大核心团队** 组成的 **"Alpha-Qwen 机构级交易委员会"**。
+    你的每一次决策，必须经过这四个团队的 **深度辩论与协作** 才能产出。
       """
      # --- 2. 各品种详细角色指令 ---
         
@@ -1147,6 +1150,13 @@ class QwenClient:
         # 1. 市场分析结果上下文
         market_context = f"\n市场结构分析结果:\n{json.dumps(market_analysis, indent=2, cls=CustomJSONEncoder)}\n"
         
+        # [NEW] Multi-Timeframe Data Context
+        mtf_context = ""
+        if "multi_tf_data" in current_market_data:
+            mtf_context = f"\n多周期市场数据 (M5/M15/H1):\n{json.dumps(current_market_data['multi_tf_data'], indent=2, cls=CustomJSONEncoder)}\n"
+        else:
+            mtf_context = "\n多周期市场数据: 未提供 (仅单周期)\n"
+        
         # 2. 上一次分析结果上下文
         if previous_analysis:
             prev_action = previous_analysis.get('action', 'unknown')
@@ -1265,6 +1275,9 @@ class QwenClient:
         
         当前市场数据：
         {json.dumps(current_market_data, indent=2, cls=CustomJSONEncoder)}
+        
+        多周期市场数据 (M5/M15/H1):
+        {mtf_context}
         
         市场结构分析结果：
         {market_context}
