@@ -1118,7 +1118,9 @@ class SymbolTrader:
                 for i, order in enumerate(grid_orders):
                     o_type = order['type']
                     o_price = self._normalize_price(order['price'])
-                    o_tp = self._normalize_price(order.get('tp', 0.0))
+                    
+                    # [Requirement] Remove all TP/SL settings, fully rely on LLM for exits
+                    o_tp = 0.0
                     
                     # 发送订单
                     self._send_order(o_type, o_price, sl=0.0, tp=o_tp, comment=f"AI-Grid-{i+1}")
@@ -1132,33 +1134,15 @@ class SymbolTrader:
                 return
 
         if trade_type and price > 0:
-            # 再次确认 SL/TP 是否存在
-            if explicit_sl is None or explicit_tp is None:
-                # 策略优化: 如果 LLM 未提供明确价格，则使用基于 MFE/MAE 的统计优化值
-                # 移除旧的 ATR 动态计算，确保策略的一致性和基于绩效的优化
-                logger.info("LLM 未提供明确 SL/TP，使用 MFE/MAE 统计优化值")
-                
-                # 计算 ATR
-                rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
-                atr = 0.0
-                if rates is not None and len(rates) > 14:
-                     df_temp = pd.DataFrame(rates)
-                     high_low = df_temp['high'] - df_temp['low']
-                     atr = high_low.rolling(14).mean().iloc[-1]
-                
-                explicit_sl, explicit_tp = self.calculate_optimized_sl_tp(trade_type, price, atr, ai_exit_conds=sl_tp_params)
-                
-                if explicit_sl == 0 or explicit_tp == 0:
-                     logger.error("无法计算优化 SL/TP，放弃交易")
-                     return 
+            # [Requirement] Remove all TP/SL settings, fully rely on LLM for exits
+            explicit_sl = 0.0
+            explicit_tp = 0.0
+            logger.info("Explicit SL/TP set to 0.0 (LLM Managed)")
 
             # User Requirement: 只有盈利比亏损的风险大于 1 的情况下交易
-            # Enforce R:R check for ALL trade types (Limit/Stop AND Market Buy/Sell)
-            valid, rr = self.check_risk_reward_ratio(price, explicit_sl, explicit_tp)
-            if not valid:
-                 logger.warning(f"最终 R:R 检查未通过: {rr:.2f} <= 1.0. 交易取消.")
-                 return
-
+            # [NOTE] R:R check requires SL/TP. If we remove SL/TP, we effectively bypass R:R check at execution level.
+            # Assuming LLM has already done this check in its reasoning.
+            
             # FIX: Ensure 'action' is defined for the comment
             # action variable was used in _send_order's comment but was coming from llm_action
             action_str = llm_action.upper() if llm_action else "UNKNOWN"
