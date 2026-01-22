@@ -2841,6 +2841,9 @@ class SymbolTrader:
             if rates is None or len(rates) < 100:
                 err = mt5.last_error()
                 logger.warning(f"Failed to get rates for {self.symbol}. Error: {err}, Rates: {len(rates) if rates is not None else 'None'}")
+                
+                # Try to check connection
+                self.check_mt5_connection()
                 return
 
             df = pd.DataFrame(rates)
