@@ -1402,7 +1402,7 @@ class SymbolTrader:
             
             # 仅记录第一次尝试或重试信息，避免刷屏
             if mode == filling_modes[0]:
-                logger.info(f"发送订单请求: Action={action}, Type={order_type}, Price={price:.2f}, SL={sl:.2f}, TP={tp:.2f}, Filling={mode}")
+                logger.info(f"发送订单请求: Action={action}, Type={order_type}, Price={price:.2f}, SL=0.0 (LLM Managed), TP=0.0 (LLM Managed), Filling={mode}")
             else:
                 logger.info(f"重试订单 (Filling Mode: {mode})...")
                 
@@ -1415,7 +1415,7 @@ class SymbolTrader:
             if result.retcode == mt5.TRADE_RETCODE_DONE:
                 success = True
                 logger.info(f"下单成功 ({type_str}) #{result.order} (Mode: {mode})")
-                self.send_telegram_message(f"✅ *Order Executed*\nType: `{type_str.upper()}`\nPrice: `{price}`\nSL: `{sl}`\nTP: `{tp}`")
+                self.send_telegram_message(f"✅ *Order Executed*\nType: `{type_str.upper()}`\nPrice: `{price}`\nSL: `LLM Managed`\nTP: `LLM Managed`")
                 break
             elif result.retcode == 10030: # Unsupported filling mode
                 logger.warning(f"Filling mode {mode} 不支持 (10030), 尝试下一个模式...")
