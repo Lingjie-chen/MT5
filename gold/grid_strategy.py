@@ -364,28 +364,38 @@ class KalmanGridStrategy:
             # 3. Never Step Down
             
             # --- Dynamic Calculation (Ideal Lock) ---
+            # Default fallback logic if no config
             lock_ratio = 0.7 # Default 70%
             dynamic_sl_profit_dist = 0.0
+            step_size_usd = 5.0 # Minimum step size to update lock (USD)
             
             if self.trailing_stop_config:
                 t_type = self.trailing_stop_config.get('type', 'atr_distance')
                 t_value = float(self.trailing_stop_config.get('value', 2.0))
                 
                 if t_type == 'atr_distance' and current_atr is not None and current_atr > 0:
-                     contract_size = 100.0 if "XAU" in self.symbol or "GOLD" in self.symbol else 1.0
-                     if "ETH" in self.symbol: contract_size = 1.0
-                     if "EUR" in self.symbol: contract_size = 100000.0
+                     # Calculate contract size properly
+                     contract_size = 100.0 # Default for XAUUSD/Standard Lots
+                     if "ETH" in self.symbol.upper(): contract_size = 1.0
+                     if "EUR" in self.symbol.upper(): contract_size = 100000.0
                      
+                     # Distance in USD = ATR * Value * TotalVolume * ContractSize
                      dynamic_sl_profit_dist = current_atr * t_value * total_volume * contract_size
                      
                 elif t_type == 'fixed_pips':
-                     pip_val = 0.01 * 10 # 0.1
-                     if "XAU" in self.symbol: pip_val = 0.1
+                     # Value is in pips
+                     pip_val_usd = 0.01 * 10 # 0.1 USD per pip for 0.01 lot roughly? No.
+                     # Pip value calculation is tricky without API, use approximate
+                     # XAUUSD: 1 pip = 0.1 USD per 0.01 lot. 
+                     # Wait, 1 pip (0.1) for 1 lot (100oz) is $10.
+                     # So for volume V, 1 pip = V * 10 (USD).
                      
-                     price_dist = t_value * pip_val
-                     contract_size = 100.0 if "XAU" in self.symbol else 1.0
-                     dynamic_sl_profit_dist = price_dist * total_volume * contract_size
-            
+                     pip_value_per_lot = 10.0 # Standard for XAUUSD/EURUSD
+                     if "ETH" in self.symbol.upper(): pip_value_per_lot = 1.0 # Approx
+                     
+                     price_dist_pips = t_value
+                     dynamic_sl_profit_dist = price_dist_pips * pip_value_per_lot * total_volume
+
             # Calculate Current Ideal Lock Level
             ideal_lock = 0.0
             
@@ -393,30 +403,30 @@ class KalmanGridStrategy:
                 # Logic: Locked = CurrentProfit - Distance
                 ideal_lock = self.max_basket_profit - dynamic_sl_profit_dist
             else:
-                # Ratio Logic
+                # Fallback Ratio Logic
                 surplus = max(0.0, self.max_basket_profit - effective_trigger)
                 ideal_lock = effective_trigger + (surplus * lock_ratio)
             
             # --- Constraints ---
-            min_break_even = 2.0
+            # Must be at least break-even (plus small buffer)
+            min_break_even = 2.0 
             ideal_lock = max(ideal_lock, min_break_even)
             
-            # Minimum floor is the trigger itself
-            ideal_lock = max(ideal_lock, effective_trigger)
+            # If we just triggered, initial lock shouldn't be too tight unless distance says so
+            # But the 'effective_trigger' acts as a floor for the lock in some logic?
+            # Actually, if we trigger at $50, and distance is $20, lock at $30.
+            # If trigger at $50, and distance is $60, lock at $2 (break even).
             
-            # --- Step Logic ---
-            # If we don't have a lock yet, set it.
+            # --- Step Logic Implementation ---
             if self.basket_lock_level is None:
                 self.basket_lock_level = ideal_lock
-                logger.info(f"Grid Profit Lock ACTIVATED: Step Lock Level set at {self.basket_lock_level:.2f} (Trigger: {effective_trigger})")
+                logger.info(f"Grid Profit Lock ACTIVATED: Step Lock Level set at {self.basket_lock_level:.2f} (Trigger: {effective_trigger}, MaxProfit: {self.max_basket_profit:.2f})")
             else:
-                # If new ideal is higher, step up
-                # Optional: Add a 'step_size' to avoid micro-updates? 
-                # For now, we update if it improves by at least $1.0 or just strictly >
-                if ideal_lock > self.basket_lock_level:
+                # Only Step Up if the difference is significant (Step Size)
+                if ideal_lock >= (self.basket_lock_level + step_size_usd):
                     old_lock = self.basket_lock_level
                     self.basket_lock_level = ideal_lock
-                    logger.info(f"Grid Profit Lock STEP UP: {old_lock:.2f} -> {self.basket_lock_level:.2f} (Peak: {self.max_basket_profit:.2f})")
+                    logger.info(f"Grid Profit Lock STEP UP: {old_lock:.2f} -> {self.basket_lock_level:.2f} (Peak: {self.max_basket_profit:.2f}, StepSize: {step_size_usd})")
 
             # Check against the STEPPED lock level
             if total_profit <= self.basket_lock_level:
