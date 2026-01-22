@@ -643,8 +643,13 @@ class SymbolTrader:
             # 如果有明确的 SL 价格，计算实际距离；否则用 ATR
             sl_distance_points = 500.0 # 默认
             
-            # 尝试从 latest_strategy 获取建议的 SL
-            if self.latest_strategy:
+            # 优先使用传入的具体价格 (针对 Limit Order)
+            if specific_entry_price and specific_sl_price and specific_entry_price > 0 and specific_sl_price > 0:
+                sl_distance_points = abs(specific_entry_price - specific_sl_price) / mt5.symbol_info(self.symbol).point
+                logger.info(f"使用具体 Limit/SL 价格计算距离: {sl_distance_points:.0f} pts")
+            
+            # 尝试从 latest_strategy 获取建议的 SL (如果是 Market Order)
+            elif self.latest_strategy:
                 sl_price = self.latest_strategy.get('exit_conditions', {}).get('sl_price')
                 entry_price_ref = mt5.symbol_info_tick(self.symbol).ask # 假设当前进场
                 
@@ -924,17 +929,8 @@ class SymbolTrader:
             trade_type = "sell"
             price = tick.bid
         elif llm_action in ['limit_buy', 'buy_limit']:
-            # 检查现有 Limit 挂单
-            current_orders = mt5.orders_get(symbol=self.symbol)
-            if current_orders:
-                for o in current_orders:
-                    if o.magic == self.magic_number:
-                        # User Request: Check for SAME symbol limit orders. If found, CANCEL old ones.
-                        # This implies we should ensure only the NEW limit order exists.
-                        # So we cancel ALL existing pending orders for this symbol.
-                        logger.info(f"取消旧挂单 #{o.ticket} (Type: {o.type}) 以便执行新限价单")
-                        req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
-                        mt5.order_send(req)
+            # 检查并取消旧挂单
+            self.cancel_pending_orders()
                         
             # 优先使用 limit_price (与 prompt 一致)，回退使用 entry_price
             price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
@@ -975,15 +971,8 @@ class SymbolTrader:
                          price = self._normalize_price(max_price)
                 
         elif llm_action in ['limit_sell', 'sell_limit']:
-            # 检查现有 Limit 挂单
-            current_orders = mt5.orders_get(symbol=self.symbol)
-            if current_orders:
-                for o in current_orders:
-                    if o.magic == self.magic_number:
-                        # User Request: Check for SAME symbol limit orders. If found, CANCEL old ones.
-                        logger.info(f"取消旧挂单 #{o.ticket} (Type: {o.type}) 以便执行新限价单")
-                        req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
-                        mt5.order_send(req)
+            # 检查并取消旧挂单
+            self.cancel_pending_orders()
 
             price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
             
