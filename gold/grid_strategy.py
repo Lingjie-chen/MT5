@@ -334,12 +334,18 @@ class KalmanGridStrategy:
                 step = fixed_step if fixed_step > 0 else (atr * 0.5)
                 levels = [current_price - step*i for i in range(1, 6)]
             
+            # Base count for lot calculation (Assume at least 1 exists if starting grid)
+            base_count = self.long_pos_count if self.long_pos_count > 0 else 1
+            
             for i, lvl in enumerate(levels):
                 # Calculate TP for this level
                 # [Requirement] Remove all TP/SL settings, fully rely on LLM for exits
                 tp_price = 0.0
                 
-                orders.append({'type': 'limit_buy', 'price': lvl, 'tp': tp_price})
+                # Calculate Lot
+                lot = self.calculate_next_lot(base_count + i)
+                
+                orders.append({'type': 'limit_buy', 'price': lvl, 'tp': tp_price, 'volume': lot})
                 
         elif trend_direction == 'bearish':
             # Sell Grid
@@ -348,12 +354,18 @@ class KalmanGridStrategy:
                 step = fixed_step if fixed_step > 0 else (atr * 0.5)
                 levels = [current_price + step*i for i in range(1, 6)]
                 
+            # Base count for lot calculation
+            base_count = self.short_pos_count if self.short_pos_count > 0 else 1
+
             for i, lvl in enumerate(levels):
                 # Calculate TP for this level
                 # [Requirement] Remove all TP/SL settings, fully rely on LLM for exits
                 tp_price = 0.0
                 
-                orders.append({'type': 'limit_sell', 'price': lvl, 'tp': tp_price})
+                # Calculate Lot
+                lot = self.calculate_next_lot(base_count + i)
+                
+                orders.append({'type': 'limit_sell', 'price': lvl, 'tp': tp_price, 'volume': lot})
                 
         return orders
 

@@ -1215,6 +1215,10 @@ class SymbolTrader:
                     o_type = order['type']
                     o_price = self._normalize_price(order['price'])
                     o_tp = self._normalize_price(order.get('tp', 0.0))
+                    o_volume = order.get('volume', 0.0)
+                    
+                    if o_volume > 0:
+                        self.lot_size = o_volume
                     
                     # 发送订单
                     self._send_order(o_type, o_price, sl=0.0, tp=o_tp, comment=f"AI-Grid-{i+1}")
