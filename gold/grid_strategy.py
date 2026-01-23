@@ -256,43 +256,43 @@ class KalmanGridStrategy:
         multiplier = 1.0
         if self.lot_type == 'GEOMETRIC':
             # Aggressive scaling for capital utilization
-            # [Advanced Martingale] Soft/Tiered Multiplier
-            if current_count <= 3:
-                multiplier = 1.0  # 初期平稳 (1-3层)
-            elif current_count <= 6:
-                multiplier = 1.4  # 中期发力 (4-6层)
+            
+            # [Advanced Martingale] 
+            # If lot_multiplier is customized (e.g. by AI or config > 1.0 but not matching hardcoded logic assumptions),
+            # we respect the configured multiplier strictly.
+            # Default soft logic uses 1.4/1.1 tiers. 
+            # If we want to support AI's "martingale_multiplier" (e.g. 1.5), we should use it.
+            
+            # Simple Heuristic: If lot_multiplier is significantly different from 1.0, use Standard Geometric
+            # Or if we want to enforce AI control.
+            
+            if self.lot_multiplier > 1.0:
+                 # Standard Geometric: Base * (Mult ^ Count)
+                 # Count starts at 0 for first position? No, current_count usually means how many we HAVE.
+                 # So next one is current_count + 1?
+                 # If we have 1 position, we are adding the 2nd. 
+                 # If we use power: Mult ^ 1.
+                 
+                 # Let's align with the Tiered logic which takes 'current_count' as input (how many exist).
+                 # If 0 exist (Initial), current_count=0.
+                 
+                 multiplier = self.lot_multiplier ** current_count
             else:
-                multiplier = 1.1  # 后期保守 (7+层)
+                # Soft/Tiered Multiplier (Fallback)
+                if current_count <= 3:
+                    multiplier = 1.0  # 初期平稳 (1-3层)
+                elif current_count <= 6:
+                    multiplier = 1.4  # 中期发力 (4-6层)
+                else:
+                    multiplier = 1.1  # 后期保守 (7+层)
                 
-            # Calculate recursive lot size based on base lot and multiplier steps? 
-            # Or just multiply base lot by accumulated multiplier?
-            # Standard Martingale: Lot = Base * (Mult ^ Count)
-            # Soft Martingale Tiered: We need to know previous lot to multiply IT.
-            # Since we don't pass previous lot, we approximate or assume standard structure.
-            # Simplified Tiered Approach relative to Base Lot:
-            # Layer 1: 1x
-            # Layer 2: 1x
-            # Layer 3: 1x
-            # Layer 4: 1.4x (of Base? No, usually of previous).
-            # Let's assume 'lot_multiplier' config is ignored in favor of this hardcoded advanced logic OR used as base.
-            
-            # Implementation of "Soft Martingale" using the formula:
-            # Lot = Base * Product(Multipliers)
-            # Since we only have current_count, we can compute it.
-            
-            accum_mult = 1.0
-            for i in range(1, current_count + 1):
-                if i <= 3: m = 1.0
-                elif i <= 6: m = 1.4
-                else: m = 1.1
-                accum_mult *= m
-            
-            multiplier = accum_mult
-            
-            # If user wants strict Geometric with config multiplier, we might want to keep that option.
-            # But user requested "Advanced Martingale Optimization", so we override.
-            # Check if symbol is XAUUSD to apply this specific logic, else fallback?
-            # Assuming this is global optimization request.
+                accum_mult = 1.0
+                for i in range(1, current_count + 1):
+                    if i <= 3: m = 1.0
+                    elif i <= 6: m = 1.4
+                    else: m = 1.1
+                    accum_mult *= m
+                multiplier = accum_mult
             
             # Override for safety if result is too huge
             if multiplier > 20.0: multiplier = 20.0
