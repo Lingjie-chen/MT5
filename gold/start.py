@@ -1208,10 +1208,82 @@ class SymbolTrader:
             if grid_orders:
                 logger.info(f"网格计划生成 {len(grid_orders)} 个挂单")
                 
+                # --- [Safety Check] Margin & Overlap ---
+                account_info = mt5.account_info()
+                if not account_info:
+                    logger.error("无法获取账户信息进行风控检查，取消网格部署")
+                    return
+                
+                # A. Overlap Check with Pending Orders
+                existing_orders = mt5.orders_get(symbol=self.symbol)
+                existing_prices = []
+                if existing_orders:
+                    for o in existing_orders:
+                        if o.magic == self.magic_number:
+                            existing_prices.append(o.price_open)
+                
+                min_dist_points = 50 * point # 50 points safety
+                
+                final_grid_orders = []
+                for order in grid_orders:
+                    o_price = order['price']
+                    
+                    # Check Overlap
+                    is_overlap = False
+                    for ep in existing_prices:
+                        if abs(o_price - ep) < min_dist_points:
+                            is_overlap = True
+                            break
+                    
+                    if is_overlap:
+                        logger.warning(f"网格挂单价格 {o_price:.2f} 与现有挂单太近，跳过")
+                        continue
+                        
+                    final_grid_orders.append(order)
+                
+                # B. Margin Pre-Calculation
+                total_margin_required = 0.0
+                margin_safe = True
+                
+                for order in final_grid_orders:
+                    try:
+                        # Estimate margin: Lot * ContractSize / Leverage (Approx)
+                        # Better use order_calc_margin but requires knowing type exactly
+                        o_type = mt5.ORDER_TYPE_BUY if 'buy' in order['type'] else mt5.ORDER_TYPE_SELL
+                        o_vol = order.get('volume', self.lot_size)
+                        
+                        margin_req = mt5.order_calc_margin(o_type, self.symbol, o_vol, order['price'])
+                        if margin_req:
+                            total_margin_required += margin_req
+                    except Exception as e:
+                        logger.warning(f"Margin calc warning: {e}")
+                        # Fallback approx
+                        total_margin_required += (o_vol * 100000 / 100) * 0.01 # Rough guess if fails
+                
+                # Check against Free Margin (with buffer)
+                if total_margin_required > (account_info.margin_free * 0.8):
+                    logger.warning(f"网格部署所需保证金 ({total_margin_required:.2f}) 超过可用保证金的 80% ({account_info.margin_free:.2f})")
+                    logger.warning("尝试缩减网格层数...")
+                    
+                    # Trim orders from the end (furthest away)
+                    while total_margin_required > (account_info.margin_free * 0.8) and len(final_grid_orders) > 0:
+                        removed = final_grid_orders.pop()
+                        # Deduct margin
+                        try:
+                            o_type = mt5.ORDER_TYPE_BUY if 'buy' in removed['type'] else mt5.ORDER_TYPE_SELL
+                            o_vol = removed.get('volume', self.lot_size)
+                            margin_req = mt5.order_calc_margin(o_type, self.symbol, o_vol, removed['price'])
+                            if margin_req: total_margin_required -= margin_req
+                        except: pass
+                
+                if not final_grid_orders:
+                    logger.warning("可用资金不足以部署任何网格单，取消操作")
+                    return
+
                 # 临时保存原始 lot_size (although we updated it above, keep logic safe)
                 original_lot = self.lot_size
                 
-                for i, order in enumerate(grid_orders):
+                for i, order in enumerate(final_grid_orders):
                     o_type = order['type']
                     o_price = self._normalize_price(order['price'])
                     o_tp = self._normalize_price(order.get('tp', 0.0))
