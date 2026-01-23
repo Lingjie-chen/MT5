@@ -326,18 +326,48 @@ class KalmanGridStrategy:
             logger.info(f"Using Dynamic Grid Step: {dynamic_step_pips} pips ({fixed_step} points)")
         else:
             fixed_step = self.grid_step_points * point
+            
+        # Ensure minimum safe step (e.g. 50 points or 0.2 ATR)
+        min_safe_step = 50 * point
+        if atr > 0:
+             min_safe_step = max(min_safe_step, atr * 0.15)
+        
+        if fixed_step < min_safe_step:
+            logger.warning(f"Grid Step {fixed_step} too small, adjusting to safe minimum {min_safe_step}")
+            fixed_step = min_safe_step
+        
+        # Determine active existing levels to prevent overlap
+        # We need pending orders (limits) and open positions to check against
+        # But here we generate a plan. The caller (start.py) should ideally check against pending.
+        # However, we can at least ensure our generated levels don't overlap with themselves (handled by loop)
+        # and don't overlap with current price too much (handled by range).
         
         if trend_direction == 'bullish':
             # Buy Grid
             levels = sorted([p for p in supports if p > lower_bound], reverse=True)
             if not levels: # Fallback to arithmetic
                 step = fixed_step if fixed_step > 0 else (atr * 0.5)
+                # Ensure step is valid
+                if step < min_safe_step: step = min_safe_step
                 levels = [current_price - step*i for i in range(1, 6)]
             
             # Base count for lot calculation (Assume at least 1 exists if starting grid)
             base_count = self.long_pos_count if self.long_pos_count > 0 else 1
             
-            for i, lvl in enumerate(levels):
+            # Filter levels that are too close to each other or current price
+            valid_levels = []
+            last_lvl = current_price
+            
+            for lvl in levels:
+                if abs(last_lvl - lvl) >= min_safe_step:
+                    valid_levels.append(lvl)
+                    last_lvl = lvl
+            
+            # Cap at max grid steps (considering existing)
+            remaining_slots = max(0, self.max_grid_steps - self.long_pos_count)
+            valid_levels = valid_levels[:remaining_slots]
+
+            for i, lvl in enumerate(valid_levels):
                 # Calculate TP for this level
                 # [Requirement] Remove all TP/SL settings, fully rely on LLM for exits
                 tp_price = 0.0
@@ -352,12 +382,27 @@ class KalmanGridStrategy:
             levels = sorted([p for p in resistances if p < upper_bound])
             if not levels:
                 step = fixed_step if fixed_step > 0 else (atr * 0.5)
+                # Ensure step is valid
+                if step < min_safe_step: step = min_safe_step
                 levels = [current_price + step*i for i in range(1, 6)]
                 
             # Base count for lot calculation
             base_count = self.short_pos_count if self.short_pos_count > 0 else 1
 
-            for i, lvl in enumerate(levels):
+            # Filter levels
+            valid_levels = []
+            last_lvl = current_price
+            
+            for lvl in levels:
+                if abs(lvl - last_lvl) >= min_safe_step:
+                    valid_levels.append(lvl)
+                    last_lvl = lvl
+            
+            # Cap at max grid steps
+            remaining_slots = max(0, self.max_grid_steps - self.short_pos_count)
+            valid_levels = valid_levels[:remaining_slots]
+
+            for i, lvl in enumerate(valid_levels):
                 # Calculate TP for this level
                 # [Requirement] Remove all TP/SL settings, fully rely on LLM for exits
                 tp_price = 0.0
