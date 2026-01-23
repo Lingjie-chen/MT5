@@ -86,7 +86,7 @@ class KalmanGridStrategy:
             "grid_step_points": 150, # [Optimized] Tighter grid (150 pts = $1.5) for HFT
             "max_grid_steps": 20,    # [Optimized] More steps for wider coverage
             "lot_type": 'GEOMETRIC',
-            "lot_multiplier": 1.3,   # [Optimized] Slightly safer multiplier for deeper grid
+            "lot_multiplier": 1.3,   # [Optimized] Slowly increasing (1.3x)
             "tp_steps": {
                 # [Optimized] Ultra-Fast Scalps: $3, $5, $8...
                 1: 3.0, 2: 5.0, 3: 8.0, 4: 12.0, 5: 18.0,
@@ -260,43 +260,33 @@ class KalmanGridStrategy:
             # [Advanced Martingale] 
             # If lot_multiplier is customized (e.g. by AI or config > 1.0 but not matching hardcoded logic assumptions),
             # we respect the configured multiplier strictly.
-            # Default soft logic uses 1.4/1.1 tiers. 
-            # If we want to support AI's "martingale_multiplier" (e.g. 1.5), we should use it.
             
             # Simple Heuristic: If lot_multiplier is significantly different from 1.0, use Standard Geometric
-            # Or if we want to enforce AI control.
             
             if self.lot_multiplier > 1.0:
                  # Standard Geometric: Base * (Mult ^ Count)
-                 # Count starts at 0 for first position? No, current_count usually means how many we HAVE.
-                 # So next one is current_count + 1?
-                 # If we have 1 position, we are adding the 2nd. 
-                 # If we use power: Mult ^ 1.
-                 
-                 # Let's align with the Tiered logic which takes 'current_count' as input (how many exist).
-                 # If 0 exist (Initial), current_count=0.
-                 
                  multiplier = self.lot_multiplier ** current_count
             else:
-                # Soft/Tiered Multiplier (Fallback)
-                if current_count <= 3:
-                    multiplier = 1.0  # 初期平稳 (1-3层)
-                elif current_count <= 6:
-                    multiplier = 1.4  # 中期发力 (4-6层)
-                else:
-                    multiplier = 1.1  # 后期保守 (7+层)
+                # Soft/Tiered Multiplier (Fallback) - Slowly Increasing Logic
+                # Level 1-2: 1.0x
+                # Level 3-5: 1.3x
+                # Level 6+: 1.5x
                 
                 accum_mult = 1.0
                 for i in range(1, current_count + 1):
-                    if i <= 3: m = 1.0
-                    elif i <= 6: m = 1.4
-                    else: m = 1.1
+                    if i <= 2: m = 1.0
+                    elif i <= 5: m = 1.3
+                    else: m = 1.5
                     accum_mult *= m
                 multiplier = accum_mult
             
             # Override for safety if result is too huge
             if multiplier > 20.0: multiplier = 20.0
              
+            # Use rounding to ensure 0.01 * 1.3 becomes 0.01 or 0.02 appropriately
+            # Standard float logic: 0.013 -> 0.01. 0.0169 -> 0.02.
+            # If user wants "slowly increase", we rely on the multiplier being large enough eventually.
+            
             return float(f"{self.lot * multiplier:.2f}")
 
         elif self.lot_type == 'ARITHMETIC':
