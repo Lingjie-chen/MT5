@@ -3265,8 +3265,8 @@ class SymbolTrader:
                             final_signal = "close"
                         elif qw_action == 'hold':
                             final_signal = "hold"
-                        elif qw_action == 'grid_start':
-                            final_signal = "grid_start"
+                        elif qw_action in ['grid_start', 'grid_start_long', 'grid_start_short']:
+                            final_signal = qw_action
                             
                         # Reason
                         reason = strategy.get('reason', 'Qwen Decision')
