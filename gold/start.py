@@ -1318,24 +1318,21 @@ class SymbolTrader:
             
             # 再次确认 TP 是否存在
             if explicit_tp is None:
-                logger.info("LLM 未提供明确 TP，尝试计算优化值")
+                # User Requirement: Disable Individual TP
+                explicit_tp = 0.0
                 
+                # logger.info("LLM 未提供明确 TP，尝试计算优化值")
                 # 计算 ATR
-                rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
-                atr = 0.0
-                if rates is not None and len(rates) > 14:
-                     df_temp = pd.DataFrame(rates)
-                     high_low = df_temp['high'] - df_temp['low']
-                     atr = high_low.rolling(14).mean().iloc[-1]
-                
+                # rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+                # ...
                 # Only calculate TP, ignore SL return
-                _, explicit_tp = self.calculate_optimized_sl_tp(trade_type, price, atr, ai_exit_conds=sl_tp_params)
+                # _, explicit_tp = self.calculate_optimized_sl_tp(trade_type, price, atr, ai_exit_conds=sl_tp_params)
                 
-                if explicit_tp == 0:
-                     logger.warning("无法计算优化 TP，使用 ATR 默认值")
-                     if atr > 0:
-                         if "buy" in trade_type: explicit_tp = price + 3.0 * atr
-                         else: explicit_tp = price - 3.0 * atr 
+                # if explicit_tp == 0:
+                #      logger.warning("无法计算优化 TP，使用 ATR 默认值")
+                #      if atr > 0:
+                #          if "buy" in trade_type: explicit_tp = price + 3.0 * atr
+                #          else: explicit_tp = price - 3.0 * atr 
 
             # User Requirement: 只有盈利比亏损的风险大于 1.5 的情况下交易
             # Enforce R:R check for ALL trade types (Limit/Stop AND Market Buy/Sell)
@@ -1721,22 +1718,23 @@ class SymbolTrader:
                 
                 # Dynamic Add TP Logic
                 add_tp = 0.0
-                if self.latest_strategy:
-                     pos_mgmt = self.latest_strategy.get('position_management', {})
-                     grid_tps = pos_mgmt.get('grid_level_tp_pips')
-                     if grid_tps:
-                         # Determine level index
-                         current_count = self.grid_strategy.long_pos_count if trade_type == 'buy' else self.grid_strategy.short_pos_count
-                         # Use specific TP if available
-                         tp_pips = grid_tps[current_count] if current_count < len(grid_tps) else grid_tps[-1]
-                         
-                         point = mt5.symbol_info(self.symbol).point
-                         if trade_type == 'buy':
-                             add_tp = price + (tp_pips * 10 * point)
-                         else:
-                             add_tp = price - (tp_pips * 10 * point)
-                         
-                         logger.info(f"Dynamic Add TP: {add_tp} ({tp_pips} pips)")
+                # User Requirement: Disable Individual TP, rely on Basket TP
+                # if self.latest_strategy:
+                #      pos_mgmt = self.latest_strategy.get('position_management', {})
+                #      grid_tps = pos_mgmt.get('grid_level_tp_pips')
+                #      if grid_tps:
+                #          # Determine level index
+                #          current_count = self.grid_strategy.long_pos_count if trade_type == 'buy' else self.grid_strategy.short_pos_count
+                #          # Use specific TP if available
+                #          tp_pips = grid_tps[current_count] if current_count < len(grid_tps) else grid_tps[-1]
+                #          
+                #          point = mt5.symbol_info(self.symbol).point
+                #          if trade_type == 'buy':
+                #              add_tp = price + (tp_pips * 10 * point)
+                #          else:
+                #              add_tp = price - (tp_pips * 10 * point)
+                #          
+                #          logger.info(f"Dynamic Add TP: {add_tp} ({tp_pips} pips)")
 
                 self._send_order(trade_type, price, 0.0, add_tp, comment=f"Grid: {action}")
                 # Don't return, allow SL/TP update for existing positions
