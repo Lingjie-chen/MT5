@@ -1193,6 +1193,7 @@ class SymbolTrader:
             entry_price = tick.ask if direction == 'bullish' else tick.bid
             
             logger.info(f"执行网格首单: {entry_type.upper()} {initial_lot} Lots")
+            # Force explicit_tp=0.0 for initial entry (User Requirement: Only Basket TP)
             self._send_order(entry_type, entry_price, sl=0.0, tp=0.0, comment="AI-Grid-Initial")
 
             # 6. 生成网格计划
