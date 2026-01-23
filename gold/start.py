@@ -1173,7 +1173,7 @@ class SymbolTrader:
             logger.info(f"网格方向: {direction} (ATR: {atr:.5f})")
 
             # 5. 执行首单 (Initial Entry) - Market Order
-            initial_lot = 0.01 # Force default 0.01 as requested
+            initial_lot = self.lot_size
             if grid_config.get('initial_lot'):
                 try:
                     # Only use config if it's explicitly set and valid, otherwise default to 0.01
