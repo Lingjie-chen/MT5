@@ -50,6 +50,7 @@ try:
         CRTAnalyzer, MTFAnalyzer
     )
     from .grid_strategy import KalmanGridStrategy
+    from .cache_manager import SymbolCache # [NEW] Import Cache
 except ImportError:
     # Fallback for direct script execution
     try:
@@ -62,6 +63,7 @@ except ImportError:
             CRTAnalyzer, MTFAnalyzer
         )
         from grid_strategy import KalmanGridStrategy
+        from cache_manager import SymbolCache # [NEW] Import Cache
     except ImportError as e:
         logger.error(f"Failed to import modules: {e}")
         sys.exit(1)
@@ -106,16 +108,17 @@ class HybridOptimizer:
         return final_signal, final_score, self.weights
 
 class SymbolTrader:
-    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M10): # Changed Default to M10
+    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M3): # Changed Default to M3
         self.symbol = symbol
         self.timeframe = timeframe
-        self.tf_name = "M10"
-        if timeframe == mt5.TIMEFRAME_M5: self.tf_name = "M5"
-        elif timeframe == mt5.TIMEFRAME_M10: self.tf_name = "M10" # Added M10 Name
+        self.tf_name = "M3"
+        if timeframe == mt5.TIMEFRAME_M1: self.tf_name = "M1"
+        elif timeframe == mt5.TIMEFRAME_M3: self.tf_name = "M3" # Added M3 Name
+        elif timeframe == mt5.TIMEFRAME_M5: self.tf_name = "M5"
+        elif timeframe == mt5.TIMEFRAME_M10: self.tf_name = "M10"
         elif timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
         elif timeframe == mt5.TIMEFRAME_H1: self.tf_name = "H1"
         elif timeframe == mt5.TIMEFRAME_H4: self.tf_name = "H4"
-        elif timeframe == mt5.TIMEFRAME_M6: self.tf_name = "M6"
         
         self.magic_number = 123456
         self.lot_size = 0.01 
@@ -211,14 +214,21 @@ class SymbolTrader:
             return False
         
         # 确认交易品种存在
-        symbol_info = mt5.symbol_info(self.symbol)
+        # [Optimized] Use SymbolCache to reduce IPC
+        symbol_info = SymbolCache.get_info(self.symbol)
+        
         if symbol_info is None:
             # 尝试重新 Select
             if not mt5.symbol_select(self.symbol, True):
                  logger.error(f"[{self.symbol}] 找不到交易品种且无法选中")
                  return False
+            # Retry cache after select
+            symbol_info = SymbolCache.get_info(self.symbol)
+            if symbol_info is None: return False
             
-        if symbol_info and not symbol_info.visible:
+        # Check visibility (Not directly available in dict cache, assume visible if selected)
+        # But for safety, we can check mt5 once here during init
+        if not mt5.symbol_info(self.symbol).visible:
             logger.info(f"[{self.symbol}] 交易品种不可见，尝试选中")
             if not mt5.symbol_select(self.symbol, True):
                 logger.error(f"[{self.symbol}] 无法选中交易品种")
@@ -247,11 +257,11 @@ class SymbolTrader:
         return df
 
     def get_multi_timeframe_data(self, num_candles=50):
-        """获取多周期数据 (M5, M15, H1)"""
+        """获取多周期数据 (M15, H1, H4)"""
         timeframes = {
-            "M5": mt5.TIMEFRAME_M5,
             "M15": mt5.TIMEFRAME_M15,
-            "H1": mt5.TIMEFRAME_H1
+            "H1": mt5.TIMEFRAME_H1,
+            "H4": mt5.TIMEFRAME_H4
         }
         
         mtf_data = {}
@@ -1699,7 +1709,7 @@ class SymbolTrader:
                     "tp": tp
                 }
                 
-                changed = False
+                # changed = False # Already initialized at top of loop
                 
                 # --- 2. 基于最新策略更新 SL/TP (全量覆盖更新) ---
                 # 策略调整: 恢复 AI 驱动的持仓参数更新逻辑
@@ -1810,31 +1820,31 @@ class SymbolTrader:
             # [FIX]: Initialize 'changed' to False at the start of the loop
             # This logic was moved inside the loop but 'changed' initialization might be missing in some paths
             
-            if changed:
-                # Retry mechanism for network issues
-                max_retries = 3
-                for attempt in range(max_retries):
-                    # Check connection first
-                    if not mt5.terminal_info().connected:
-                        logger.warning(f"检测到 MT5 未连接，尝试重新初始化... (Attempt {attempt+1})")
-                        if not mt5.initialize():
-                             logger.error("MT5 重新初始化失败")
-                             time.sleep(1)
-                             continue
-                    
-                    result = mt5.order_send(request)
-                    
-                    if result.retcode == mt5.TRADE_RETCODE_DONE:
-                        logger.info(f"持仓修改成功 (Ticket: {pos.ticket})")
-                        break
-                    elif result.retcode in [mt5.TRADE_RETCODE_CONNECTION, mt5.TRADE_RETCODE_TIMEOUT, mt5.TRADE_RETCODE_TOO_MANY_REQUESTS]:
-                        logger.warning(f"持仓修改网络错误 ({result.comment})，等待重试... (Attempt {attempt+1}/{max_retries})")
-                        time.sleep(2)
+                if changed:
+                    # Retry mechanism for network issues
+                    max_retries = 3
+                    for attempt in range(max_retries):
+                        # Check connection first
+                        if not mt5.terminal_info().connected:
+                            logger.warning(f"检测到 MT5 未连接，尝试重新初始化... (Attempt {attempt+1})")
+                            if not mt5.initialize():
+                                 logger.error("MT5 重新初始化失败")
+                                 time.sleep(1)
+                                 continue
+                        
+                        result = mt5.order_send(request)
+                        
+                        if result.retcode == mt5.TRADE_RETCODE_DONE:
+                            logger.info(f"持仓修改成功 (Ticket: {pos.ticket})")
+                            break
+                        elif result.retcode in [mt5.TRADE_RETCODE_CONNECTION, mt5.TRADE_RETCODE_TIMEOUT, mt5.TRADE_RETCODE_TOO_MANY_REQUESTS]:
+                            logger.warning(f"持仓修改网络错误 ({result.comment})，等待重试... (Attempt {attempt+1}/{max_retries})")
+                            time.sleep(2)
+                        else:
+                            logger.error(f"持仓修改失败: {result.comment} (Retcode: {result.retcode})")
+                            break
                     else:
-                        logger.error(f"持仓修改失败: {result.comment} (Retcode: {result.retcode})")
-                        break
-                else:
-                    logger.error("持仓修改多次重试均失败，放弃本次更新。")
+                        logger.error("持仓修改多次重试均失败，放弃本次更新。")
             # 如果最新信号转为反向或中立，且强度足够，可以考虑提前平仓
             # 但 execute_trade 已经处理了反向开仓(会先平仓)。
             # 这里只处理: 信号变 Weak/Neutral 时的防御性平仓 (如果需要)
@@ -2806,9 +2816,11 @@ class SymbolTrader:
         # [Scalping Mode]: If LLM suggests small TP (<= 20), we relax ATR constraints to allow quick exits.
         
         total_volume = sum([p['volume'] for p in current_positions])
-        symbol_info = mt5.symbol_info(self.symbol)
-        tick_value = symbol_info.trade_tick_value if symbol_info else 1.0
-        point = symbol_info.point if symbol_info else 0.01
+        # [Optimized] Use SymbolCache
+        symbol_info = SymbolCache.get_info(self.symbol)
+        
+        tick_value = symbol_info['trade_tick_value'] if symbol_info else 1.0
+        point = symbol_info['point'] if symbol_info else 0.01
         
         # ATR (Price Diff) -> ATR Value (USD)
         # ATR Value = ATR / Point * TickValue * Volume
@@ -2958,51 +2970,49 @@ class SymbolTrader:
                         try:
                             account_info = mt5.account_info()
                             if account_info:
-                                # 计算当前品种的浮动盈亏
                                 positions = mt5.positions_get(symbol=self.symbol)
-                                symbol_pnl = 0.0
-                                magic_positions_count = 0
+                                current_basket_profit = 0.0
+                                
                                 if positions:
                                     for pos in positions:
-                                        # 仅统计和计算属于本策略ID的持仓
                                         if pos.magic == self.magic_number:
-                                            magic_positions_count += 1
-                                            # Handle different position object structures safely
+                                            # Calculate real-time profit for basket check
                                             profit = getattr(pos, 'profit', 0.0)
                                             swap = getattr(pos, 'swap', 0.0)
-                                            commission = getattr(pos, 'commission', 0.0) # Check attribute existence
-                                            symbol_pnl += profit + swap + commission
+                                            commission = getattr(pos, 'commission', 0.0)
+                                            current_basket_profit += (profit + swap + commission)
+                                            
+                                # --- Check Grid Basket TP (Simple & Direct) ---
+                                # If current basket profit > target, close all
+                                if self.latest_strategy and self.latest_strategy.get('position_management'):
+                                    # Use Dynamic Basket TP
+                                    basket_tp = self.latest_strategy['position_management'].get('dynamic_basket_tp', 15.0)
+                                else:
+                                    # Use Config Default
+                                    basket_tp = self.grid_strategy.global_tp
+                                    
+                                # Safety: Ensure basket_tp is at least $5
+                                basket_tp = max(basket_tp, 5.0)
                                 
-                                # 显示当前 ID 的持仓状态
-                                # if magic_positions_count > 0:
-                                #     logger.info(f"ID {self.magic_number} 当前持仓: {magic_positions_count} 个")
-                                # else:
-                                #     pass
+                                if current_basket_profit >= basket_tp:
+                                     logger.info(f"💰 Basket TP Triggered! Profit: ${current_basket_profit:.2f} >= Target: ${basket_tp:.2f}")
+                                     self.close_all_positions(reason="Basket TP Hit")
                                 
-                                metrics = {
-                                    "timestamp": datetime.now(),
-                                    "balance": account_info.balance,
-                                    "equity": account_info.equity,
-                                    "margin": account_info.margin,
-                                    "free_margin": account_info.margin_free,
-                                    "margin_level": account_info.margin_level,
-                                    "total_profit": account_info.profit,
-                                    "symbol_pnl": symbol_pnl
-                                }
-                                self.db_manager.save_account_metrics(metrics)
-                                # [NEW] Sync Account Metrics to Master DB
-                                self.master_db_manager.save_account_metrics(metrics)
+                                # --- REMOVED: Locked Trigger Logic ---
+                                # Previously here... now deleted as per user request.
+                                
+                                # ------------------------------
                         except Exception as e:
-                            logger.error(f"Failed to save account metrics: {e}")
-                        # ------------------------------
-                        
-                        # 实时更新持仓 SL/TP (使用最近一次分析的策略)
-                        if self.latest_strategy:
-                            self.manage_positions(self.latest_signal, self.latest_strategy)
-                            
+                            logger.error(f"Failed to process account info or check basket TP: {e}")
+
                     except Exception as e:
                         logger.error(f"Real-time data save failed: {e}")
-                # ---------------------------------------------------
+            
+                # 实时更新持仓 SL/TP (使用最近一次分析的策略)
+                if self.latest_strategy:
+                    self.manage_positions(self.latest_signal, self.latest_strategy)
+                    
+            # ---------------------------------------------------
 
                 # 如果是新 K 线 或者 这是第一次运行 (last_bar_time 为 0)
                 # 用户需求: 交易周期改为 6 分钟，大模型 6 分钟分析

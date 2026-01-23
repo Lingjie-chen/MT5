@@ -301,19 +301,21 @@ class QwenClient:
         martingale_configs = {
             "XAUUSD": """
     **交易员与风控团队必须严格遵守的【Martingale网格技术规范 (XAUUSD) - High Frequency Scalping Mode】**:
-    1. **首单**: 风险完全动态 (Dynamic Risk)，但倾向于**较大的起始手数 (High Lot Size)** 以利用微小波动。
-    2. **加仓 (Grid Add)**: 仅在SMC关键位(OB/FVG)加仓，禁止固定间距。但考虑到高频特性，允许在 M5 级别的微结构处加仓。
-    3. **动态加仓倍数 (Dynamic Multiplier)**:
-       - **决策逻辑**: 每次加仓必须综合分析市场走势、情绪(Sentiment)、预期收益(MFE)与风险(MAE)。
+    1. **交易执行与周期选择 (Execution & Timeframe)**:
+       - **核心周期**: 必须重点参考 **M15, H1, H4** 的市场结构。
+       - **执行周期**: **M3 (3分钟)**。
+       - **执行模式**: **尽量使用市场价直接买入/卖出 (Market Order)**，以确保不错过高频机会。
+       - **风格**: **快进快出 (Scalping)**。不要恋战，有利润就跑。
+    2. **首单**: 风险完全动态 (Dynamic Risk)，倾向于**较大的起始手数 (High Lot Size)** 以利用微小波动。
+    3. **加仓 (Grid Add)**: 仅在SMC关键位(OB/FVG)加仓。
+    4. **动态加仓倍数 (Dynamic Multiplier)**:
        - **倍数范围**: **1.5倍 - 2.0倍**。
-       - **执行**: 若SMC结构支撑强且情绪极度超卖(做多时)，可使用高倍数(2.0x)以快速摊低成本；若风险较高，维持保守倍数(1.5x)。
-    4. **参数表**:
-       - 最小间距: ATR(14) * 1.0 (更紧密的加仓间距)
-       - 最大层数: 15层 (允许更深的网格以应对高频波动)
+    5. **参数表**:
+       - 最小间距: ATR(14) * 1.0
+       - 最大层数: 15层
        - **整体止盈 (Basket TP)**: **必须设定为较小值 (Scalping Target)**。
-         - **推荐范围**: **5 USD - 15 USD**。
-         - **逻辑**: 追求高胜率、快速周转。只要获利 5-10 刀，立刻平仓离场，落袋为安。
-         - **指令**: 在 `dynamic_basket_tp` 中返回较小的数值 (如 10.0)。
+         - **推荐范围**: **5 USD - 20 USD**。
+         - **逻辑**: 追求高胜率、快速周转。只要获利 5-20 刀，立刻平仓离场，落袋为安。
             """,
             
             "ETHUSD": """
@@ -396,11 +398,9 @@ class QwenClient:
          - **拒绝固定值**: 严禁使用固定的数值 (如 50.0)！必须是经过上述逻辑计算后的结果。
          - **更新指令**: 在 `position_management` -> `dynamic_basket_tp` 中返回计算后的数值。
        - **Lock Profit Trigger (Profit Locking)**:
-         - **定义**: 当 Basket 整体利润达到此数值时，启动强制利润锁定机制 (Trailing Stop for Basket)。
-         - **逻辑**: 如果利润达到此阈值，系统将锁定大部分利润 (如 60%)，防止利润回撤。
-         - **最小值**: 必须 >= 10.0 USD。
-         - **量化优化**: Trigger 值应设置为 `Dynamic_Basket_TP` 的 60%-75%，这是一个经典的 Pareto Principle (二八定律) 在交易中的应用，即捕捉 80% 的趋势利润。
-         - **更新指令**: 在 `position_management` -> `lock_profit_trigger` 中返回计算后的数值。
+         - **[Disabled]**: 已禁用强制利润锁定功能 (Locked Trigger)。
+         - **逻辑**: 仅依赖 `Dynamic_Basket_TP` (整体止盈) 进行平仓。无需设置中间锁定点。
+         - **更新指令**: 在 `position_management` -> `lock_profit_trigger` 中返回 0.0 或不返回。
 
     5. **CandleSmoothing EMA 策略 (Strategy B)**:
        - **核心逻辑**: 基于 EMA50 趋势过滤，结合 EMA20 High/Low 通道突破和 Heiken Ashi 蜡烛形态。
