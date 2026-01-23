@@ -194,7 +194,7 @@ class KalmanGridStrategy:
             
         return signal
 
-    def check_grid_add(self, positions, current_price, point=0.01):
+    def check_grid_add(self, positions, current_price, point=0.01, current_atr=None):
         """
         Check if we need to add a position to the grid.
         Returns: ('add_buy', lot) or ('add_sell', lot) or (None, 0)
@@ -203,6 +203,14 @@ class KalmanGridStrategy:
         
         # Default Grid Distance
         grid_dist = self.grid_step_points * point
+        
+        # [Dynamic Step] Use ATR if provided
+        if current_atr is not None and current_atr > 0:
+            # 基础步长为 ATR 的 0.8 倍 (Advanced Martingale Logic)
+            grid_dist = current_atr * 0.8
+            # Ensure not smaller than minimum safety distance (e.g. 50 points)
+            min_safety = 50 * point
+            if grid_dist < min_safety: grid_dist = min_safety
         
         # SMC-Aware Grid Spacing (Optional Dynamic Adjustment)
         # If price is near an OB, we might want to add sooner or later
@@ -215,7 +223,7 @@ class KalmanGridStrategy:
             # Use points logic
             # grid_step_points is already integer points (e.g., 2000 for ETH)
             # point is e.g. 0.01 for ETH
-            min_dist_price = self.grid_step_points * point
+            min_dist_price = grid_dist
             
             # Ensure strictly greater than minimum distance
             if dist >= min_dist_price:
@@ -223,7 +231,7 @@ class KalmanGridStrategy:
                 # But here self.last_long_price is the *latest* opened position.
                 
                 next_lot = self.calculate_next_lot(self.long_pos_count)
-                logger.info(f"Grid Add BUY Signal: Dist {dist:.2f} >= Min {min_dist_price:.2f} (Step {self.grid_step_points})")
+                logger.info(f"Grid Add BUY Signal: Dist {dist:.2f} >= Min {min_dist_price:.2f} (ATR Dynamic: {current_atr is not None})")
                 return 'add_buy', next_lot
                 
         # Check Sell Grid
@@ -231,11 +239,11 @@ class KalmanGridStrategy:
             # For SELL, we add when price rises above last open
             dist = current_price - self.last_short_price
             
-            min_dist_price = self.grid_step_points * point
+            min_dist_price = grid_dist
             
             if dist >= min_dist_price:
                 next_lot = self.calculate_next_lot(self.short_pos_count)
-                logger.info(f"Grid Add SELL Signal: Dist {dist:.2f} >= Min {min_dist_price:.2f} (Step {self.grid_step_points})")
+                logger.info(f"Grid Add SELL Signal: Dist {dist:.2f} >= Min {min_dist_price:.2f} (ATR Dynamic: {current_atr is not None})")
                 return 'add_sell', next_lot
                 
         return None, 0.0
@@ -248,9 +256,52 @@ class KalmanGridStrategy:
         multiplier = 1.0
         if self.lot_type == 'GEOMETRIC':
             # Aggressive scaling for capital utilization
-            multiplier = self.lot_multiplier ** current_count 
+            # [Advanced Martingale] Soft/Tiered Multiplier
+            if current_count <= 3:
+                multiplier = 1.0  # 初期平稳 (1-3层)
+            elif current_count <= 6:
+                multiplier = 1.4  # 中期发力 (4-6层)
+            else:
+                multiplier = 1.1  # 后期保守 (7+层)
+                
+            # Calculate recursive lot size based on base lot and multiplier steps? 
+            # Or just multiply base lot by accumulated multiplier?
+            # Standard Martingale: Lot = Base * (Mult ^ Count)
+            # Soft Martingale Tiered: We need to know previous lot to multiply IT.
+            # Since we don't pass previous lot, we approximate or assume standard structure.
+            # Simplified Tiered Approach relative to Base Lot:
+            # Layer 1: 1x
+            # Layer 2: 1x
+            # Layer 3: 1x
+            # Layer 4: 1.4x (of Base? No, usually of previous).
+            # Let's assume 'lot_multiplier' config is ignored in favor of this hardcoded advanced logic OR used as base.
+            
+            # Implementation of "Soft Martingale" using the formula:
+            # Lot = Base * Product(Multipliers)
+            # Since we only have current_count, we can compute it.
+            
+            accum_mult = 1.0
+            for i in range(1, current_count + 1):
+                if i <= 3: m = 1.0
+                elif i <= 6: m = 1.4
+                else: m = 1.1
+                accum_mult *= m
+            
+            multiplier = accum_mult
+            
+            # If user wants strict Geometric with config multiplier, we might want to keep that option.
+            # But user requested "Advanced Martingale Optimization", so we override.
+            # Check if symbol is XAUUSD to apply this specific logic, else fallback?
+            # Assuming this is global optimization request.
+            
+            # Override for safety if result is too huge
+            if multiplier > 20.0: multiplier = 20.0
+             
+            return float(f"{self.lot * multiplier:.2f}")
+
         elif self.lot_type == 'ARITHMETIC':
             multiplier = current_count + 1
+            return float(f"{self.lot * multiplier:.2f}")
             
         return float(f"{self.lot * multiplier:.2f}")
 
@@ -354,8 +405,8 @@ class KalmanGridStrategy:
         
         if self.lock_profit_trigger is not None and self.lock_profit_trigger > 0:
              effective_trigger = self.lock_profit_trigger
-        else:
-             effective_trigger = 10.0
+        # else:
+        #      effective_trigger = 10.0 # Disabled default 10.0 trigger per user request
         
         if self.max_basket_profit >= effective_trigger:
             # We are in locking mode

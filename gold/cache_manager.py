@@ -31,7 +31,7 @@ class SymbolCache:
             cls._cache[symbol] = {
                 'point': info.point,
                 'digits': info.digits,
-                'contract_size': info.contract_size,
+                'contract_size': info.trade_contract_size,
                 'trade_stops_level': info.trade_stops_level,
                 'trade_tick_value': info.trade_tick_value,
                 'trade_tick_size': info.trade_tick_size,

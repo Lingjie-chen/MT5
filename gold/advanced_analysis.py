@@ -508,10 +508,22 @@ class SMCAnalyzer:
         if (active_strategy == "ALL" or active_strategy == "BOS") and self.allow_bos:
             if bos_signal['signal'] != "neutral":
                 aligned = False
+                # BOS typically means continuation, so it must align with trend
                 if (bos_signal['signal'] == 'buy' and sentiment_score >= 0): aligned = True
                 if (bos_signal['signal'] == 'sell' and sentiment_score <= 0): aligned = True
-                if aligned: final_signal = bos_signal['signal']; reason = f"SMC BOS (Sweep): {bos_signal['reason']}"; strength = 80
-        
+                
+                # Special Case: CHoCH (Change of Character) - Reversal
+                # If sentiment is opposite but we have a strong structure break, it might be CHoCH
+                # For now, we strictly follow user's "Trend Trading" request, so we prioritize alignment.
+                
+                if aligned: 
+                    final_signal = bos_signal['signal']
+                    reason = f"SMC BOS (Structure Break): {bos_signal['reason']}"
+                    strength = 90 # Increased strength for strict execution
+                    is_strict_trigger = True # User Requirement: Strictly execute on structure break
+                else:
+                    is_strict_trigger = False
+
         if final_signal == "neutral" and (active_strategy == "ALL" or active_strategy == "FVG") and self.allow_fvg:
             if fvg_signal['signal'] != "neutral":
                 valid_zone = True
@@ -587,7 +599,103 @@ class SMCAnalyzer:
                 
         return {"signal": signal, "reason": reason, "top": top, "bottom": bottom, "active_fvgs": active_fvgs}
 
+    def detect_structure_points(self, df):
+        """
+        识别最近的市场结构点 (Swing Highs / Swing Lows)
+        返回: 结构列表, 包含价格、索引、类型(SH/SL)
+        """
+        highs = df['high'].values; lows = df['low'].values
+        n = len(df)
+        points = []
+        
+        # 使用动态回溯，寻找分形点
+        # Fractal: High[i] > High[i-2...i+2]
+        for i in range(n-3, 2, -1):
+            is_sh = True
+            is_sl = True
+            
+            # Check Swing High
+            for k in range(1, 4): # Look left and right 3 bars
+                if i-k >= 0 and highs[i] <= highs[i-k]: is_sh = False
+                if i+k < n and highs[i] <= highs[i+k]: is_sh = False
+            
+            # Check Swing Low
+            for k in range(1, 4):
+                if i-k >= 0 and lows[i] >= lows[i-k]: is_sl = False
+                if i+k < n and lows[i] >= lows[i+k]: is_sl = False
+                
+            if is_sh: points.append({'type': 'SH', 'price': highs[i], 'index': i, 'time': df.index[i]})
+            if is_sl: points.append({'type': 'SL', 'price': lows[i], 'index': i, 'time': df.index[i]})
+            
+            if len(points) >= 10: break # 只找最近的10个点
+            
+        return sorted(points, key=lambda x: x['index']) # 按时间正序排列
+
+    def detect_smart_structure(self, df, sentiment_score):
+        """
+        综合检测 BOS 和 CHoCH
+        基于最近的 Swing Points 和 宏观趋势 (sentiment_score)
+        """
+        points = self.detect_structure_points(df)
+        if not points: return {"signal": "neutral", "reason": "No Structure Points"}
+        
+        current_close = df['close'].iloc[-1]
+        
+        # 1. 确定当前微观结构趋势 (基于最近两个同类点)
+        last_sh = [p for p in points if p['type'] == 'SH']
+        last_sl = [p for p in points if p['type'] == 'SL']
+        
+        if len(last_sh) < 2 or len(last_sl) < 2: return {"signal": "neutral", "reason": "Insufficient Structure"}
+        
+        # 最近的一个 SH 和 SL
+        recent_sh = last_sh[-1]
+        recent_sl = last_sl[-1]
+        prev_sh = last_sh[-2]
+        prev_sl = last_sl[-2]
+        
+        micro_trend = "neutral"
+        if recent_sh['price'] > prev_sh['price'] and recent_sl['price'] > prev_sl['price']: micro_trend = "bullish"
+        elif recent_sh['price'] < prev_sh['price'] and recent_sl['price'] < prev_sl['price']: micro_trend = "bearish"
+        
+        signal = "neutral"
+        reason = ""
+        pattern_type = "none"
+        
+        # --- BOS (Break of Structure) - 顺势突破 ---
+        # Uptrend: Break above recent SH
+        if (micro_trend == "bullish" or sentiment_score >= 0) and current_close > recent_sh['price']:
+            # 确认是有效突破 (Close > SH)
+            signal = "buy"
+            reason = f"BOS Bullish: Closed above SH ({recent_sh['price']})"
+            pattern_type = "BOS"
+            
+        # Downtrend: Break below recent SL
+        elif (micro_trend == "bearish" or sentiment_score <= 0) and current_close < recent_sl['price']:
+            signal = "sell"
+            reason = f"BOS Bearish: Closed below SL ({recent_sl['price']})"
+            pattern_type = "BOS"
+            
+        # --- CHoCH (Change of Character) - 反转破坏 ---
+        # 如果当前是看涨结构/趋势，但价格跌破了最近的 "Strong Low" (导致这一波上涨的起点 SL)
+        # 简化: 跌破最近的 SL
+        elif (micro_trend == "bullish" or sentiment_score > 0) and current_close < recent_sl['price']:
+             # 这可能是一个反转信号
+             signal = "sell"
+             reason = f"CHoCH Bearish: Structure Broken (SL {recent_sl['price']} violated)"
+             pattern_type = "CHoCH"
+             
+        # 如果当前是看跌结构/趋势，但价格突破了最近的 "Strong High"
+        elif (micro_trend == "bearish" or sentiment_score < 0) and current_close > recent_sh['price']:
+             signal = "buy"
+             reason = f"CHoCH Bullish: Structure Broken (SH {recent_sh['price']} violated)"
+             pattern_type = "CHoCH"
+             
+        return {"signal": signal, "reason": reason, "type": pattern_type, "price": current_close}
+
     def detect_bos(self, df):
+        # Legacy method kept for compatibility, redirected to new logic internally if needed
+        # Or we can keep it simple as a 'Sweep' detector.
+        # Let's keep the original Sweep logic but rename reason to distinguish.
         highs = df['high'].values; lows = df['low'].values; closes = df['close'].values
         swing_high = -1; swing_low = -1
         for i in range(len(df)-4, len(df)-30, -1):
@@ -595,8 +703,8 @@ class SMCAnalyzer:
         for i in range(len(df)-4, len(df)-30, -1):
             if (lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i-3] and lows[i] < lows[i+1] and lows[i] < lows[i+2] and lows[i] < lows[i+3]): swing_low = lows[i]; break
         current_bid = closes[-1]
-        if swing_high > 0 and current_bid > swing_high: return {"signal": "sell", "reason": "BOS Sell (Liquidity Sweep)", "price": swing_high}
-        if swing_low > 0 and current_bid < swing_low: return {"signal": "buy", "reason": "BOS Buy (Liquidity Sweep)", "price": swing_low}
+        if swing_high > 0 and current_bid > swing_high: return {"signal": "sell", "reason": "Liquidity Sweep (High)", "price": swing_high}
+        if swing_low > 0 and current_bid < swing_low: return {"signal": "buy", "reason": "Liquidity Sweep (Low)", "price": swing_low}
         return {"signal": "neutral", "reason": ""}
 
 class MatrixMLAnalyzer:
@@ -793,7 +901,7 @@ class TimeframeVisualAnalyzer:
     Uses Moving Averages alignment to simulate visual trend confirmation
     """
     def __init__(self):
-        self.timeframes = {"M10": mt5.TIMEFRAME_M10, "M15": mt5.TIMEFRAME_M15, "H1": mt5.TIMEFRAME_H1}
+        self.timeframes = {"M15": mt5.TIMEFRAME_M15, "H1": mt5.TIMEFRAME_H1, "H4": mt5.TIMEFRAME_H4}
         
     def analyze(self, symbol, current_time):
         trends = {}; alignment_score = 0
@@ -871,7 +979,7 @@ class MTFAnalyzer:
         except: return 0
     def update_zones(self, symbol):
         try:
-            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M10, 0, 500)
+            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M15, 0, 500)
             if rates is None or len(rates) < 50: return
             self.demand_zones = []; self.supply_zones = []
             tr_sum = 0

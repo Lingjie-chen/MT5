@@ -3,6 +3,7 @@ import logging
 import requests
 import json
 import threading
+import math
 from datetime import datetime
 
 logger = logging.getLogger("RemoteStorage")
@@ -101,15 +102,21 @@ class RemoteStorage:
                 # Assuming df index is timestamp
                 records = []
                 for index, row in df.iterrows():
+                    o = float(row['open'])
+                    h = float(row['high'])
+                    l = float(row['low'])
+                    c = float(row['close'])
+                    v = float(row['volume'])
+                    
                     record = {
                         "timestamp": index.isoformat() if isinstance(index, datetime) else str(index),
                         "symbol": symbol,
                         "timeframe": timeframe,
-                        "open": float(row['open']),
-                        "high": float(row['high']),
-                        "low": float(row['low']),
-                        "close": float(row['close']),
-                        "volume": float(row['volume'])
+                        "open": None if math.isnan(o) else o,
+                        "high": None if math.isnan(h) else h,
+                        "low": None if math.isnan(l) else l,
+                        "close": None if math.isnan(c) else c,
+                        "volume": None if math.isnan(v) else v
                     }
                     records.append(record)
                 
@@ -119,7 +126,7 @@ class RemoteStorage:
                     chunk = records[i:i + chunk_size]
                     response = requests.post(url, json=chunk, headers=headers, timeout=20)
                     if response.status_code not in [200, 201]:
-                         logger.warning(f"Failed to send market data batch: {response.status_code}")
+                         logger.warning(f"Failed to send market data batch: {response.status_code} - {response.text[:100]}")
             except Exception as e:
                 logger.error(f"Error sending market data batch: {e}")
 
