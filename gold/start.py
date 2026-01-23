@@ -1113,10 +1113,52 @@ class SymbolTrader:
                         logger.warning(f"Limit Sell Price {price} too close to Bid {tick.bid}, adjusting to {min_price}")
                         price = self._normalize_price(min_price)
 
-        elif llm_action == 'grid_start':
-            logger.info(">>> 执行网格部署 (Grid Start) <<<")
+        elif llm_action in ['grid_start', 'grid_start_long', 'grid_start_short']:
+            logger.info(f">>> 执行网格部署 ({llm_action}) <<<")
             
-            # 1. 获取 ATR (用于网格间距)
+            # 1. 确定方向
+            direction = 'bullish' # Default
+            if llm_action == 'grid_start_long':
+                direction = 'bullish'
+            elif llm_action == 'grid_start_short':
+                direction = 'bearish'
+            else:
+                # Fallback for legacy 'grid_start'
+                if self.latest_strategy:
+                    market_state = str(self.latest_strategy.get('market_state', '')).lower()
+                    pred = str(self.latest_strategy.get('short_term_prediction', '')).lower()
+                    if 'down' in market_state or 'bear' in pred or 'sell' in str(self.latest_strategy.get('action', '')).lower():
+                        direction = 'bearish'
+            
+            # 2. 提取配置 (Grid Config)
+            grid_config = {}
+            if self.latest_strategy:
+                grid_config = self.latest_strategy.get('grid_config', {})
+                # Compatibility with position_management
+                if not grid_config:
+                     pm = self.latest_strategy.get('position_management', {})
+                     grid_config = {
+                         'grid_step_pips': pm.get('recommended_grid_step_pips'),
+                         'martingale_multiplier': pm.get('martingale_multiplier'),
+                         'basket_tp_usd': pm.get('dynamic_basket_tp'),
+                         'initial_lot': self.latest_strategy.get('position_size')
+                     }
+
+            # 3. 更新网格策略参数
+            if grid_config:
+                # Multiplier
+                if grid_config.get('martingale_multiplier'):
+                    try:
+                        self.grid_strategy.lot_multiplier = float(grid_config['martingale_multiplier'])
+                        logger.info(f"Updated Grid Multiplier: {self.grid_strategy.lot_multiplier}")
+                    except: pass
+                
+                # Basket TP
+                basket_tp = grid_config.get('basket_tp_usd')
+                if basket_tp:
+                    self.grid_strategy.update_dynamic_params(basket_tp=basket_tp)
+            
+            # 4. 获取 ATR (用于网格间距)
             rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
             atr = 0.0
             if rates is not None and len(rates) > 14:
@@ -1128,20 +1170,27 @@ class SymbolTrader:
                 logger.warning("无法计算 ATR，无法生成网格计划")
                 return
 
-            # 2. 确定方向
-            direction = 'bullish' # Default
-            if self.latest_strategy:
-                market_state = str(self.latest_strategy.get('market_state', '')).lower()
-                pred = str(self.latest_strategy.get('short_term_prediction', '')).lower()
-                # 结合 Qwen 分析判断方向
-                if 'down' in market_state or 'bear' in pred or 'sell' in str(self.latest_strategy.get('action', '')).lower():
-                    direction = 'bearish'
-                elif 'up' in market_state or 'bull' in pred or 'buy' in str(self.latest_strategy.get('action', '')).lower():
-                    direction = 'bullish'
-            
-            logger.info(f"网格方向判定: {direction} (ATR: {atr:.5f})")
+            logger.info(f"网格方向: {direction} (ATR: {atr:.5f})")
 
-            # 3. 生成网格计划
+            # 5. 执行首单 (Initial Entry) - Market Order
+            initial_lot = self.lot_size
+            if grid_config.get('initial_lot'):
+                try:
+                    initial_lot = float(grid_config['initial_lot'])
+                except: pass
+            elif suggested_lot:
+                initial_lot = suggested_lot
+                
+            # Update class lot_size for consistency
+            self.lot_size = initial_lot
+            
+            entry_type = "buy" if direction == 'bullish' else "sell"
+            entry_price = tick.ask if direction == 'bullish' else tick.bid
+            
+            logger.info(f"执行网格首单: {entry_type.upper()} {initial_lot} Lots")
+            self._send_order(entry_type, entry_price, sl=0.0, tp=0.0, comment="AI-Grid-Initial")
+
+            # 6. 生成网格计划
             # 使用当前价格作为基准
             current_price = tick.ask if direction == 'bullish' else tick.bid
             
@@ -1150,32 +1199,17 @@ class SymbolTrader:
             point = symbol_info.point if symbol_info else 0.01
             
             # 提取 LLM 建议的动态网格间距 (Pips) 和 动态TP配置
-            dynamic_step = None
-            grid_level_tps = None
-            
-            if self.latest_strategy:
-                pos_mgmt = self.latest_strategy.get('position_management', {})
-                if pos_mgmt:
-                    dynamic_step = pos_mgmt.get('recommended_grid_step_pips')
-                    grid_level_tps = pos_mgmt.get('grid_level_tp_pips')
-                    if grid_level_tps:
-                         logger.info(f"Using Dynamic Grid Level TPs: {grid_level_tps}")
+            dynamic_step = grid_config.get('grid_step_pips')
+            grid_level_tps = self.latest_strategy.get('position_management', {}).get('grid_level_tp_pips')
             
             grid_orders = self.grid_strategy.generate_grid_plan(current_price, direction, atr, point=point, dynamic_step_pips=dynamic_step, grid_level_tps=grid_level_tps)
             
-            # 4. 执行挂单
+            # 7. 执行挂单
             if grid_orders:
                 logger.info(f"网格计划生成 {len(grid_orders)} 个挂单")
                 
-                # 计算一个基础手数
-                base_lot = self.lot_size
-                # 如果有 suggested_lot，使用它
-                if suggested_lot and suggested_lot > 0:
-                    base_lot = suggested_lot
-                
-                # 临时保存原始 lot_size
+                # 临时保存原始 lot_size (although we updated it above, keep logic safe)
                 original_lot = self.lot_size
-                self.lot_size = base_lot # 设置为本次网格的基础手数
                 
                 for i, order in enumerate(grid_orders):
                     o_type = order['type']
@@ -1185,9 +1219,9 @@ class SymbolTrader:
                     # 发送订单
                     self._send_order(o_type, o_price, sl=0.0, tp=o_tp, comment=f"AI-Grid-{i+1}")
                     
-                # 恢复 lot_size
-                self.lot_size = original_lot
-                logger.info("网格部署完成")
+                # 恢复 lot_size (Optional, but good practice if shared state)
+                # self.lot_size = original_lot 
+                logger.info("网格部署完成 (Initial + Limits)")
                 return # 结束本次 execute_trade
             else:
                 logger.warning("网格计划为空，未执行任何操作")
