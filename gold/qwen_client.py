@@ -689,6 +689,9 @@ class QwenClient:
         *   **网格间距 (Grid Step)**: 当前设置是否适应了当时的 ATR 波动？是否因为间距太小导致在窄幅震荡中过早打满仓位？
         *   **整体止盈 (Basket TP)**: 目标设定是否过高导致无法触及？或者过低导致错失大行情？
         *   **仓位控制 (Position Sizing)**: 首单仓位 (Initial Lot) 是否相对于账户资金过重？加仓倍数是否带来了不可控的风险？
+        *   **最大回撤优化 (Max Drawdown Optimization)**: 
+            *   *止损位置分析*: 止损 (Basket SL) 是否正好设置在流动性扫荡区 (Liquidity Sweep Zone)？(即：刚打止损就反弹)
+            *   *改进策略*: 如果发生了"打损反弹"，说明 Basket SL 设置过于保守。下次应参考历史 MAE (最大不利偏移) 的 90% 分位值，并结合关键支撑位 **下方** 预留更多缓冲空间。
 
     3.  **执行偏差检查 (Execution Gap)**:
         *   对比 **交易计划 (Strategy Rationale)** 与 **实际执行 (Actual Execution)**。
@@ -699,6 +702,7 @@ class QwenClient:
         *   **参数动态调整 (Parameter Tuning)**:
             *   *如果本次抗单严重*: 下次需 **扩大** 网格间距 (e.g., 1.5 * ATR -> 2.0 * ATR) 或 **降低** 首单仓位。
             *   *如果本次踏空*: 下次需 **缩小** 间距或使用更灵敏的 Basket TP。
+            *   *如果遭遇"打损反弹"*: 下次需 **放宽** Basket SL (例如增加 20% 空间) 或 **减少** 最大加仓层数以降低总风险。
         *   **Action Item**: 生成一条具体的 JSON 配置指令，用于覆盖下一次的默认参数。
 
     **Output Format (输出格式 - 存入 Long-Term Memory):**
@@ -712,14 +716,22 @@ class QwenClient:
       "grid_audit": {
           "step_rating": "too_tight" | "optimal" | "too_wide",
           "tp_rating": "too_high" | "optimal" | "too_low",
-          "entry_timing": "early" | "perfect" | "late"
+          "entry_timing": "early" | "perfect" | "late",
+          "sl_placement": "too_tight" | "optimal" | "too_loose" // 新增止损评估
+      },
+      "drawdown_analysis": { // 新增回撤分析
+          "max_drawdown_reached": -150.0,
+          "sl_trigger_point": -200.0,
+          "was_liquidity_sweep": true, // 是否为流动性扫荡(打损反弹)
+          "optimal_sl_suggestion": -250.0 // 基于事后分析的最优止损建议
       },
       "shortcomings": "本次交易的不足之处",
       "improvements": "下次交易的具体改进措施 (包含参数调整建议)",
       "next_trade_adjustments": {
           "suggested_initial_lot": 0.01,
           "suggested_grid_step_multiplier": 1.2,
-          "suggested_basket_tp_adjustment": "+10%"
+          "suggested_basket_tp_adjustment": "+10%",
+          "suggested_basket_sl_adjustment": "-20%" // 建议放宽止损
       },
       "self_rating": 8.5
     }
