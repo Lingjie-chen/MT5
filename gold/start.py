@@ -990,129 +990,36 @@ class SymbolTrader:
         # This handles cases where LLM says "add" but position was closed or didn't exist
         
         # User Requirement: 如果很确定的话 (High Strength) 可以直接开市场价
-        if strength is not None and strength >= 0.8:
-            if llm_action in ['limit_buy', 'buy_limit']:
-                logger.info(f"High confidence ({strength}), switching Limit Buy to Market Buy")
-                llm_action = 'buy'
-            elif llm_action in ['limit_sell', 'sell_limit']:
-                logger.info(f"High confidence ({strength}), switching Limit Sell to Market Sell")
-                llm_action = 'sell'
+        # [DISABLED] Market Buy/Sell Logic for Single Orders
+        # if strength is not None and strength >= 0.8:
+        #     if llm_action in ['limit_buy', 'buy_limit']:
+        #         logger.info(f"High confidence ({strength}), switching Limit Buy to Market Buy")
+        #         llm_action = 'buy'
+        #     elif llm_action in ['limit_sell', 'sell_limit']:
+        #         logger.info(f"High confidence ({strength}), switching Limit Sell to Market Sell")
+        #         llm_action = 'sell'
 
         if llm_action in ['buy', 'add_buy']:
-            trade_type = "buy"
-            price = tick.ask
+            # [DISABLED]
+            # trade_type = "buy"
+            # price = tick.ask
+            logger.info("Ignoring 'buy'/'add_buy' action as per Grid-Only policy.")
+            return
         elif llm_action in ['sell', 'add_sell']:
-            trade_type = "sell"
-            price = tick.bid
+            # [DISABLED]
+            # trade_type = "sell"
+            # price = tick.bid
+            logger.info("Ignoring 'sell'/'add_sell' action as per Grid-Only policy.")
+            return
         elif llm_action in ['limit_buy', 'buy_limit']:
-            # 检查现有 Limit 挂单
-            current_orders = mt5.orders_get(symbol=self.symbol)
-            if current_orders:
-                for o in current_orders:
-                    if o.magic == self.magic_number:
-                        # 如果是 Sell Limit/Stop (反向)，则取消
-                        if o.type in [mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP]:
-                             logger.info(f"取消反向挂单 #{o.ticket} (Type: {o.type})")
-                             req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
-                             mt5.order_send(req)
-                        # User Requirement: 如果有同向限价单，取消旧的开设新的
-                        elif o.type in [mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP]:
-                             logger.info(f"取消同向旧挂单 #{o.ticket} (Type: {o.type}) 以便更新")
-                             req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
-                             mt5.order_send(req)
-                        
-            # 优先使用 limit_price (与 prompt 一致)，回退使用 entry_price
-            price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
-            
-            # 增强：如果价格无效，尝试自动修复
-            if price <= 0:
-                logger.warning(f"LLM 建议 Limit Buy 但未提供价格，尝试使用 ATR 自动计算")
-                # 获取 ATR
-                rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
-                if rates is not None and len(rates) > 14:
-                     df_temp = pd.DataFrame(rates)
-                     high_low = df_temp['high'] - df_temp['low']
-                     atr = high_low.rolling(14).mean().iloc[-1]
-                     if atr > 0:
-                        price = tick.ask - (atr * 0.5) # 默认在当前价格下方 0.5 ATR 处挂单
-                        logger.info(f"自动设定 Limit Buy 价格: {price:.2f} (Ask: {tick.ask}, ATR: {atr:.4f})")
-            
-            # 智能判断 Limit vs Stop
-            if price > 0:
-                # 检查最小间距 (Stops Level)
-                symbol_info = mt5.symbol_info(self.symbol)
-                stop_level = symbol_info.trade_stops_level * symbol_info.point if symbol_info else 0
-                price = self._normalize_price(price)
-                
-                if price > tick.ask:
-                    trade_type = "stop_buy" # 价格高于当前价 -> 突破买入
-                    # Buy Stop must be >= Ask + StopLevel
-                    min_price = tick.ask + stop_level
-                    if price < min_price:
-                        logger.warning(f"Stop Buy Price {price} too close to Ask {tick.ask}, adjusting to {min_price}")
-                        price = self._normalize_price(min_price)
-                else:
-                    trade_type = "limit_buy" # 价格低于当前价 -> 回调买入
-                    # Buy Limit must be <= Ask - StopLevel
-                    max_price = tick.ask - stop_level
-                    if price > max_price:
-                         logger.warning(f"Limit Buy Price {price} too close to Ask {tick.ask}, adjusting to {max_price}")
-                         price = self._normalize_price(max_price)
-                
+            # [DISABLED]
+            logger.info("Ignoring 'limit_buy' action as per Grid-Only policy.")
+            return
         elif llm_action in ['limit_sell', 'sell_limit']:
-            # 检查现有 Limit 挂单
-            current_orders = mt5.orders_get(symbol=self.symbol)
-            if current_orders:
-                for o in current_orders:
-                    if o.magic == self.magic_number:
-                        # 如果是 Buy Limit/Stop (反向)，则取消
-                        if o.type in [mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP]:
-                             logger.info(f"取消反向挂单 #{o.ticket} (Type: {o.type})")
-                             req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
-                             mt5.order_send(req)
-                        # User Requirement: 如果有同向限价单，取消旧的开设新的
-                        elif o.type in [mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP]:
-                             logger.info(f"取消同向旧挂单 #{o.ticket} (Type: {o.type}) 以便更新")
-                             req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
-                             mt5.order_send(req)
-
-            price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
-            
-            # 增强：如果价格无效，尝试自动修复
-            if price <= 0:
-                logger.warning(f"LLM 建议 Limit Sell 但未提供价格，尝试使用 ATR 自动计算")
-                # 获取 ATR
-                rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
-                if rates is not None and len(rates) > 14:
-                     df_temp = pd.DataFrame(rates)
-                     high_low = df_temp['high'] - df_temp['low']
-                     atr = high_low.rolling(14).mean().iloc[-1]
-                     if atr > 0:
-                        price = tick.bid + (atr * 0.5) # 默认在当前价格上方 0.5 ATR 处挂单
-                        logger.info(f"自动设定 Limit Sell 价格: {price:.2f} (Bid: {tick.bid}, ATR: {atr:.4f})")
-            
-            # 智能判断 Limit vs Stop
-            if price > 0:
-                # 检查最小间距 (Stops Level)
-                symbol_info = mt5.symbol_info(self.symbol)
-                stop_level = symbol_info.trade_stops_level * symbol_info.point if symbol_info else 0
-                price = self._normalize_price(price)
-
-                if price < tick.bid:
-                    trade_type = "stop_sell" # 价格低于当前价 -> 突破卖出
-                    # Sell Stop must be <= Bid - StopLevel
-                    max_price = tick.bid - stop_level
-                    if price > max_price:
-                        logger.warning(f"Stop Sell Price {price} too close to Bid {tick.bid}, adjusting to {max_price}")
-                        price = self._normalize_price(max_price)
-                else:
-                    trade_type = "limit_sell" # 价格高于当前价 -> 反弹卖出
-                    # Sell Limit must be >= Bid + StopLevel
-                    min_price = tick.bid + stop_level
-                    if price < min_price:
-                        logger.warning(f"Limit Sell Price {price} too close to Bid {tick.bid}, adjusting to {min_price}")
-                        price = self._normalize_price(min_price)
-
+            # [DISABLED]
+            logger.info("Ignoring 'limit_sell' action as per Grid-Only policy.")
+            return
+        
         elif llm_action in ['grid_start', 'grid_start_long', 'grid_start_short']:
             logger.info(f">>> 执行网格部署 ({llm_action}) <<<")
             
@@ -1173,15 +1080,10 @@ class SymbolTrader:
             logger.info(f"网格方向: {direction} (ATR: {atr:.5f})")
 
             # 5. 执行首单 (Initial Entry) - Market Order
-            initial_lot = 0.01
-            if grid_config.get('initial_lot'):
-                try:
-                    # Only use config if it's explicitly set and valid, otherwise default to 0.01
-                    cfg_lot = float(grid_config['initial_lot'])
-                    if cfg_lot > 0: initial_lot = cfg_lot
-                except: pass
-            elif suggested_lot:
-                initial_lot = suggested_lot
+            initial_lot = 0.01 # Strictly Force 0.01 as requested
+            # User Requirement: Disable override from AI config to ensure safety start
+            # if grid_config.get('initial_lot'): ...
+            # elif suggested_lot: ...
                 
             # Update class lot_size for consistency
             self.lot_size = initial_lot
