@@ -11,7 +11,7 @@ cd /d "%~dp0"
 :: -----------------------------------------------------------------------------
 
 echo Launching GOLD Strategy (Ava)...
-start "Strategy - GOLD (Ava)" run_bot_watchdog.bat GOLD --account 1
+start "Strategy - GOLD (Ava)" run_bot_watchdog.bat EURUSD --account 1
 timeout /t 1 /nobreak >nul
 
 
