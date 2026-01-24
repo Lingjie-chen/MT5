@@ -15,9 +15,6 @@ start "Strategy - GOLD (Ava)" run_bot_watchdog.bat GOLD --account 1
 timeout /t 1 /nobreak >nul
 
 
-echo Launching EURUSD Strategy (Ava)...
-start "Strategy - EURUSD (Ava)" run_bot_watchdog.bat EURUSD --account 1
-
 echo.
 echo ========================================================
 echo  All strategies have been launched in separate windows.
