@@ -2,12 +2,12 @@
 # One-Click Start for Auto Sync Engine (Mac/Linux)
 
 # Ensure we are in the project root
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 # 0. Check/Setup Environment
 if [ ! -d "venv" ]; then
     echo "⚠️  Virtual environment not found! Running setup..."
-    bash "说明使用/setup_env.sh"
+    bash "scripts/setup/setup_env.sh"
 fi
 
 # 1. Activate Virtual Environment
@@ -43,7 +43,7 @@ echo "🚀 Starting Auto Sync Engine..."
 echo "Logs will be written to auto_sync_engine.log"
 
 # Auto-resolve Git conflicts
-python3 scripts/git_auto_resolve.py
+python3 scripts/maintenance/git_auto_resolve.py
 
 # Fix "modify/delete" conflicts
 if git status | grep -q "deleted by them"; then
@@ -53,15 +53,15 @@ if git status | grep -q "deleted by them"; then
 fi
 
 # Auto-repair Database
-python3 scripts/db_auto_repair.py
+python3 scripts/maintenance/db_auto_repair.py
 
 # Merge Archived DBs to Main
 echo "📦 Consolidating databases..."
-python3 scripts/consolidate_dbs.py
+python3 scripts/maintenance/consolidate_dbs.py
 
 # 3. Backup PostgreSQL to GitHub
 echo "📦 Backing up PostgreSQL data to GitHub..."
-python3 scripts/backup_postgres.py
+python3 scripts/maintenance/backup_postgres.py
 
 # Run the engine
-python3 scripts/checkpoint_dbs.py
+python3 scripts/maintenance/checkpoint_dbs.py

@@ -11,7 +11,7 @@ logger = logging.getLogger("DBConsolidator")
 
 def consolidate_dbs(project_root):
     # Main DB location
-    main_db_path = os.path.join(project_root, "gold", "trading_data.db")
+    main_db_path = os.path.join(project_root, "src", "trading_bot", "data", "trading_data.db")
     
     # Define paths to search for other DBs
     search_paths = [
