@@ -441,15 +441,15 @@ def main():
     if args.once:
         logger.info("Running single sync pass...")
         
-        # --- NEW: Merge Archives to Main DB ---
+        # --- NEW: Consolidate DBs ---
         try:
-            spec = importlib.util.spec_from_file_location("merge_archives", os.path.join(base_dir, "scripts", "merge_archives.py"))
+            spec = importlib.util.spec_from_file_location("consolidate_dbs", os.path.join(base_dir, "scripts", "consolidate_dbs.py"))
             if spec and spec.loader:
-                merge_module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(merge_module)
-                merge_module.merge_archives_to_main(base_dir)
+                consolidate_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(consolidate_module)
+                consolidate_module.consolidate_dbs(base_dir)
         except Exception as e:
-            logger.warning(f"Archive Merge Failed: {e}")
+            logger.warning(f"DB Consolidation Failed: {e}")
         # --------------------------------------
 
         db_manager.sync_all()
