@@ -51,8 +51,8 @@ if %errorlevel% equ 0 (
 python scripts\db_auto_repair.py
 
 :: Merge Archived DBs to Main
-echo 📦 Merging archived databases...
-python scripts\merge_archives.py
+echo 📦 Consolidating databases...
+python scripts\consolidate_dbs.py
 
 :: 3. Backup PostgreSQL to GitHub
 echo 📦 Backing up PostgreSQL data to GitHub...

@@ -56,8 +56,8 @@ fi
 python3 scripts/db_auto_repair.py
 
 # Merge Archived DBs to Main
-echo "📦 Merging archived databases..."
-python3 scripts/merge_archives.py
+echo "📦 Consolidating databases..."
+python3 scripts/consolidate_dbs.py
 
 # 3. Backup PostgreSQL to GitHub
 echo "📦 Backing up PostgreSQL data to GitHub..."
