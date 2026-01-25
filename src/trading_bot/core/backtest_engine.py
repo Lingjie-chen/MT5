@@ -326,7 +326,7 @@ def main():
     """
     主函数用于测试回测引擎
     """
-    from data_processor import MT5DataProcessor
+    from src.trading_bot.data.mt5_data_processor import MT5DataProcessor
     
     # 初始化数据处理器
     processor = MT5DataProcessor()
