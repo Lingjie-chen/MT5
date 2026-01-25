@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Ensure we are in the project root
-cd "$(dirname "$0")/.." || exit 1
+cd "$(dirname "$0")/../.." || exit 1
 
 echo "🚀 Setting up Quant Trading Environment..."
 

@@ -1,6 +1,6 @@
 @echo off
 :: Switch to project root
-cd /d "%~dp0.."
+cd /d "%~dp0..\.."
 
 echo 🚀 Setting up Quant Trading Environment...
 

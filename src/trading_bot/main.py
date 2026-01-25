@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
-from file_watcher import FileWatcher
 
 # Try importing MetaTrader5
 try:
@@ -21,7 +20,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('windows_bot.log', encoding='utf-8'),
+        logging.FileHandler(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'logs', 'windows_bot.log'), encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
@@ -30,37 +29,26 @@ logger = logging.getLogger("WindowsBot")
 # Load Environment Variables
 load_dotenv()
 
-# Add current directory to sys.path to ensure local imports work
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
+# Add project root to sys.path
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if project_root not in sys.path:
+    sys.path.append(project_root)
 
 # Import Local Modules
 try:
-    from .ai_client_factory import AIClientFactory
-    from .mt5_data_processor import MT5DataProcessor
-    from .database_manager import DatabaseManager
-    from .optimization import WOAm, TETA
-    from .advanced_analysis import (
+    from src.trading_bot.ai.ai_client_factory import AIClientFactory
+    from src.trading_bot.data.mt5_data_processor import MT5DataProcessor
+    from src.trading_bot.data.database_manager import DatabaseManager
+    from src.trading_bot.analysis.optimization import WOAm, TETA
+    from src.trading_bot.analysis.advanced_analysis import (
         AdvancedMarketAnalysis, AdvancedMarketAnalysisAdapter, SMCAnalyzer, 
         CRTAnalyzer, MTFAnalyzer
     )
-    from .grid_strategy import KalmanGridStrategy
-except ImportError:
-    # Fallback for direct script execution
-    try:
-        from ai_client_factory import AIClientFactory
-        from mt5_data_processor import MT5DataProcessor
-        from database_manager import DatabaseManager
-        from optimization import WOAm, TETA
-        from advanced_analysis import (
-            AdvancedMarketAnalysis, AdvancedMarketAnalysisAdapter, SMCAnalyzer, 
-            CRTAnalyzer, MTFAnalyzer
-        )
-        from grid_strategy import KalmanGridStrategy
-    except ImportError as e:
-        logger.error(f"Failed to import modules: {e}")
-        sys.exit(1)
+    from src.trading_bot.strategies.grid_strategy import KalmanGridStrategy
+    from src.trading_bot.utils.file_watcher import FileWatcher
+except ImportError as e:
+    logger.error(f"Failed to import modules: {e}")
+    sys.exit(1)
 
 class HybridOptimizer:
     def __init__(self):

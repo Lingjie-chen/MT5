@@ -13,21 +13,19 @@ import pandas as pd
 import numpy as np
 import importlib.util
 
-# Try to import git_auto_resolve
-try:
-    from scripts import git_auto_resolve
-except ImportError:
-    # If run directly from scripts folder
-    try:
-        import git_auto_resolve
-    except ImportError:
-        git_auto_resolve = None
-
-# Adjust path to allow importing from gold package
+# Adjust path to allow importing from scripts package
 current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(current_dir)
+scripts_dir = os.path.dirname(current_dir) # scripts/
+project_root = os.path.dirname(scripts_dir) # root
+
 if project_root not in sys.path:
     sys.path.append(project_root)
+
+# Try to import git_auto_resolve
+try:
+    from scripts.maintenance import git_auto_resolve
+except ImportError:
+    git_auto_resolve = None
 
 # Configure Logging
 logging.basicConfig(
