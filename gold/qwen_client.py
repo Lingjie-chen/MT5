@@ -292,6 +292,16 @@ class QwenClient:
         1. **MFE 分析**: 关注 1.0800, 1.1000 等整数关口的反应，适时止盈。
     - **风险评估**: 单笔风险控制在 1-2%。
     - **执行**: 批准交易，**输出经过集合分析后的最终最优 TP (Optimal TP)**。
+
+    **5. 学习与自我修正团队 (Self-Learning Team)**
+    - **反思机制**: 
+        - 每次交易结束后，必须调用 `Trade Reflection` 技能。
+        - 分析 `performance_stats` 中的历史盈亏归因。
+        - 识别 "Execution Gap" (执行偏差)：计划 vs 实际。
+    - **Qlib 深度研习**:
+        - 在每个 Session 启动时，主动回顾 Qlib 源码架构。
+        - 思考如何利用 Qlib 的 `Data Handler` 和 `Strategy` 模块优化现有的因子分析。
+        - 如果发现现有代码效率低下，提出重构建议。
         """
 
         # Select Instructions
