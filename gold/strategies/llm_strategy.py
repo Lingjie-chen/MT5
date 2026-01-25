@@ -37,15 +37,15 @@ if current_dir not in sys.path:
 
 # Import Local Modules
 try:
-    from .ai_client_factory import AIClientFactory
-    from .mt5_data_processor import MT5DataProcessor
-    from .database_manager import DatabaseManager
-    from .optimization import WOAm, TETA
-    from .advanced_analysis import (
+    from ai_client_factory import AIClientFactory
+    from mt5_data_processor import MT5DataProcessor
+    from database_manager import DatabaseManager
+    from optimization import WOAm, TETA
+    from advanced_analysis import (
         AdvancedMarketAnalysis, AdvancedMarketAnalysisAdapter, SMCAnalyzer, 
         CRTAnalyzer, MTFAnalyzer
     )
-    from .grid_strategy import KalmanGridStrategy
+    from grid_strategy import KalmanGridStrategy
 except ImportError:
     # Fallback for direct script execution
     try:
@@ -183,25 +183,8 @@ class SymbolTrader:
 
 
             # 2. 净值回撤检查 (Equity Drawdown)
-            balance = account_info.balance
-            equity = account_info.equity
-            if balance > 0:
-                drawdown_pct = (balance - equity) / balance
-                # Default 20% if not set
-                limit = getattr(self, 'max_drawdown_pct', 0.20)
-                
-                if drawdown_pct >= limit:
-                    msg = f"Max Drawdown Reached: {drawdown_pct:.1%} >= {limit:.1%}"
-                    logger.critical(msg)
-                    if close_if_critical:
-                        logger.critical("⚠️ 触发最大回撤风控，正在强制平仓所有头寸！")
-                        # Close all positions for this symbol
-                        positions = mt5.positions_get(symbol=self.symbol)
-                        if positions:
-                            for pos in positions:
-                                if pos.magic == self.magic_number:
-                                    self.close_position(pos, comment="Max Drawdown Hard Stop")
-                    return False, msg
+            # User Requirement: Function removed as requested
+            # if balance > 0: ...
             
             return True, "Safe"
             
@@ -990,82 +973,133 @@ class SymbolTrader:
         # This handles cases where LLM says "add" but position was closed or didn't exist
         
         # User Requirement: 如果很确定的话 (High Strength) 可以直接开市场价
-        # [DISABLED] Market Buy/Sell Logic for Single Orders
-        # if strength is not None and strength >= 0.8:
-        #     if llm_action in ['limit_buy', 'buy_limit']:
-        #         logger.info(f"High confidence ({strength}), switching Limit Buy to Market Buy")
-        #         llm_action = 'buy'
-        #     elif llm_action in ['limit_sell', 'sell_limit']:
-        #         logger.info(f"High confidence ({strength}), switching Limit Sell to Market Sell")
-        #         llm_action = 'sell'
+        if strength is not None and strength >= 0.8:
+            if llm_action in ['limit_buy', 'buy_limit']:
+                logger.info(f"High confidence ({strength}), switching Limit Buy to Market Buy")
+                llm_action = 'buy'
+            elif llm_action in ['limit_sell', 'sell_limit']:
+                logger.info(f"High confidence ({strength}), switching Limit Sell to Market Sell")
+                llm_action = 'sell'
 
         if llm_action in ['buy', 'add_buy']:
-            # [DISABLED]
-            # trade_type = "buy"
-            # price = tick.ask
-            logger.info("Ignoring 'buy'/'add_buy' action as per Grid-Only policy.")
-            return
+            trade_type = "buy"
+            price = tick.ask
         elif llm_action in ['sell', 'add_sell']:
-            # [DISABLED]
-            # trade_type = "sell"
-            # price = tick.bid
-            logger.info("Ignoring 'sell'/'add_sell' action as per Grid-Only policy.")
-            return
+            trade_type = "sell"
+            price = tick.bid
         elif llm_action in ['limit_buy', 'buy_limit']:
-            # [DISABLED]
-            logger.info("Ignoring 'limit_buy' action as per Grid-Only policy.")
-            return
-        elif llm_action in ['limit_sell', 'sell_limit']:
-            # [DISABLED]
-            logger.info("Ignoring 'limit_sell' action as per Grid-Only policy.")
-            return
-        
-        elif llm_action in ['grid_start', 'grid_start_long', 'grid_start_short']:
-            logger.info(f">>> 执行网格部署 ({llm_action}) <<<")
+            # 检查现有 Limit 挂单
+            current_orders = mt5.orders_get(symbol=self.symbol)
+            if current_orders:
+                for o in current_orders:
+                    if o.magic == self.magic_number:
+                        # 如果是 Sell Limit/Stop (反向)，则取消
+                        if o.type in [mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP]:
+                             logger.info(f"取消反向挂单 #{o.ticket} (Type: {o.type})")
+                             req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
+                             mt5.order_send(req)
+                        # User Requirement: 如果有同向限价单，取消旧的开设新的
+                        elif o.type in [mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP]:
+                             logger.info(f"取消同向旧挂单 #{o.ticket} (Type: {o.type}) 以便更新")
+                             req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
+                             mt5.order_send(req)
+                        
+            # 优先使用 limit_price (与 prompt 一致)，回退使用 entry_price
+            price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
             
-            # 1. 确定方向
-            direction = 'bullish' # Default
-            if llm_action == 'grid_start_long':
-                direction = 'bullish'
-            elif llm_action == 'grid_start_short':
-                direction = 'bearish'
-            else:
-                # Fallback for legacy 'grid_start'
-                if self.latest_strategy:
-                    market_state = str(self.latest_strategy.get('market_state', '')).lower()
-                    pred = str(self.latest_strategy.get('short_term_prediction', '')).lower()
-                    if 'down' in market_state or 'bear' in pred or 'sell' in str(self.latest_strategy.get('action', '')).lower():
-                        direction = 'bearish'
+            # 增强：如果价格无效，尝试自动修复
+            if price <= 0:
+                logger.warning(f"LLM 建议 Limit Buy 但未提供价格，尝试使用 ATR 自动计算")
+                # 获取 ATR
+                rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+                if rates is not None and len(rates) > 14:
+                     df_temp = pd.DataFrame(rates)
+                     high_low = df_temp['high'] - df_temp['low']
+                     atr = high_low.rolling(14).mean().iloc[-1]
+                     if atr > 0:
+                        price = tick.ask - (atr * 0.5) # 默认在当前价格下方 0.5 ATR 处挂单
+                        logger.info(f"自动设定 Limit Buy 价格: {price:.2f} (Ask: {tick.ask}, ATR: {atr:.4f})")
             
-            # 2. 提取配置 (Grid Config)
-            grid_config = {}
-            if self.latest_strategy:
-                grid_config = self.latest_strategy.get('grid_config', {})
-                # Compatibility with position_management
-                if not grid_config:
-                     pm = self.latest_strategy.get('position_management', {})
-                     grid_config = {
-                         'grid_step_pips': pm.get('recommended_grid_step_pips'),
-                         'martingale_multiplier': pm.get('martingale_multiplier'),
-                         'basket_tp_usd': pm.get('dynamic_basket_tp'),
-                         'initial_lot': self.latest_strategy.get('position_size')
-                     }
-
-            # 3. 更新网格策略参数
-            if grid_config:
-                # Multiplier
-                if grid_config.get('martingale_multiplier'):
-                    try:
-                        self.grid_strategy.lot_multiplier = float(grid_config['martingale_multiplier'])
-                        logger.info(f"Updated Grid Multiplier: {self.grid_strategy.lot_multiplier}")
-                    except: pass
+            # 智能判断 Limit vs Stop
+            if price > 0:
+                # 检查最小间距 (Stops Level)
+                symbol_info = mt5.symbol_info(self.symbol)
+                stop_level = symbol_info.trade_stops_level * symbol_info.point if symbol_info else 0
+                price = self._normalize_price(price)
                 
-                # Basket TP
-                basket_tp = grid_config.get('basket_tp_usd')
-                if basket_tp:
-                    self.grid_strategy.update_dynamic_params(basket_tp=basket_tp)
+                if price > tick.ask:
+                    trade_type = "stop_buy" # 价格高于当前价 -> 突破买入
+                    # Buy Stop must be >= Ask + StopLevel
+                    min_price = tick.ask + stop_level
+                    if price < min_price:
+                        logger.warning(f"Stop Buy Price {price} too close to Ask {tick.ask}, adjusting to {min_price}")
+                        price = self._normalize_price(min_price)
+                else:
+                    trade_type = "limit_buy" # 价格低于当前价 -> 回调买入
+                    # Buy Limit must be <= Ask - StopLevel
+                    max_price = tick.ask - stop_level
+                    if price > max_price:
+                         logger.warning(f"Limit Buy Price {price} too close to Ask {tick.ask}, adjusting to {max_price}")
+                         price = self._normalize_price(max_price)
+                
+        elif llm_action in ['limit_sell', 'sell_limit']:
+            # 检查现有 Limit 挂单
+            current_orders = mt5.orders_get(symbol=self.symbol)
+            if current_orders:
+                for o in current_orders:
+                    if o.magic == self.magic_number:
+                        # 如果是 Buy Limit/Stop (反向)，则取消
+                        if o.type in [mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP]:
+                             logger.info(f"取消反向挂单 #{o.ticket} (Type: {o.type})")
+                             req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
+                             mt5.order_send(req)
+                        # User Requirement: 如果有同向限价单，取消旧的开设新的
+                        elif o.type in [mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP]:
+                             logger.info(f"取消同向旧挂单 #{o.ticket} (Type: {o.type}) 以便更新")
+                             req = {"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket}
+                             mt5.order_send(req)
+
+            price = entry_params.get('limit_price', entry_params.get('entry_price', 0.0)) if entry_params else 0.0
             
-            # 4. 获取 ATR (用于网格间距)
+            # 增强：如果价格无效，尝试自动修复
+            if price <= 0:
+                logger.warning(f"LLM 建议 Limit Sell 但未提供价格，尝试使用 ATR 自动计算")
+                # 获取 ATR
+                rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+                if rates is not None and len(rates) > 14:
+                     df_temp = pd.DataFrame(rates)
+                     high_low = df_temp['high'] - df_temp['low']
+                     atr = high_low.rolling(14).mean().iloc[-1]
+                     if atr > 0:
+                        price = tick.bid + (atr * 0.5) # 默认在当前价格上方 0.5 ATR 处挂单
+                        logger.info(f"自动设定 Limit Sell 价格: {price:.2f} (Bid: {tick.bid}, ATR: {atr:.4f})")
+            
+            # 智能判断 Limit vs Stop
+            if price > 0:
+                # 检查最小间距 (Stops Level)
+                symbol_info = mt5.symbol_info(self.symbol)
+                stop_level = symbol_info.trade_stops_level * symbol_info.point if symbol_info else 0
+                price = self._normalize_price(price)
+
+                if price < tick.bid:
+                    trade_type = "stop_sell" # 价格低于当前价 -> 突破卖出
+                    # Sell Stop must be <= Bid - StopLevel
+                    max_price = tick.bid - stop_level
+                    if price > max_price:
+                        logger.warning(f"Stop Sell Price {price} too close to Bid {tick.bid}, adjusting to {max_price}")
+                        price = self._normalize_price(max_price)
+                else:
+                    trade_type = "limit_sell" # 价格高于当前价 -> 反弹卖出
+                    # Sell Limit must be >= Bid + StopLevel
+                    min_price = tick.bid + stop_level
+                    if price < min_price:
+                        logger.warning(f"Limit Sell Price {price} too close to Bid {tick.bid}, adjusting to {min_price}")
+                        price = self._normalize_price(min_price)
+
+        elif llm_action == 'grid_start':
+            logger.info(">>> 执行网格部署 (Grid Start) <<<")
+            
+            # 1. 获取 ATR (用于网格间距)
             rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
             atr = 0.0
             if rates is not None and len(rates) > 14:
@@ -1077,28 +1111,20 @@ class SymbolTrader:
                 logger.warning("无法计算 ATR，无法生成网格计划")
                 return
 
-            logger.info(f"网格方向: {direction} (ATR: {atr:.5f})")
+            # 2. 确定方向
+            direction = 'bullish' # Default
+            if self.latest_strategy:
+                market_state = str(self.latest_strategy.get('market_state', '')).lower()
+                pred = str(self.latest_strategy.get('short_term_prediction', '')).lower()
+                # 结合 Qwen 分析判断方向
+                if 'down' in market_state or 'bear' in pred or 'sell' in str(self.latest_strategy.get('action', '')).lower():
+                    direction = 'bearish'
+                elif 'up' in market_state or 'bull' in pred or 'buy' in str(self.latest_strategy.get('action', '')).lower():
+                    direction = 'bullish'
+            
+            logger.info(f"网格方向判定: {direction} (ATR: {atr:.5f})")
 
-            # 5. 执行首单 (Initial Entry) - Market Order
-            initial_lot = 0.01 # Strictly Force 0.01 as requested
-            # User Requirement: Disable override from AI config to ensure safety start
-            # if grid_config.get('initial_lot'): ...
-            # elif suggested_lot: ...
-                
-            # Update class lot_size for consistency
-            self.lot_size = initial_lot
-            
-            # Update GridStrategy base lot size for calculations
-            self.grid_strategy.lot = initial_lot
-            
-            entry_type = "buy" if direction == 'bullish' else "sell"
-            entry_price = tick.ask if direction == 'bullish' else tick.bid
-            
-            logger.info(f"执行网格首单: {entry_type.upper()} {initial_lot} Lots")
-            # Force explicit_tp=0.0 for initial entry (User Requirement: Only Basket TP)
-            self._send_order(entry_type, entry_price, sl=0.0, tp=0.0, comment="AI-Grid-Initial")
-
-            # 6. 生成网格计划
+            # 3. 生成网格计划
             # 使用当前价格作为基准
             current_price = tick.ask if direction == 'bullish' else tick.bid
             
@@ -1107,105 +1133,44 @@ class SymbolTrader:
             point = symbol_info.point if symbol_info else 0.01
             
             # 提取 LLM 建议的动态网格间距 (Pips) 和 动态TP配置
-            dynamic_step = grid_config.get('grid_step_pips')
-            grid_level_tps = self.latest_strategy.get('position_management', {}).get('grid_level_tp_pips')
+            dynamic_step = None
+            grid_level_tps = None
+            
+            if self.latest_strategy:
+                pos_mgmt = self.latest_strategy.get('position_management', {})
+                if pos_mgmt:
+                    dynamic_step = pos_mgmt.get('recommended_grid_step_pips')
+                    grid_level_tps = pos_mgmt.get('grid_level_tp_pips')
+                    if grid_level_tps:
+                         logger.info(f"Using Dynamic Grid Level TPs: {grid_level_tps}")
             
             grid_orders = self.grid_strategy.generate_grid_plan(current_price, direction, atr, point=point, dynamic_step_pips=dynamic_step, grid_level_tps=grid_level_tps)
             
-            # 7. 执行挂单
+            # 4. 执行挂单
             if grid_orders:
                 logger.info(f"网格计划生成 {len(grid_orders)} 个挂单")
                 
-                # --- [Safety Check] Margin & Overlap ---
-                account_info = mt5.account_info()
-                if not account_info:
-                    logger.error("无法获取账户信息进行风控检查，取消网格部署")
-                    return
+                # 计算一个基础手数
+                base_lot = self.lot_size
+                # 如果有 suggested_lot，使用它
+                if suggested_lot and suggested_lot > 0:
+                    base_lot = suggested_lot
                 
-                # A. Overlap Check with Pending Orders
-                existing_orders = mt5.orders_get(symbol=self.symbol)
-                existing_prices = []
-                if existing_orders:
-                    for o in existing_orders:
-                        if o.magic == self.magic_number:
-                            existing_prices.append(o.price_open)
-                
-                min_dist_points = 50 * point # 50 points safety
-                
-                final_grid_orders = []
-                for order in grid_orders:
-                    o_price = order['price']
-                    
-                    # Check Overlap
-                    is_overlap = False
-                    for ep in existing_prices:
-                        if abs(o_price - ep) < min_dist_points:
-                            is_overlap = True
-                            break
-                    
-                    if is_overlap:
-                        logger.warning(f"网格挂单价格 {o_price:.2f} 与现有挂单太近，跳过")
-                        continue
-                        
-                    final_grid_orders.append(order)
-                
-                # B. Margin Pre-Calculation
-                total_margin_required = 0.0
-                margin_safe = True
-                
-                for order in final_grid_orders:
-                    try:
-                        # Estimate margin: Lot * ContractSize / Leverage (Approx)
-                        # Better use order_calc_margin but requires knowing type exactly
-                        o_type = mt5.ORDER_TYPE_BUY if 'buy' in order['type'] else mt5.ORDER_TYPE_SELL
-                        o_vol = order.get('volume', self.lot_size)
-                        
-                        margin_req = mt5.order_calc_margin(o_type, self.symbol, o_vol, order['price'])
-                        if margin_req:
-                            total_margin_required += margin_req
-                    except Exception as e:
-                        logger.warning(f"Margin calc warning: {e}")
-                        # Fallback approx
-                        total_margin_required += (o_vol * 100000 / 100) * 0.01 # Rough guess if fails
-                
-                # Check against Free Margin (with buffer)
-                if total_margin_required > (account_info.margin_free * 0.8):
-                    logger.warning(f"网格部署所需保证金 ({total_margin_required:.2f}) 超过可用保证金的 80% ({account_info.margin_free:.2f})")
-                    logger.warning("尝试缩减网格层数...")
-                    
-                    # Trim orders from the end (furthest away)
-                    while total_margin_required > (account_info.margin_free * 0.8) and len(final_grid_orders) > 0:
-                        removed = final_grid_orders.pop()
-                        # Deduct margin
-                        try:
-                            o_type = mt5.ORDER_TYPE_BUY if 'buy' in removed['type'] else mt5.ORDER_TYPE_SELL
-                            o_vol = removed.get('volume', self.lot_size)
-                            margin_req = mt5.order_calc_margin(o_type, self.symbol, o_vol, removed['price'])
-                            if margin_req: total_margin_required -= margin_req
-                        except: pass
-                
-                if not final_grid_orders:
-                    logger.warning("可用资金不足以部署任何网格单，取消操作")
-                    return
-
-                # 临时保存原始 lot_size (although we updated it above, keep logic safe)
+                # 临时保存原始 lot_size
                 original_lot = self.lot_size
+                self.lot_size = base_lot # 设置为本次网格的基础手数
                 
-                for i, order in enumerate(final_grid_orders):
+                for i, order in enumerate(grid_orders):
                     o_type = order['type']
                     o_price = self._normalize_price(order['price'])
                     o_tp = self._normalize_price(order.get('tp', 0.0))
-                    o_volume = order.get('volume', 0.0)
-                    
-                    if o_volume > 0:
-                        self.lot_size = o_volume
                     
                     # 发送订单
                     self._send_order(o_type, o_price, sl=0.0, tp=o_tp, comment=f"AI-Grid-{i+1}")
                     
-                # 恢复 lot_size (Optional, but good practice if shared state)
-                # self.lot_size = original_lot 
-                logger.info("网格部署完成 (Initial + Limits)")
+                # 恢复 lot_size
+                self.lot_size = original_lot
+                logger.info("网格部署完成")
                 return # 结束本次 execute_trade
             else:
                 logger.warning("网格计划为空，未执行任何操作")
@@ -1220,21 +1185,24 @@ class SymbolTrader:
             
             # 再次确认 TP 是否存在
             if explicit_tp is None:
-                # User Requirement: Disable Individual TP
-                explicit_tp = 0.0
+                logger.info("LLM 未提供明确 TP，尝试计算优化值")
                 
-                # logger.info("LLM 未提供明确 TP，尝试计算优化值")
                 # 计算 ATR
-                # rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
-                # ...
-                # Only calculate TP, ignore SL return
-                # _, explicit_tp = self.calculate_optimized_sl_tp(trade_type, price, atr, ai_exit_conds=sl_tp_params)
+                rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+                atr = 0.0
+                if rates is not None and len(rates) > 14:
+                     df_temp = pd.DataFrame(rates)
+                     high_low = df_temp['high'] - df_temp['low']
+                     atr = high_low.rolling(14).mean().iloc[-1]
                 
-                # if explicit_tp == 0:
-                #      logger.warning("无法计算优化 TP，使用 ATR 默认值")
-                #      if atr > 0:
-                #          if "buy" in trade_type: explicit_tp = price + 3.0 * atr
-                #          else: explicit_tp = price - 3.0 * atr 
+                # Only calculate TP, ignore SL return
+                _, explicit_tp = self.calculate_optimized_sl_tp(trade_type, price, atr, ai_exit_conds=sl_tp_params)
+                
+                if explicit_tp == 0:
+                     logger.warning("无法计算优化 TP，使用 ATR 默认值")
+                     if atr > 0:
+                         if "buy" in trade_type: explicit_tp = price + 3.0 * atr
+                         else: explicit_tp = price - 3.0 * atr 
 
             # User Requirement: 只有盈利比亏损的风险大于 1.5 的情况下交易
             # Enforce R:R check for ALL trade types (Limit/Stop AND Market Buy/Sell)
@@ -1620,23 +1588,22 @@ class SymbolTrader:
                 
                 # Dynamic Add TP Logic
                 add_tp = 0.0
-                # User Requirement: Disable Individual TP, rely on Basket TP
-                # if self.latest_strategy:
-                #      pos_mgmt = self.latest_strategy.get('position_management', {})
-                #      grid_tps = pos_mgmt.get('grid_level_tp_pips')
-                #      if grid_tps:
-                #          # Determine level index
-                #          current_count = self.grid_strategy.long_pos_count if trade_type == 'buy' else self.grid_strategy.short_pos_count
-                #          # Use specific TP if available
-                #          tp_pips = grid_tps[current_count] if current_count < len(grid_tps) else grid_tps[-1]
-                #          
-                #          point = mt5.symbol_info(self.symbol).point
-                #          if trade_type == 'buy':
-                #              add_tp = price + (tp_pips * 10 * point)
-                #          else:
-                #              add_tp = price - (tp_pips * 10 * point)
-                #          
-                #          logger.info(f"Dynamic Add TP: {add_tp} ({tp_pips} pips)")
+                if self.latest_strategy:
+                     pos_mgmt = self.latest_strategy.get('position_management', {})
+                     grid_tps = pos_mgmt.get('grid_level_tp_pips')
+                     if grid_tps:
+                         # Determine level index
+                         current_count = self.grid_strategy.long_pos_count if trade_type == 'buy' else self.grid_strategy.short_pos_count
+                         # Use specific TP if available
+                         tp_pips = grid_tps[current_count] if current_count < len(grid_tps) else grid_tps[-1]
+                         
+                         point = mt5.symbol_info(self.symbol).point
+                         if trade_type == 'buy':
+                             add_tp = price + (tp_pips * 10 * point)
+                         else:
+                             add_tp = price - (tp_pips * 10 * point)
+                         
+                         logger.info(f"Dynamic Add TP: {add_tp} ({tp_pips} pips)")
 
                 self._send_order(trade_type, price, 0.0, add_tp, comment=f"Grid: {action}")
                 # Don't return, allow SL/TP update for existing positions
@@ -3281,8 +3248,8 @@ class SymbolTrader:
                             final_signal = "close"
                         elif qw_action == 'hold':
                             final_signal = "hold"
-                        elif qw_action in ['grid_start', 'grid_start_long', 'grid_start_short']:
-                            final_signal = qw_action
+                        elif qw_action == 'grid_start':
+                            final_signal = "grid_start"
                             
                         # Reason
                         reason = strategy.get('reason', 'Qwen Decision')
@@ -3500,226 +3467,3 @@ class SymbolTrader:
             logger.error(f"发生未捕获异常: {e}", exc_info=True)
             mt5.shutdown()
 
-class MultiSymbolBot:
-    def __init__(self, symbols, timeframe=mt5.TIMEFRAME_M15):
-        self.symbols = symbols
-        self.timeframe = timeframe
-        self.traders = []
-        self.is_running = False
-        self.watcher = None
-
-    def initialize_mt5(self, account_index=1):
-        """Global MT5 Initialization"""
-        # Account Configuration
-        if account_index == 2:
-             # Exness Account
-             account = 232809484
-             server = "Exness-MT5Real5"
-             password = "Clj568741230#"
-        else:
-             # Default to Ava (Account 1)
-             account = 89633982
-             server = "Ava-Real 1-MT5"
-             password = "Clj568741230#"
-        
-        logger.info(f"Connecting to MT5 Account {account_index}: {account} on {server}")
-        
-        # Initialize MT5
-        if not mt5.initialize(login=account, server=server, password=password):
-            err_code = mt5.last_error()
-            logger.error(f"MT5 初始化失败 (Account {account_index}), 错误码: {err_code}")
-            
-            # Fallback: Try initialize without credentials (uses last logged in account in Terminal)
-            if not mt5.initialize():
-                logger.error("MT5 默认初始化也失败")
-                return False
-        
-        # Check if login successful (login matches)
-        current_login = mt5.account_info().login
-        if current_login != account:
-             logger.warning(f"⚠️ 登录账户 ({current_login}) 与配置账户 ({account}) 不一致！")
-             logger.warning("请确保 MT5 终端已登录正确账户，或使用多个终端实例。")
-             
-        # Check algo trading status
-        term_info = mt5.terminal_info()
-        if not term_info.trade_allowed:
-            logger.warning("⚠️ 警告: 终端 '自动交易' (Algo Trading) 未开启！")
-            
-        logger.info(f"MT5 全局初始化成功，当前登录账户: {current_login}")
-        return True
-
-    def _resolve_symbol(self, base_symbol):
-        """
-        自动识别不同平台的交易品种名称 (Exness/Ava/etc.)
-        例如: GOLD -> XAUUSDm, EURUSD -> EURUSDm
-        """
-        # Handle User Typos or Aliases
-        base_upper = base_symbol.upper()
-        if base_upper == "XUAUSD" or base_upper == "XUAUSDM":
-             base_upper = "XAUUSD"
-        
-        # 1. 尝试直接匹配
-        if mt5.symbol_info(base_upper):
-            return base_upper
-            
-        # 2. 常见变体映射
-        variants = []
-        
-        # 针对特定品种的已知映射
-        if base_upper == "GOLD" or base_upper == "XAUUSD":
-            variants = ["XAUUSD", "XAUUSDm", "XAUUSDz", "XAUUSDk", "Gold", "GOLD", "Goldm", "XAUUSD.a", "XAUUSD.ecn"]
-        elif base_upper == "EURUSD":
-            variants = ["EURUSDm", "EURUSDz", "EURUSDk", "EURUSD.a", "EURUSD.ecn"]
-        elif base_upper == "ETHUSD":
-            variants = ["ETHUSDm", "ETHUSDz", "ETHUSDk", "ETHUSD.a", "ETHUSD.ecn"]
-        
-        # 3. 动态扫描 (Dynamic Scanning for Platform Specifics)
-        # 获取所有可用交易品种，寻找最匹配的
-        # 适用于未知品种或复杂后缀
-        
-        # 通用后缀尝试 (Priority 1)
-        variants.extend([f"{base_upper}m", f"{base_upper}z", f"{base_upper}k", f"{base_upper}.a", f"{base_upper}.ecn"])
-        
-        # 4. Search in All Symbols (Heavy operation, but done once at startup)
-        # 如果前面的常见变体都失败了，我们扫描所有品种
-        # 优化: 仅当 variants 为空或都失败时执行
-        
-        # First pass: Check known variants
-        for var in variants:
-            if mt5.symbol_select(var, True):
-                 if mt5.symbol_info(var):
-                    logger.info(f"✅ 自动识别品种: {base_symbol} -> {var}")
-                    return var
-            elif mt5.symbol_info(var): 
-                logger.info(f"✅ 自动识别品种 (Info): {base_symbol} -> {var}")
-                return var
-        
-        # Second pass: Deep Search
-        logger.info(f"Deep searching for symbol match: {base_upper}...")
-        all_symbols = mt5.symbols_get()
-        if all_symbols:
-            # Sort by name length to find shortest match (usually standard) or specific suffix?
-            # Prefer suffixes like 'm' or 'z' or '.a' if they contain the base name
-            
-            candidates = []
-            for s in all_symbols:
-                if base_upper in s.name.upper():
-                    candidates.append(s.name)
-            
-            if candidates:
-                # 智能选择最佳匹配
-                # 优先规则: 
-                # 1. Exness 偏好: 'm' 结尾 (e.g. XAUUSDm)
-                # 2. Standard: 完全匹配
-                # 3. Shortest: 最短的 (e.g. XAUUSD vs XAUUSD.ecn)
-                
-                # Exness Check
-                exness_matches = [c for c in candidates if c.endswith('m') and len(c) == len(base_upper) + 1]
-                if exness_matches:
-                    chosen = exness_matches[0]
-                    if mt5.symbol_select(chosen, True):
-                        logger.info(f"✅ 自动识别品种 (Deep Exness): {base_symbol} -> {chosen}")
-                        return chosen
-
-                # Standard/Shortest
-                candidates.sort(key=len)
-                chosen = candidates[0]
-                if mt5.symbol_select(chosen, True):
-                    logger.info(f"✅ 自动识别品种 (Deep Match): {base_symbol} -> {chosen}")
-                    return chosen
-
-        logger.warning(f"⚠️ 未能自动识别品种变体: {base_symbol}, 将尝试使用原名")
-        return base_symbol
-
-    def start(self, account_index=1):
-        if not self.initialize_mt5(account_index):
-            logger.error("MT5 初始化失败，无法启动")
-            return
-            
-        # --- 自动解析品种名称 ---
-        resolved_symbols = []
-        for s in self.symbols:
-            resolved = self._resolve_symbol(s)
-            if resolved not in resolved_symbols:
-                resolved_symbols.append(resolved)
-        self.symbols = resolved_symbols
-        logger.info(f"最终交易品种列表: {self.symbols}")
-        # -----------------------
-
-        # Start File Watcher
-        try:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            self.watcher = FileWatcher([current_dir])
-            self.watcher.start()
-        except Exception as e:
-            logger.error(f"Failed to start FileWatcher: {e}")
-
-        self.is_running = True
-        logger.info(f"🚀 Multi-Symbol Bot Started for: {self.symbols}")
-
-        # Launch a thread for each symbol
-        for symbol in self.symbols:
-            try:
-                # Create and start a worker thread for this symbol
-                thread = threading.Thread(target=self._trader_worker, args=(symbol,), name=f"Thread-{symbol}", daemon=True)
-                thread.start()
-                logger.info(f"Thread for {symbol} started.")
-            except Exception as e:
-                logger.error(f"Failed to start thread for {symbol}: {e}")
-
-        try:
-            # Main thread keep-alive
-            while self.is_running:
-                time.sleep(1)
-                
-        except KeyboardInterrupt:
-            logger.info("Bot stopped by user.")
-            self.is_running = False
-            mt5.shutdown()
-        except Exception as e:
-            logger.critical(f"Fatal Bot Error: {e}", exc_info=True)
-            self.is_running = False
-            mt5.shutdown()
-
-    def _trader_worker(self, symbol):
-        """Worker function for each symbol thread"""
-        try:
-            # Initialize trader instance inside the thread
-            # NOTE: MT5 calls are thread-safe, but we need to ensure separate state
-            trader = SymbolTrader(symbol=symbol, timeframe=self.timeframe)
-            trader.initialize()
-            self.traders.append(trader) # Keep reference if needed
-            
-            logger.info(f"[{symbol}] Worker Loop Started")
-            
-            while self.is_running:
-                try:
-                    trader.process_tick()
-                except Exception as e:
-                    logger.error(f"[{symbol}] Process Error: {e}")
-                
-                # Independent sleep for this symbol's loop
-                # Adjust polling rate if needed
-                time.sleep(1) 
-                
-        except Exception as e:
-            logger.error(f"[{symbol}] Worker Thread Crash: {e}")
-
-if __name__ == "__main__":
-    import argparse
-    
-    # Argument Parsing
-    parser = argparse.ArgumentParser(description="Multi-Symbol AI Trading Bot")
-    parser.add_argument("symbols", nargs="?", default="GOLD,ETHUSD,EURUSD", help="Comma separated symbols (e.g. GOLD,EURUSD)")
-    parser.add_argument("--account", type=int, default=1, help="Account Index from .env (1=Ava, 2=Exness)")
-    
-    args = parser.parse_args()
-    
-    # Parse Symbols
-    symbols = [s.strip().upper() for s in args.symbols.split(",")]
-    
-    logger.info(f"Starting Bot with Account {args.account} for symbols: {symbols}")
-            
-    # User Requirement: Change Timeframe back to 15 Minutes
-    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M15)
-    bot.start(account_index=args.account)
