@@ -117,15 +117,14 @@ class SymbolTrader:
         self.lot_size = 0.01 
         self.max_drawdown_pct = 0.05
         
-        # 使用特定品种的独立数据库文件，确保数据完全隔离
+        # 使用统一的主数据库文件 (All symbols share trading_data.db)
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        db_filename = f"trading_data_{symbol}.db"
-        db_path = os.path.join(current_dir, db_filename)
+        db_path = os.path.join(current_dir, "trading_data.db")
         
         self.db_manager = DatabaseManager(db_path=db_path)
         
-        # [NEW] 初始化主数据库 (Master DB) 用于数据汇总和集体学习
-        self.master_db_path = os.path.join(current_dir, "trading_data.db")
+        # [NEW] 初始化主数据库 (Master DB) - Now same as local DB
+        self.master_db_path = db_path
         self.master_db_manager = DatabaseManager(db_path=self.master_db_path)
         
         # [Optimization] Flag to skip heavy analysis after first run
