@@ -43,3 +43,21 @@
 
 **Usage Instruction:**
 请在每次 `analyze_market` 的 prompt 中包含上述反思的历史记录 (Memory Retrieval)，以确保大模型能够“记住”之前的教训，避免犯同样的错误。
+
+## Skill: Qlib Source Code Study (Qlib 源码研习)
+
+**Description:**
+此技能要求 Agent 在每个 Session 启动时，主动研究 Qlib 源码，学习如何使用 Qlib 原生工具（如数据加载器、回测引擎、因子分析等）来实现量化任务，从而提升代码的专业性和效率。
+
+**Trigger:**
+Session Start (每当开启一个新的对话会话时).
+
+**Action Items:**
+1.  **Locate Qlib**: 尝试查找环境中是否安装了 Qlib (`import qlib`) 或存在源码目录。
+2.  **Study Core Modules**:
+    *   `qlib.data`: 学习数据加载与处理 (Data Handler).
+    *   `qlib.strategy`: 学习策略基类与实现.
+    *   `qlib.backtest`: 学习回测引擎与执行器.
+    *   `qlib.workflow`: 学习完整的量化工作流.
+3.  **Apply Knowledge**: 在编写量化代码时，优先使用 Qlib 提供的原生接口，避免重复造轮子。
+4.  **Self-Correction**: 如果发现自己编写的代码可以用 Qlib 工具替代，请进行重构。
