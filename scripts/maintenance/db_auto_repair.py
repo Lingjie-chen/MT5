@@ -5,7 +5,7 @@ import psutil
 from datetime import datetime
 import time
 
-DB_PATH = os.path.join("gold", "trading_data.db")
+DB_PATH = os.path.join("src", "trading_bot", "data", "trading_data.db")
 
 def kill_locking_processes(file_path):
     """Attempt to find and kill processes locking the file (Windows specific)"""
@@ -101,7 +101,8 @@ def check_and_repair_db():
 if __name__ == "__main__":
     # Ensure we are in project root
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(script_dir)
+    scripts_dir = os.path.dirname(script_dir)
+    project_root = os.path.dirname(scripts_dir)
     os.chdir(project_root)
     
     check_and_repair_db()
