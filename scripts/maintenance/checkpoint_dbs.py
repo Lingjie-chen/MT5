@@ -283,7 +283,7 @@ class DBSyncManager:
     def get_dbs(self):
         """Find all relevant DB files"""
         patterns = [
-            os.path.join(self.base_dir, 'gold', 'trading_data_*.db'),
+            os.path.join(self.base_dir, 'src', 'trading_bot', 'trading_data_*.db'),
             os.path.join(self.base_dir, 'crypto', '*.db'),
             os.path.join(self.base_dir, 'trading_data.db')
         ]
@@ -401,7 +401,7 @@ def main():
     
     # --- NEW: Consolidate DBs (Run at startup) ---
     try:
-        spec = importlib.util.spec_from_file_location("consolidate_dbs", os.path.join(base_dir, "scripts", "consolidate_dbs.py"))
+        spec = importlib.util.spec_from_file_location("consolidate_dbs", os.path.join(base_dir, "scripts", "maintenance", "consolidate_dbs.py"))
         if spec and spec.loader:
             consolidate_module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(consolidate_module)
@@ -443,7 +443,7 @@ def main():
         
         # --- NEW: Consolidate DBs ---
         try:
-            spec = importlib.util.spec_from_file_location("consolidate_dbs", os.path.join(base_dir, "scripts", "consolidate_dbs.py"))
+            spec = importlib.util.spec_from_file_location("consolidate_dbs", os.path.join(base_dir, "scripts", "maintenance", "consolidate_dbs.py"))
             if spec and spec.loader:
                 consolidate_module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(consolidate_module)
