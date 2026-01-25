@@ -1914,7 +1914,7 @@ class SymbolTrader:
         if hasattr(optimizer, 'pop_size'):
             # Calculate pop_size to match roughly 2000 evaluations with 4 epochs
             # Total Evals ≈ Pop * Epochs. So 2000 / 4 = 500.
-            optimizer.pop_size = 500
+            optimizer.pop_size = 2000
             
         logger.info(f"本次选择的优化算法: {algo_name} (Pop: {optimizer.pop_size})")
 
