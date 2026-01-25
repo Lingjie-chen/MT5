@@ -2573,6 +2573,20 @@ class SymbolTrader:
     def initialize(self):
         """Initialize Trader State"""
         logger.info(f"初始化交易代理 - {self.symbol}")
+        
+        # [NEW] Start FileWatcher
+        # Watch 'src' and 'config' (if it exists)
+        watch_dirs = [
+            os.path.join(project_root, "src"),
+            os.path.join(project_root, "config")
+        ]
+        # Filter out non-existent dirs
+        watch_dirs = [d for d in watch_dirs if os.path.exists(d)]
+        
+        self.file_watcher = FileWatcher(watch_dirs)
+        self.file_watcher.start()
+        logger.info(f"File Watcher started on: {watch_dirs}")
+        
         # Sync history on startup
         self.sync_account_history()
         self.is_running = True
