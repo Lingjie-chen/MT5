@@ -399,15 +399,15 @@ def main():
     base_dir = project_root
     logger.info(f"Base Directory: {base_dir}")
     
-    # --- NEW: Merge Archives to Main DB (Run at startup) ---
+    # --- NEW: Consolidate DBs (Run at startup) ---
     try:
-        spec = importlib.util.spec_from_file_location("merge_archives", os.path.join(base_dir, "scripts", "merge_archives.py"))
+        spec = importlib.util.spec_from_file_location("consolidate_dbs", os.path.join(base_dir, "scripts", "consolidate_dbs.py"))
         if spec and spec.loader:
-            merge_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(merge_module)
-            merge_module.merge_archives_to_main(base_dir)
+            consolidate_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(consolidate_module)
+            consolidate_module.consolidate_dbs(base_dir)
     except Exception as e:
-        logger.warning(f"Archive Merge Failed: {e}")
+        logger.warning(f"DB Consolidation Failed: {e}")
     # -------------------------------------------------------
 
     # Initialize Managers
