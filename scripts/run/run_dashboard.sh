@@ -7,7 +7,7 @@ echo -e "\033]0;AI Trading Dashboard\007"
 cd "$(dirname "$0")"
 
 # Switch to parent directory (project root)
-cd ..
+cd ../..
 
 echo "[$(date)] Starting AI Trading Dashboard..."
 echo "---------------------------------------------------"
