@@ -1954,7 +1954,7 @@ class SymbolTrader:
             objective, 
             bounds, 
             steps=steps, 
-            epochs=4,
+            epochs=1,
             historical_data=historical_seeds # Pass seeds
         )
         
