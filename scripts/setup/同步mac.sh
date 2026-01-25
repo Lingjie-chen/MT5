@@ -18,10 +18,27 @@ fi
 # Add current directory to PYTHONPATH
 export PYTHONPATH=$PYTHONPATH:$(pwd)
 
-# --- Fix Git State (Auto-Unlock) ---
+# --- Fix Git State (Auto-Unlock & Sync) ---
 if [ -f ".git/index.lock" ]; then
     echo "🗑️ Removing stale .git/index.lock..."
     rm -f .git/index.lock
+fi
+
+echo "🔧 Ensuring Git Consistency..."
+# 1. Ensure we are on master
+git checkout master >/dev/null 2>&1
+
+# 2. Save local state
+git add .
+git commit -m "auto: save before sync" >/dev/null 2>&1
+
+# 3. Pull Remote (Rebase strategy: Apply local changes ON TOP of remote)
+# -X theirs means: In case of conflict, keep OUR local changes
+echo "🔄 Pulling remote updates..."
+if ! git pull origin master --rebase -X theirs; then
+    echo "⚠️ Rebase failed. Trying standard merge (keeping local data)..."
+    git rebase --abort >/dev/null 2>&1
+    git pull origin master --strategy-option=ours --no-edit
 fi
 # -----------------------------------
 

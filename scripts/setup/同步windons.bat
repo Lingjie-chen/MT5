@@ -14,10 +14,32 @@ call venv\Scripts\activate.bat
 :: Add current dir to PYTHONPATH
 set PYTHONPATH=%PYTHONPATH%;%cd%
 
-:: --- Fix Git State (Auto-Unlock) ---
+:: --- Fix Git State (Auto-Unlock & Sync) ---
 if exist .git\index.lock (
     echo 🗑️ Removing stale .git/index.lock...
     del /F /Q .git\index.lock
+)
+
+echo 🔧 Ensuring Git Consistency...
+:: 1. Handle Detached HEAD / Ensure master
+git symbolic-ref -q HEAD >nul
+if %errorlevel% neq 0 (
+    echo ⚠️ Detached HEAD detected. Checking out master...
+    git checkout master
+)
+
+:: 2. Save local state
+git add .
+git commit -m "auto: save before sync" >nul 2>&1
+
+:: 3. Pull Remote (Rebase strategy: Apply local changes ON TOP of remote)
+:: -X theirs means: In case of conflict, keep OUR local changes
+echo 🔄 Pulling remote updates...
+git pull origin master --rebase -X theirs
+if %errorlevel% neq 0 (
+    echo ⚠️ Rebase failed. Trying standard merge (keeping local data)...
+    git rebase --abort >nul 2>&1
+    git pull origin master --strategy-option=ours --no-edit
 )
 :: -----------------------------------
 
