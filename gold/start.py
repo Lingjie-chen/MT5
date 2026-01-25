@@ -182,25 +182,8 @@ class SymbolTrader:
 
 
             # 2. 净值回撤检查 (Equity Drawdown)
-            balance = account_info.balance
-            equity = account_info.equity
-            if balance > 0:
-                drawdown_pct = (balance - equity) / balance
-                # Default 20% if not set
-                limit = getattr(self, 'max_drawdown_pct', 0.20)
-                
-                if drawdown_pct >= limit:
-                    msg = f"Max Drawdown Reached: {drawdown_pct:.1%} >= {limit:.1%}"
-                    logger.critical(msg)
-                    if close_if_critical:
-                        logger.critical("⚠️ 触发最大回撤风控，正在强制平仓所有头寸！")
-                        # Close all positions for this symbol
-                        positions = mt5.positions_get(symbol=self.symbol)
-                        if positions:
-                            for pos in positions:
-                                if pos.magic == self.magic_number:
-                                    self.close_position(pos, comment="Max Drawdown Hard Stop")
-                    return False, msg
+            # User Requirement: Function removed as requested
+            # if balance > 0: ...
             
             return True, "Safe"
             
