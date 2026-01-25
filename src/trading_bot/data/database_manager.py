@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 import logging
 import os
-from .remote_storage import RemoteStorage
+from ..utils.remote_storage import RemoteStorage
 
 logger = logging.getLogger("DatabaseManager")
 
