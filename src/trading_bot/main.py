@@ -2742,9 +2742,45 @@ class SymbolTrader:
         logger.info(f"Smart Basket TP Calc: Base(LLM)={base_tp:.2f}, ATR_Val={tech_tp:.2f}, Regime={market_regime} -> Final={final_tp:.2f}")
         return final_tp
 
+    def check_trading_schedule(self):
+        """
+        Check if trading is allowed based on the schedule and symbol.
+        Rules:
+        - ETHUSD: Only Weekends (Sat, Sun).
+        - GOLD/XAUUSD/EURUSD: Only Weekdays (Mon-Fri).
+        """
+        now = datetime.now()
+        weekday = now.weekday() # 0=Mon, 6=Sun
+        
+        symbol_upper = self.symbol.upper()
+        
+        # Crypto Rules (ETHUSD) - Weekend Only
+        if "ETH" in symbol_upper:
+            if weekday >= 5: # Saturday(5) or Sunday(6)
+                return True
+            else:
+                logger.info(f"[{self.symbol}] 仅限周末交易，今天是 {now.strftime('%A')} (Weekday {weekday})，暂停交易。")
+                return False
+                
+        # Forex/Metal Rules (GOLD, EURUSD) - Weekday Only
+        # Matches GOLD, XAUUSD, XAUUSDM, EURUSD, EURUSDM
+        if "GOLD" in symbol_upper or "XAU" in symbol_upper or "EUR" in symbol_upper:
+            if weekday < 5: # Mon(0) to Fri(4)
+                return True
+            else:
+                logger.info(f"[{self.symbol}] 仅限工作日交易，今天是 {now.strftime('%A')} (Weekday {weekday})，暂停交易。")
+                return False
+                
+        # Default: Allow if not specified
+        return True
+
     def process_tick(self):
         """Single tick processing"""
         if not self.is_running:
+            return
+
+        # 0. Check Trading Schedule
+        if not self.check_trading_schedule():
             return
 
         # [NEW] Safety Check (Continuous Monitoring)
