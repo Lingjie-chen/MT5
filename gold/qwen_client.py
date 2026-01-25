@@ -653,6 +653,7 @@ class QwenClient:
         - "max_grid_levels": int (最大网格层数, e.g., 5)
         - "basket_tp_usd": float (整体止盈金额 USD, e.g., 50.0)
         - "basket_sl_usd": float (整体止损金额 USD, e.g., -200.0)
+        - "max_drawdown_usd": float (网格交易最大允许回撤 USD, e.g., 500.0. 必须基于账户资金和风险偏好由大模型分析得出)
     - **strategy_rationale**: str (中文, 详细解释 SMC 结构、为什么在此处启动网格、ATR 分析等)
     - **market_structure**: dict (SMC 分析摘要)
         - "trend_h4": str
