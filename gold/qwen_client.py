@@ -644,6 +644,11 @@ class QwenClient:
     JSON 必须包含以下字段：
 
     - **action**: str ("GRID_START_LONG", "GRID_START_SHORT", "HOLD", "CLOSE_ALL")
+    - **risk_management**: dict (风险管理配置)
+        - "risk_per_trade": float (单笔风险百分比, e.g., 0.02)
+        - "stop_loss_price": float (明确的止损价格)
+        - "take_profit_price": float (明确的止盈价格)
+        - "trailing_stop_atr": float (追踪止损ATR倍数, e.g., 1.5)
     - **grid_config**: dict (网格策略核心参数)
         - "initial_lot": float (首单手数, e.g., 0.01)
         - "grid_step_mode": str ("fixed" 或 "atr")
@@ -1346,7 +1351,7 @@ class QwenClient:
                     logger.info(f"收到模型响应 (Length: {len(message_content)})")
                     
                     # 使用 robust_json_parser 进行稳健解析
-                    required_fields = ['action', 'entry_conditions', 'exit_conditions', 'strategy_rationale', 'telegram_report', 'grid_config']
+                    required_fields = ['action', 'entry_conditions', 'exit_conditions', 'strategy_rationale', 'telegram_report', 'grid_config', 'risk_management']
                     defaults = {field: self._get_default_value(field) for field in required_fields}
                     # Ensure position_management default is available for compatibility
                     defaults['position_management'] = self._get_default_value('position_management')
@@ -1497,6 +1502,12 @@ class QwenClient:
                 "max_grid_levels": 5,
                 "basket_tp_usd": 50.0,
                 "basket_sl_usd": -200.0
+            },
+            'risk_management': {
+                "risk_per_trade": 0.01,
+                "stop_loss_price": 0.0,
+                "take_profit_price": 0.0,
+                "trailing_stop_atr": 1.5
             },
             'position_size': 0.01,
             'leverage': 1,
