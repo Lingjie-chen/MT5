@@ -143,6 +143,19 @@ class DatabaseManager:
                     PRIMARY KEY (timestamp)
                 )
             ''')
+
+            # Table for optimization history
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS optimization_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp DATETIME,
+                    algorithm TEXT,
+                    symbol TEXT,
+                    timeframe TEXT,
+                    params TEXT, -- JSON list of parameters
+                    score REAL
+                )
+            ''')
             
             conn.commit()
             # conn.close() # Persistent connection, do not close
