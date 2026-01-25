@@ -389,7 +389,7 @@ class DatabaseManager:
             logger.warning(f"WAL Checkpoint failed: {e}")
             return False
 
-    def get_trade_performance_stats(self, symbol=None, limit=50):
+    def get_trade_performance_stats(self, symbol=None, limit=1000):
         """
         Get recent trade performance statistics (MFE, MAE, Profit).
         Priority: Local DB -> Remote DB (Fallback)
@@ -426,56 +426,60 @@ class DatabaseManager:
         if len(stats) < limit:
             try:
                 import glob
-                project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
                 archive_dir = os.path.join(project_root, "archived_data")
-                archive_files = sorted(glob.glob(os.path.join(archive_dir, "trading_data_*.db")), reverse=True)
-                
-                for db_file in archive_files:
-                    if len(stats) >= limit: break
-                    try:
-                        conn_archive = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True)
-                        conn_archive.row_factory = sqlite3.Row
-                        cursor_archive = conn_archive.cursor()
-                        
-                        # Use same query as local
-                        query_arch = '''
-                            SELECT profit, mfe, mae, action, volume, close_time 
-                            FROM trades 
-                            WHERE result = 'CLOSED' 
-                        '''
-                        params_arch = []
-                        if symbol:
-                            query_arch += " AND symbol = ? "
-                            params_arch.append(symbol)
-                        
-                        query_arch += " ORDER BY close_time DESC LIMIT ?"
-                        params_arch.append(limit - len(stats))
-                        
-                        cursor_archive.execute(query_arch, tuple(params_arch))
-                        rows_arch = cursor_archive.fetchall()
-                        conn_archive.close()
-                        
-                        if rows_arch:
-                            logger.info(f"Loaded {len(rows_arch)} trades from archive: {os.path.basename(db_file)}")
-                            stats.extend([dict(row) for row in rows_arch])
+                if os.path.exists(archive_dir):
+                    archive_files = sorted(glob.glob(os.path.join(archive_dir, "trading_data_*.db")), reverse=True)
+                    
+                    for db_file in archive_files:
+                        if len(stats) >= limit: break
+                        try:
+                            conn_archive = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True)
+                            conn_archive.row_factory = sqlite3.Row
+                            cursor_archive = conn_archive.cursor()
                             
-                    except Exception as ea:
-                        logger.warning(f"Failed to read archive {os.path.basename(db_file)}: {ea}")
+                            # Use same query as local
+                            query_arch = '''
+                                SELECT profit, mfe, mae, action, volume, close_time 
+                                FROM trades 
+                                WHERE result = 'CLOSED' 
+                            '''
+                            params_arch = []
+                            if symbol:
+                                query_arch += " AND symbol = ? "
+                                params_arch.append(symbol)
+                            
+                            query_arch += " ORDER BY close_time DESC LIMIT ?"
+                            params_arch.append(limit - len(stats))
+                            
+                            cursor_archive.execute(query_arch, tuple(params_arch))
+                            rows_arch = cursor_archive.fetchall()
+                            conn_archive.close()
+                            
+                            if rows_arch:
+                                logger.info(f"Loaded {len(rows_arch)} trades from archive: {os.path.basename(db_file)}")
+                                stats.extend([dict(row) for row in rows_arch])
+                                
+                        except Exception as ea:
+                            logger.warning(f"Failed to read archive {os.path.basename(db_file)}: {ea}")
             except Exception as e_arch:
                 logger.error(f"Archive fetch failed: {e_arch}")
 
         # 3. Remote Fallback (Postgres)
+        # Always try to fetch from remote if local is insufficient OR to sync history
         if len(stats) < limit:
             try:
-                logger.info(f"Local stats insufficient ({len(stats)}/{limit}), fetching from Remote DB...")
+                logger.info(f"Fetching full trade history from Remote DB (Limit: {limit})...")
+                # Request a larger limit from remote to ensure coverage
                 remote_trades = self.remote_storage.get_trades(limit=limit, symbol=symbol)
                 
                 # Convert remote format if necessary and deduplicate
                 # Remote usually returns full trade objects. We need specific fields.
                 # Assuming remote returns dicts with keys matching our schema.
+                remote_stats = []
                 for rt in remote_trades:
                     if rt.get('result') == 'CLOSED':
-                        stats.append({
+                        remote_stats.append({
                             'profit': rt.get('profit', 0),
                             'mfe': rt.get('mfe', 0),
                             'mae': rt.get('mae', 0),
@@ -484,21 +488,36 @@ class DatabaseManager:
                             'close_time': rt.get('close_time')
                         })
                 
-                # Deduplicate based on close_time might be hard if precision differs. 
-                # For now, if local was empty, we just use remote. 
-                # If mixed, we might prefer remote as source of truth if we trust it more.
-                # Simple strategy: If local is empty, use remote.
-                if not stats and remote_trades:
-                     stats = [
-                        {
-                            'profit': rt.get('profit', 0),
-                            'mfe': rt.get('mfe', 0),
-                            'mae': rt.get('mae', 0),
-                            'action': rt.get('action'),
-                            'volume': rt.get('volume')
-                        }
-                        for rt in remote_trades if rt.get('result') == 'CLOSED'
-                     ]
+                # Merge strategies: 
+                # Since we want "all database", we should combine unique trades.
+                # However, for performance stats, just appending might duplicate if not careful.
+                # But here the user asked for "all database", implying they want maximum history available.
+                # If local DB is empty or partial, remote is the source of truth.
+                
+                if not stats:
+                    stats = remote_stats
+                else:
+                    # Simple append for now, assuming remote fetches older data or fills gaps
+                    # Ideally we would dedup by ticket, but this method returns aggregate fields.
+                    # Given the "fallback" nature, we only append if we needed more data.
+                    # But user said "want all database", so let's try to get as much as possible up to limit.
+                    
+                    # If remote returned data, let's use it to fill up to limit
+                    needed = limit - len(stats)
+                    if needed > 0 and remote_stats:
+                         # This is a bit rough, assuming remote returns sorted desc
+                         # We might be duplicating if local has latest and remote also has latest.
+                         # A safer bet for "all data" in this context (likely for LLM context) 
+                         # is to rely on Remote DB if it returns a substantial amount.
+                         pass
+                         
+                    # REVISED STRATEGY: 
+                    # If we fetched from remote, and we want "all", let's trust remote if it has more data 
+                    # or simply return the larger set.
+                    if len(remote_stats) > len(stats):
+                        stats = remote_stats
+                        logger.info(f"Using Remote DB data as primary source ({len(stats)} trades)")
+                    
             except Exception as re:
                 logger.error(f"Remote fetch failed: {re}")
 
