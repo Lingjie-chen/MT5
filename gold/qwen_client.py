@@ -397,6 +397,14 @@ class QwenClient:
        - **做多信号 (Buy)**: HA收盘价 > EMA20 High AND HA阳线 AND HA收盘价 > EMA50 AND EMA50上升趋势 AND 前一HA收盘价 < EMA50 (金叉)。
        - **做空信号 (Sell)**: HA收盘价 < EMA20 Low AND HA阴线 AND HA收盘价 < EMA50 AND EMA50下降趋势 AND 前一HA收盘价 > EMA50 (死叉)。
        - **权重**: 当此策略发出信号且与 SMC 结构方向一致时，置信度应显著提高。
+
+    6. **LLM原生风控配置 (LLM-Native Risk Management)**:
+       - **核心思想**: 摒弃固定参数，所有风控指标必须由大模型实时分析得出。
+       - **Max Drawdown (最大回撤配置)**:
+         - 在 `grid_config` 中必须输出 `max_drawdown_usd`。
+         - **计算逻辑**: Account_Balance * Risk_Tolerance_Factor (e.g., 0.05 for conservative, 0.15 for aggressive).
+         - **动态调整**: 当 VIX > 20 或 市场处于重大新闻发布前，必须降低 Risk_Tolerance_Factor。
+         - **硬性限制**: 任何时候，`max_drawdown_usd` 不得超过账户总资金的 20%。
     """
 
         # --- 3. 市场特性 (品种特定) ---
