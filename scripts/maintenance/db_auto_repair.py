@@ -5,7 +5,7 @@ import psutil
 from datetime import datetime
 import time
 
-DB_PATH = os.path.join("gold", "trading_data.db")
+DB_PATH = os.path.join("src", "trading_bot", "trading_data.db")
 
 def kill_locking_processes(file_path):
     """Attempt to find and kill processes locking the file (Windows specific)"""
@@ -23,7 +23,7 @@ def kill_locking_processes(file_path):
                     cmdline = proc.info.get('cmdline', [])
                     if cmdline:
                         cmd_str = ' '.join(cmdline)
-                        if 'gold' in cmd_str or 'checkpoint_dbs' in cmd_str or 'uvicorn' in cmd_str:
+                        if 'trading_bot' in cmd_str or 'checkpoint_dbs' in cmd_str or 'uvicorn' in cmd_str:
                             print(f"   Terminating process {proc.info['pid']} ({cmd_str[:50]}...)")
                             proc.terminate()
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
@@ -96,12 +96,12 @@ def check_and_repair_db():
                     print("✅ Corrupted database deleted (move failed).")
             except Exception as e2:
                 print(f"❌ Failed to delete corrupted database: {e2}")
-                print("⚠️ Please manually delete gold/trading_data.db and restart.")
+                print("⚠️ Please manually delete src/trading_bot/trading_data.db and restart.")
 
 if __name__ == "__main__":
     # Ensure we are in project root
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(script_dir)
+    project_root = os.path.dirname(os.path.dirname(script_dir))
     os.chdir(project_root)
     
     check_and_repair_db()

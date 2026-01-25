@@ -102,7 +102,7 @@ def resolve_conflicts():
 
 if __name__ == "__main__":
     # Ensure we are in root
-    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     os.chdir(root_dir)
     
     fix_git_state()
