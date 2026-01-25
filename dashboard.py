@@ -7,10 +7,10 @@ import os
 import json
 
 # Ensure python path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.append(os.path.join(os.path.dirname(__file__), 'gold'))
 
-from trading_bot.data.database_manager import DatabaseManager
-from trading_bot.analysis.visualization import TradingVisualizer
+from gold.database_manager import DatabaseManager
+from gold.visualization import TradingVisualizer
 
 # Page Config
 st.set_page_config(
@@ -132,8 +132,8 @@ tabs = st.tabs(selected_symbols)
 def get_db_manager(symbol):
     """Dynamically get the DatabaseManager for a specific symbol"""
     db_filename = f"trading_data_{symbol}.db"
-    # Assuming the DBs are in the 'src/trading_bot' directory relative to this script
-    db_path = os.path.join(os.path.dirname(__file__), 'src', 'trading_bot', db_filename)
+    # Assuming the DBs are in the 'gold' directory relative to this script
+    db_path = os.path.join(os.path.dirname(__file__), 'gold', db_filename)
     return DatabaseManager(db_path=db_path)
 
 def update_dashboard():

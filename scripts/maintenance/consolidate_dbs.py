@@ -11,7 +11,7 @@ logger = logging.getLogger("DBConsolidator")
 
 def consolidate_dbs(project_root):
     # Main DB location
-    main_db_path = os.path.join(project_root, "src", "trading_bot", "trading_data.db")
+    main_db_path = os.path.join(project_root, "gold", "trading_data.db")
     
     # Define paths to search for other DBs
     search_paths = [
@@ -156,9 +156,9 @@ def consolidate_dbs(project_root):
         logger.error(f"Critical error during consolidation: {e}")
 
 if __name__ == "__main__":
-    # Assuming this script is in scripts/maintenance/, so project root is two levels up
+    # Assuming this script is in scripts/, so project root is one level up
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(os.path.dirname(script_dir))
+    project_root = os.path.dirname(script_dir)
     
     print(f"Project Root: {project_root}")
     consolidate_dbs(project_root)

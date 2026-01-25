@@ -16,10 +16,10 @@ import os
 import sys
 
 # 添加项目根目录到Python路径
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.trading_bot.data.mt5_data_processor import MT5DataProcessor
-from src.trading_bot.ai.ai_client_factory import initialize_ai_clients
+from data_processor import MT5DataProcessor
+from ai_client_factory import initialize_ai_clients
 from dotenv import load_dotenv
 
 # 加载环境变量

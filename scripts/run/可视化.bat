@@ -2,8 +2,8 @@
 title AI Trading Dashboard
 color 0d
 
-:: Navigate to the project root directory (two levels up from scripts/run)
-cd /d "%~dp0\..\.."
+:: Navigate to the project root directory (one level up from scripts)
+cd /d "%~dp0\.."
 
 echo [%DATE% %TIME%] Starting AI Trading Dashboard...
 echo ---------------------------------------------------

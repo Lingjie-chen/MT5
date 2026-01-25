@@ -15,7 +15,7 @@ import importlib.util
 
 # Try to import git_auto_resolve
 try:
-    from scripts.maintenance import git_auto_resolve
+    from scripts import git_auto_resolve
 except ImportError:
     # If run directly from scripts folder
     try:
@@ -25,7 +25,7 @@ except ImportError:
 
 # Adjust path to allow importing from gold package
 current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(os.path.dirname(current_dir)) # Up 2 levels from scripts/maintenance
+project_root = os.path.dirname(current_dir)
 if project_root not in sys.path:
     sys.path.append(project_root)
 
@@ -152,7 +152,7 @@ class GitSyncManager:
         # --- NEW: Auto-Backup Postgres to GitHub ---
         try:
             # Import dynamically to avoid circular imports if any
-            spec = importlib.util.spec_from_file_location("backup_postgres", os.path.join(self.base_dir, "scripts", "maintenance", "backup_postgres.py"))
+            spec = importlib.util.spec_from_file_location("backup_postgres", os.path.join(self.base_dir, "scripts", "backup_postgres.py"))
             if spec and spec.loader:
                 backup_module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(backup_module)
@@ -283,7 +283,7 @@ class DBSyncManager:
     def get_dbs(self):
         """Find all relevant DB files"""
         patterns = [
-            os.path.join(self.base_dir, 'src', 'trading_bot', 'trading_data_*.db'),
+            os.path.join(self.base_dir, 'gold', 'trading_data_*.db'),
             os.path.join(self.base_dir, 'crypto', '*.db'),
             os.path.join(self.base_dir, 'trading_data.db')
         ]
@@ -401,7 +401,7 @@ def main():
     
     # --- NEW: Consolidate DBs (Run at startup) ---
     try:
-        spec = importlib.util.spec_from_file_location("consolidate_dbs", os.path.join(base_dir, "scripts", "maintenance", "consolidate_dbs.py"))
+        spec = importlib.util.spec_from_file_location("consolidate_dbs", os.path.join(base_dir, "scripts", "consolidate_dbs.py"))
         if spec and spec.loader:
             consolidate_module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(consolidate_module)
@@ -443,7 +443,7 @@ def main():
         
         # --- NEW: Consolidate DBs ---
         try:
-            spec = importlib.util.spec_from_file_location("consolidate_dbs", os.path.join(base_dir, "scripts", "maintenance", "consolidate_dbs.py"))
+            spec = importlib.util.spec_from_file_location("consolidate_dbs", os.path.join(base_dir, "scripts", "consolidate_dbs.py"))
             if spec and spec.loader:
                 consolidate_module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(consolidate_module)
