@@ -15,7 +15,7 @@ echo ---------------------------------------------------
 
 :: Run as module, passing all arguments
 :: Ensure python is in your PATH
-python -m gold.start %*
+python -m src.trading_bot.main %*
 
 echo ---------------------------------------------------
 echo [%DATE% %TIME%] Bot crashed or stopped. Restarting in 5 seconds...
