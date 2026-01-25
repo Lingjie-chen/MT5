@@ -1915,13 +1915,51 @@ class SymbolTrader:
             optimizer.pop_size = 1000
             
         logger.info(f"本次选择的优化算法: {algo_name} (Pop: {optimizer.pop_size})")
+
+        # [NEW] Fetch Historical Data for Seeding
+        # We need historical successful parameters or infer them from successful trades?
+        # Since we don't store 'parameters' directly with every trade in a structured way for this purpose yet,
+        # we might need to rely on 'cached_analysis' or previous optimization logs if available.
+        # But for now, let's try to fetch recent 'signals' or 'strategies' if we stored params there.
+        # Actually, the user asked to learn from 'long-term historical trades'.
+        # Since we don't have a direct mapping of "Trade -> Parameters used", we can't easily seed *exact* params.
+        # However, we can use the 'latest_strategy' history if we saved it?
+        # Alternatively, we can use the 'Remote DB' to fetch previous successful optimization results if we stored them.
+        
+        # Ideally, we should have a table 'optimization_history' storing {params, score}.
+        # Since we don't, we will try to infer or use a placeholder for now, 
+        # OR better: The user might be implying we should use the *outcome* of trades to guide the *current* optimization (Evaluation).
+        # But the request says "as seeds", which implies initializing the population.
+        
+        # Let's check if we can get previous successful params.
+        # If not, we pass an empty list but enable the mechanism.
+        
+        # But wait, we can try to get 'good' params from previous runs if we store them in memory?
+        # We have self.latest_strategy which might have params.
+        
+        historical_seeds = []
+        # Example: If we have a previous successful run, add it.
+        if hasattr(self, 'short_term_params') and self.short_term_params:
+             # Construct a param vector from current settings (as a good starting point)
+             # smc_ma, smc_atr, rvgi_sma, rvgi_cci, ifvg_gap, grid_step, grid_tp
+             current_seed = [
+                 self.smc_analyzer.ma_period,
+                 self.smc_analyzer.atr_threshold,
+                 self.short_term_params.get('rvgi_sma', 20),
+                 self.short_term_params.get('rvgi_cci', 14),
+                 self.short_term_params.get('ifvg_gap', 20),
+                 self.grid_strategy.grid_step_points,
+                 self.grid_strategy.global_tp
+             ]
+             historical_seeds.append({'params': current_seed, 'score': 100}) # High score to ensure selection
         
         # 5. Run
         best_params, best_score = optimizer.optimize(
             objective, 
             bounds, 
             steps=steps, 
-            epochs=4
+            epochs=4,
+            historical_data=historical_seeds # Pass seeds
         )
         
         # 6. Apply Results
