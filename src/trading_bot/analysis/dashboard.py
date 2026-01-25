@@ -7,10 +7,27 @@ import os
 import json
 
 # Ensure python path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'gold'))
+import os
+import sys
 
-from gold.database_manager import DatabaseManager
-from gold.visualization import TradingVisualizer
+# Add project root to sys.path to ensure correct imports
+# dashboard.py is at src/trading_bot/analysis/dashboard.py
+# We want to add the project root (MT5/) to sys.path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_dir))))
+
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
+# Import using full package paths
+try:
+    from src.trading_bot.data.database_manager import DatabaseManager
+    from src.trading_bot.analysis.visualization import TradingVisualizer
+except ImportError:
+    # Fallback for relative run
+    sys.path.append(os.path.join(project_root, 'src'))
+    from trading_bot.data.database_manager import DatabaseManager
+    from trading_bot.analysis.visualization import TradingVisualizer
 
 # Page Config
 st.set_page_config(
