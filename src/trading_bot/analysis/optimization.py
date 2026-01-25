@@ -24,7 +24,7 @@ class WOAm(Optimizer):
     """
     def __init__(self, pop_size: int = 50, ref_prob: float = 0.1, spiral_coeff: float = 0.5, spiral_prob: float = 0.8):
         super().__init__("WOAm")
-        self.pop_size = pop_size
+        self.pop_size = pop_size  # Population Size (Search Width): Larger pop_size (e.g., 50-100) covers broader search space, reducing risk of local optima.
         self.ref_prob = ref_prob
         self.spiral_coeff = spiral_coeff
         self.spiral_prob = spiral_prob
