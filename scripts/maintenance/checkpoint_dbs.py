@@ -15,7 +15,7 @@ import importlib.util
 
 # Try to import git_auto_resolve
 try:
-    from scripts import git_auto_resolve
+    from scripts.maintenance import git_auto_resolve
 except ImportError:
     # If run directly from scripts folder
     try:
@@ -25,7 +25,7 @@ except ImportError:
 
 # Adjust path to allow importing from gold package
 current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(current_dir)
+project_root = os.path.dirname(os.path.dirname(current_dir)) # Up 2 levels from scripts/maintenance
 if project_root not in sys.path:
     sys.path.append(project_root)
 
@@ -152,7 +152,7 @@ class GitSyncManager:
         # --- NEW: Auto-Backup Postgres to GitHub ---
         try:
             # Import dynamically to avoid circular imports if any
-            spec = importlib.util.spec_from_file_location("backup_postgres", os.path.join(self.base_dir, "scripts", "backup_postgres.py"))
+            spec = importlib.util.spec_from_file_location("backup_postgres", os.path.join(self.base_dir, "scripts", "maintenance", "backup_postgres.py"))
             if spec and spec.loader:
                 backup_module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(backup_module)
