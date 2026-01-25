@@ -1505,7 +1505,8 @@ class QwenClient:
                 "martingale_multiplier": 1.5,
                 "max_grid_levels": 5,
                 "basket_tp_usd": 50.0,
-                "basket_sl_usd": -200.0
+                "basket_sl_usd": -200.0,
+                "max_drawdown_usd": 500.0
             },
             'position_size': 0.01,
             'leverage': 1,
