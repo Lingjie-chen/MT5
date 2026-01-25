@@ -1,7 +1,7 @@
 @echo off
 echo Starting Strategy Servers...
 
-:: Switch to current script directory (gold/一键启动/)
+:: Switch to current script directory (scripts/run/)
 cd /d "%~dp0"
 
 :: -----------------------------------------------------------------------------
