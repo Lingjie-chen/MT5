@@ -1,6 +1,6 @@
 # Quant Trading Strategy Deployment Guide
 
-This guide details how to deploy, configure, and run the Quant Trading Strategy system on a new device (Windows/Mac/Linux).
+This guide details how to deploy, configure, and run the Quant Trading Strategy system.
 
 ## 1. Prerequisites
 
@@ -19,142 +19,94 @@ git clone https://github.com/Lingjie-chen/MT5.git
 cd MT5
 ```
 
-### 2.2 Set up Virtual Environment
-It is recommended to use a virtual environment to manage dependencies.
+### 2.2 One-Click Setup (Recommended)
+We provide automation scripts to handle virtual environment creation and dependency installation.
 
 **Mac/Linux:**
 ```bash
-python3 -m venv venv
+# Make script executable
+chmod +x scripts/setup/setup_env.sh
+# Run setup
+./scripts/setup/setup_env.sh
+# Activate environment
 source venv/bin/activate
 ```
 
 **Windows:**
 ```cmd
-python -m venv venv 
+# Run setup script
+scripts\setup\setup_env.bat
+# Activate environment
 venv\Scripts\activate
 ```
 
-### 2.3 Install Dependencies
+### 2.3 Manual Setup (Alternative)
+If you prefer manual installation:
 ```bash
+python -m venv venv
+# Activate venv (source venv/bin/activate OR venv\Scripts\activate)
 pip install -r requirements.txt
 ```
-*Note: On Mac/Linux, `MetaTrader5` package will be skipped as it is Windows-only. The analysis dashboard and backend server can still run on Mac/Linux.*
 
-## 3. Database Configuration (PostgreSQL)
+## 3. Database Configuration
 
-The system uses a **Remote-First** architecture where PostgreSQL is the primary data store.
+The system uses a **Remote-First** architecture with PostgreSQL.
 
-### 3.1 Install and Start PostgreSQL
-Ensure the PostgreSQL service is running.
+1.  **Start PostgreSQL**: Ensure the service is running.
+2.  **Create Database & User**:
+    ```sql
+    CREATE DATABASE trading_bot;
+    CREATE USER chenlingjie WITH ENCRYPTED PASSWORD 'clj568741230';
+    GRANT ALL PRIVILEGES ON DATABASE trading_bot TO chenlingjie;
+    ```
+3.  **Configure .env**: Create a `.env` file in the project root:
+    ```ini
+    POSTGRES_CONNECTION_STRING=postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot
+    SERVER_API_KEY=my_secret_key
+    SILICONFLOW_API_KEY=your_siliconflow_api_key
+    ```
 
-### 3.2 Create Database and User
-Open your terminal or SQL tool (like pgAdmin) and run:
+## 4. Running the System
 
-```sql
-CREATE DATABASE trading_bot;
-CREATE USER chenlingjie WITH ENCRYPTED PASSWORD 'clj568741230';
-GRANT ALL PRIVILEGES ON DATABASE trading_bot TO chenlingjie;
-```
+### 4.1 Auto-Sync Engine (Background Service)
+Handles **Git Sync**, **DB Sync**, and **Environment Checks**.
 
-### 3.3 Configure Environment Variables
-Create a `.env` file in the project root:
+*   **Windows**: `scripts\setup\同步windons.bat`
+*   **Mac/Linux**: `bash scripts/setup/同步mac.sh`
 
-```ini
-# Database Connection
-POSTGRES_CONNECTION_STRING=postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot
+### 4.2 Trading Bot (Windows Only)
+The core logic interacting with MT5.
+*   Run the strategy launcher:
+    ```cmd
+    scripts\run\run_strategies-GOLD.bat
+    ```
+    *This will launch a watchdog process that automatically restarts the bot if it crashes.*
 
-# API Keys
-SERVER_API_KEY=my_secret_key
-SILICONFLOW_API_KEY=your_siliconflow_api_key
-```
-
-## 4. One-Click Setup (Quick Start)
-
-We have provided automation scripts to handle the entire setup process (virtual env, dependencies, .env file) in one go.
-
-### Mac/Linux
-```bash
-# Make the script executable
-chmod +x setup_env.sh
-
-# Run the setup script
-./setup_env.sh
-
-# Activate the environment
-source venv/bin/activate
-```
-
-### Windows
-```cmd
-# Run the setup script
-setup_env.bat
-
-# Activate the environment
-venv\Scripts\activate
-```
-
-Once the environment is activated, you are ready to run the system!
-
-## 5. Data Migration (Optional)
-
-If you have existing local SQLite data (`.db` files) that you want to migrate to the new remote PostgreSQL database:
-
-```bash
-python migrate_sqlite_to_postgres.py
-```
-*This script automatically detects all `trading_data_*.db` files and uploads them to PostgreSQL.*
-
-## 6. Running the System
-
-The system consists of three main components:
-
-### 6.1 Start Auto-Sync Engine (Recommended)
-This engine handles **Git Sync**, **DB Sync**, and **Environment Setup** automatically.
-
-**Windows:**
-```cmd
-说明使用\同步windons.bat
-```
-*This script will:*
-1.  *Auto-detect and activate virtual environment.*
-2.  *Check if PostgreSQL port (5432) is active.*
-3.  *Start the background sync engine.*
-
-**Mac/Linux:**
-```bash
-bash 说明使用/同步mac.sh
-```
-
-### 6.2 Trading Bot (Windows Only)
-The core logic that interacts with MT5.
-
-```cmd
-python gold/start.py
-```
-*Ensure MT5 terminal is running and "Algo Trading" is enabled.*
-
-### 6.3 Analysis Dashboard (Streamlit)
+### 4.3 Analysis Dashboard
 Visual interface for monitoring performance.
 
-```bash
-streamlit run dashboard.py
-```
+*   **Windows**: `scripts\run\可视化.bat`
+*   **Mac/Linux**: `bash scripts/run/run_dashboard.sh`
 
-## 7. Maintenance & Sync
+## 5. Optimization & Data
+**Does optimization use all transaction data?**
+Yes. The optimization module (`src/trading_bot/analysis/optimization.py`) and the `HybridOptimizer` in `main.py` are designed to utilize historical data.
+*   **Mechanism**: The system fetches historical trade data (stored in PostgreSQL and synced locally to `trading_data.db`).
+*   **Seeding**: This historical data is used to "seed" the initial population of the optimization algorithms (like WOAm - Whale Optimization Algorithm).
+*   **Benefit**: By using past high-performing parameters as a starting point, the optimizer converges faster and adapts to market conditions based on actual transaction history.
 
-### 7.1 Auto-Sync & System Startup
-The `同步windons.bat` (Windows) or `同步mac.sh` (Mac) scripts handle everything:
-1.  **Git Auto-Sync**: Automatically pulls updates and pushes changes every 60s.
-2.  **DB Sync**: Automatically syncs local SQLite data to remote PostgreSQL.
+## 6. Project Structure
+*   `src/trading_bot/`: Core source code.
+    *   `ai/`: AI models (DeepSeek, Qwen).
+    *   `analysis/`: Dashboard, Optimization (`optimization.py`), Visualization.
+    *   `strategies/`: Trading strategies (e.g., Grid).
+*   `scripts/`:
+    *   `setup/`: Installation and Sync scripts.
+    *   `run/`: Launch scripts for Bot and Dashboard.
+    *   `maintenance/`: DB repair and backup tools.
+*   `docs/`: Documentation.
 
-You don't need to run any separate sync scripts.
-
-### 7.2 Local DB Cleanup
-The system automatically uploads data to PostgreSQL. Local `.db` files are cache-only. The system will automatically delete local DB files if they are fully checkpointed, keeping the system lightweight.
-
-## 8. Troubleshooting
-
-*   **Database Connection Error**: Check `POSTGRES_CONNECTION_STRING` in `.env` and ensure PostgreSQL service is active.
-*   **MT5 Not Found**: Ensure you are on Windows and MT5 is installed. On Mac, you can only run the Server and Dashboard.
-*   **Missing Dependencies**: Re-run `pip install -r requirements.txt`.
-
+## 7. Troubleshooting
+*   **PostgreSQL Error**: Check if port 5432 is active and `.env` credentials are correct.
+*   **MT5 Missing**: The trading bot only runs on Windows with MT5 installed. Dashboard and Server work on Mac/Linux.
+*   **Dependencies**: Re-run `pip install -r requirements.txt` if modules are missing.
