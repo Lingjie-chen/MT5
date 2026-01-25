@@ -1912,7 +1912,7 @@ class SymbolTrader:
         
         # Adjust population size for realtime performance
         if hasattr(optimizer, 'pop_size'):
-            optimizer.pop_size = 200
+            optimizer.pop_size = 1000
             
         logger.info(f"本次选择的优化算法: {algo_name} (Pop: {optimizer.pop_size})")
         
