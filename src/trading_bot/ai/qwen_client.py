@@ -408,6 +408,10 @@ class QwenClient:
            5. **量化书籍优化**: 
               - 引入 Kelly Criterion (凯利公式) 思想，在胜率高时允许更大的 TP 以最大化几何增长。
               - 参考《交易系统的胜算》中的 "Expectancy" (期望值) 概念，确保 (WinRate * AvgWin) > (LossRate * AvgLoss)。
+           6. **长期历史优化种子 (Long-term Optimization Seeds)**:
+              - **必须参考** `historical_seeds` 中的最佳参数组合。
+              - 如果历史数据显示某组参数 (如特定的 SMC ATR 阈值或 Grid Step) 长期表现优异，应在策略制定中给予更高权重。
+              - 将历史最优参数作为决策的 "Anchor" (锚点)，在此基础上进行微调，而不是凭空猜测。
          - **计算公式参考**:
            - `Base_Target` = (ATR * Position_Size * Contract_Size)
            - `Sentiment_Multiplier`: 0.5 (Weak) to 2.0 (Strong)
