@@ -571,39 +571,26 @@ class SymbolTrader:
                 except Exception as e:
                     logger.warning(f"解析 LLM 仓位失败: {e}")
 
-            # --- 0.5. 优先使用 LLM 建议的风险配置 (LLM Risk Management) ---
-            llm_risk_pct = 0.0
-            if self.latest_strategy and 'risk_management' in self.latest_strategy:
-                rm = self.latest_strategy['risk_management']
-                if isinstance(rm, dict):
-                    try:
-                        llm_risk_pct = float(rm.get('risk_per_trade', 0.0))
-                    except: pass
-            
             # --- 1. 自适应基础风险 (Self-Adaptive Base Risk) ---
             # 基于近期胜率和盈亏比动态调整基础风险
             # 默认 2%
-            if llm_risk_pct > 0:
-                base_risk_pct = llm_risk_pct
-                logger.info(f"✅ 采用大模型建议风险比率: {base_risk_pct:.2%}")
-            else:
-                base_risk_pct = 0.02
-                
-                metrics = self.db_manager.get_performance_metrics(symbol=self.symbol, limit=20)
-                win_rate = metrics.get('win_rate', 0.0)
-                profit_factor = metrics.get('profit_factor', 0.0)
-                consecutive_losses = metrics.get('consecutive_losses', 0)
-                
-                # 学习逻辑:
-                # 如果近期表现好 (WinRate > 55% & PF > 1.5)，基础风险上调至 2.5% - 3.0%
-                # 如果近期表现差 (WinRate < 40% 或 连败 > 2)，基础风险下调至 1.0%
-                
-                if win_rate > 0.55 and profit_factor > 1.5:
-                    base_risk_pct = 0.03
-                    logger.info(f"资金管理学习: 近期表现优异 (WR={win_rate:.2%}, PF={profit_factor:.2f}), 基础风险上调至 3%")
-                elif win_rate < 0.40 or consecutive_losses >= 2:
-                    base_risk_pct = 0.01
-                    logger.info(f"资金管理学习: 近期表现不佳/连败 (WR={win_rate:.2%}, LossStreak={consecutive_losses}), 基础风险下调至 1%")
+            base_risk_pct = 0.02
+            
+            metrics = self.db_manager.get_performance_metrics(symbol=self.symbol, limit=20)
+            win_rate = metrics.get('win_rate', 0.0)
+            profit_factor = metrics.get('profit_factor', 0.0)
+            consecutive_losses = metrics.get('consecutive_losses', 0)
+            
+            # 学习逻辑:
+            # 如果近期表现好 (WinRate > 55% & PF > 1.5)，基础风险上调至 2.5% - 3.0%
+            # 如果近期表现差 (WinRate < 40% 或 连败 > 2)，基础风险下调至 1.0%
+            
+            if win_rate > 0.55 and profit_factor > 1.5:
+                base_risk_pct = 0.03
+                logger.info(f"资金管理学习: 近期表现优异 (WR={win_rate:.2%}, PF={profit_factor:.2f}), 基础风险上调至 3%")
+            elif win_rate < 0.40 or consecutive_losses >= 2:
+                base_risk_pct = 0.01
+                logger.info(f"资金管理学习: 近期表现不佳/连败 (WR={win_rate:.2%}, LossStreak={consecutive_losses}), 基础风险下调至 1%")
             
             # --- 2. AI 与 算法共振加成 (Consensus Multiplier) ---
             consensus_multiplier = 1.0
