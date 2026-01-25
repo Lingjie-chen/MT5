@@ -684,6 +684,62 @@ class DatabaseManager:
             logger.error(f"Failed to get market data: {e}")
             return pd.DataFrame()
 
+    def save_optimization_result(self, algo_name, symbol, timeframe, params, score):
+        """Save optimization result to history"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                INSERT INTO optimization_history (timestamp, algorithm, symbol, timeframe, params, score)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (
+                datetime.now(), 
+                algo_name, 
+                symbol, 
+                timeframe, 
+                json.dumps(params.tolist() if hasattr(params, 'tolist') else params), 
+                score
+            ))
+            
+            conn.commit()
+            
+            # [Remote Sync] - Optional, can implement if remote DB supports this table
+            # self.remote_storage.save_optimization_result(...)
+            
+        except Exception as e:
+            logger.error(f"Failed to save optimization result: {e}")
+
+    def get_top_optimization_results(self, symbol, limit=10):
+        """Get top historical optimization parameters"""
+        try:
+            conn = self._get_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            # Get best scores first
+            cursor.execute('''
+                SELECT params, score FROM optimization_history 
+                WHERE symbol = ? 
+                ORDER BY score DESC 
+                LIMIT ?
+            ''', (symbol, limit))
+            
+            rows = cursor.fetchall()
+            
+            results = []
+            for row in rows:
+                try:
+                    params = json.loads(row['params'])
+                    results.append({'params': params, 'score': row['score']})
+                except:
+                    pass
+                    
+            return results
+        except Exception as e:
+            logger.error(f"Failed to get top optimization results: {e}")
+            return []
+
     def get_trades(self, limit=50):
         """Get trade history from local DB"""
         try:
