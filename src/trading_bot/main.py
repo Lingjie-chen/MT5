@@ -2444,6 +2444,9 @@ class SymbolTrader:
         Optimize short-term strategy parameters (RVGI+CCI, IFVG)
         Executed every 1 hour
         """
+        # [DISABLED] as per user request
+        return
+
         logger.info("Running Short-Term Parameter Optimization (WOAm)...")
         
         # 1. Get Data (Last 500 M10 candles) [Changed from M15 to M10 if available, but MT5 standard is M10/M15? MT5 has M10.]
