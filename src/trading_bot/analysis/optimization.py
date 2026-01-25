@@ -22,7 +22,7 @@ class WOAm(Optimizer):
     Whale Optimization Algorithm M (Modified)
     Based on MQL5 implementation: AO_WOA_WhaleOptimizationAlgorithm.mqh
     """
-    def __init__(self, pop_size: int = 50, ref_prob: float = 0.1, spiral_coeff: float = 0.5, spiral_prob: float = 0.8):
+    def __init__(self, pop_size: int = 200, ref_prob: float = 0.1, spiral_coeff: float = 0.5, spiral_prob: float = 0.8):
         super().__init__("WOAm")
         self.pop_size = pop_size
         self.ref_prob = ref_prob
@@ -174,7 +174,7 @@ class GWO(Optimizer):
     Grey Wolf Optimizer (GWO)
     Based on MQL5 implementation: AO_GWO_GreyWolfOptimizer.mqh
     """
-    def __init__(self, pop_size: int = 50, alpha_number: int = 3):
+    def __init__(self, pop_size: int = 200, alpha_number: int = 3):
         super().__init__("GWO")
         self.pop_size = pop_size
         self.alpha_number = alpha_number # Standard GWO uses 3 (Alpha, Beta, Delta)
@@ -463,7 +463,7 @@ class BBO(Optimizer):
     Biogeography-Based Optimization (BBO)
     Based on MQL5 implementation: AO_BBO_BiogeographyBasedOptimization.mqh
     """
-    def __init__(self, pop_size: int = 50, immigration_max: float = 1.0, emigration_max: float = 1.0, mutation_prob: float = 0.5, elitism_count: int = 2):
+    def __init__(self, pop_size: int = 200, immigration_max: float = 1.0, emigration_max: float = 1.0, mutation_prob: float = 0.5, elitism_count: int = 2):
         super().__init__("BBO")
         self.pop_size = pop_size
         self.immigration_max = immigration_max
@@ -609,7 +609,7 @@ class DE(Optimizer):
     Differential Evolution (DE)
     Another popular AO from the list
     """
-    def __init__(self, pop_size: int = 50, F: float = 0.5, CR: float = 0.7):
+    def __init__(self, pop_size: int = 200, F: float = 0.5, CR: float = 0.7):
         super().__init__("DE")
         self.pop_size = pop_size
         self.F = F   # Mutation factor
@@ -689,7 +689,7 @@ class TETA(Optimizer):
     Time Evolution Travel Algorithm (TETA)
     Based on MQL5 implementation: AO_TETA_TimeEvolutionTravelAlgorithm.mqh
     """
-    def __init__(self, pop_size: int = 50):
+    def __init__(self, pop_size: int = 200):
         super().__init__("TETA")
         self.pop_size = pop_size
 
