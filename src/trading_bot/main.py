@@ -2742,7 +2742,7 @@ class SymbolTrader:
         logger.info(f"Smart Basket TP Calc: Base(LLM)={base_tp:.2f}, ATR_Val={tech_tp:.2f}, Regime={market_regime} -> Final={final_tp:.2f}")
         return final_tp
 
-    def check_trading_schedule(self):
+ doowdon    def check_trading_schedule(self):
         """
         Check if trading is allowed based on the schedule and symbol.
         Rules:
