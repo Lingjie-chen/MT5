@@ -2742,33 +2742,53 @@ class SymbolTrader:
         logger.info(f"Smart Basket TP Calc: Base(LLM)={base_tp:.2f}, ATR_Val={tech_tp:.2f}, Regime={market_regime} -> Final={final_tp:.2f}")
         return final_tp
 
- doowdon    def check_trading_schedule(self):
+    def check_trading_schedule(self):
         """
         Check if trading is allowed based on the schedule and symbol.
         Rules:
-        - ETHUSD: Only Weekends (Sat, Sun).
-        - GOLD/XAUUSD/EURUSD: Only Weekdays (Mon-Fri).
+        - ETHUSD: Weekend (Sat-Sun) + Monday < 07:00.
+        - GOLD/XAUUSD/EURUSD: Monday >= 06:30 to Saturday 00:00.
         """
         now = datetime.now()
         weekday = now.weekday() # 0=Mon, 6=Sun
+        current_time = now.time()
         
         symbol_upper = self.symbol.upper()
         
-        # Crypto Rules (ETHUSD) - Weekend Only
+        # Crypto Rules (ETHUSD)
+        # 允许交易时间: 周六(5), 周日(6), 周一(0) 07:00 之前
         if "ETH" in symbol_upper:
-            if weekday >= 5: # Saturday(5) or Sunday(6)
+            is_weekend = weekday >= 5
+            is_monday_morning = (weekday == 0 and current_time.hour < 7)
+            
+            if is_weekend or is_monday_morning:
                 return True
             else:
-                logger.info(f"[{self.symbol}] 仅限周末交易，今天是 {now.strftime('%A')} (Weekday {weekday})，暂停交易。")
+                # 只有在整点或半点打印日志，避免刷屏
+                if current_time.minute % 30 == 0 and current_time.second < 2:
+                    logger.info(f"[{self.symbol}] 非交易时间 (Crypto). 允许: 周六-周一07:00. 当前: {now.strftime('%A %H:%M')}")
                 return False
                 
-        # Forex/Metal Rules (GOLD, EURUSD) - Weekday Only
-        # Matches GOLD, XAUUSD, XAUUSDM, EURUSD, EURUSDM
+        # Forex/Metal Rules (GOLD, EURUSD)
+        # 允许交易时间: 周一 06:30 - 周六 00:00 (即周五 23:59:59)
         if "GOLD" in symbol_upper or "XAU" in symbol_upper or "EUR" in symbol_upper:
-            if weekday < 5: # Mon(0) to Fri(4)
+            # 周一: 需 06:30 之后
+            if weekday == 0:
+                if (current_time.hour > 6) or (current_time.hour == 6 and current_time.minute >= 30):
+                    return True
+                else:
+                    if current_time.minute % 30 == 0 and current_time.second < 2:
+                        logger.info(f"[{self.symbol}] 非交易时间 (Forex Start). 允许: 周一 06:30+. 当前: {now.strftime('%A %H:%M')}")
+                    return False
+            
+            # 周二(1) - 周五(4): 全天允许
+            elif 1 <= weekday <= 4:
                 return True
+                
+            # 周六(5) - 周日(6): 禁止
             else:
-                logger.info(f"[{self.symbol}] 仅限工作日交易，今天是 {now.strftime('%A')} (Weekday {weekday})，暂停交易。")
+                if current_time.minute % 30 == 0 and current_time.second < 2:
+                    logger.info(f"[{self.symbol}] 非交易时间 (Forex Weekend). 允许: 周一06:30 - 周六00:00. 当前: {now.strftime('%A %H:%M')}")
                 return False
                 
         # Default: Allow if not specified
