@@ -1912,10 +1912,10 @@ class SymbolTrader:
         
         # Adjust population size for realtime performance
         if hasattr(optimizer, 'pop_size'):
-            # Calculate pop_size to match roughly 2000 evaluations with 3 epochs
+            # Calculate pop_size to match roughly 500 evaluations
             # Total Evals = Pop_Size (Init) + Pop_Size * Epochs
-            # 2000 = 500 + 500 * 3
-            optimizer.pop_size = 500
+            # 500 = 125 + 125 * 3
+            optimizer.pop_size = 125
             
         logger.info(f"本次选择的优化算法: {algo_name} (Pop: {optimizer.pop_size})")
 
