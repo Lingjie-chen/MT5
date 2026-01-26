@@ -371,6 +371,36 @@ class SymbolTrader:
             if pos.magic == self.magic_number:
                 self.close_position(pos, comment=reason)
 
+    def cancel_all_pending_orders(self):
+        """Cancel all pending orders for the current symbol"""
+        try:
+            orders = mt5.orders_get(symbol=self.symbol)
+            if orders:
+                # Filter for pending orders only (though orders_get returns orders, not positions)
+                # Filter by magic number
+                my_orders = [o for o in orders if o.magic == self.magic_number]
+                
+                if my_orders:
+                    logger.info(f"Found {len(my_orders)} pending orders to cancel for {self.symbol} (New Grid Start)")
+                    for order in my_orders:
+                        request = {
+                            "action": mt5.TRADE_ACTION_REMOVE,
+                            "order": order.ticket,
+                            "magic": self.magic_number,
+                        }
+                        result = mt5.order_send(request)
+                        if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+                            err_comment = result.comment if result else "Unknown Error"
+                            logger.error(f"Failed to remove order {order.ticket}: {err_comment}")
+                        else:
+                            logger.info(f"Order {order.ticket} removed")
+                else:
+                    logger.info("No pending orders to cancel.")
+            else:
+                logger.info("No pending orders to cancel.")
+        except Exception as e:
+            logger.error(f"Error canceling orders: {e}")
+
     def check_risk_reward_ratio(self, entry_price, sl_price, tp_price, atr=None):
         """检查盈亏比是否达标"""
         # User Requirement: Profit must be > 1.5 * Lose Risk.
