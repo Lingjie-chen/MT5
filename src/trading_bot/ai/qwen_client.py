@@ -62,7 +62,7 @@ class QwenClient:
         symbol = symbol.upper()
         
         # --- 1. 核心策略架构 (通用) ---
-        core_strategy = f"""
+        role_definition = f"""
     作为{symbol}交易的唯一核心决策大脑，你全权负责基于SMC(Smart Money Concepts)和Martingale(马丁格尔)策略的交易执行。
     
     你的核心策略架构：**SMC + Martingale Grid (马丁网格)**
@@ -521,8 +521,7 @@ class QwenClient:
             """
         }
 
-        common_rules = ""
-        core_strategy = """
+        analysis_framework = """
     ### 一、大趋势分析框架 (Multi-Timeframe)
     你必须从多时间框架分析整体市场结构 (查看提供的 `multi_tf_data`):
     
@@ -770,7 +769,7 @@ class QwenClient:
         """
 
         # Assemble
-        full_prompt = f"{core_strategy}\n{martingale_config}\n{market_spec}\n{common_rules}\n{reflection_skills}"
+        full_prompt = f"{role_definition}\n{analysis_framework}\n{martingale_config}\n{market_spec}\n{common_rules}\n{reflection_skills}"
         return full_prompt
 
     
