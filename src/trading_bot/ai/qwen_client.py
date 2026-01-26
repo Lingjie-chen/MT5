@@ -437,8 +437,22 @@ class QwenClient:
        - **Max Drawdown (最大回撤配置)**:
          - 在 `grid_config` 中必须输出 `max_drawdown_usd`。
          - **计算逻辑**: Account_Balance * Risk_Tolerance_Factor (e.g., 0.05 for conservative, 0.15 for aggressive).
-         - **动态调整**: 当 VIX > 20 或 市场处于重大新闻发布前，必须降低 Risk_Tolerance_Factor。
+         - **动态调整 (Dynamic Adjustment)**: 
+           - **Volatility Based**: 参考 `risk_metrics.volatility` (ATR)。如果当前 ATR > Average ATR * 1.5，说明市场剧烈波动，必须 **降低** Max Drawdown (例如减半) 以防止被动止损。
+           - **Event Based**: 当 VIX > 20 或 市场处于重大新闻发布前，必须降低 Risk_Tolerance_Factor。
          - **硬性限制**: 任何时候，`max_drawdown_usd` 不得超过账户总资金的 20%。
+
+    7. **Turtle Trading Protocol (海龟交易法则 - 趋势跟随)**:
+       - **唐奇安通道 (Donchian Channel)**: 
+         - **突破信号**: 关注 `donchian` 指标。当价格突破 Donchian Upper (20日高点) 时，为潜在做多信号；跌破 Donchian Lower (20日低点) 时，为潜在做空信号。
+         - **SMC 过滤**: 海龟信号必须得到 SMC 结构的验证 (即突破方向必须有 FVG 或 OB 支持)。
+         - **退出规则**: 使用 10日 Donchian 反向突破作为趋势结束的离场信号 (Trailing Stop)。
+       - **加仓 (Pyramiding)**: 趋势确认后，若价格继续向有利方向移动 1N (1 ATR)，可加仓。
+
+    8. **Strict Supply/Demand (严格供需)**:
+       - **优先权**: 在寻找入场位时，优先参考 `strict_supply_demand` 返回的区域，而非普通 OB。
+       - **特征**: 这些区域具备 "Strong Impulse" (强力脱离) 和 "Fresh Base" (新鲜基地)，胜率更高。
+       - **操作**: 在 Demand Zone 上沿挂 Limit Buy，在 Supply Zone 下沿挂 Limit Sell。
     """
 
         # --- 3. 市场特性 (品种特定) ---
