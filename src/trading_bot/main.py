@@ -1044,6 +1044,9 @@ class SymbolTrader:
         elif llm_action in ['grid_start', 'grid_start_long', 'grid_start_short']:
             logger.info(f">>> 执行网格部署 ({llm_action}) <<<")
             
+            # [NEW] Clear existing pending orders before starting new grid
+            self.cancel_all_pending_orders()
+            
             # 1. 确定方向
             direction = 'bullish' # Default
             if llm_action == 'grid_start_long':
