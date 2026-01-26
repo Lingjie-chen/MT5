@@ -1020,25 +1020,10 @@ class SymbolTrader:
         #         logger.info(f"High confidence ({strength}), switching Limit Sell to Market Sell")
         #         llm_action = 'sell'
 
-        if llm_action in ['buy', 'add_buy']:
-            # [DISABLED]
-            # trade_type = "buy"
-            # price = tick.ask
-            logger.info("Ignoring 'buy'/'add_buy' action as per Grid-Only policy.")
-            return
-        elif llm_action in ['sell', 'add_sell']:
-            # [DISABLED]
-            # trade_type = "sell"
-            # price = tick.bid
-            logger.info("Ignoring 'sell'/'add_sell' action as per Grid-Only policy.")
-            return
-        elif llm_action in ['limit_buy', 'buy_limit']:
-            # [DISABLED]
-            logger.info("Ignoring 'limit_buy' action as per Grid-Only policy.")
-            return
-        elif llm_action in ['limit_sell', 'sell_limit']:
-            # [DISABLED]
-            logger.info("Ignoring 'limit_sell' action as per Grid-Only policy.")
+        # User Requirement: Disable all single 'buy'/'sell'/'add' actions.
+        # Grid Strategy ONLY.
+        if llm_action in ['buy', 'add_buy', 'sell', 'add_sell', 'limit_buy', 'buy_limit', 'limit_sell', 'sell_limit']:
+            logger.info(f"Ignoring '{llm_action}' action as per Strict Grid-Only policy.")
             return
         
         elif llm_action in ['grid_start', 'grid_start_long', 'grid_start_short']:
