@@ -114,6 +114,140 @@ class AdvancedMarketAnalysis:
         
         return {"regime": regime, "confidence": confidence, "description": description, "volatility": volatility, "adx": current_adx, "price_change": price_change}
     
+    def calculate_donchian_channels(self, df: pd.DataFrame, period: int = 20) -> Dict[str, float]:
+        """
+        计算唐奇安通道 (Turtle Trading 核心指标)
+        """
+        if len(df) < period:
+            return {"upper": 0, "lower": 0, "middle": 0}
+        
+        # Donchian Channel is the Max High / Min Low of the LAST 'period' days (excluding current if used for breakout signal, 
+        # but typically calculated on closed candles)
+        # We use the window of 'period' size ending at previous candle for signal generation, 
+        # or current window for visualization. 
+        # Turtle Rule: Buy when price > High of last 20 days.
+        
+        recent_data = df.tail(period + 1).iloc[:-1] # Exclude current forming candle for strict breakout check
+        if len(recent_data) < period:
+            recent_data = df.tail(period)
+
+        upper = recent_data['high'].max()
+        lower = recent_data['low'].min()
+        middle = (upper + lower) / 2
+        
+        return {"donchian_upper": upper, "donchian_lower": lower, "donchian_middle": middle}
+
+    def detect_strict_supply_demand(self, df: pd.DataFrame) -> Dict[str, any]:
+        """
+        严格供需区识别 (Strict Supply/Demand Zones)
+        结合 动量(Momentum) + 盘整(Base) + 新鲜度(Freshness)
+        """
+        if len(df) < 50: return {"signal": "neutral", "zones": []}
+        
+        closes = df['close'].values
+        opens = df['open'].values
+        highs = df['high'].values
+        lows = df['low'].values
+        volatilities = (df['high'] - df['low']).values
+        avg_vol = np.mean(volatilities[-50:])
+        
+        zones = []
+        
+        # Look back for strong impulse moves
+        for i in range(len(df)-2, 10, -1):
+            body_size = abs(closes[i] - opens[i])
+            is_bullish_impulse = closes[i] > opens[i] and body_size > avg_vol * 2.0 # Strong move
+            is_bearish_impulse = closes[i] < opens[i] and body_size > avg_vol * 2.0
+            
+            if is_bullish_impulse:
+                # Look for base (consolidation) before impulse
+                # Check previous 1-3 candles for small bodies
+                is_base = True
+                base_high = -1
+                base_low = 999999
+                base_start_idx = i
+                
+                for k in range(1, 4):
+                    prev_idx = i - k
+                    if prev_idx < 0: break
+                    prev_body = abs(closes[prev_idx] - opens[prev_idx])
+                    if prev_body > avg_vol * 1.0: # Base candles should be small
+                        is_base = False
+                        break
+                    base_high = max(base_high, highs[prev_idx])
+                    base_low = min(base_low, lows[prev_idx])
+                    base_start_idx = prev_idx
+                
+                if is_base and base_high > 0:
+                    # Demand Zone Found (Rally-Base-Rally or Drop-Base-Rally)
+                    # For simplicity, we define the Zone as the Base High/Low
+                    zones.append({
+                        'type': 'demand',
+                        'top': base_high,
+                        'bottom': base_low,
+                        'index': base_start_idx,
+                        'strength': 'strong', # Strict criteria met
+                        'tested_count': 0
+                    })
+            
+            elif is_bearish_impulse:
+                # Look for base
+                is_base = True
+                base_high = -1
+                base_low = 999999
+                base_start_idx = i
+                
+                for k in range(1, 4):
+                    prev_idx = i - k
+                    if prev_idx < 0: break
+                    prev_body = abs(closes[prev_idx] - opens[prev_idx])
+                    if prev_body > avg_vol * 1.0:
+                        is_base = False
+                        break
+                    base_high = max(base_high, highs[prev_idx])
+                    base_low = min(base_low, lows[prev_idx])
+                    base_start_idx = prev_idx
+                    
+                if is_base and base_high > 0:
+                    # Supply Zone Found
+                    zones.append({
+                        'type': 'supply',
+                        'top': base_high,
+                        'bottom': base_low,
+                        'index': base_start_idx,
+                        'strength': 'strong',
+                        'tested_count': 0
+                    })
+        
+        # Check if current price is in any fresh zone
+        current_price = closes[-1]
+        signal = "neutral"
+        reason = ""
+        active_zones = []
+        
+        for zone in zones[:5]: # Check 5 most recent zones
+            # Check if price has already mitigated this zone (simple check)
+            # In a real strict system, we'd track all price history since zone creation.
+            # Here we just check if current price is inside.
+            
+            is_inside = False
+            if zone['type'] == 'demand':
+                if zone['bottom'] <= current_price <= zone['top'] * 1.001: # Slight tolerance
+                    signal = "buy"
+                    reason = "Price in Strict Demand Zone"
+                    is_inside = True
+            elif zone['type'] == 'supply':
+                if zone['bottom'] * 0.999 <= current_price <= zone['top']:
+                    signal = "sell"
+                    reason = "Price in Strict Supply Zone"
+                    is_inside = True
+            
+            if is_inside:
+                active_zones.append(zone)
+                break # Priority to most recent
+                
+        return {"signal": signal, "reason": reason, "active_zones": active_zones}
+
     def generate_support_resistance(self, df: pd.DataFrame, lookback_period: int = 100) -> Dict[str, List[float]]:
         if len(df) < lookback_period: lookback_period = len(df)
         recent_data = df.tail(lookback_period)
@@ -1015,6 +1149,11 @@ class AdvancedMarketAnalysisAdapter(AdvancedMarketAnalysis):
             summary = self.generate_analysis_summary(df)
             ifvg = self.analyze_ifvg(df, min_gap_points=params.get('ifvg_gap', 10))
             rvgi_cci = self.analyze_rvgi_cci_strategy(df, sma_period=params.get('rvgi_sma', 10), cci_period=params.get('rvgi_cci', 14))
+            
+            # New Indicators
+            donchian = self.calculate_donchian_channels(df, period=20)
+            strict_sd = self.detect_strict_supply_demand(df)
+            
             return {
                 "indicators": indicators,
                 "regime": regime,
@@ -1023,7 +1162,9 @@ class AdvancedMarketAnalysisAdapter(AdvancedMarketAnalysis):
                 "signal_info": signal_info,
                 "summary": summary,
                 "ifvg": ifvg,
-                "rvgi_cci": rvgi_cci
+                "rvgi_cci": rvgi_cci,
+                "donchian": donchian,
+                "strict_supply_demand": strict_sd
             }
         except Exception as e:
             logging.error(f"Full Analysis failed: {e}")
