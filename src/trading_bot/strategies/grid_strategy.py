@@ -199,53 +199,8 @@ class KalmanGridStrategy:
         Check if we need to add a position to the grid.
         Returns: ('add_buy', lot) or ('add_sell', lot) or (None, 0)
         """
-        self._update_positions_state(positions)
-        
-        # Default Grid Distance
-        grid_dist = self.grid_step_points * point
-        
-        # [Dynamic Step] Use ATR if provided
-        if current_atr is not None and current_atr > 0:
-            # 基础步长为 ATR 的 0.8 倍 (Advanced Martingale Logic)
-            grid_dist = current_atr * 0.8
-            # Ensure not smaller than minimum safety distance (e.g. 50 points)
-            min_safety = 50 * point
-            if grid_dist < min_safety: grid_dist = min_safety
-        
-        # SMC-Aware Grid Spacing (Optional Dynamic Adjustment)
-        # If price is near an OB, we might want to add sooner or later
-        
-        # Check Buy Grid
-        if self.long_pos_count > 0 and self.long_pos_count < self.max_grid_steps:
-            # For BUY, we add when price drops below last open
-            dist = self.last_long_price - current_price
-            
-            # Use points logic
-            # grid_step_points is already integer points (e.g., 2000 for ETH)
-            # point is e.g. 0.01 for ETH
-            min_dist_price = grid_dist
-            
-            # Ensure strictly greater than minimum distance
-            if dist >= min_dist_price:
-                # Double check not adding too close to existing (in case of volatility spikes)
-                # But here self.last_long_price is the *latest* opened position.
-                
-                next_lot = self.calculate_next_lot(self.long_pos_count)
-                logger.info(f"Grid Add BUY Signal: Dist {dist:.2f} >= Min {min_dist_price:.2f} (ATR Dynamic: {current_atr is not None})")
-                return 'add_buy', next_lot
-                
-        # Check Sell Grid
-        if self.short_pos_count > 0 and self.short_pos_count < self.max_grid_steps:
-            # For SELL, we add when price rises above last open
-            dist = current_price - self.last_short_price
-            
-            min_dist_price = grid_dist
-            
-            if dist >= min_dist_price:
-                next_lot = self.calculate_next_lot(self.short_pos_count)
-                logger.info(f"Grid Add SELL Signal: Dist {dist:.2f} >= Min {min_dist_price:.2f} (ATR Dynamic: {current_atr is not None})")
-                return 'add_sell', next_lot
-                
+        # User Requirement: Disable autonomous grid adding. Rely on LLM/Grid Plan (Limit Orders).
+        # "Grid Add BUY Signal... cancel this module, completely judge based on the big model"
         return None, 0.0
 
     def calculate_next_lot(self, current_count):
