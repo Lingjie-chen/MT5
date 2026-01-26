@@ -174,26 +174,21 @@ class SymbolTrader:
 
 
             # 2. 净值回撤检查 (Equity Drawdown)
-            balance = account_info.balance
-            equity = account_info.equity
-            if balance > 0:
-                drawdown_pct = (balance - equity) / balance
-                # Default 20% if not set
-                limit = getattr(self, 'max_drawdown_pct', 0.20)
-                
-                if drawdown_pct >= limit:
-                    msg = f"Max Drawdown Reached: {drawdown_pct:.1%} >= {limit:.1%}"
-                    logger.critical(msg)
-                    if close_if_critical:
-                        logger.critical("⚠️ 触发最大回撤风控，正在强制平仓所有头寸！")
-                        # Close all positions for this symbol
-                        positions = mt5.positions_get(symbol=self.symbol)
-                        if positions:
-                            for pos in positions:
-                                if pos.magic == self.magic_number:
-                                    self.close_position(pos, comment="Max Drawdown Hard Stop")
-                    return False, msg
+            # User Requirement: Remove fixed drawdown check, rely on AI trend analysis.
+            # Only check for critical Margin Level (< 50%) to prevent broker stopout.
             
+            if account_info.margin_level > 0 and account_info.margin_level < 50.0:
+                 msg = f"CRITICAL: Margin Level Critical! {account_info.margin_level:.2f}% < 50.0%"
+                 logger.critical(msg)
+                 if close_if_critical:
+                     logger.critical("⚠️ 触发保证金紧急风控，正在强制平仓所有头寸！")
+                     positions = mt5.positions_get(symbol=self.symbol)
+                     if positions:
+                         for pos in positions:
+                             if pos.magic == self.magic_number:
+                                 self.close_position(pos, comment="Margin Call Protection")
+                 return False, msg
+
             return True, "Safe"
             
         except Exception as e:
