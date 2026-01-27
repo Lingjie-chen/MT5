@@ -175,6 +175,15 @@ class KalmanGridStrategy:
         self.bb_upper = rolling_mean.iloc[-1] + (rolling_std.iloc[-1] * self.bb_deviation)
         self.bb_lower = rolling_mean.iloc[-1] - (rolling_std.iloc[-1] * self.bb_deviation)
         self.ma_value = rolling_mean.iloc[-1]
+        
+        # 3. Calculate Swing High/Low (for Fibonacci)
+        # Lookback 50 bars
+        if len(df) >= 50:
+             self.swing_high = df['high'].iloc[-50:].max()
+             self.swing_low = df['low'].iloc[-50:].min()
+        else:
+             self.swing_high = df['high'].max()
+             self.swing_low = df['low'].min()
 
     def get_entry_signal(self, current_price):
         """
@@ -203,12 +212,57 @@ class KalmanGridStrategy:
         # "Grid Add BUY Signal... cancel this module, completely judge based on the big model"
         return None, 0.0
 
-    def calculate_next_lot(self, current_count):
+    def calculate_next_lot(self, current_count, ai_override_multiplier=None):
         """
         Calculate next lot size based on strategy.
-        Uses Martingale or Pyramid logic.
+        Uses Martingale, Pyramid, or Fibonacci logic.
         """
         multiplier = 1.0
+        
+        # [User Requirement] Fibonacci Lot Sequence
+        # If lot_type is set to 'FIBONACCI', use Fibo sequence.
+        # But allow AI override multiplier if provided.
+        
+        # Priority 1: AI Override Multiplier
+        if ai_override_multiplier and ai_override_multiplier > 0:
+             # Treat as Geometric with custom multiplier
+             multiplier = ai_override_multiplier ** current_count
+             return float(f"{self.lot * multiplier:.2f}")
+
+        # Priority 2: Fibonacci Sequence
+        # "Grid strategy requires matching Fibonacci sequence for callback adding positions"
+        # We can implement a Fibo Lot Logic here.
+        # Sequence: 1, 1, 2, 3, 5, 8, 13...
+        # Index:    0, 1, 2, 3, 4, 5, 6...
+        # current_count is 0-based index of NEW order (e.g., 1st add is count=1, 2nd add is count=2)
+        # Wait, base_count in generate_grid_plan starts from 1.
+        # Let's assume current_count 0 = Base Lot. 
+        # current_count 1 = 1st Add = Base Lot.
+        # current_count 2 = 2nd Add = 2 * Base.
+        
+        # Let's define Fibo function
+        def fib(n):
+            if n <= 1: return 1
+            a, b = 1, 1
+            for _ in range(2, n + 1):
+                a, b = b, a + b
+            return b
+            
+        # We use Fibonacci logic if specified or by default if requested
+        # For now, let's stick to existing logic unless config changes, 
+        # BUT user said "Combine with Fibonacci sequence".
+        # Let's add a check for 'FIBONACCI' type or default behavior
+        
+        if getattr(self, 'lot_type', '') == 'FIBONACCI':
+            fib_mult = fib(current_count + 1) # +1 to align 1st add (index 0?) No.
+            # If current_count = 1 (1st grid level), fib(1) = 1.
+            # If current_count = 2 (2nd grid level), fib(2) = 1.
+            # If current_count = 3 (3rd grid level), fib(3) = 2.
+            # If current_count = 4, fib(4) = 3.
+            # If current_count = 5, fib(5) = 5.
+            # This matches standard Fibo Martingale.
+            return float(f"{self.lot * fib_mult:.2f}")
+
         if self.lot_type == 'GEOMETRIC':
             # Aggressive scaling for capital utilization
             
@@ -237,7 +291,7 @@ class KalmanGridStrategy:
             
             # Override for safety if result is too huge
             if multiplier > 20.0: multiplier = 20.0
-             
+            
             # Use rounding to ensure 0.01 * 1.3 becomes 0.01 or 0.02 appropriately
             # Standard float logic: 0.013 -> 0.01. 0.0169 -> 0.02.
             # If user wants "slowly increase", we rely on the multiplier being large enough eventually.
@@ -253,13 +307,57 @@ class KalmanGridStrategy:
     def generate_grid_plan(self, current_price, trend_direction, atr, point=0.01, dynamic_step_pips=None, grid_level_tps=None):
         """
         Generate a plan for grid deployment (for limit orders)
-        grid_level_tps: List of TP pips for each level [tp1, tp2, ...]
+        Uses Fibonacci Retracement Levels for placement if applicable.
         """
         orders = []
         
         # Range
         upper_bound = current_price + (atr * 5)
         lower_bound = current_price - (atr * 5)
+        
+        # [User Requirement] Fibonacci Retracement Levels
+        # Use Swing High/Low calculated in update_market_data
+        fibo_levels = []
+        use_fibo = True
+        
+        # Validate Swing
+        swing_dist = 0
+        if hasattr(self, 'swing_high') and hasattr(self, 'swing_low'):
+             swing_dist = self.swing_high - self.swing_low
+        
+        # Minimum swing requirement (e.g. > 100 pips)
+        if swing_dist < (1000 * point): 
+            use_fibo = False
+            
+        if use_fibo:
+            # Calculate Retracement Levels based on Trend Direction
+            # If Bullish, we look to buy at retracements from Low to High? 
+            # Or if trend is Bullish, we assume we are in an uptrend, so we buy dips.
+            # Dips are measured from Swing Low to Swing High range.
+            # Retracements: 0.236, 0.382, 0.5, 0.618, 0.786 from High down.
+            
+            # Standard Fibo Ratios
+            ratios = [0.236, 0.382, 0.5, 0.618, 0.786]
+            
+            if trend_direction == 'bullish':
+                # Buy Limit Orders below current price
+                # Levels = High - Range * Ratio
+                # Only keep levels < current_price
+                for r in ratios:
+                    lvl = self.swing_high - (swing_dist * r)
+                    if lvl < current_price:
+                        fibo_levels.append(lvl)
+                fibo_levels.sort(reverse=True) # Descending (closest to price first)
+                
+            elif trend_direction == 'bearish':
+                # Sell Limit Orders above current price
+                # Levels = Low + Range * Ratio
+                # Only keep levels > current_price
+                for r in ratios:
+                    lvl = self.swing_low + (swing_dist * r)
+                    if lvl > current_price:
+                        fibo_levels.append(lvl)
+                fibo_levels.sort() # Ascending (closest to price first)
         
         # Find SMC Levels
         resistances = [p for p in self.smc_levels['ob_bearish'] if p > current_price]
@@ -289,7 +387,14 @@ class KalmanGridStrategy:
         
         if trend_direction == 'bullish':
             # Buy Grid
-            levels = sorted([p for p in supports if p > lower_bound], reverse=True)
+            # [Logic] Prioritize Fibo Levels, then SMC, then Fixed
+            levels = []
+            if use_fibo and fibo_levels:
+                levels = fibo_levels
+                logger.info(f"Using Fibonacci Levels for Grid: {levels}")
+            elif supports:
+                levels = sorted([p for p in supports if p > lower_bound], reverse=True)
+            
             if not levels: # Fallback to arithmetic
                 step = fixed_step if fixed_step > 0 else (atr * 0.5)
                 # Ensure step is valid
@@ -318,13 +423,20 @@ class KalmanGridStrategy:
                 tp_price = 0.0
                 
                 # Calculate Lot
+                # Use Fibonacci logic if specified or default
                 lot = self.calculate_next_lot(base_count + i)
                 
                 orders.append({'type': 'limit_buy', 'price': lvl, 'tp': tp_price, 'volume': lot})
                 
         elif trend_direction == 'bearish':
             # Sell Grid
-            levels = sorted([p for p in resistances if p < upper_bound])
+            levels = []
+            if use_fibo and fibo_levels:
+                levels = fibo_levels
+                logger.info(f"Using Fibonacci Levels for Grid: {levels}")
+            elif resistances:
+                levels = sorted([p for p in resistances if p < upper_bound])
+            
             if not levels:
                 step = fixed_step if fixed_step > 0 else (atr * 0.5)
                 # Ensure step is valid

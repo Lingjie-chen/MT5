@@ -1084,7 +1084,7 @@ class SymbolTrader:
             logger.info(f"网格方向: {direction} (ATR: {atr:.5f})")
 
             # 5. 执行首单 (Initial Entry) - Market Order
-            initial_lot = 0.01 # Strictly Force 0.01 as requested
+            initial_lot = 0.02 # [User Requirement] Fixed Initial Lot 0.02
             # User Requirement: Disable override from AI config to ensure safety start
             # if grid_config.get('initial_lot'): ...
             # elif suggested_lot: ...
