@@ -1007,8 +1007,19 @@ class SymbolTrader:
             if 'grid_start' in llm_action:
                 logger.info(f"已有持仓 ({len(bot_positions)})，但收到新的网格指令 ({llm_action})，允许调整/重新部署网格。")
                 # Pass through to grid logic below
-            elif 'add' not in llm_action:
-                # 对于非 grid_start 且非 add 的指令 (如被过滤的 buy/sell)，保持跳过
+            elif 'add' in llm_action:
+                 # Explicit add command from LLM
+                 pass 
+            elif llm_action in ['buy', 'sell']:
+                 # [User Requirement] 即使有持仓，如果 AI 明确给出 buy/sell (且 confidence 高)，也允许加仓。
+                 # 但我们之前为了强制网格策略，屏蔽了单纯的 buy/sell。
+                 # 这里我们需要放行，并将其转化为 grid_start 或 add 逻辑。
+                 
+                 # 假设 buy/sell 在有持仓时意味着 "Trend Following Add"
+                 logger.info(f"已有持仓，收到 ({llm_action}) 指令。视为趋势加仓信号，放行。")
+                 pass
+            else:
+                # 只有完全不相关的指令才拦截
                 logger.info(f"已有持仓 ({len(bot_positions)}), 且非加仓/网格指令 ({llm_action}), 跳过开仓")
                 return
 
@@ -1031,29 +1042,45 @@ class SymbolTrader:
 
         # User Requirement: Disable all single 'buy'/'sell'/'add' actions.
         # Grid Strategy ONLY.
-        if llm_action in ['buy', 'add_buy', 'sell', 'add_sell', 'limit_buy', 'buy_limit', 'limit_sell', 'sell_limit']:
-            logger.info(f"Ignoring '{llm_action}' action as per Strict Grid-Only policy.")
-            return
         
-        elif llm_action in ['grid_start', 'grid_start_long', 'grid_start_short']:
-            logger.info(f">>> 执行网格部署 ({llm_action}) <<<")
-            
-            # [NEW] Clear existing pending orders before starting new grid
-            self.cancel_all_pending_orders()
-            
-            # 1. 确定方向
-            direction = 'bullish' # Default
-            if llm_action == 'grid_start_long':
-                direction = 'bullish'
-            elif llm_action == 'grid_start_short':
-                direction = 'bearish'
+        # [MODIFIED] Allow 'buy'/'sell'/'add' to pass through and be converted to grid actions
+        # if llm_action in ['buy', 'add_buy', 'sell', 'add_sell', 'limit_buy', 'buy_limit', 'limit_sell', 'sell_limit']:
+        #     logger.info(f"Ignoring '{llm_action}' action as per Strict Grid-Only policy.")
+        #     return
+        
+        # Determine if this is a grid deployment (explicit or converted)
+        is_grid_action = False
+        direction = 'bullish' # Default
+        
+        if llm_action in ['grid_start', 'grid_start_long', 'grid_start_short']:
+            is_grid_action = True
+            if llm_action == 'grid_start_long': direction = 'bullish'
+            elif llm_action == 'grid_start_short': direction = 'bearish'
             else:
-                # Fallback for legacy 'grid_start'
+                # Legacy grid_start inference
                 if self.latest_strategy:
                     market_state = str(self.latest_strategy.get('market_state', '')).lower()
                     pred = str(self.latest_strategy.get('short_term_prediction', '')).lower()
                     if 'down' in market_state or 'bear' in pred or 'sell' in str(self.latest_strategy.get('action', '')).lower():
                         direction = 'bearish'
+                        
+        elif llm_action in ['buy', 'add_buy', 'limit_buy', 'buy_limit']:
+             # Convert Buy -> Grid Start Long
+             is_grid_action = True
+             direction = 'bullish'
+             logger.info(f"Converting '{llm_action}' to Grid Start (Long) due to Trend Surfing policy.")
+             
+        elif llm_action in ['sell', 'add_sell', 'limit_sell', 'sell_limit']:
+             # Convert Sell -> Grid Start Short
+             is_grid_action = True
+             direction = 'bearish'
+             logger.info(f"Converting '{llm_action}' to Grid Start (Short) due to Trend Surfing policy.")
+        
+        if is_grid_action:
+            logger.info(f">>> 执行网格部署 (Direction: {direction}) <<<")
+            
+            # [NEW] Clear existing pending orders before starting new grid
+            self.cancel_all_pending_orders()
             
             # 2. 提取配置 (Grid Config)
             grid_config = {}
