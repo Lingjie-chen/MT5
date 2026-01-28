@@ -19,11 +19,16 @@ logger = logging.getLogger("PostgresBackup")
 
 # Configuration
 POSTGRES_URL = os.getenv("POSTGRES_CONNECTION_STRING", "postgresql://chenlingjie:clj568741230@localhost:5432/trading_bot")
-BACKUP_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "postgres_backup")
+# Changed BACKUP_DIR to point to scripts/postgres_backup to unify locations
+# Previous location was project_root/postgres_backup (c:\Users\Administrator\Desktop\MT5\postgres_backup)
+# New location: project_root/scripts/postgres_backup (c:\Users\Administrator\Desktop\MT5\scripts\postgres_backup)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+BACKUP_DIR = os.path.join(PROJECT_ROOT, "scripts", "postgres_backup")
 
 def backup_postgres_to_csv():
     """
     Dumps PostgreSQL tables to CSV files and pushes them to GitHub.
+    Unifies backup location to scripts/postgres_backup.
     """
     try:
         # 1. Connect to Postgres
@@ -48,6 +53,15 @@ def backup_postgres_to_csv():
                     logger.warning(f"   Table {table} is empty, skipping.")
                     continue
                 
+                # Remove duplicates (keep first occurrence)
+                # Assuming 'ticket' is unique for trades, 'id' for signals/metrics if available.
+                # If no specific unique key, drop exact duplicates.
+                initial_len = len(df)
+                df.drop_duplicates(inplace=True)
+                final_len = len(df)
+                if initial_len > final_len:
+                    logger.info(f"   Removed {initial_len - final_len} duplicate rows.")
+                
                 # Save to CSV
                 filename = f"{table}_backup.csv"
                 filepath = os.path.join(BACKUP_DIR, filename)
@@ -61,21 +75,30 @@ def backup_postgres_to_csv():
         # 3. Push to GitHub
         if files_changed:
             logger.info("🔄 Pushing backups to GitHub...")
-            base_dir = os.path.dirname(BACKUP_DIR)
+            # Git needs to run from project root or handle paths correctly
             
             # Git Add
-            subprocess.run(["git", "add", "postgres_backup/"], cwd=base_dir, check=True)
+            subprocess.run(["git", "add", "scripts/postgres_backup/"], cwd=PROJECT_ROOT, check=True)
             
             # Git Commit
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             commit_msg = f"backup: update postgres data {timestamp}"
-            subprocess.run(["git", "commit", "-m", commit_msg], cwd=base_dir, check=False) # Check=False in case no changes
+            subprocess.run(["git", "commit", "-m", commit_msg], cwd=PROJECT_ROOT, check=False) 
             
             # Git Push
-            subprocess.run(["git", "push", "origin", "master"], cwd=base_dir, check=True)
+            subprocess.run(["git", "push", "origin", "master"], cwd=PROJECT_ROOT, check=True)
             logger.info("✅ Backup pushed to GitHub successfully.")
         else:
             logger.info("No data found to backup.")
+            
+        # 4. Cleanup old directory if empty or redundant
+        old_backup_dir = os.path.join(PROJECT_ROOT, "postgres_backup")
+        if os.path.exists(old_backup_dir):
+            try:
+                # Optional: Remove old directory if we want to enforce the move
+                # subprocess.run(["git", "rm", "-r", "postgres_backup/"], cwd=PROJECT_ROOT, check=False)
+                pass 
+            except Exception: pass
 
     except Exception as e:
         logger.error(f"❌ Backup failed: {e}")
