@@ -402,7 +402,9 @@ class QwenClient:
        - **Basket TP 动态实时配置 (Real-time Dynamic Basket TP)**:
          - **核心要求**: 对于每个品种的网格 Basket TP (整体止盈)，必须根据以下所有维度进行综合分析和自我学习，给出一个**最优的美元数值**：
            1. **市场情绪 (Sentiment)**: 如果情绪极度乐观(Bullish)且方向做多，大幅上调 Basket TP；反之则保守。
-           2. **结构趋势 (Structure)**: 顺势交易(Following Trend)目标更高；逆势/震荡(Range/Counter)目标更低。
+           2. **结构趋势 (Structure)**: 
+              - **强趋势 (Trend Surfing)**: 若市场处于单边强趋势 (如 H1/H4 结构破坏且 MA 发散)，**必须大幅上调 Basket TP** (例如正常值的 2-3 倍)，防止只吃了一小部分利润就过早离场。
+              - **震荡/逆势**: 目标应保守，快速落袋为安。
            3. **高级算法 (Algo Metrics)**: 
               - 参考 `technical_signals` 中的 **EMA/HA** 数据。
               - 如果价格远离 EMA 50 (乖离率高)，预期会有回归，TP 应保守。
@@ -420,17 +422,24 @@ class QwenClient:
               - 将历史最优参数作为决策的 "Anchor" (锚点)，在此基础上进行微调，而不是凭空猜测。
          - **计算公式参考**:
            - `Base_Target` = (ATR * Position_Size * Contract_Size)
-           - `Sentiment_Multiplier`: 0.5 (Weak) to 2.0 (Strong)
-           - `Structure_Multiplier`: 0.8 (Range) to 1.5 (Trend)
+           - `Sentiment_Multiplier`: 0.5 (Weak) to 3.0 (Strong Trend)
+           - `Structure_Multiplier`: 0.8 (Range) to 2.0 (Trend Surfing)
            - `Dynamic_Basket_TP` = `Base_Target` * `Sentiment_Multiplier` * `Structure_Multiplier` (并用 Avg_MFE 做校验)
          - **拒绝固定值**: 严禁使用固定的数值 (如 50.0)！必须是经过上述逻辑计算后的结果。
          - **更新指令**: 在 `position_management` -> `dynamic_basket_tp` 中返回计算后的数值。
        - **Lock Profit Trigger (Profit Locking)**:
          - **定义**: 当 Basket 整体利润达到此数值时，启动强制利润锁定机制 (Trailing Stop for Basket)。
          - **逻辑**: 如果利润达到此阈值，系统将锁定大部分利润 (如 60%)，防止利润回撤。
+         - **趋势保护**: 在强趋势中，应将 Trigger 设置得更高 (例如 Basket TP 的 80%)，给予价格充分的波动空间，避免被微小的回调震出。
          - **最小值**: 必须 >= 10.0 USD。
-         - **量化优化**: Trigger 值应设置为 `Dynamic_Basket_TP` 的 60%-75%，这是一个经典的 Pareto Principle (二八定律) 在交易中的应用，即捕捉 80% 的趋势利润。
-         - **更新指令**: 在 `position_management` -> `lock_profit_trigger` 中返回计算后的数值。
+         - **量化优化**: Trigger 值应设置为 `Dynamic_Basket_TP` 的 60%-75% (震荡) 或 80% (强趋势)。
+          - **更新指令**: 在 `position_management` -> `lock_profit_trigger` 中返回计算后的数值。
+       - **Trailing Stop Config (移动止损配置)**:
+         - **核心逻辑**: 一旦 Trigger 触发，使用何种机制进行利润保护。
+         - **动态调整**:
+           - **强趋势 (Trend Surfing)**: 必须使用更宽的 ATR 倍数 (e.g., ATR * 3.0 或 4.0)，允许价格在趋势中大幅呼吸，防止被噪音洗出。
+           - **震荡/剥头皮**: 使用紧凑的 ATR 倍数 (e.g., ATR * 1.5)，快速锁住利润。
+         - **更新指令**: 在 `position_management` -> `trailing_stop_config` 中返回 (e.g., `{"type": "atr_distance", "value": 3.5}`).
 
     5. **CandleSmoothing EMA 策略 (Strategy B)**:
        - **核心逻辑**: 基于 EMA50 趋势过滤，结合 EMA20 High/Low 通道突破和 Heiken Ashi 蜡烛形态。
