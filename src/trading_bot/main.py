@@ -994,8 +994,22 @@ class SymbolTrader:
             if added_this_cycle:
                 logger.info(f"本轮已执行加仓，跳过额外开仓")
                 return
+            
+            # [User Requirement] 取消对 "非加仓指令就跳过" 的限制。
+            # 允许在已有持仓的情况下，如果 AI 发出了新的网格启动指令 (grid_start_long/short)，
+            # 且方向与现有持仓一致（或者 AI 认为需要重新部署网格），则允许执行。
+            # 实际上，grid_start_long/short 会在下方逻辑中被处理，会先 cancel pending orders，然后根据 grid_strategy 生成新挂单。
+            # 如果是同向，这相当于"网格重置/增强"。如果是反向，通常应该先平仓（由上方 Close 逻辑处理），如果没平仓直接反向开网格，就是对冲。
+            
+            # 过滤掉单纯的 'buy'/'sell' 指令（因为我们已经是 Grid-Only 模式），只放行 grid_start 系列
+            # 且如果是 grid_start，我们需要确保不会无限叠加首单。
+            
+            if 'grid_start' in llm_action:
+                logger.info(f"已有持仓 ({len(bot_positions)})，但收到新的网格指令 ({llm_action})，允许调整/重新部署网格。")
+                # Pass through to grid logic below
             elif 'add' not in llm_action:
-                logger.info(f"已有持仓 ({len(bot_positions)}), 且非加仓指令 ({llm_action}), 跳过开仓")
+                # 对于非 grid_start 且非 add 的指令 (如被过滤的 buy/sell)，保持跳过
+                logger.info(f"已有持仓 ({len(bot_positions)}), 且非加仓/网格指令 ({llm_action}), 跳过开仓")
                 return
 
         # 执行开仓/挂单
