@@ -13,6 +13,8 @@ logs/
 # SQLite 临时文件
 *.db-shm
 *.db-wal
+# Ignore actual DB files to prevent binary blobs in git
+*.db
 
 # 可视化图表文件
 figures/
