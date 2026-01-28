@@ -177,7 +177,16 @@ class KalmanGridStrategy:
         self.ma_value = rolling_mean.iloc[-1]
         
         # 3. Calculate Swing High/Low (for Fibonacci)
-        # Lookback 50 bars
+        # Lookback 50 bars (Default) -> M5 requires shorter lookback? 
+        # Actually, if we run on M15/H1 timeframe, 'df' is M15/H1.
+        # But User requested "Analysis Fibonacci structure based on 5-minute structure".
+        # Since 'update_market_data' receives 'df' which comes from main loop's timeframe (likely M15 or H1),
+        # we cannot see M5 structure here directly unless main loop passes M5 data.
+        
+        # However, we can approximate "Micro Structure" by using a shorter lookback on current timeframe
+        # or rely on the LLM (who sees multi-tf data) to guide the direction/levels via 'grid_config'.
+        
+        # For this function, we stick to calculating local swings.
         if len(df) >= 50:
              self.swing_high = df['high'].iloc[-50:].max()
              self.swing_low = df['low'].iloc[-50:].min()
