@@ -25,9 +25,9 @@ echo ===================================================
 echo Quant Trading System Startup
 echo ===================================================
 
-:: Check PostgreSQL
+:: Check PostgreSQL and Auto-Start
 echo [Checking PostgreSQL...]
-powershell -Command "if (Test-NetConnection -ComputerName localhost -Port 5432 -InformationLevel Quiet) { Write-Host '✅ PostgreSQL is running on port 5432.' -ForegroundColor Green } else { Write-Host '❌ PostgreSQL is NOT running on port 5432.' -ForegroundColor Red; Write-Host '   Please ensure local DB or Tunnel is active.' -ForegroundColor Yellow }"
+powershell -Command "if (Test-NetConnection -ComputerName localhost -Port 5432 -InformationLevel Quiet) { Write-Host '✅ PostgreSQL is running on port 5432.' -ForegroundColor Green } else { Write-Host '⚠️ PostgreSQL is NOT running. Attempting to start service...' -ForegroundColor Yellow; Start-Service -Name postgresql* -ErrorAction SilentlyContinue; Start-Sleep -Seconds 5; if (Test-NetConnection -ComputerName localhost -Port 5432 -InformationLevel Quiet) { Write-Host '✅ PostgreSQL started successfully.' -ForegroundColor Green } else { Write-Host '❌ Failed to start PostgreSQL. Please check service manually.' -ForegroundColor Red } }"
 
 echo.
 echo [1/2] Starting API Server...

@@ -29,14 +29,29 @@ echo "==================================================="
 echo "   Quant Trading System - Auto Sync Engine"
 echo "==================================================="
 
-# 2. Check PostgreSQL
+# 2. Check PostgreSQL and Auto-Start
 echo "🐘 Checking PostgreSQL connection..."
 if nc -z localhost 5432 2>/dev/null; then
     echo "✅ PostgreSQL is running on port 5432."
 else
-    echo "❌ ERROR: PostgreSQL is NOT running on port 5432."
-    echo "   Please start your database server and try again."
-    echo "   (If using a remote DB, ensure the tunnel is active at localhost:5432)"
+    echo "⚠️ PostgreSQL is NOT running. Attempting to start service..."
+    # Try common start commands (Homebrew, systemctl, pg_ctl)
+    if command -v brew &> /dev/null; then
+        brew services start postgresql
+    elif command -v systemctl &> /dev/null; then
+        sudo systemctl start postgresql
+    elif command -v pg_ctl &> /dev/null; then
+        pg_ctl -D /usr/local/var/postgres start
+    fi
+    
+    sleep 5
+    
+    if nc -z localhost 5432 2>/dev/null; then
+        echo "✅ PostgreSQL started successfully."
+    else
+        echo "❌ ERROR: Failed to auto-start PostgreSQL."
+        echo "   Please start your database server manually."
+    fi
 fi
 
 echo "🚀 Starting Auto Sync Engine..."
