@@ -259,10 +259,6 @@ class KalmanGridStrategy:
         """
         multiplier = 1.0
         
-        # [User Requirement] Fibonacci Lot Sequence
-        # If lot_type is set to 'FIBONACCI', use Fibo sequence.
-        # But allow AI override multiplier if provided.
-        
         # Priority 1: AI Override Multiplier
         if ai_override_multiplier and ai_override_multiplier > 0:
              # Treat as Geometric with custom multiplier
@@ -270,37 +266,37 @@ class KalmanGridStrategy:
              return float(f"{self.lot * multiplier:.2f}")
 
         # Priority 2: Fibonacci Sequence
-        # "Grid strategy requires matching Fibonacci sequence for callback adding positions"
-        # We can implement a Fibo Lot Logic here.
-        # Sequence: 1, 1, 2, 3, 5, 8, 13...
-        # Index:    0, 1, 2, 3, 4, 5, 6...
-        # current_count is 0-based index of NEW order (e.g., 1st add is count=1, 2nd add is count=2)
-        # Wait, base_count in generate_grid_plan starts from 1.
-        # Let's assume current_count 0 = Base Lot. 
-        # current_count 1 = 1st Add = Base Lot.
-        # current_count 2 = 2nd Add = 2 * Base.
+        # User Requirement: Grid strategy requires matching Fibonacci sequence for callback adding positions
+        # [MODIFIED] To ensure we use Fibonacci even if 'lot_type' wasn't explicitly set by legacy config
+        # We default to FIBONACCI if no specific type or if type is GEOMETRIC/ARITHMETIC but we want to enforce User Rule.
         
-        # Let's define Fibo function
-        def fib(n):
-            if n <= 1: return 1
-            a, b = 1, 1
-            for _ in range(2, n + 1):
-                a, b = b, a + b
-            return b
+        # Let's enforce Fibonacci if lot_type is not specifically set to something else strict,
+        # or we can just make it the default logic as per user request.
+        
+        # For now, let's respect the flag but ensure it defaults to FIBONACCI in main.py initialization
+        # (which we did in previous step: self.grid_strategy.lot_type = 'FIBONACCI')
+        
+        if getattr(self, 'lot_type', 'FIBONACCI') == 'FIBONACCI':
+            # Fibonacci Sequence: 1, 1, 2, 3, 5, 8, 13...
+            def fib(n):
+                if n <= 1: return 1
+                a, b = 1, 1
+                for _ in range(2, n + 1):
+                    a, b = b, a + b
+                return b
             
-        # We use Fibonacci logic if specified or by default if requested
-        # For now, let's stick to existing logic unless config changes, 
-        # BUT user said "Combine with Fibonacci sequence".
-        # Let's add a check for 'FIBONACCI' type or default behavior
-        
-        if getattr(self, 'lot_type', '') == 'FIBONACCI':
-            fib_mult = fib(current_count + 1) # +1 to align 1st add (index 0?) No.
-            # If current_count = 1 (1st grid level), fib(1) = 1.
-            # If current_count = 2 (2nd grid level), fib(2) = 1.
-            # If current_count = 3 (3rd grid level), fib(3) = 2.
-            # If current_count = 4, fib(4) = 3.
-            # If current_count = 5, fib(5) = 5.
-            # This matches standard Fibo Martingale.
+            # current_count starts from 1 for the first add? 
+            # Usually base position is count=0 (or 1).
+            # If current_count represents the "nth grid level" (1, 2, 3...),
+            # Level 1 (1st Add) -> Fib(1) = 1 (Same as Base)
+            # Level 2 (2nd Add) -> Fib(2) = 1 (Same as Base)
+            # Level 3 (3rd Add) -> Fib(3) = 2 (Double)
+            # This is a safe progression.
+            
+            fib_mult = fib(current_count) 
+            # Note: If current_count=0 (Base), fib(0)=1.
+            # If current_count=1 (1st Grid Order), fib(1)=1.
+            
             return float(f"{self.lot * fib_mult:.2f}")
 
         if self.lot_type == 'GEOMETRIC':
