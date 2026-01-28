@@ -185,21 +185,52 @@ class KalmanGridStrategy:
              self.swing_high = df['high'].max()
              self.swing_low = df['low'].min()
 
-    def get_entry_signal(self, current_price):
+    def get_entry_signal(self, current_price, trend_direction=None):
         """
         Determine if we should start a grid.
         Returns: 'buy', 'sell', or None
-        """
-        # Logic from MQL:
-        # Buy: Price < BB Lower AND Price > Kalman (Oversold but Bullish Trend)
-        # Sell: Price > BB Upper AND Price < Kalman (Overbought but Bearish Trend)
         
+        [Optimized] Hybrid Logic:
+        1. Mean Reversion (Standard): Buy Low (BB Lower), Sell High (BB Upper).
+        2. Trend Following (Aggressive): If trend is strong, enter on shallow pullbacks (Mid Band).
+        """
         signal = None
         
-        if current_price < self.bb_lower and current_price > self.kalman_value:
-            signal = 'buy'
-        elif current_price > self.bb_upper and current_price < self.kalman_value:
-            signal = 'sell'
+        # Calculate Trend Strength (Simple Slope of Kalman Filter)
+        # We need history of kalman values to calculate slope properly, 
+        # but here we can compare current price vs MA vs Kalman
+        
+        # Proxy for Trend Strength: Distance between Kalman and MA
+        # If Kalman > MA by a margin, it's an uptrend.
+        trend_strength = 0.0
+        if self.ma_value > 0:
+            trend_strength = (self.kalman_value - self.ma_value) / self.ma_value * 10000 # Basis points
+            
+        is_strong_uptrend = trend_strength > 5.0 # Arbitrary threshold, tune based on asset
+        is_strong_downtrend = trend_strength < -5.0
+        
+        # [Optimized Entry Logic]
+        
+        # 1. Buy Signal
+        if trend_direction == 'bullish' or (trend_direction is None and is_strong_uptrend):
+            # Aggressive Trend Entry: Price touches Mid Band (MA) or simply is below Kalman in strong trend
+            if is_strong_uptrend and current_price < self.kalman_value:
+                 # In strong uptrend, buy the dip to Kalman/Mid line, don't wait for BB Lower
+                 logger.info(f"Aggressive Trend BUY Signal: Price {current_price} < Kalman {self.kalman_value} (Strong UpTrend)")
+                 signal = 'buy'
+            # Standard Mean Reversion Entry
+            elif current_price < self.bb_lower and current_price > self.kalman_value:
+                 signal = 'buy'
+                 
+        # 2. Sell Signal
+        elif trend_direction == 'bearish' or (trend_direction is None and is_strong_downtrend):
+            # Aggressive Trend Entry
+            if is_strong_downtrend and current_price > self.kalman_value:
+                 logger.info(f"Aggressive Trend SELL Signal: Price {current_price} > Kalman {self.kalman_value} (Strong DownTrend)")
+                 signal = 'sell'
+            # Standard Mean Reversion Entry
+            elif current_price > self.bb_upper and current_price < self.kalman_value:
+                 signal = 'sell'
             
         return signal
 
