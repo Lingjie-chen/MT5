@@ -394,17 +394,36 @@ class KalmanGridStrategy:
         resistances = [p for p in self.smc_levels['ob_bearish'] if p > current_price]
         supports = [p for p in self.smc_levels['ob_bullish'] if p < current_price]
         
+        # [Optimized] Trend Strength Calculation (Internal)
+        trend_strength = 0.0
+        if self.ma_value > 0:
+            trend_strength = (self.kalman_value - self.ma_value) / self.ma_value * 10000 
+            
+        is_strong_uptrend = trend_strength > 5.0
+        is_strong_downtrend = trend_strength < -5.0
+
+        # [Optimized] Dynamic Step Adjustment for Trends
+        # If trend is strong, tighten the grid to catch shallow pullbacks (Trend Surfing)
+        step_modifier = 1.0
+        if (trend_direction == 'bullish' and is_strong_uptrend) or (trend_direction == 'bearish' and is_strong_downtrend):
+            step_modifier = 0.6 # Reduce step by 40% in strong trends
+            logger.info(f"Strong Trend Detected (Strength {trend_strength:.2f}). Tightening grid step by 40%.")
+
         # Calculate fixed step based on config or dynamic override
         if dynamic_step_pips and dynamic_step_pips > 0:
-            fixed_step = dynamic_step_pips * 10 * point # Pip to Point (1 pip = 10 points)
-            logger.info(f"Using Dynamic Grid Step: {dynamic_step_pips} pips ({fixed_step} points)")
+            fixed_step = dynamic_step_pips * 10 * point * step_modifier
+            logger.info(f"Using Dynamic Grid Step: {dynamic_step_pips} pips * {step_modifier} = {fixed_step:.1f} points")
         else:
-            fixed_step = self.grid_step_points * point
+            fixed_step = self.grid_step_points * point * step_modifier
             
         # Ensure minimum safe step (e.g. 50 points or 0.2 ATR)
         min_safe_step = 50 * point
         if atr > 0:
              min_safe_step = max(min_safe_step, atr * 0.15)
+        
+        # In strong trend, allow slightly tighter minimum (Aggressive)
+        if step_modifier < 1.0:
+            min_safe_step *= 0.8
         
         if fixed_step < min_safe_step:
             logger.warning(f"Grid Step {fixed_step} too small, adjusting to safe minimum {min_safe_step}")
