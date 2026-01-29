@@ -2867,12 +2867,35 @@ class SymbolTrader:
                 final_tp = adjusted_tp
 
         # Final Hard Limits
-        upper_limit = 8.0
-        if market_regime == 'trending':
-            upper_limit = 15.0
-            
-        final_tp = max(final_tp, 2.0)
-        final_tp = min(final_tp, upper_limit)
+        # [MODIFIED] Relaxed limits to allow larger TP for larger positions/higher volatility
+        # Original limits (2.0 - 15.0) were too tight for XAUUSD with larger lots
+        
+        # Determine reasonable max based on total volume
+        # If total volume is 0.02, $15 is 750 pips (huge)
+        # If total volume is 1.00, $15 is 15 pips (tiny)
+        # So limits should scale with volume
+        
+        # Base limit per 0.01 lot
+        base_min_per_001 = 0.5 # $0.5 per 0.01 lot
+        base_max_per_001 = 50.0 # $50 per 0.01 lot (very large)
+        
+        scaling_factor = total_volume / 0.01
+        
+        lower_limit = base_min_per_001 * scaling_factor
+        upper_limit = base_max_per_001 * scaling_factor
+        
+        # Apply Regime modifier to Upper Limit
+        if market_regime == 'ranging':
+             upper_limit *= 0.5 # Reduce max potential in ranging
+        
+        # Ensure we don't go below absolute minimum $2 (to cover fees/swaps basic)
+        final_tp = max(final_tp, max(2.0, lower_limit))
+        
+        # Only cap if it exceeds the dynamic upper limit
+        # And ensure upper limit is at least reasonable
+        if final_tp > upper_limit:
+             logger.info(f"Capping TP at Upper Limit: {final_tp:.2f} -> {upper_limit:.2f}")
+             final_tp = upper_limit
         
         logger.info(f"Smart Basket TP Calc: Base(LLM)={base_tp:.2f}, ATR_Val={tech_tp:.2f}, Regime={market_regime} -> Final={final_tp:.2f}")
         return final_tp
