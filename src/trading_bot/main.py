@@ -368,9 +368,9 @@ class SymbolTrader:
         if not positions:
             return
         
-        logger.info(f"Closing all positions. Reason: {reason}")
+        logger.info(f"Closing {len(positions)} positions. Reason: {reason}")
         for pos in positions:
-            if pos.magic == self.magic_number:
+            if pos.magic == self.magic_number and pos.symbol == self.symbol:
                 self.close_position(pos, comment=reason)
 
     def cancel_all_pending_orders(self):
