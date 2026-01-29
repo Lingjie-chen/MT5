@@ -2810,26 +2810,36 @@ class SymbolTrader:
         elif market_regime == 'ranging':
             regime_multiplier = 0.8 # 震荡中缩小目标
             
-        # 4. SMC 阻力位修正 (SMC Resistance Cap)
-        # 如果是做多，TP 不应超过最近的 Bearish OB 太多
-        # 如果是做空，TP 不应超过最近的 Bullish OB 太多
-        # 这里简化处理：如果 LLM 给出的 TP 对应的盈利价格远超最近阻力位，则保守下调
-        
-        # 计算混合 TP
-        # 逻辑: 加权平均
-        # 70% LLM, 30% Volatility-based
-        # 且应用 Regime Multiplier
+        # 4. 混合权重计算 (Hybrid Weighting)
+        # [User Requirement] 综合优化：根据大模型建议动态调整权重
+        # 如果 LLM 非常自信 (base_tp 很大) 且市场处于趋势中，给予 LLM 更高权重
         
         tech_tp = min_tp_volatility
         
-        # 如果 LLM 值异常小 (小于 ATR 价值)，可能是保守或错误，取较大值
-        # 如果 LLM 值异常大，可能是贪婪，取加权
+        llm_weight = 0.7 # 默认 70%
+        tech_weight = 0.3
         
-        final_tp = (base_tp * 0.7) + (tech_tp * 0.3)
-        final_tp *= regime_multiplier
-        
-        # 5. 硬性下限
-        final_tp = max(final_tp, min_tp_volatility)
+        if market_regime == 'trending':
+            # 趋势行情，更信任 LLM 的“格局”
+            llm_weight = 0.9
+            tech_weight = 0.1
+            # 且应用 Regime Multiplier 放大
+            final_tp = (base_tp * llm_weight) + (tech_tp * tech_weight)
+            final_tp *= regime_multiplier
+        else:
+            # 震荡行情，稍微保守，回归波动率均值
+            final_tp = (base_tp * llm_weight) + (tech_tp * tech_weight)
+            final_tp *= regime_multiplier
+
+        # 5. 动态下限 (Dynamic Floor)
+        # 原逻辑强行要求 max(final_tp, min_tp_volatility)。
+        # 优化: 如果 LLM 给的非常小 (base_tp < min_tp_volatility) 且是震荡市 (ranging)，允许“快进快出”，不强行拉大。
+        if market_regime == 'ranging' and base_tp < min_tp_volatility:
+             # 允许下探到 1.0 倍 ATR 价值 (min_tp_volatility 是 2.0 倍)
+             soft_floor = min_tp_volatility * 0.5
+             final_tp = max(final_tp, soft_floor)
+        else:
+             final_tp = max(final_tp, min_tp_volatility)
         
         # User Requirement: Basket TP based on reasonable config & market sentiment
         # "Cannot be too high nor too low" -> Dynamic Range based on ATR & Avg Open Price
@@ -2853,6 +2863,16 @@ class SymbolTrader:
             
             if market_regime == 'trending':
                 max_atr_ratio = 2.5 # Allow 250% ATR in trends
+                # [User Optimization] 如果 LLM 建议的距离更远，且在合理范围内，信任 LLM
+                llm_dist_price = (base_tp * point) / (total_volume * tick_value)
+                llm_atr_ratio = llm_dist_price / atr
+                
+                if llm_atr_ratio > max_atr_ratio:
+                    # 允许扩展到 LLM 建议的水平，但设定一个绝对熔断值 (例如 5.0 ATR)
+                    new_max = min(llm_atr_ratio, 5.0)
+                    logger.info(f"Trusting LLM Trend Vision: Extending Max ATR Ratio {max_atr_ratio} -> {new_max:.2f}")
+                    max_atr_ratio = new_max
+                    
             elif market_regime == 'ranging':
                 max_atr_ratio = 0.8 # Limit to 80% ATR in ranges
             
