@@ -1189,8 +1189,8 @@ class SymbolTrader:
                 if suggested_price and float(suggested_price) > 0:
                      entry_price = float(suggested_price)
                      # Safety check: Don't buy above Ask (that would be a market order essentially)
-                     if entry_price > tick.ask:
-                         logger.warning(f"LLM 建议买入价 {entry_price} 高于当前 Ask {tick.ask}，回退到 Ask - Offset")
+                     if entry_price >= tick.ask: # Relaxed check: >= instead of >
+                         logger.warning(f"LLM 建议买入价 {entry_price} >= 当前 Ask {tick.ask}，回退到 Ask - Offset")
                          entry_price = tick.ask - initial_offset
                      else:
                          logger.info(f"Using LLM Suggested Entry Price: {entry_price}")
@@ -1203,8 +1203,8 @@ class SymbolTrader:
                 if suggested_price and float(suggested_price) > 0:
                      entry_price = float(suggested_price)
                      # Safety check: Don't sell below Bid
-                     if entry_price < tick.bid:
-                         logger.warning(f"LLM 建议卖出价 {entry_price} 低于当前 Bid {tick.bid}，回退到 Bid + Offset")
+                     if entry_price <= tick.bid: # Relaxed check: <= instead of <
+                         logger.warning(f"LLM 建议卖出价 {entry_price} <= 当前 Bid {tick.bid}，回退到 Bid + Offset")
                          entry_price = tick.bid + initial_offset
                      else:
                          logger.info(f"Using LLM Suggested Entry Price: {entry_price}")
@@ -1213,6 +1213,11 @@ class SymbolTrader:
                      entry_price = tick.bid + initial_offset
                 
             entry_price = self._normalize_price(entry_price)
+            
+            # [User Request Fix] Ensure SL/TP are 0.0 to prevent immediate SL/TP triggering
+            # "为啥网格交易的首单还是被打止损，并且系统输出是 INFO - Grid Strategy: Basket TP Reached"
+            # -> This means SL/TP was set on the order itself, or the strategy logic closed it.
+            # Since we disabled strategy close, let's ensure order level SL/TP is 0.
             
             logger.info(f"执行网格首单(挂单): {entry_type.upper()} {initial_lot} Lots @ {entry_price:.2f} (Offset: {initial_offset:.2f})")
             self._send_order(entry_type, entry_price, sl=0.0, tp=0.0, comment="AI-Grid-Initial-Limit")
