@@ -1409,8 +1409,12 @@ class SymbolTrader:
         if symbol_info is None:
             return price
         
-        digits = symbol_info.digits
-        return round(price, digits)
+        # 使用 tick_size 进行更精确的规范化
+        tick_size = symbol_info.trade_tick_size
+        if tick_size > 0:
+            return round(round(price / tick_size) * tick_size, symbol_info.digits)
+        else:
+            return round(price, symbol_info.digits)
 
     def _send_order(self, type_str, price, sl, tp, comment=""):
         """底层下单函数"""
