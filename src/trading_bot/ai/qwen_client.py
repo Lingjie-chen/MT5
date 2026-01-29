@@ -446,12 +446,9 @@ class QwenClient:
     6. **LLM原生风控配置 (LLM-Native Risk Management)**:
        - **核心思想**: 摒弃固定参数，所有风控指标必须由大模型实时分析得出。
        - **Max Drawdown (最大回撤配置)**:
-         - 在 `grid_config` 中必须输出 `max_drawdown_usd`。
-         - **计算逻辑**: Account_Balance * Risk_Tolerance_Factor (e.g., 0.05 for conservative, 0.15 for aggressive).
-         - **动态调整 (Dynamic Adjustment)**: 
-           - **Volatility Based**: 参考 `risk_metrics.volatility` (ATR)。如果当前 ATR > Average ATR * 1.5，说明市场剧烈波动，必须 **降低** Max Drawdown (例如减半) 以防止被动止损。
-           - **Event Based**: 当 VIX > 20 或 市场处于重大新闻发布前，必须降低 Risk_Tolerance_Factor。
-         - **硬性限制**: 任何时候，`max_drawdown_usd` 不得超过账户总资金的 20%。
+         - **User Instruction**: 用户明确要求 **只遵循盈利 TP**，移除亏损平仓逻辑。
+         - **设置策略**: 请将 `max_drawdown_usd` 设置为一个极高的数值 (例如 Account_Balance * 0.95)，以确保在任何正常市场波动下都不会触发强制平仓。
+         - **仅用于极端风控**: 只有当账户真正面临爆仓风险 (Margin Call) 时，才由系统底层触发，而非策略层主动平仓。
 
     7. **Turtle Trading Protocol (海龟交易法则 - 趋势跟随)**:
        - **唐奇安通道 (Donchian Channel)**: 
