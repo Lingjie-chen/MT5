@@ -272,17 +272,11 @@ def render_symbol_dashboard(symbol):
         
         if chart_source == "Internet (Live)":
             if online_df is not None and not online_df.empty:
-                # Prepare data safely
-                o = online_df['open']
-                h = online_df['high']
-                l = online_df['low']
-                c = online_df['close']
-                
-                # Handle potential DataFrame types (if duplicate columns or MultiIndex issues persist)
-                if isinstance(o, pd.DataFrame): o = o.iloc[:, 0]
-                if isinstance(h, pd.DataFrame): h = h.iloc[:, 0]
-                if isinstance(l, pd.DataFrame): l = l.iloc[:, 0]
-                if isinstance(c, pd.DataFrame): c = c.iloc[:, 0]
+                # Prepare data safely using squeeze() to handle single-col DataFrame or Series
+                o = online_df['open'].squeeze()
+                h = online_df['high'].squeeze()
+                l = online_df['low'].squeeze()
+                c = online_df['close'].squeeze()
                 
                 # Simple Candlestick for Internet Data
                 fig = go.Figure(data=[go.Candlestick(
