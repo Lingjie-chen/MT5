@@ -58,6 +58,11 @@ python scripts\maintenance\consolidate_dbs.py
 echo 📦 Backing up PostgreSQL data to GitHub...
 python scripts\maintenance\backup_postgres.py
 
+:: 4. Clean up duplicate data (Local & Remote)
+echo 🧹 Cleaning up duplicate data...
+python scripts\maintenance\clean_backup_data.py
+python scripts\maintenance\clean_postgres_db.py
+
 :: Run the engine
 python scripts\maintenance\checkpoint_dbs.py
 

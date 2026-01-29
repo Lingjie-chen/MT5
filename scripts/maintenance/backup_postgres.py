@@ -1,10 +1,10 @@
 import os
 import sys
 import logging
-import pandas as pd
-from sqlalchemy import create_engine
-from datetime import datetime
 import subprocess
+from datetime import datetime
+from sqlalchemy import create_engine, text
+import csv
 
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -28,80 +28,93 @@ BACKUP_DIR = os.path.join(PROJECT_ROOT, "scripts", "postgres_backup")
 def backup_postgres_to_csv():
     """
     Dumps PostgreSQL tables to CSV files and pushes them to GitHub.
-    Unifies backup location to scripts/postgres_backup.
+    Uses server-side SQL to deduplicate and streams results to CSV (no pandas).
     """
     try:
-        # 1. Connect to Postgres
         engine = create_engine(POSTGRES_URL)
-        logger.info("✅ Connected to PostgreSQL.")
-        
-        if not os.path.exists(BACKUP_DIR):
-            os.makedirs(BACKUP_DIR)
+        with engine.connect() as conn:
+            logger.info("✅ Connected to PostgreSQL.")
             
-        # 2. Define tables to backup
-        tables = ["trades", "signals", "account_metrics"]
-        
-        files_changed = False
-        
-        for table in tables:
-            try:
-                logger.info(f"📦 Backing up table: {table}...")
-                query = f"SELECT * FROM {table} ORDER BY 1 DESC" # Default sort
-                df = pd.read_sql_query(query, engine)
-                
-                if df.empty:
-                    logger.warning(f"   Table {table} is empty, skipping.")
-                    continue
-                
-                # Remove duplicates (keep first occurrence)
-                # Assuming 'ticket' is unique for trades, 'id' for signals/metrics if available.
-                # If no specific unique key, drop exact duplicates.
-                initial_len = len(df)
-                df.drop_duplicates(inplace=True)
-                final_len = len(df)
-                if initial_len > final_len:
-                    logger.info(f"   Removed {initial_len - final_len} duplicate rows.")
-                
-                # Save to CSV
-                filename = f"{table}_backup.csv"
-                filepath = os.path.join(BACKUP_DIR, filename)
-                df.to_csv(filepath, index=False)
-                logger.info(f"   Saved {len(df)} rows to {filename}")
-                files_changed = True
-                
-            except Exception as e:
-                logger.error(f"   Failed to backup {table}: {e}")
+            if not os.path.exists(BACKUP_DIR):
+                os.makedirs(BACKUP_DIR)
+            
+            files_changed = False
+            
+            # TRADES: keep latest per ticket
+            logger.info("📦 Backing up table: trades...")
+            trades_sql = text("""
+                SELECT t.*
+                FROM trades t
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM trades t2
+                    WHERE t2.ticket = t.ticket
+                      AND t2.ctid > t.ctid
+                )
+                ORDER BY t.ticket
+            """)
+            filepath = os.path.join(BACKUP_DIR, "trades_backup.csv")
+            _stream_query_to_csv(conn, trades_sql, filepath)
+            files_changed = True
 
-        # 3. Push to GitHub
+            # SIGNALS: keep latest per (symbol,timeframe,timestamp)
+            logger.info("📦 Backing up table: signals...")
+            signals_sql = text("""
+                SELECT s.*
+                FROM signals s
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM signals s2
+                    WHERE s2.symbol = s.symbol
+                      AND s2.timeframe = s.timeframe
+                      AND s2.timestamp = s.timestamp
+                      AND s2.ctid > s.ctid
+                )
+                ORDER BY s.symbol, s.timeframe, s.timestamp
+            """)
+            filepath = os.path.join(BACKUP_DIR, "signals_backup.csv")
+            _stream_query_to_csv(conn, signals_sql, filepath)
+            files_changed = True
+
+            # ACCOUNT_METRICS: keep latest per timestamp
+            logger.info("📦 Backing up table: account_metrics...")
+            metrics_sql = text("""
+                SELECT m.*
+                FROM account_metrics m
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM account_metrics m2
+                    WHERE m2.timestamp = m.timestamp
+                      AND m2.ctid > m.ctid
+                )
+                ORDER BY m.timestamp
+            """)
+            filepath = os.path.join(BACKUP_DIR, "account_metrics_backup.csv")
+            _stream_query_to_csv(conn, metrics_sql, filepath)
+            files_changed = True
+
+        # Push to GitHub
         if files_changed:
             logger.info("🔄 Pushing backups to GitHub...")
-            # Git needs to run from project root or handle paths correctly
-            
-            # Git Add
             subprocess.run(["git", "add", "scripts/postgres_backup/"], cwd=PROJECT_ROOT, check=True)
-            
-            # Git Commit
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             commit_msg = f"backup: update postgres data {timestamp}"
-            subprocess.run(["git", "commit", "-m", commit_msg], cwd=PROJECT_ROOT, check=False) 
-            
-            # Git Push
+            subprocess.run(["git", "commit", "-m", commit_msg], cwd=PROJECT_ROOT, check=False)
             subprocess.run(["git", "push", "origin", "master"], cwd=PROJECT_ROOT, check=True)
             logger.info("✅ Backup pushed to GitHub successfully.")
         else:
             logger.info("No data found to backup.")
-            
-        # 4. Cleanup old directory if empty or redundant
-        old_backup_dir = os.path.join(PROJECT_ROOT, "postgres_backup")
-        if os.path.exists(old_backup_dir):
-            try:
-                # Optional: Remove old directory if we want to enforce the move
-                # subprocess.run(["git", "rm", "-r", "postgres_backup/"], cwd=PROJECT_ROOT, check=False)
-                pass 
-            except Exception: pass
-
     except Exception as e:
         logger.error(f"❌ Backup failed: {e}")
+
+def _stream_query_to_csv(conn, sql_text, csv_path):
+    """
+    Execute query and stream rows to CSV without loading all into memory.
+    """
+    result = conn.execution_options(stream_results=True).execute(sql_text)
+    cols = result.keys()
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(cols)
+        for row in result:
+            writer.writerow(list(row))
 
 if __name__ == "__main__":
     backup_postgres_to_csv()

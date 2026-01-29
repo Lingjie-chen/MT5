@@ -162,34 +162,156 @@ class DatabaseManager:
             
             # Perform cleanup on startup
             self.clean_duplicate_signals()
+            self.clean_redundant_metrics()
             
         except Exception as e:
             logger.error(f"Database initialization failed: {e}")
 
-    def save_account_metrics(self, metrics):
-        """Save account metrics"""
+    def clean_redundant_metrics(self):
+        """Remove redundant account metrics (heartbeats with no value change) from database"""
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
             
+            # Check if we need cleanup (count rows)
+            cursor.execute("SELECT COUNT(*) FROM account_metrics")
+            count = cursor.fetchone()[0]
+            if count < 1000: return # Skip if small
+            
+            logger.info(f"Checking for redundant metrics (Total rows: {count})...")
+            
+            # Get all metrics ordered by timestamp
             cursor.execute('''
-                INSERT INTO account_metrics (timestamp, balance, equity, margin, free_margin, margin_level, total_profit, symbol_pnl)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                metrics.get('timestamp', datetime.now()),
-                metrics.get('balance', 0),
-                metrics.get('equity', 0),
-                metrics.get('margin', 0),
-                metrics.get('free_margin', 0),
-                metrics.get('margin_level', 0),
-                metrics.get('total_profit', 0),
-                metrics.get('symbol_pnl', 0)
-            ))
+                SELECT rowid, timestamp, balance, equity, margin, total_profit 
+                FROM account_metrics 
+                ORDER BY timestamp ASC
+            ''')
             
-            conn.commit()
+            rows = cursor.fetchall()
+            if not rows: return
             
-            # [Remote Sync]
-            self.remote_storage.save_account_metrics(metrics)
+            to_delete = []
+            last_saved = None
+            
+            for row in rows:
+                if last_saved is None:
+                    last_saved = row
+                    continue
+                
+                # Compare row with last_saved
+                is_redundant = False
+                
+                # Value check (Tuple: rowid, timestamp, balance, equity, margin, total_profit)
+                vals_changed = (
+                    abs(row[2] - last_saved[2]) > 0.01 or
+                    abs(row[3] - last_saved[3]) > 0.01 or
+                    abs(row[4] - last_saved[4]) > 0.01 or
+                    abs(row[5] - last_saved[5]) > 0.01
+                )
+                
+                if not vals_changed:
+                    # Time check
+                    try:
+                        if "." in row[1]: t_curr = datetime.strptime(row[1], "%Y-%m-%d %H:%M:%S.%f")
+                        else: t_curr = datetime.strptime(row[1], "%Y-%m-%d %H:%M:%S")
+                        
+                        if "." in last_saved[1]: t_last = datetime.strptime(last_saved[1], "%Y-%m-%d %H:%M:%S.%f")
+                        else: t_last = datetime.strptime(last_saved[1], "%Y-%m-%d %H:%M:%S")
+                        
+                        if (t_curr - t_last).total_seconds() < 900: # 15 mins
+                            is_redundant = True
+                    except: pass
+                
+                if is_redundant:
+                    to_delete.append(row[0])
+                    # last_saved remains the same (we keep the 'old' one as reference)
+                else:
+                    last_saved = row
+            
+            if to_delete:
+                logger.info(f"Found {len(to_delete)} redundant metrics to remove.")
+                # Batch delete
+                chunk_size = 1000
+                for i in range(0, len(to_delete), chunk_size):
+                    chunk = to_delete[i:i+chunk_size]
+                    placeholders = ','.join(['?'] * len(chunk))
+                    cursor.execute(f"DELETE FROM account_metrics WHERE rowid IN ({placeholders})", chunk)
+                    conn.commit()
+                logger.info("Metrics cleanup complete.")
+                
+                # Optimize DB size
+                # cursor.execute("VACUUM") # Optional, might be slow
+                
+            else:
+                logger.info("No redundant metrics found.")
+                
+        except Exception as e:
+            logger.error(f"Failed to clean redundant metrics: {e}")
+
+    def save_account_metrics(self, metrics):
+        """Save account metrics (with deduplication)"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # Check for duplicate/unchanged state
+            # Get the very last record
+            cursor.execute('SELECT balance, equity, margin, free_margin, total_profit, timestamp FROM account_metrics ORDER BY timestamp DESC LIMIT 1')
+            last_row = cursor.fetchone()
+            
+            should_save = True
+            if last_row:
+                # Compare values
+                # SQLite returns tuple: (balance, equity, margin, free_margin, total_profit, timestamp)
+                last_balance = last_row[0]
+                last_equity = last_row[1]
+                last_margin = last_row[2]
+                last_free = last_row[3]
+                last_profit = last_row[4]
+                last_ts_str = last_row[5]
+                
+                # Check if values changed significantly (using small epsilon for floats)
+                has_changed = (
+                    abs(metrics.get('balance', 0) - last_balance) > 0.01 or
+                    abs(metrics.get('equity', 0) - last_equity) > 0.01 or
+                    abs(metrics.get('margin', 0) - last_margin) > 0.01 or
+                    abs(metrics.get('total_profit', 0) - last_profit) > 0.01
+                )
+                
+                if not has_changed:
+                    # If values haven't changed, check time diff
+                    # Only save heartbeat every 15 minutes if nothing changed
+                    try:
+                        if "." in last_ts_str:
+                            last_ts = datetime.strptime(last_ts_str, "%Y-%m-%d %H:%M:%S.%f")
+                        else:
+                            last_ts = datetime.strptime(last_ts_str, "%Y-%m-%d %H:%M:%S")
+                        
+                        time_diff = (datetime.now() - last_ts).total_seconds()
+                        if time_diff < 900: # 15 minutes
+                            should_save = False
+                    except: pass
+            
+            if should_save:
+                cursor.execute('''
+                    INSERT INTO account_metrics (timestamp, balance, equity, margin, free_margin, margin_level, total_profit, symbol_pnl)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    metrics.get('timestamp', datetime.now()),
+                    metrics.get('balance', 0),
+                    metrics.get('equity', 0),
+                    metrics.get('margin', 0),
+                    metrics.get('free_margin', 0),
+                    metrics.get('margin_level', 0),
+                    metrics.get('total_profit', 0),
+                    metrics.get('symbol_pnl', 0)
+                ))
+                
+                conn.commit()
+                
+                # [Remote Sync]
+                self.remote_storage.save_account_metrics(metrics)
+                
         except sqlite3.OperationalError as e:
             if "database or disk is full" in str(e):
                 logger.warning(f"Database full error in save_account_metrics, attempting checkpoint: {e}")

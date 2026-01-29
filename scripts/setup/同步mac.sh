@@ -78,5 +78,10 @@ python3 scripts/maintenance/consolidate_dbs.py
 echo "📦 Backing up PostgreSQL data to GitHub..."
 python3 scripts/maintenance/backup_postgres.py
 
+# 4. Clean up duplicate data
+echo "🧹 Cleaning up duplicate data..."
+python3 scripts/maintenance/clean_backup_data.py
+python3 scripts/maintenance/clean_postgres_db.py
+
 # Run the engine
 python3 scripts/maintenance/checkpoint_dbs.py
