@@ -2920,9 +2920,10 @@ class SymbolTrader:
         
         # Only cap if it exceeds the dynamic upper limit
         # And ensure upper limit is at least reasonable
-        if final_tp > upper_limit:
-             logger.info(f"Capping TP at Upper Limit: {final_tp:.2f} -> {upper_limit:.2f}")
-             final_tp = upper_limit
+        # [User Request] Remove Upper Limit Cap completely to allow higher profits
+        # if final_tp > upper_limit:
+        #      logger.info(f"Capping TP at Upper Limit: {final_tp:.2f} -> {upper_limit:.2f}")
+        #      final_tp = upper_limit
         
         logger.info(f"Smart Basket TP Calc: Base(LLM)={base_tp:.2f}, ATR_Val={tech_tp:.2f}, Regime={market_regime} -> Final={final_tp:.2f}")
         return final_tp
