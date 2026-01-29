@@ -15,6 +15,10 @@ DATABASE_URL = os.getenv("POSTGRES_CONNECTION_STRING", "postgresql://chenlingjie
 # Windows Encoding Fix: Force libpq to use UTF-8
 os.environ["PGCLIENTENCODING"] = "utf-8"
 
+# Use psycopg2 driver explicitly instead of default (which might be asyncpg causing import issues)
+if "postgresql://" in DATABASE_URL and "postgresql+psycopg2://" not in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://")
+
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
