@@ -23,8 +23,13 @@ if not exist venv (
 :: 3. Activate and Install Deps
 echo 📥 Installing dependencies...
 call venv\Scripts\activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
+
+:: Fix for JSONDecodeError/Network issues: Use Tsinghua Mirror & No Cache
+echo 🔄 Upgrading pip (using Tsinghua mirror)...
+python -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+echo 📦 Installing requirements (using Tsinghua mirror & no-cache)...
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --no-cache-dir --default-timeout=100
 
 :: 4. .env setup
 if not exist .env (
