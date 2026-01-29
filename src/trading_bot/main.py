@@ -246,29 +246,22 @@ class SymbolTrader:
 
     def get_market_data(self, num_candles=100):
         """直接从 MT5 获取历史数据"""
-        # [Optimized] Retry mechanism for data fetching
-        max_retries = 3
-        for attempt in range(max_retries):
-            rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, num_candles)
+        rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, num_candles)
+        
+        if rates is None or len(rates) == 0:
+            logger.error("无法获取 K 线数据")
+            return None
             
-            if rates is not None and len(rates) > 0:
-                # 转换为 DataFrame
-                df = pd.DataFrame(rates)
-                df['time'] = pd.to_datetime(df['time'], unit='s')
-                df.set_index('time', inplace=True)
-                
-                # 将 tick_volume 重命名为 volume 以保持一致性
-                if 'tick_volume' in df.columns:
-                    df.rename(columns={'tick_volume': 'volume'}, inplace=True)
-                
-                return df
-                
-            # If failed, wait and retry
-            logger.warning(f"Failed to get rates for {self.symbol} (Attempt {attempt+1}/{max_retries})")
-            time.sleep(1) # Wait 1s before retry
-            
-        logger.error(f"无法获取 K 线数据 ({self.symbol}) after {max_retries} retries")
-        return None
+        # 转换为 DataFrame
+        df = pd.DataFrame(rates)
+        df['time'] = pd.to_datetime(df['time'], unit='s')
+        df.set_index('time', inplace=True)
+        
+        # 将 tick_volume 重命名为 volume 以保持一致性
+        if 'tick_volume' in df.columns:
+            df.rename(columns={'tick_volume': 'volume'}, inplace=True)
+        
+        return df
 
     def get_position_stats(self, pos):
         """
@@ -368,9 +361,9 @@ class SymbolTrader:
         if not positions:
             return
         
-        logger.info(f"Closing {len(positions)} positions. Reason: {reason}")
+        logger.info(f"Closing all positions. Reason: {reason}")
         for pos in positions:
-            if pos.magic == self.magic_number and pos.symbol == self.symbol:
+            if pos.magic == self.magic_number:
                 self.close_position(pos, comment=reason)
 
     def cancel_all_pending_orders(self):
@@ -1116,34 +1109,6 @@ class SymbolTrader:
                 basket_tp = grid_config.get('basket_tp_usd')
                 if basket_tp:
                     self.grid_strategy.update_dynamic_params(basket_tp=basket_tp)
-            
-            if llm_action == 'grid_start':
-                chosen = direction
-                try:
-                    ma = self.latest_strategy.get('market_analysis', {}) if self.latest_strategy else {}
-                    sent = str(ma.get('sentiment_analysis', {}).get('sentiment', '')).lower()
-                    m_struct = ma.get('market_structure', {})
-                    trend = str(m_struct.get('trend', '')).lower()
-                    tf = m_struct.get('timeframe_analysis', {}) if isinstance(m_struct, dict) else {}
-                    tf_h4 = str(tf.get('h4', '')).lower()
-                    tf_daily = str(tf.get('daily', '')).lower()
-                    ms = self.latest_strategy.get('market_structure', {}) if self.latest_strategy else {}
-                    t_h4 = str(ms.get('trend_h4', '')).lower() if isinstance(ms, dict) else ''
-                    t_m15 = str(ms.get('trend_m15', '')).lower() if isinstance(ms, dict) else ''
-                    act = str(self.latest_strategy.get('action', '')).lower() if self.latest_strategy else ''
-                    if signal == 'sell' or 'sell' in act:
-                        chosen = 'bearish'
-                    elif signal == 'buy' or 'buy' in act:
-                        chosen = 'bullish'
-                    else:
-                        if 'bear' in sent or 'bear' in trend or 'bear' in tf_h4 or 'bear' in tf_daily or 'bear' in t_h4 or 'bear' in t_m15:
-                            chosen = 'bearish'
-                        elif 'bull' in sent or 'bull' in trend or 'bull' in tf_h4 or 'bull' in tf_daily or 'bull' in t_h4 or 'bull' in t_m15:
-                            chosen = 'bullish'
-                    direction = chosen
-                    logger.info(f"Grid Start direction resolved: {direction} (sent={sent}, trend={trend}, h4={tf_h4}/{t_h4}, m15={t_m15}, signal={signal})")
-                except Exception as e:
-                    logger.warning(f"Grid direction inference failed: {e}. Using default: {direction}")
             
             # 4. 获取 ATR (用于网格间距)
             rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
@@ -2817,36 +2782,26 @@ class SymbolTrader:
         elif market_regime == 'ranging':
             regime_multiplier = 0.8 # 震荡中缩小目标
             
-        # 4. 混合权重计算 (Hybrid Weighting)
-        # [User Requirement] 综合优化：根据大模型建议动态调整权重
-        # 如果 LLM 非常自信 (base_tp 很大) 且市场处于趋势中，给予 LLM 更高权重
+        # 4. SMC 阻力位修正 (SMC Resistance Cap)
+        # 如果是做多，TP 不应超过最近的 Bearish OB 太多
+        # 如果是做空，TP 不应超过最近的 Bullish OB 太多
+        # 这里简化处理：如果 LLM 给出的 TP 对应的盈利价格远超最近阻力位，则保守下调
+        
+        # 计算混合 TP
+        # 逻辑: 加权平均
+        # 70% LLM, 30% Volatility-based
+        # 且应用 Regime Multiplier
         
         tech_tp = min_tp_volatility
         
-        llm_weight = 0.7 # 默认 70%
-        tech_weight = 0.3
+        # 如果 LLM 值异常小 (小于 ATR 价值)，可能是保守或错误，取较大值
+        # 如果 LLM 值异常大，可能是贪婪，取加权
         
-        if market_regime == 'trending':
-            # 趋势行情，更信任 LLM 的“格局”
-            llm_weight = 0.9
-            tech_weight = 0.1
-            # 且应用 Regime Multiplier 放大
-            final_tp = (base_tp * llm_weight) + (tech_tp * tech_weight)
-            final_tp *= regime_multiplier
-        else:
-            # 震荡行情，稍微保守，回归波动率均值
-            final_tp = (base_tp * llm_weight) + (tech_tp * tech_weight)
-            final_tp *= regime_multiplier
-
-        # 5. 动态下限 (Dynamic Floor)
-        # 原逻辑强行要求 max(final_tp, min_tp_volatility)。
-        # 优化: 如果 LLM 给的非常小 (base_tp < min_tp_volatility) 且是震荡市 (ranging)，允许“快进快出”，不强行拉大。
-        if market_regime == 'ranging' and base_tp < min_tp_volatility:
-             # 允许下探到 1.0 倍 ATR 价值 (min_tp_volatility 是 2.0 倍)
-             soft_floor = min_tp_volatility * 0.5
-             final_tp = max(final_tp, soft_floor)
-        else:
-             final_tp = max(final_tp, min_tp_volatility)
+        final_tp = (base_tp * 0.7) + (tech_tp * 0.3)
+        final_tp *= regime_multiplier
+        
+        # 5. 硬性下限
+        final_tp = max(final_tp, min_tp_volatility)
         
         # User Requirement: Basket TP based on reasonable config & market sentiment
         # "Cannot be too high nor too low" -> Dynamic Range based on ATR & Avg Open Price
@@ -2870,16 +2825,6 @@ class SymbolTrader:
             
             if market_regime == 'trending':
                 max_atr_ratio = 2.5 # Allow 250% ATR in trends
-                # [User Optimization] 如果 LLM 建议的距离更远，且在合理范围内，信任 LLM
-                llm_dist_price = (base_tp * point) / (total_volume * tick_value)
-                llm_atr_ratio = llm_dist_price / atr
-                
-                if llm_atr_ratio > max_atr_ratio:
-                    # 允许扩展到 LLM 建议的水平，但设定一个绝对熔断值 (例如 5.0 ATR)
-                    new_max = min(llm_atr_ratio, 5.0)
-                    logger.info(f"Trusting LLM Trend Vision: Extending Max ATR Ratio {max_atr_ratio} -> {new_max:.2f}")
-                    max_atr_ratio = new_max
-                    
             elif market_regime == 'ranging':
                 max_atr_ratio = 0.8 # Limit to 80% ATR in ranges
             
@@ -2894,36 +2839,12 @@ class SymbolTrader:
                 final_tp = adjusted_tp
 
         # Final Hard Limits
-        # [MODIFIED] Relaxed limits to allow larger TP for larger positions/higher volatility
-        # Original limits (2.0 - 15.0) were too tight for XAUUSD with larger lots
-        
-        # Determine reasonable max based on total volume
-        # If total volume is 0.02, $15 is 750 pips (huge)
-        # If total volume is 1.00, $15 is 15 pips (tiny)
-        # So limits should scale with volume
-        
-        # Base limit per 0.01 lot
-        base_min_per_001 = 0.5 # $0.5 per 0.01 lot
-        base_max_per_001 = 50.0 # $50 per 0.01 lot (very large)
-        
-        scaling_factor = total_volume / 0.01
-        
-        lower_limit = base_min_per_001 * scaling_factor
-        upper_limit = base_max_per_001 * scaling_factor
-        
-        # Apply Regime modifier to Upper Limit
-        if market_regime == 'ranging':
-             upper_limit *= 0.5 # Reduce max potential in ranging
-        
-        # Ensure we don't go below absolute minimum $2 (to cover fees/swaps basic)
-        final_tp = max(final_tp, max(10.0, lower_limit))
-        
-        # Only cap if it exceeds the dynamic upper limit
-        # And ensure upper limit is at least reasonable
-        # [User Request] Remove Upper Limit Cap completely to allow higher profits
-        # if final_tp > upper_limit:
-        #      logger.info(f"Capping TP at Upper Limit: {final_tp:.2f} -> {upper_limit:.2f}")
-        #      final_tp = upper_limit
+        upper_limit = 8.0
+        if market_regime == 'trending':
+            upper_limit = 15.0
+            
+        final_tp = max(final_tp, 2.0)
+        final_tp = min(final_tp, upper_limit)
         
         logger.info(f"Smart Basket TP Calc: Base(LLM)={base_tp:.2f}, ATR_Val={tech_tp:.2f}, Regime={market_regime} -> Final={final_tp:.2f}")
         return final_tp
@@ -3026,23 +2947,11 @@ class SymbolTrader:
             tr3 = abs(low[-1] - close[-2])
             current_atr = max(tr1, max(tr2, tr3))
             
-            # Check Grid TP / Lock (Separately for Long/Short)
-            should_close_long, should_close_short = self.grid_strategy.check_basket_tp(positions, current_atr=current_atr)
-            
-            if should_close_long:
-                logger.info("Grid Strategy triggered LONG Basket TP/Lock! Closing LONG positions...")
-                long_positions = [p for p in positions if p.magic == self.magic_number and p.type == mt5.ORDER_TYPE_BUY]
-                self.close_all_positions(long_positions, reason="Grid Basket TP/Lock (LONG)")
-                
-            if should_close_short:
-                logger.info("Grid Strategy triggered SHORT Basket TP/Lock! Closing SHORT positions...")
-                short_positions = [p for p in positions if p.magic == self.magic_number and p.type == mt5.ORDER_TYPE_SELL]
-                self.close_all_positions(short_positions, reason="Grid Basket TP/Lock (SHORT)")
-                
-            if should_close_long or should_close_short:
-                 # If we closed something, maybe refresh positions?
-                 # But the next loop iteration will handle updated state naturally.
-                 pass
+            # Check Grid TP / Lock
+            if self.grid_strategy.check_basket_tp(positions, current_atr=current_atr):
+                logger.info("Grid Strategy triggered Basket TP/Lock! Closing all positions...")
+                self.close_all_positions(positions, reason="Grid Basket TP/Lock")
+                return
 
             # Single iteration logic (replacing while True)
             if True:
