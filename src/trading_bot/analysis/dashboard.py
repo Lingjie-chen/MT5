@@ -306,7 +306,7 @@ def render_symbol_dashboard(symbol):
                     increasing_line_color='#00ff9d', decreasing_line_color='#ff0055'
                 )])
                 fig.update_layout(height=500, template="plotly_white", title=f"{symbol} Live Trend (Yahoo Finance)", font={'color': "black"})
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=f"live_trend_{symbol}")
             else:
                 st.warning("Online data unavailable. Please check your internet connection.")
                 
@@ -336,7 +336,7 @@ def render_symbol_dashboard(symbol):
                     mode='lines', name='Equity', line=dict(color='#00ff9d'), fill='tonexty'
                 ))
                 fig_assets.update_layout(height=350, template='plotly_white', title="Account Growth", hovermode="x unified", font={'color': "black"})
-                st.plotly_chart(fig_assets, use_container_width=True)
+                st.plotly_chart(fig_assets, use_container_width=True, key=f"assets_{symbol}")
             else:
                 st.info("No account metrics history.")
                 
@@ -364,7 +364,7 @@ def render_symbol_dashboard(symbol):
                     # Pie Chart
                     fig_pie = visualizer.create_pnl_distribution(trades_df)
                     fig_pie.update_layout(height=200)
-                    st.plotly_chart(fig_pie, use_container_width=True)
+                    st.plotly_chart(fig_pie, use_container_width=True, key=f"pnl_pie_{symbol}")
                 else:
                     st.info("No closed trades yet.")
             else:
@@ -389,7 +389,7 @@ def render_symbol_dashboard(symbol):
                 with c3:
                     fig_gauge = visualizer.create_gauge_chart(last_signal['strength'], title="Confidence")
                     fig_gauge.update_layout(height=150)
-                    st.plotly_chart(fig_gauge, use_container_width=True)
+                    st.plotly_chart(fig_gauge, use_container_width=True, key=f"gauge_{symbol}")
                 
                 # Technical Details
                 with st.expander("Detailed Analysis"):
@@ -406,7 +406,8 @@ def render_symbol_dashboard(symbol):
             st.dataframe(
                 trades_df[['ticket', 'time', 'action', 'price', 'volume', 'profit', 'result', 'close_time']].sort_values('time', ascending=False),
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
+                key=f"history_{symbol}"
             )
         else:
             st.info("No trade history.")
