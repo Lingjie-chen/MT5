@@ -682,11 +682,22 @@ class KalmanGridStrategy:
                 
         return False
 
-    def update_dynamic_params(self, basket_tp=None, lock_trigger=None, trailing_config=None):
+    def update_dynamic_params(self, basket_tp=None, basket_tp_long=None, basket_tp_short=None, lock_trigger=None, trailing_config=None):
         """Update dynamic parameters from AI analysis"""
         if basket_tp is not None and basket_tp > 0:
             self.dynamic_global_tp = float(basket_tp)
-            logger.info(f"Updated Dynamic Basket TP: {self.dynamic_global_tp}")
+            # If specific ones are not provided, apply global to both to ensure consistency if switched later
+            if basket_tp_long is None: self.dynamic_tp_long = float(basket_tp)
+            if basket_tp_short is None: self.dynamic_tp_short = float(basket_tp)
+            logger.info(f"Updated Dynamic Basket TP (Global): {self.dynamic_global_tp}")
+            
+        if basket_tp_long is not None and basket_tp_long > 0:
+            self.dynamic_tp_long = float(basket_tp_long)
+            logger.info(f"Updated Dynamic Basket TP (Long): {self.dynamic_tp_long}")
+            
+        if basket_tp_short is not None and basket_tp_short > 0:
+            self.dynamic_tp_short = float(basket_tp_short)
+            logger.info(f"Updated Dynamic Basket TP (Short): {self.dynamic_tp_short}")
             
         if lock_trigger is not None:
             if lock_trigger > 0:

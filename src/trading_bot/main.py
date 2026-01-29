@@ -3510,28 +3510,51 @@ class SymbolTrader:
                             trailing_config = {} # Disable trailing config as well
                             # trailing_config = pos_mgmt.get('trailing_stop_config')
                             
-                            # [RESTORED] Smart Basket TP Calculation
+                            # [RESTORED] Smart Basket TP Calculation (Independent Long/Short)
                             # Get ATR
                             atr_current = float(latest_features.get('atr', 0))
                             # Get Regime
                             regime_current = adv_result['regime']['regime'] if adv_result and 'regime' in adv_result else 'ranging'
                             
-                            smart_basket_tp = self.calculate_smart_basket_tp(
-                                raw_basket_tp,
+                            # Filter positions
+                            long_positions = [p for p in current_positions_list if p['type'] == mt5.POSITION_TYPE_BUY]
+                            short_positions = [p for p in current_positions_list if p['type'] == mt5.POSITION_TYPE_SELL]
+                            
+                            # Parse Raw TP
+                            raw_tp_long = raw_basket_tp
+                            raw_tp_short = raw_basket_tp
+                            
+                            if isinstance(raw_basket_tp, dict):
+                                raw_tp_long = raw_basket_tp.get('long', raw_basket_tp.get('buy', 10.0))
+                                raw_tp_short = raw_basket_tp.get('short', raw_basket_tp.get('sell', 10.0))
+                            
+                            # Calculate Smart TP for Long
+                            smart_tp_long = self.calculate_smart_basket_tp(
+                                raw_tp_long,
                                 atr_current,
                                 regime_current,
                                 smc_result,
-                                current_positions_list
+                                long_positions
                             )
                             
-                            if smart_basket_tp or lock_trigger or trailing_config:
+                            # Calculate Smart TP for Short
+                            smart_tp_short = self.calculate_smart_basket_tp(
+                                raw_tp_short,
+                                atr_current,
+                                regime_current,
+                                smc_result,
+                                short_positions
+                            )
+                            
+                            if smart_tp_long or smart_tp_short or lock_trigger or trailing_config:
                                 try:
                                     self.grid_strategy.update_dynamic_params(
-                                        basket_tp=smart_basket_tp, 
+                                        basket_tp_long=smart_tp_long,
+                                        basket_tp_short=smart_tp_short,
                                         lock_trigger=lock_trigger,
                                         trailing_config=trailing_config
                                     )
-                                    logger.info(f"Applied AI Dynamic Params: BasketTP={smart_basket_tp:.2f} (LLM:{raw_basket_tp}), LockTrigger={lock_trigger}, Trailing={trailing_config}")
+                                    logger.info(f"Applied AI Dynamic Params: LongTP={smart_tp_long:.2f}, ShortTP={smart_tp_short:.2f} (LLM Base: {raw_basket_tp})")
                                 except Exception as e:
                                     logger.error(f"Failed to update dynamic params: {e}")
 
