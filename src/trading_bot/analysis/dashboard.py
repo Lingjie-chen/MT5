@@ -363,7 +363,8 @@ def render_symbol_dashboard(symbol):
                     
                     # Pie Chart
                     fig_pie = visualizer.create_pnl_distribution(trades_df)
-                    st.plotly_chart(fig_pie, use_container_width=True, height=200)
+                    fig_pie.update_layout(height=200)
+                    st.plotly_chart(fig_pie, use_container_width=True)
                 else:
                     st.info("No closed trades yet.")
             else:
@@ -387,7 +388,8 @@ def render_symbol_dashboard(symbol):
                 # Signal Gauge
                 with c3:
                     fig_gauge = visualizer.create_gauge_chart(last_signal['strength'], title="Confidence")
-                    st.plotly_chart(fig_gauge, use_container_width=True, height=150)
+                    fig_gauge.update_layout(height=150)
+                    st.plotly_chart(fig_gauge, use_container_width=True)
                 
                 # Technical Details
                 with st.expander("Detailed Analysis"):
