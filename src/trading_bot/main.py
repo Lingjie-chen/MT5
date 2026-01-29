@@ -1121,8 +1121,15 @@ class SymbolTrader:
                 
                 # Basket TP
                 basket_tp = grid_config.get('basket_tp_usd')
-                if basket_tp:
-                    self.grid_strategy.update_dynamic_params(basket_tp=basket_tp)
+                basket_tp_long = grid_config.get('basket_tp_long')
+                basket_tp_short = grid_config.get('basket_tp_short')
+                
+                if basket_tp or basket_tp_long or basket_tp_short:
+                    self.grid_strategy.update_dynamic_params(
+                        basket_tp=basket_tp,
+                        basket_tp_long=basket_tp_long,
+                        basket_tp_short=basket_tp_short
+                    )
             
             # 4. 获取 ATR (用于网格间距)
             rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
