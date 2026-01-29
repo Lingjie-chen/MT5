@@ -996,14 +996,8 @@ class SymbolTrader:
         bot_positions = [p for p in all_positions if p.magic == self.magic_number] if all_positions else []
         has_position = len(bot_positions) > 0
         
-        # [Fix] 同时也检查挂单 (Pending Orders)
-        # 如果有挂单（例如 Initial Limit），也视为已有网格在运行，避免重复 grid_start 导致撤单重挂
-        all_orders = mt5.orders_get(symbol=self.symbol)
-        bot_orders = [o for o in all_orders if o.magic == self.magic_number] if all_orders else []
-        has_pending = len(bot_orders) > 0
-        
         # 如果有持仓且不是加仓指令，则不再开新仓
-        if has_position or has_pending:
+        if has_position:
             if added_this_cycle:
                 logger.info(f"本轮已执行加仓，跳过额外开仓")
                 return
@@ -1018,12 +1012,6 @@ class SymbolTrader:
             # 且如果是 grid_start，我们需要确保不会无限叠加首单。
             
             if 'grid_start' in llm_action:
-                # [Fix] 如果只有挂单且没有持仓，说明网格首单还未成交，忽略重复的 grid_start 指令
-                # 避免出现 "一开启就平仓(撤单)" 的现象
-                if has_pending and not has_position:
-                    logger.info(f"网格首单已挂单 ({len(bot_orders)}) 且未成交，忽略重复的 {llm_action} 指令，等待成交。")
-                    return
-
                 logger.info(f"已有持仓 ({len(bot_positions)})，但收到新的网格指令 ({llm_action})，允许调整/重新部署网格。")
                 # Pass through to grid logic below
             elif 'add' in llm_action:
@@ -1035,11 +1023,11 @@ class SymbolTrader:
                  # 这里我们需要放行，并将其转化为 grid_start 或 add 逻辑。
                  
                  # 假设 buy/sell 在有持仓时意味着 "Trend Following Add"
-                 logger.info(f"已有持仓/挂单，收到 ({llm_action}) 指令。视为趋势加仓信号，放行。")
+                 logger.info(f"已有持仓，收到 ({llm_action}) 指令。视为趋势加仓信号，放行。")
                  pass
             else:
                 # 只有完全不相关的指令才拦截
-                logger.info(f"已有持仓/挂单 ({len(bot_positions)} pos, {len(bot_orders)} orders), 且非加仓/网格指令 ({llm_action}), 跳过开仓")
+                logger.info(f"已有持仓 ({len(bot_positions)}), 且非加仓/网格指令 ({llm_action}), 跳过开仓")
                 return
 
         # 执行开仓/挂单
