@@ -304,7 +304,25 @@ def render_symbol_dashboard(symbol):
         col_acc1, col_acc2 = st.columns([2, 1])
         
         with col_acc1:
-            st.subheader("Equity Curve & Asset Growth")
+            st.subheader("Total Asset Trend (Balance vs Equity)")
+            metrics_df = db_manager.get_account_metrics_history(limit=500)
+            
+            if not metrics_df.empty:
+                fig_assets = go.Figure()
+                fig_assets.add_trace(go.Scatter(
+                    x=metrics_df['timestamp'], y=metrics_df['balance'],
+                    mode='lines', name='Balance', line=dict(color='#00f3ff')
+                ))
+                fig_assets.add_trace(go.Scatter(
+                    x=metrics_df['timestamp'], y=metrics_df['equity'],
+                    mode='lines', name='Equity', line=dict(color='#00ff9d'), fill='tonexty'
+                ))
+                fig_assets.update_layout(height=350, template='plotly_dark', title="Account Growth", hovermode="x unified")
+                st.plotly_chart(fig_assets, use_container_width=True)
+            else:
+                st.info("No account metrics history.")
+                
+            st.subheader("Realized PnL Curve")
             if not trades_df.empty:
                 fig_equity = visualizer.create_equity_curve(trades_df)
                 st.plotly_chart(fig_equity, use_container_width=True, key=f"equity_{symbol}")
