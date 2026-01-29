@@ -3,9 +3,14 @@ import sys
 import unittest
 from unittest.mock import MagicMock
 import os
+import types
 
 # Adjust path to import modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+
+# Mock MetaTrader5 before importing strategy to provide required constants
+mt5_stub = types.SimpleNamespace(ORDER_TYPE_BUY=0, ORDER_TYPE_SELL=1, POSITION_TYPE_BUY=0, POSITION_TYPE_SELL=1)
+sys.modules['MetaTrader5'] = mt5_stub
 
 from trading_bot.strategies.grid_strategy import KalmanGridStrategy
 import MetaTrader5 as mt5
