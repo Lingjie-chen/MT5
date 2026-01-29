@@ -621,49 +621,9 @@ class KalmanGridStrategy:
                 self.short_lock_level = None
             return True
             
-        # 2. Lock Logic
-        effective_trigger = 9999.0
-        if self.lock_profit_trigger is not None and self.lock_profit_trigger > 0:
-             effective_trigger = self.lock_profit_trigger
-             
-        if current_max >= effective_trigger:
-            lock_ratio = 0.7
-            ideal_lock = 0.0
-            
-            # Simple fallback logic for now
-            surplus = max(0.0, current_max - effective_trigger)
-            ideal_lock = effective_trigger + (surplus * lock_ratio)
-            ideal_lock = max(ideal_lock, 2.0)
-            
-            step_size_usd = 5.0
-            
-            # Init lock
-            if current_lock is None:
-                current_lock = ideal_lock
-                logger.info(f"[{direction_label}] Lock ACTIVATED at {current_lock:.2f}")
-            else:
-                # Step Up
-                if ideal_lock >= (current_lock + step_size_usd):
-                    old = current_lock
-                    current_lock = ideal_lock
-                    logger.info(f"[{direction_label}] Lock STEP UP: {old:.2f} -> {current_lock:.2f}")
-            
-            # Update state
-            if direction_label == "LONG": self.long_lock_level = current_lock
-            else: self.short_lock_level = current_lock
-            
-            # [Safety Check] Ensure we only close in profit for Lock logic
-            if profit <= current_lock and profit > 0:
-                logger.info(f"[{direction_label}] Lock Triggered: Profit {profit:.2f} <= Lock {current_lock:.2f}")
-                # Reset
-                if direction_label == "LONG": 
-                    self.max_long_profit = 0.0
-                    self.long_lock_level = None
-                else: 
-                    self.max_short_profit = 0.0
-                    self.short_lock_level = None
-                return True
-                
+        # 2. Lock Logic - DISABLED per user request
+        # User requested to remove Profit Lock completely and rely only on Basket TP
+        
         return False
 
     def update_dynamic_params(self, basket_tp=None, lock_trigger=None, trailing_config=None):
