@@ -3353,9 +3353,8 @@ class SymbolTrader:
                         if pos_mgmt:
                             raw_basket_tp = pos_mgmt.get('dynamic_basket_tp')
                             
-                            # User Requirement: Disable trigger locked
-                            lock_trigger = None 
-                            # lock_trigger = pos_mgmt.get('lock_profit_trigger')
+                            # User Requirement: Restore lock_trigger from AI strategy
+                            lock_trigger = pos_mgmt.get('lock_profit_trigger')
                             
                             trailing_config = pos_mgmt.get('trailing_stop_config')
                             
