@@ -1234,7 +1234,7 @@ class SymbolTrader:
             gc_init_lot = float(grid_config.get('initial_lot', self.lot_size))
             gc_mult = float(grid_config.get('martingale_multiplier', 1.5))
             gc_mode = grid_config.get('martingale_mode', 'multiply') # multiply, add, fibonacci
-            gc_max_levels = int(grid_config.get('max_grid_levels', 10))
+            gc_max_levels = int(grid_config.get('max_grid_levels', 5))
             
             # If lot_type is in grid_config, respect it
             if 'lot_type' in grid_config:
