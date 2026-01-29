@@ -611,15 +611,22 @@ class KalmanGridStrategy:
         # Select Dynamic TP based on direction
         dynamic_tp = self.dynamic_tp_long if is_long else self.dynamic_tp_short
         
-        # Fallback to legacy single dynamic var if specific not set (backward compatibility)
+        # Fallback to legacy single dynamic var
         if dynamic_tp is None:
             dynamic_tp = self.dynamic_global_tp
+            
+        # Determine Scale Factor based on Lot Size (relative to 0.01 base config)
+        # If self.lot is 0.02, scale_factor = 2.0. TP $3 -> $6.
+        scale_factor = self.lot / 0.01
+        if scale_factor < 1.0: scale_factor = 1.0 # Safety: Don't reduce below base
             
         if dynamic_tp is not None and dynamic_tp > 0:
             target_tp = dynamic_tp
         else:
-            target_tp = self.tp_steps.get(count, self.global_tp)
-            if count > 9: target_tp = self.global_tp
+            # Use scaled config values
+            base_target = self.tp_steps.get(count, self.global_tp)
+            if count > 9: base_target = self.global_tp
+            target_tp = base_target * scale_factor
 
         if total_profit >= target_tp:
             logger.info(f"Grid Basket TP ({'LONG' if is_long else 'SHORT'}) Reached: Profit {total_profit:.2f} >= Target {target_tp}")
