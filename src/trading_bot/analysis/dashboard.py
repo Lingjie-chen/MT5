@@ -144,6 +144,44 @@ if not selected_symbols:
 # Create tabs for each selected symbol
 tabs = st.tabs(selected_symbols)
 
+# Mapping for YFinance
+SYMBOL_MAP = {
+    "GOLD": "GC=F", # Gold Futures
+    "XAUUSD": "GC=F",
+    "EURUSD": "EURUSD=X",
+    "ETHUSD": "ETH-USD",
+    "BTCUSD": "BTC-USD",
+    "USDJPY": "JPY=X",
+    "GBPUSD": "GBPUSD=X"
+}
+
+@st.cache_data(ttl=60) # Cache for 1 min
+def fetch_online_price(symbol, period="1d", interval="15m"):
+    """Fetch real-time data from Yahoo Finance"""
+    try:
+        ticker = SYMBOL_MAP.get(symbol.upper(), symbol)
+        # Handle XAUUSD specifically if not found
+        if "XAU" in symbol.upper(): ticker = "GC=F"
+        
+        df = yf.download(ticker, period=period, interval=interval, progress=False)
+        if df.empty:
+            return None
+        
+        # Standardize columns
+        df.reset_index(inplace=True)
+        df.columns = [c.lower() for c in df.columns]
+        
+        # Ensure timestamp column is named 'timestamp' or 'date'
+        if 'date' in df.columns:
+            df.rename(columns={'date': 'timestamp'}, inplace=True)
+        elif 'datetime' in df.columns:
+            df.rename(columns={'datetime': 'timestamp'}, inplace=True)
+            
+        return df
+    except Exception as e:
+        st.error(f"Failed to fetch online data: {e}")
+        return None
+
 def get_db_manager(symbol):
     """Dynamically get the DatabaseManager for a specific symbol"""
     db_filename = f"trading_data_{symbol}.db"
