@@ -1,11 +1,12 @@
 import streamlit as st
 import pandas as pd
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
-# Ensure python path
 import os
 import sys
+import yfinance as yf
+import plotly.graph_objects as go
 
 # Add project root to sys.path to ensure correct imports
 # dashboard.py is at src/trading_bot/analysis/dashboard.py
