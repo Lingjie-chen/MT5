@@ -1347,7 +1347,9 @@ class SymbolTrader:
                     except Exception as e:
                         logger.warning(f"Margin calc warning: {e}")
                         # Fallback approx
-                        total_margin_required += (o_vol * 100000 / 100) * 0.01 # Rough guess if fails
+                        # Ensure o_vol is defined in exception scope by defaulting above, or here
+                        safe_vol = order.get('volume', self.lot_size)
+                        total_margin_required += (safe_vol * 100000 / 100) * 0.01 # Rough guess if fails
                 
                 # Check against Free Margin (with buffer)
                 if total_margin_required > (account_info.margin_free * 0.8):
