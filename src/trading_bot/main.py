@@ -1140,19 +1140,55 @@ class SymbolTrader:
             point = symbol_info.point if symbol_info else 0.01
             
             # 计算首单挂单位置 (Offset based on ATR or Fixed Points)
-            # 使用 ATR 的 10% 作为微小回撤等待，或者直接挂在 Grid Step 的第一个位置？
-            # 用户只说 "不要立刻开仓"， implying wait for better price.
-            # Let's use a small offset: 0.1 * ATR or 50 points
+            # 优先使用 LLM 建议的精确入场价
+            suggested_price = None
+            
+            # 1. Try entry_params (from execute_trade args)
+            if entry_params:
+                suggested_price = entry_params.get('price') or entry_params.get('entry_price')
+            
+            # 2. Try latest_strategy (from LLM response)
+            if suggested_price is None and self.latest_strategy:
+                # Check inside entry_conditions
+                ec = self.latest_strategy.get('entry_conditions', {})
+                if isinstance(ec, dict):
+                    suggested_price = ec.get('price') or ec.get('entry_price')
+                
+                # Check top level
+                if suggested_price is None:
+                    suggested_price = self.latest_strategy.get('entry_price')
+            
+            # 3. Fallback logic (ATR Offset)
             initial_offset = atr * 0.1 if atr > 0 else 50 * point
             
             if direction == 'bullish':
-                entry_type = "limit_buy" # Convert to pending
-                # 挂单价格 = 当前Ask - Offset (等待回调接多)
-                entry_price = tick.ask - initial_offset
+                entry_type = "limit_buy" 
+                
+                if suggested_price and float(suggested_price) > 0:
+                     entry_price = float(suggested_price)
+                     # Safety check: Don't buy above Ask (that would be a market order essentially)
+                     if entry_price > tick.ask:
+                         logger.warning(f"LLM 建议买入价 {entry_price} 高于当前 Ask {tick.ask}，回退到 Ask - Offset")
+                         entry_price = tick.ask - initial_offset
+                     else:
+                         logger.info(f"Using LLM Suggested Entry Price: {entry_price}")
+                else:
+                     # 挂单价格 = 当前Ask - Offset (等待回调接多)
+                     entry_price = tick.ask - initial_offset
             else:
                 entry_type = "limit_sell"
-                # 挂单价格 = 当前Bid + Offset (等待反弹接空)
-                entry_price = tick.bid + initial_offset
+                
+                if suggested_price and float(suggested_price) > 0:
+                     entry_price = float(suggested_price)
+                     # Safety check: Don't sell below Bid
+                     if entry_price < tick.bid:
+                         logger.warning(f"LLM 建议卖出价 {entry_price} 低于当前 Bid {tick.bid}，回退到 Bid + Offset")
+                         entry_price = tick.bid + initial_offset
+                     else:
+                         logger.info(f"Using LLM Suggested Entry Price: {entry_price}")
+                else:
+                     # 挂单价格 = 当前Bid + Offset (等待反弹接空)
+                     entry_price = tick.bid + initial_offset
                 
             entry_price = self._normalize_price(entry_price)
             
