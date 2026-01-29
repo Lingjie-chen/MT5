@@ -151,8 +151,6 @@ SYMBOL_MAP = {
     "EURUSD": "EURUSD=X",
     "ETHUSD": "ETH-USD",
     "BTCUSD": "BTC-USD",
-    "USDJPY": "JPY=X",
-    "GBPUSD": "GBPUSD=X"
 }
 
 @st.cache_data(ttl=60) # Cache for 1 min
