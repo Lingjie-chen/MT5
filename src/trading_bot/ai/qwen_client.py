@@ -717,7 +717,7 @@ class QwenClient:
     JSON 必须包含以下字段：
 
     - **action**: str ("GRID_START_LONG", "GRID_START_SHORT", "HOLD", "CLOSE_ALL")
-    - **entry_price**: float (LLM 建议的首单挂单价格。如果是 LIMIT 单，请务必给出精确价格；如果是 MARKET 单，可为 null)
+    - **entry_price**: float (首单价格。**强烈建议设为 null** 以使用市价单(Market Order)立即入场。仅在必须等待深度回调时才填写具体价格)
     - **grid_config**: dict (网格策略核心参数)
         - "initial_lot": float (首单手数, e.g., 0.01)
         - "grid_step_mode": str ("fixed" 或 "atr")
