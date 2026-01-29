@@ -159,6 +159,10 @@ class DatabaseManager:
             
             conn.commit()
             # conn.close() # Persistent connection, do not close
+            
+            # Perform cleanup on startup
+            self.clean_duplicate_signals()
+            
         except Exception as e:
             logger.error(f"Database initialization failed: {e}")
 
@@ -282,40 +286,162 @@ class DatabaseManager:
             logger.error(f"Failed to save market data: {e}")
 
     def save_signal(self, symbol, timeframe, signal_data):
-        """Save analysis signal"""
+        """Save analysis signal (with deduplication)"""
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
             
-            timestamp = datetime.now()
-            
-            # Save Hybrid result
+            # Check for duplicate (Debounce)
+            # Only save if signal changed or reason changed or it's been > 15 minutes
             cursor.execute('''
-                INSERT INTO signals (timestamp, symbol, timeframe, signal, strength, source, details)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (timestamp, symbol, timeframe, signal_data['final_signal'], signal_data['strength'], 'Hybrid', json.dumps(signal_data['details'])))
+                SELECT signal, details, timestamp 
+                FROM signals 
+                WHERE symbol = ? AND timeframe = ? 
+                ORDER BY timestamp DESC LIMIT 1
+            ''', (symbol, timeframe))
             
-            conn.commit()
-            # conn.close()
+            last_row = cursor.fetchone()
+            should_save = True
             
-            # [Remote Sync]
-            # Normalize signal data for remote storage
-            try:
-                remote_signal = {
-                    'symbol': symbol,
-                    'timeframe': timeframe,
-                    'final_signal': signal_data['final_signal'],
-                    'strength': signal_data['strength'],
-                    'source': 'Hybrid',
-                    'details': signal_data['details'],
-                    'timestamp': timestamp
-                }
-                self.remote_storage.save_signal(remote_signal)
-            except Exception as e_remote:
-                logger.warning(f"Failed to sync signal to remote: {e_remote}")
+            if last_row:
+                last_signal = last_row[0]
+                last_details_json = last_row[1]
+                last_ts_str = last_row[2]
                 
+                # Parse timestamp
+                try:
+                    # SQLite returns string, usually "YYYY-MM-DD HH:MM:SS.ssssss"
+                    if "." in last_ts_str:
+                        last_ts = datetime.strptime(last_ts_str, "%Y-%m-%d %H:%M:%S.%f")
+                    else:
+                        last_ts = datetime.strptime(last_ts_str, "%Y-%m-%d %H:%M:%S")
+                        
+                    time_diff = (datetime.now() - last_ts).total_seconds()
+                except:
+                    time_diff = 9999
+                
+                # Check content equality
+                if last_signal == signal_data['final_signal']:
+                    try:
+                        last_details = json.loads(last_details_json)
+                        # Compare reasons
+                        if last_details.get('reason') == signal_data['details'].get('reason'):
+                            # If identical signal and reason, and recent (< 15 mins), skip
+                            if time_diff < 900: 
+                                should_save = False
+                                # logger.debug(f"Skipping duplicate signal save for {symbol}")
+                    except: pass
+
+            if should_save:
+                timestamp = datetime.now()
+                
+                # Save Hybrid result
+                cursor.execute('''
+                    INSERT INTO signals (timestamp, symbol, timeframe, signal, strength, source, details)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (timestamp, symbol, timeframe, signal_data['final_signal'], signal_data['strength'], 'Hybrid', json.dumps(signal_data['details'])))
+                
+                conn.commit()
+                
+                # [Remote Sync]
+                try:
+                    remote_signal = {
+                        'symbol': symbol,
+                        'timeframe': timeframe,
+                        'final_signal': signal_data['final_signal'],
+                        'strength': signal_data['strength'],
+                        'source': 'Hybrid',
+                        'details': signal_data['details'],
+                        'timestamp': timestamp
+                    }
+                    self.remote_storage.save_signal(remote_signal)
+                except Exception as e_remote:
+                    logger.warning(f"Failed to sync signal to remote: {e_remote}")
+            
         except Exception as e:
             logger.error(f"Failed to save signal: {e}")
+
+    def clean_duplicate_signals(self):
+        """Remove consecutive duplicate signals from the database"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            logger.info("Starting signal deduplication cleanup...")
+            
+            # This is a complex operation for SQLite without window functions in older versions
+            # But assuming Python 3.7+ / SQLite 3.25+, we have window functions.
+            # However, for safety, let's just delete rows where signal/reason are same as previous row within short time?
+            # Or simply keep the latest one per 15-min block?
+            
+            # Simple approach: Delete signals that are not the first in a 15-min window for same symbol/signal
+            # Actually, user wants to remove duplicates.
+            # Let's delete rows where (symbol, timeframe, signal, details) matches the previous row?
+            # Hard to do in pure SQL efficiently without complex logic.
+            
+            # Alternative: Keep only the LAST signal of each hour? No, that loses granularity.
+            
+            # Let's try to remove exact duplicates if any (though timestamp differs).
+            # We will use the logic: if signal and reason are same as previous, delete it.
+            
+            # Fetch all signals
+            cursor.execute("SELECT rowid, symbol, timeframe, signal, details, timestamp FROM signals ORDER BY symbol, timeframe, timestamp ASC")
+            rows = cursor.fetchall()
+            
+            to_delete = []
+            if rows:
+                prev = None
+                for row in rows:
+                    if prev:
+                        # Check equality
+                        if (row[1] == prev[1] and # symbol
+                            row[2] == prev[2] and # timeframe
+                            row[3] == prev[3]): # signal
+                            
+                            # Check details (reason)
+                            try:
+                                curr_det = json.loads(row[4])
+                                prev_det = json.loads(prev[4])
+                                if curr_det.get('reason') == prev_det.get('reason'):
+                                    # Check time diff
+                                    try:
+                                        t_curr = datetime.strptime(row[5], "%Y-%m-%d %H:%M:%S.%f")
+                                    except:
+                                        try: t_curr = datetime.strptime(row[5], "%Y-%m-%d %H:%M:%S")
+                                        except: t_curr = datetime.now()
+                                        
+                                    try:
+                                        t_prev = datetime.strptime(prev[5], "%Y-%m-%d %H:%M:%S.%f")
+                                    except:
+                                        try: t_prev = datetime.strptime(prev[5], "%Y-%m-%d %H:%M:%S")
+                                        except: t_prev = datetime.now()
+                                    
+                                    # If within 15 mins, delete the NEWER one (row) to keep history clean? 
+                                    # Actually, usually we want to keep the START of the signal.
+                                    # So we delete 'row' (the later one).
+                                    if (t_curr - t_prev).total_seconds() < 900:
+                                        to_delete.append(row[0])
+                                        # Don't update 'prev' to 'row', so we continue comparing against the 'first' one of the series
+                                        continue 
+                            except: pass
+                    
+                    prev = row
+            
+            if to_delete:
+                logger.info(f"Found {len(to_delete)} duplicate signals to remove.")
+                # Batch delete
+                chunk_size = 500
+                for i in range(0, len(to_delete), chunk_size):
+                    chunk = to_delete[i:i+chunk_size]
+                    placeholders = ','.join(['?'] * len(chunk))
+                    cursor.execute(f"DELETE FROM signals WHERE rowid IN ({placeholders})", chunk)
+                    conn.commit()
+                logger.info("Signal cleanup complete.")
+            else:
+                logger.info("No duplicate signals found.")
+                
+        except Exception as e:
+            logger.error(f"Failed to clean duplicate signals: {e}")
 
     def save_trade(self, trade_data):
         """Save trade execution"""
