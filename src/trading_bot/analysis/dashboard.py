@@ -161,6 +161,8 @@ SYMBOL_MAP = {
 @st.cache_data(ttl=60) # Cache for 1 min
 def fetch_online_price(symbol, period="1d", interval="15m"):
     """Fetch real-time data from Yahoo Finance"""
+    if yf is None:
+        return None
     try:
         ticker = SYMBOL_MAP.get(symbol.upper(), symbol)
         # Handle XAUUSD specifically if not found
