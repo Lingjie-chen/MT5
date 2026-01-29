@@ -2916,7 +2916,7 @@ class SymbolTrader:
              upper_limit *= 0.5 # Reduce max potential in ranging
         
         # Ensure we don't go below absolute minimum $2 (to cover fees/swaps basic)
-        final_tp = max(final_tp, max(2.0, lower_limit))
+        final_tp = max(final_tp, max(10.0, lower_limit))
         
         # Only cap if it exceeds the dynamic upper limit
         # And ensure upper limit is at least reasonable
