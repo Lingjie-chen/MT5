@@ -487,8 +487,12 @@ class KalmanGridStrategy:
                 tp_price = 0.0
                 
                 # Calculate Lot
-                # Use Fibonacci logic if specified or default
-                lot = self.calculate_next_lot(base_count + i)
+                # Use Fibonacci logic if specified or default, OR use override sequence
+                lot = 0.01
+                if override_lot_sequence and i < len(override_lot_sequence):
+                    lot = float(override_lot_sequence[i])
+                else:
+                    lot = self.calculate_next_lot(base_count + i)
                 
                 orders.append({'type': 'limit_buy', 'price': lvl, 'tp': tp_price, 'volume': lot})
                 
@@ -529,7 +533,11 @@ class KalmanGridStrategy:
                 tp_price = 0.0
                 
                 # Calculate Lot
-                lot = self.calculate_next_lot(base_count + i)
+                lot = 0.01
+                if override_lot_sequence and i < len(override_lot_sequence):
+                    lot = float(override_lot_sequence[i])
+                else:
+                    lot = self.calculate_next_lot(base_count + i)
                 
                 orders.append({'type': 'limit_sell', 'price': lvl, 'tp': tp_price, 'volume': lot})
                 
