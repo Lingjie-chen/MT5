@@ -24,8 +24,21 @@ class TestGridDirection(unittest.TestCase):
         
         # Mock mt5 functions used in execute_trade
         mt5.symbol_info_tick.return_value = MagicMock(ask=2000.0, bid=1999.0)
-        mt5.account_info.return_value = MagicMock(margin_free=10000.0)
-        mt5.symbol_info.return_value = MagicMock(point=0.01, trade_stops_level=0)
+        
+        account_info_mock = MagicMock()
+        account_info_mock.margin_free = 10000.0
+        account_info_mock.equity = 10000.0
+        account_info_mock.balance = 10000.0
+        account_info_mock.margin_level = 9999.0
+        mt5.account_info.return_value = account_info_mock
+
+        symbol_info_mock = MagicMock()
+        symbol_info_mock.point = 0.01
+        symbol_info_mock.trade_tick_size = 0.01
+        symbol_info_mock.digits = 2
+        symbol_info_mock.trade_stops_level = 0
+        mt5.symbol_info.return_value = symbol_info_mock
+
         mt5.positions_get.return_value = [] # No positions
         mt5.orders_get.return_value = [] # No pending orders
         
