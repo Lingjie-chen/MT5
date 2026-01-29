@@ -272,13 +272,25 @@ def render_symbol_dashboard(symbol):
         
         if chart_source == "Internet (Live)":
             if online_df is not None and not online_df.empty:
+                # Prepare data safely
+                o = online_df['open']
+                h = online_df['high']
+                l = online_df['low']
+                c = online_df['close']
+                
+                # Handle potential DataFrame types (if duplicate columns or MultiIndex issues persist)
+                if isinstance(o, pd.DataFrame): o = o.iloc[:, 0]
+                if isinstance(h, pd.DataFrame): h = h.iloc[:, 0]
+                if isinstance(l, pd.DataFrame): l = l.iloc[:, 0]
+                if isinstance(c, pd.DataFrame): c = c.iloc[:, 0]
+                
                 # Simple Candlestick for Internet Data
                 fig = go.Figure(data=[go.Candlestick(
                     x=online_df['timestamp'],
-                    open=online_df['open'] if isinstance(online_df['open'], pd.Series) else online_df['open'].iloc[:,0],
-                    high=online_df['high'] if isinstance(online_df['high'], pd.Series) else online_df['high'].iloc[:,0],
-                    low=online_df['low'] if isinstance(online_df['low'], pd.Series) else online_df['low'].iloc[:,0],
-                    close=online_df['close'] if isinstance(online_df['close'], pd.Series) else online_df['close'].iloc[:,0],
+                    open=o,
+                    high=h,
+                    low=l,
+                    close=c,
                     increasing_line_color='#00ff9d', decreasing_line_color='#ff0055'
                 )])
                 fig.update_layout(height=500, template="plotly_dark", title=f"{symbol} Live Trend (Yahoo Finance)")
