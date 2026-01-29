@@ -548,7 +548,11 @@ class KalmanGridStrategy:
         
         for pos in positions:
             if pos.magic == self.magic_number:
-                profit_val = pos.profit + pos.swap + pos.commission
+                # Safely access commission using getattr as it might not be available in all brokers/versions
+                commission = getattr(pos, 'commission', 0.0)
+                swap = getattr(pos, 'swap', 0.0)
+                profit_val = pos.profit + swap + commission
+                
                 if pos.type == mt5.ORDER_TYPE_BUY:
                     long_profit += profit_val
                     long_count += 1
