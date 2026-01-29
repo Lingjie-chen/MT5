@@ -10,16 +10,9 @@ echo ---------------------------------------------------
 echo Access the dashboard at http://localhost:8501
 echo ---------------------------------------------------
 
-:: Activate Virtual Environment
-if exist venv\Scripts\activate.bat (
-    call venv\Scripts\activate.bat
-) else (
-    echo Warning: Virtual environment not found at venv\Scripts\activate.bat
-)
-
 :loop
 :: Run Streamlit pointing to the correct location in src
-python -m streamlit run src/trading_bot/analysis/dashboard.py --server.port 8501 --server.address localhost --server.headless true
+streamlit run src/trading_bot/analysis/dashboard.py --server.port 8501 --server.address localhost --server.headless true
 
 :: If Streamlit exits, restart it
 echo [%DATE% %TIME%] Dashboard process ended. Restarting in 5 seconds...

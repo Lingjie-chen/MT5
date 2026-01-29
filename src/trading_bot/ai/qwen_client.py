@@ -400,36 +400,33 @@ class QwenClient:
          - **MFE 驱动**: 
              - **TP**: 根据实时 MFE 预测，如果动能衰竭，提前移动 TP 锁定利润。
        - **Basket TP 动态实时配置 (Real-time Dynamic Basket TP)**:
-          - **核心要求**: 对于每个品种的网格 Basket TP (整体止盈)，必须根据以下所有维度进行综合分析和自我学习，给出一个**最优的美元数值 (针对 0.01 手基础仓位)**：
-            1. **市场情绪 (Sentiment)**: 如果情绪极度乐观(Bullish)且方向做多，大幅上调 Basket TP；反之则保守。
-            2. **结构趋势 (Structure)**: 
-               - **强趋势 (Trend Surfing)**: 若市场处于单边强趋势 (如 H1/H4 结构破坏且 MA 发散)，**必须大幅上调 Basket TP** (例如正常值的 2-3 倍)，防止只吃了一小部分利润就过早离场。
-               - **震荡/逆势**: 目标应保守，快速落袋为安。
-            3. **高级算法 (Algo Metrics)**: 
-               - 参考 `technical_signals` 中的 **EMA/HA** 数据。
-               - 如果价格远离 EMA 50 (乖离率高)，预期会有回归，TP 应保守。
-               - 如果 EMA 50 强劲倾斜且 HA 连续同色，TP 应激进。
-            4. **历史绩效 (Self-Learning)**: 
-               - **必须参考** `performance_stats` 中的 `avg_mfe` (平均最大有利偏移)。
-               - **Basket TP 上限** = (0.01 * Contract Size * Avg_MFE_Points * 0.8)。不要设定超过历史平均表现太多的不切实际目标。
-               - **Basket TP 下限** = 能够覆盖交易成本 (Spread + Swap + Commission) 的最小利润。
-            5. **量化书籍优化**: 
-               - 引入 Kelly Criterion (凯利公式) 思想，在胜率高时允许更大的 TP 以最大化几何增长。
-               - 参考《交易系统的胜算》中的 "Expectancy" (期望值) 概念，确保 (WinRate * AvgWin) > (LossRate * AvgLoss)。
-            6. **长期历史优化种子 (Long-term Optimization Seeds)**:
-               - **必须参考** `historical_seeds` 中的最佳参数组合。
-               - 如果历史数据显示某组参数 (如特定的 SMC ATR 阈值或 Grid Step) 长期表现优异，应在策略制定中给予更高权重。
-               - 将历史最优参数作为决策的 "Anchor" (锚点)，在此基础上进行微调，而不是凭空猜测。
-        - **计算公式参考**:
-          - `Base_Target` = (ATR * 0.01 * Contract_Size)
-          - `Sentiment_Multiplier`: 0.5 (Weak) to 3.0 (Strong Trend)
-          - `Structure_Multiplier`: 0.8 (Range) to 2.0 (Trend Surfing)
-          - `Dynamic_Basket_TP` = `Base_Target` * `Sentiment_Multiplier` * `Structure_Multiplier` (并用 Avg_MFE 做校验)
-          - **Hybrid Weighting**:
-            - 趋势行情: `llm_weight=0.9`, `atr_weight=0.1`，允许 `ATR_Ratio_Cap` 扩展至 `<= 5.0` 若大模型建议更远目标
-            - 震荡行情: `llm_weight=0.7`, `atr_weight=0.3`，允许 `Soft_Floor=1.0 * ATR_Value` 以支持快进快出
-        - **拒绝固定值**: 严禁使用固定的数值 (如 50.0)！必须是经过上述逻辑计算后的结果。
-        - **重要提示**: 输出的 `basket_tp_usd` 应该是基于 0.01 手的标准参考值。系统会自动根据实际开仓手数进行等比例缩放 (例如实际开 0.1 手，系统会将你的建议值乘以 10)。因此，请专注于给出**单位标准手**的最优止盈值。
+         - **核心要求**: 对于每个品种的网格 Basket TP (整体止盈)，必须根据以下所有维度进行综合分析和自我学习，给出一个**最优的美元数值**：
+           1. **市场情绪 (Sentiment)**: 如果情绪极度乐观(Bullish)且方向做多，大幅上调 Basket TP；反之则保守。
+           2. **结构趋势 (Structure)**: 
+              - **强趋势 (Trend Surfing)**: 若市场处于单边强趋势 (如 H1/H4 结构破坏且 MA 发散)，**必须大幅上调 Basket TP** (例如正常值的 2-3 倍)，防止只吃了一小部分利润就过早离场。
+              - **震荡/逆势**: 目标应保守，快速落袋为安。
+           3. **高级算法 (Algo Metrics)**: 
+              - 参考 `technical_signals` 中的 **EMA/HA** 数据。
+              - 如果价格远离 EMA 50 (乖离率高)，预期会有回归，TP 应保守。
+              - 如果 EMA 50 强劲倾斜且 HA 连续同色，TP 应激进。
+           4. **历史绩效 (Self-Learning)**: 
+              - **必须参考** `performance_stats` 中的 `avg_mfe` (平均最大有利偏移)。
+              - **Basket TP 上限** = (Position Size * Contract Size * Avg_MFE_Points * 0.8)。不要设定超过历史平均表现太多的不切实际目标。
+              - **Basket TP 下限** = 能够覆盖交易成本 (Spread + Swap + Commission) 的最小利润。
+           5. **量化书籍优化**: 
+              - 引入 Kelly Criterion (凯利公式) 思想，在胜率高时允许更大的 TP 以最大化几何增长。
+              - 参考《交易系统的胜算》中的 "Expectancy" (期望值) 概念，确保 (WinRate * AvgWin) > (LossRate * AvgLoss)。
+           6. **长期历史优化种子 (Long-term Optimization Seeds)**:
+              - **必须参考** `historical_seeds` 中的最佳参数组合。
+              - 如果历史数据显示某组参数 (如特定的 SMC ATR 阈值或 Grid Step) 长期表现优异，应在策略制定中给予更高权重。
+              - 将历史最优参数作为决策的 "Anchor" (锚点)，在此基础上进行微调，而不是凭空猜测。
+         - **计算公式参考**:
+           - `Base_Target` = (ATR * Position_Size * Contract_Size)
+           - `Sentiment_Multiplier`: 0.5 (Weak) to 3.0 (Strong Trend)
+           - `Structure_Multiplier`: 0.8 (Range) to 2.0 (Trend Surfing)
+           - `Dynamic_Basket_TP` = `Base_Target` * `Sentiment_Multiplier` * `Structure_Multiplier` (并用 Avg_MFE 做校验)
+         - **拒绝固定值**: 严禁使用固定的数值 (如 50.0)！必须是经过上述逻辑计算后的结果。
+         - **更新指令**: 在 `position_management` -> `dynamic_basket_tp` 中返回计算后的数值。
        - **Lock Profit Trigger (Profit Locking)**:
          - **User Instruction**: **已被禁用**。请不要设置此值，或将其设置为 null / 0。我们不再使用利润锁定机制，完全依赖 Basket TP。
          - **更新指令**: 在 `position_management` -> `lock_profit_trigger` 中返回 null 或 0。
@@ -446,9 +443,12 @@ class QwenClient:
     6. **LLM原生风控配置 (LLM-Native Risk Management)**:
        - **核心思想**: 摒弃固定参数，所有风控指标必须由大模型实时分析得出。
        - **Max Drawdown (最大回撤配置)**:
-         - **User Instruction**: 用户明确要求 **只遵循盈利 TP**，移除亏损平仓逻辑。
-         - **设置策略**: 请将 `max_drawdown_usd` 设置为一个极高的数值 (例如 Account_Balance * 0.95)，以确保在任何正常市场波动下都不会触发强制平仓。
-         - **仅用于极端风控**: 只有当账户真正面临爆仓风险 (Margin Call) 时，才由系统底层触发，而非策略层主动平仓。
+         - 在 `grid_config` 中必须输出 `max_drawdown_usd`。
+         - **计算逻辑**: Account_Balance * Risk_Tolerance_Factor (e.g., 0.05 for conservative, 0.15 for aggressive).
+         - **动态调整 (Dynamic Adjustment)**: 
+           - **Volatility Based**: 参考 `risk_metrics.volatility` (ATR)。如果当前 ATR > Average ATR * 1.5，说明市场剧烈波动，必须 **降低** Max Drawdown (例如减半) 以防止被动止损。
+           - **Event Based**: 当 VIX > 20 或 市场处于重大新闻发布前，必须降低 Risk_Tolerance_Factor。
+         - **硬性限制**: 任何时候，`max_drawdown_usd` 不得超过账户总资金的 20%。
 
     7. **Turtle Trading Protocol (海龟交易法则 - 趋势跟随)**:
        - **唐奇安通道 (Donchian Channel)**: 
@@ -621,14 +621,13 @@ class QwenClient:
     2. **动态调整**: 当市场动能衰竭或遇到强阻力时，应在下一次分析中降低 `basket_tp_usd` 以确保落袋为安。
     
     **平仓 (CLOSE_ALL) 标准**:
-    - **仅限盈利平仓**: 
-        1. **严禁亏损平仓**: 除非收到用户明确的手动指令，否则绝不因浮亏而平仓。
-        2. **只遵循盈利 TP**: 只有当整体利润达到预期目标 (Basket TP) 时才平仓。
-        3. **重大风险事件例外**: 仅在即将发布极度危险的黑天鹅事件前，且已获利或保本时，才考虑提前平仓。
+    - **仅用于紧急情况**: 正常情况下，让网格自动止盈。只有在以下情况手动 CLOSE_ALL：
+        1. **结构彻底破坏**: H4/H1 趋势完全反转。
+        2. **重大风险事件**: 即将发布超预期利空数据。
+        3. **风控触发**: 浮亏超过账户净值的 20% (或预设阈值)。
     
-    **止损退出 (Disabled)**:
-    - **严禁设置整体止损**: 网格策略的核心是抗浮亏并等待回调盈利。
-    - **Instruction**: 请务必在 `grid_config` 中将 `basket_sl_usd` 设置为一个极大的负数 (例如 -999999.0) 或 null，确保永远不会触发自动止损。
+    **止损退出**:
+    - 网格策略不设单单止损，而是依赖 `basket_sl_usd` (整体止损)。请在 `grid_config` 中合理设置此值。
     
     ## 输出格式要求
     
@@ -678,25 +677,18 @@ class QwenClient:
     1. **GRID_START_LONG**:
        - 含义: 启动多头网格策略 (Initial Entry + Grid Setup)。
        - 适用场景: SMC 确认看涨趋势 (BOS/CHOCH)，价格位于 H4/H1 关键支撑位 (OB/FVG)。
-       - **执行逻辑 (Entry Execution)**: 
-         - **首选市价单 (Market Order Preferred)**: 默认情况，首单将以**市价 (Market)** 立即成交，确保不错过行情。
-         - **挂单例外**: 仅当你认为当前价格过高，必须等待深度回调 (Deep Retracement) 时，才在 `entry_price` 中指定具体价格 (Limit Order)。
-       - **后续网格**: 首单成交后，系统自动计算并挂出后续的 LIMIT_BUY 网格单。
-
+       - **执行逻辑**: 系统将立即开启首单 BUY，并自动挂出后续的 LIMIT_BUY 网格单。
     2. **GRID_START_SHORT**:
        - 含义: 启动空头网格策略 (Initial Entry + Grid Setup)。
        - 适用场景: SMC 确认看跌趋势 (BOS/CHOCH)，价格位于 H4/H1 关键阻力位 (OB/FVG)。
-       - **执行逻辑 (Entry Execution)**: 
-         - **首选市价单 (Market Order Preferred)**: 默认情况，首单将以**市价 (Market)** 立即成交，确保不错过行情。
-         - **挂单例外**: 仅当你认为当前价格过低，必须等待深度反弹 (Deep Retracement) 时，才在 `entry_price` 中指定具体价格 (Limit Order)。
-       - **后续网格**: 首单成交后，系统自动计算并挂出后续的 LIMIT_SELL 网格单。
+       - **执行逻辑**: 系统将立即开启首单 SELL，并自动挂出后续的 LIMIT_SELL 网格单。
     3. **HOLD**:
        - 含义: 暂时观望，不开启新网格。
        - 适用场景: 市场方向不明、处于震荡区间中间、或已有网格在运行中。
        - **注意**: 如果已有持仓，HOLD 意味着维持当前网格策略不变。
     4. **CLOSE_ALL**:
-       - 含义: 紧急平仓所有头寸。
-       - 适用场景: **仅限盈利出场** 或 **用户强制指令**。严禁在亏损状态下使用此 Action (除非账户即将爆仓)。
+       - 含义: 紧急平仓所有头寸 (Panic Button)。
+       - 适用场景: 发生重大基本面利空、SMC 结构完全失效 (失效位被强力击穿)、或达到总账户风控阈值。
 
     **自我学习与适应 (Self-Learning & Adaptation)**:
     - **数据源**: 你现在接收来自远程数据库 (Remote DB) 的实时历史交易数据 (`performance_stats`)。
@@ -715,7 +707,6 @@ class QwenClient:
     JSON 必须包含以下字段：
 
     - **action**: str ("GRID_START_LONG", "GRID_START_SHORT", "HOLD", "CLOSE_ALL")
-    - **entry_price**: float (首单价格。**强烈建议设为 null** 以使用市价单(Market Order)立即入场。仅在必须等待深度回调时才填写具体价格)
     - **grid_config**: dict (网格策略核心参数)
         - "initial_lot": float (首单手数, e.g., 0.01)
         - "grid_step_mode": str ("fixed" 或 "atr")
@@ -724,15 +715,13 @@ class QwenClient:
         - "martingale_multiplier": float (马丁倍数, e.g., 1.5)
         - "max_grid_levels": int (最大网格层数, e.g., 5)
         - "basket_tp_usd": float (整体止盈金额 USD, e.g., 50.0)
-        - "basket_sl_usd": float (整体止损金额 USD. **必须设为 -999999.0** 以禁用止损，只允许止盈)
-        - "max_drawdown_usd": float (网格交易最大允许回撤 USD. 建议设为账户余额的 90% 或更高，防止因普通回撤而触发平仓)
-        - "dynamic_tp_policy": { "regime": "trending|ranging", "llm_weight": float, "atr_weight": float, "atr_ratio_cap": float }
+        - "basket_sl_usd": float (整体止损金额 USD, e.g., -200.0)
+        - "max_drawdown_usd": float (网格交易最大允许回撤 USD, e.g., 500.0. 必须基于账户资金和风险偏好由大模型分析得出)
     - **strategy_rationale**: str (中文, 详细解释 SMC 结构、为什么在此处启动网格、ATR 分析等)
     - **market_structure**: dict (SMC 分析摘要)
         - "trend_h4": str
         - "trend_m15": str
         - "key_level": str
-    - **basket_tp_rationale**: str (中文，解释 Basket TP 的推导逻辑：权重、ATR比例、情绪与结构依据)
     - **telegram_report**: str (Markdown 格式的简报，用于发送通知。包含 emoji，简洁明了)
         """
         

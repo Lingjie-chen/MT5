@@ -611,108 +611,22 @@ class KalmanGridStrategy:
         # Select Dynamic TP based on direction
         dynamic_tp = self.dynamic_tp_long if is_long else self.dynamic_tp_short
         
-        # Fallback to legacy single dynamic var
+        # Fallback to legacy single dynamic var if specific not set (backward compatibility)
         if dynamic_tp is None:
             dynamic_tp = self.dynamic_global_tp
-            
-        # Determine Scale Factor based on Lot Size (relative to 0.01 base config)
-        # If self.lot is 0.02, scale_factor = 2.0. TP $3 -> $6.
-        scale_factor = self.lot / 0.01
-        if scale_factor < 1.0: scale_factor = 1.0 # Safety: Don't reduce below base
             
         if dynamic_tp is not None and dynamic_tp > 0:
             target_tp = dynamic_tp
         else:
-            # Use scaled config values
-            base_target = self.tp_steps.get(count, self.global_tp)
-            if count > 9: base_target = self.global_tp
-            target_tp = base_target * scale_factor
+            target_tp = self.tp_steps.get(count, self.global_tp)
+            if count > 9: target_tp = self.global_tp
 
-        # User Requirement: Disable simple Basket TP, rely ONLY on Lock/Trailing Logic
-        # "保留grid basket tp/lock（long）（short），删除Grid Basket TP"
-        # Implication: The user wants to keep the detailed lock mechanism (below) but disable the simple "hit and run" TP above?
-        # Or maybe they mean "only use the directional ones".
-        # Re-reading: "保留grid basket tp/lock（long）（short）" -> Keep separate directional logic.
-        # "删除Grid Basket TP" -> Remove the unified/simple logic if it interferes?
-        
-        # Actually, the code already separates long/short.
-        # If the user means "Don't use the simple threshold check, only use the trailing lock check":
-        # But 'basket tp' usually means the threshold. 
-        # Let's assume they want to keep the Directional TP checks (which we have) and Directional Lock checks (which we have).
-        # And remove any "Global Mixed" check if it existed (it doesn't in this function, it's per basket).
-        
-        # Wait, maybe they mean the log message or the specific logic block?
-        # "Grid Basket TP Reached" is the simple threshold. 
-        # "Grid Profit Lock ... Triggered" is the trailing lock.
-        
-        # If the user wants to DELETE "Grid Basket TP" but KEEP "Grid Basket TP/Lock (Long/Short)",
-        # It sounds like they want to rely on the sophisticated locking mechanism or the directional TPs.
-        # The current code DOES use directional TPs (`target_tp` is derived from `dynamic_tp_long/short`).
-        
-        # Interpretation: The user might be seeing "Grid Basket TP" logs and wants to see "Grid Basket TP (Long)" or similar?
-        # The logs already say `Grid Basket TP ({'LONG' if is_long else 'SHORT'}) Reached`.
-        
-        # Let's look at the "Locking" logic below.
-        # The user said "保留grid basket tp/lock（long）（short）" -> Keep the Lock logic.
-        # "删除Grid Basket TP" -> Maybe they want to disable the fixed target TP and ONLY use the Trailing Lock?
-        # That would mean `if total_profit >= target_tp: return True` should be removed or made optional?
-        
-        # If I remove the simple TP check, the basket will only close if it hits the Lock Trigger and then retraces.
-        # That effectively turns it into a pure trailing stop strategy for the basket.
-        
-        # Let's try to interpret "删除Grid Basket TP" as removing the *simple* fixed TP logic, 
-        # and relying on the dynamic/locking logic which allows run-up.
-        
-        # HOWEVER, `target_tp` IS the dynamic basket TP if `dynamic_tp` is set.
-        # So removing it would disable the main goal.
-        
-        # Let's assume the user just wants to ensure we don't have a "Global" check that ignores direction.
-        # We are already doing `_check_single_basket` separately for long and short.
-        
-        # Let's look at `check_basket_tp` main function.
-        # It calls `_check_single_basket` for long and short.
-        # That seems correct per "Keep (Long)(Short)".
-        
-        # Maybe the user implies the "Simple Threshold" (lines 631-633) is what they call "Grid Basket TP",
-        # and the "Locking Logic" (lines 636+) is "Lock".
-        # If they want to "Delete Grid Basket TP", they might want to rely ONLY on the Lock mechanism?
-        # But if Lock Trigger is not set, they would never close.
-        
-        # Let's add a flag or logic: If Lock Trigger is active, maybe we ignore the simple TP?
-        # Or maybe they just want the log message changed?
-        
-        # "删除Grid Basket TP" -> Delete the simple target check.
-        # "保留...Lock" -> Keep the lock check.
-        
-        # Let's comment out the simple target check if it seems redundant or if that's what's requested.
-        # But wait, if I remove it, and Lock Trigger is None, it never closes.
-        
-        # Let's assume the user wants to prioritize the Lock/Trailing mechanism.
-        # I will Comment out the Simple TP Check to allow profits to run until Lock is triggered.
-        # BUT I must ensure `lock_profit_trigger` is set or default to `target_tp`.
-        
-        # If I comment out the simple TP, `target_tp` becomes the `effective_trigger` for locking?
-        # Let's merge them.
-        
-        # Current Logic:
-        # 1. Simple TP: Hit $50 -> Close immediately.
-        # 2. Lock: Hit $35 (Trigger) -> Set Lock at $25. Price moves to $50 -> Lock at $40. Price drops to $40 -> Close.
-        
-        # If user says "Delete Grid Basket TP", they probably hate #1 (Immediate Close) and want #2 (Trailing).
-        # So I will disable #1.
-        # AND I will ensure `effective_trigger` uses `target_tp` if `lock_profit_trigger` is missing.
-        
-        # Modified Logic:
-        # Remove the `if total_profit >= target_tp: return True` block.
-        # Use `target_tp` as the default trigger for locking if explicit trigger is missing.
-        
-        # --- 1. Regular Basket TP (Immediate Close) - DISABLED per User Request ---
-        # if total_profit >= target_tp:
-        #    logger.info(f"Grid Basket TP ({'LONG' if is_long else 'SHORT'}) Reached: Profit {total_profit:.2f} >= Target {target_tp}")
-        #    return True
+        if total_profit >= target_tp:
+            logger.info(f"Grid Basket TP ({'LONG' if is_long else 'SHORT'}) Reached: Profit {total_profit:.2f} >= Target {target_tp}")
+            return True
             
         # --- 2. Profit Locking Logic (Trailing Stop for Basket) ---
-        effective_trigger = target_tp # Use Target TP as the trigger for locking now
+        effective_trigger = 9999.0 # Default inactive
         
         if self.lock_profit_trigger is not None and self.lock_profit_trigger > 0:
              effective_trigger = self.lock_profit_trigger

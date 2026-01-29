@@ -1057,26 +1057,12 @@ class SymbolTrader:
             if llm_action == 'grid_start_long': direction = 'bullish'
             elif llm_action == 'grid_start_short': direction = 'bearish'
             else:
-                # [MODIFIED] Logic to check sentiment properly
-                direction = 'bullish' # Default
-                
-                # Check Sentiment Analysis
-                if self.latest_strategy and 'market_analysis' in self.latest_strategy:
-                    ma = self.latest_strategy['market_analysis']
-                    if 'sentiment_analysis' in ma:
-                         sa = ma['sentiment_analysis']
-                         sentiment = sa.get('sentiment', 'neutral').lower()
-                         if sentiment == 'bearish':
-                             direction = 'bearish'
-                         elif sentiment == 'bullish':
-                             direction = 'bullish'
-                
-                # Fallback to market structure trend if sentiment is neutral
-                if self.latest_strategy and 'market_analysis' in self.latest_strategy:
-                     ms = self.latest_strategy['market_analysis'].get('market_structure', {})
-                     trend = ms.get('trend', '').lower()
-                     if 'bear' in trend or 'down' in trend:
-                         direction = 'bearish'
+                # Legacy grid_start inference
+                if self.latest_strategy:
+                    market_state = str(self.latest_strategy.get('market_state', '')).lower()
+                    pred = str(self.latest_strategy.get('short_term_prediction', '')).lower()
+                    if 'down' in market_state or 'bear' in pred or 'sell' in str(self.latest_strategy.get('action', '')).lower():
+                        direction = 'bearish'
                         
         elif llm_action in ['buy', 'add_buy', 'limit_buy', 'buy_limit']:
              # Convert Buy -> Grid Start Long
@@ -1121,15 +1107,8 @@ class SymbolTrader:
                 
                 # Basket TP
                 basket_tp = grid_config.get('basket_tp_usd')
-                basket_tp_long = grid_config.get('basket_tp_long')
-                basket_tp_short = grid_config.get('basket_tp_short')
-                
-                if basket_tp or basket_tp_long or basket_tp_short:
-                    self.grid_strategy.update_dynamic_params(
-                        basket_tp=basket_tp,
-                        basket_tp_long=basket_tp_long,
-                        basket_tp_short=basket_tp_short
-                    )
+                if basket_tp:
+                    self.grid_strategy.update_dynamic_params(basket_tp=basket_tp)
             
             # 4. 获取 ATR (用于网格间距)
             rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
@@ -1161,76 +1140,24 @@ class SymbolTrader:
             point = symbol_info.point if symbol_info else 0.01
             
             # 计算首单挂单位置 (Offset based on ATR or Fixed Points)
-            # 优先使用 LLM 建议的精确入场价
-            suggested_price = None
-            
-            # 1. Try entry_params (from execute_trade args)
-            if entry_params:
-                suggested_price = entry_params.get('price') or entry_params.get('entry_price')
-            
-            # 2. Try latest_strategy (from LLM response)
-            if suggested_price is None and self.latest_strategy:
-                # Check inside entry_conditions
-                ec = self.latest_strategy.get('entry_conditions', {})
-                if isinstance(ec, dict):
-                    suggested_price = ec.get('price') or ec.get('entry_price')
-                
-                # Check top level
-                if suggested_price is None:
-                    suggested_price = self.latest_strategy.get('entry_price')
-            
-            # 3. Fallback logic (ATR Offset)
-            # [User Requirement] Use Market Order if AI is confident or price is valid.
-            # "这边首单还是直接根据大模型分析如果值得买入就开市场价买入"
-            
-            # Default to Market Order for Initial Entry
-            use_market_order = True 
+            # 使用 ATR 的 10% 作为微小回撤等待，或者直接挂在 Grid Step 的第一个位置？
+            # 用户只说 "不要立刻开仓"， implying wait for better price.
+            # Let's use a small offset: 0.1 * ATR or 50 points
+            initial_offset = atr * 0.1 if atr > 0 else 50 * point
             
             if direction == 'bullish':
-                entry_type = "buy" # Market Buy
-                
-                if suggested_price and float(suggested_price) > 0:
-                     entry_price = float(suggested_price)
-                     # If suggested price is significantly lower than current Ask, use Limit
-                     # "如果值得买入" -> Usually means current price is good.
-                     # If LLM gives a specific Limit Price (much lower), we respect it as Limit.
-                     if entry_price < (tick.ask - 50 * point):
-                         logger.info(f"LLM suggested Limit Price {entry_price} is lower than market {tick.ask}, using LIMIT BUY.")
-                         entry_type = "limit_buy"
-                     else:
-                         # Treat as Market Buy (Entry Price ~ Market Price)
-                         entry_price = tick.ask 
-                         logger.info(f"LLM suggested price {entry_price} is close to market, using MARKET BUY.")
-                else:
-                     # No specific price, execute at Market
-                     entry_price = tick.ask
-                     logger.info("No specific entry price, executing MARKET BUY.")
-                     
+                entry_type = "limit_buy" # Convert to pending
+                # 挂单价格 = 当前Ask - Offset (等待回调接多)
+                entry_price = tick.ask - initial_offset
             else:
-                entry_type = "sell" # Market Sell
-                
-                if suggested_price and float(suggested_price) > 0:
-                     entry_price = float(suggested_price)
-                     # If suggested price is significantly higher than current Bid, use Limit
-                     if entry_price > (tick.bid + 50 * point):
-                         logger.info(f"LLM suggested Limit Price {entry_price} is higher than market {tick.bid}, using LIMIT SELL.")
-                         entry_type = "limit_sell"
-                     else:
-                         # Treat as Market Sell
-                         entry_price = tick.bid
-                         logger.info(f"LLM suggested price {entry_price} is close to market, using MARKET SELL.")
-                else:
-                     # No specific price, execute at Market
-                     entry_price = tick.bid
-                     logger.info("No specific entry price, executing MARKET SELL.")
+                entry_type = "limit_sell"
+                # 挂单价格 = 当前Bid + Offset (等待反弹接空)
+                entry_price = tick.bid + initial_offset
                 
             entry_price = self._normalize_price(entry_price)
             
-            # [User Request Fix] Ensure SL/TP are 0.0 to prevent immediate SL/TP triggering
-            # Even for Market Orders, we rely on Strategy Close.
-            
-            logger.info(f"执行网格首单: {entry_type.upper()} {initial_lot} Lots @ {entry_price:.2f}")
-            self._send_order(entry_type, entry_price, sl=0.0, tp=0.0, comment="AI-Grid-Initial")
+            logger.info(f"执行网格首单(挂单): {entry_type.upper()} {initial_lot} Lots @ {entry_price:.2f} (Offset: {initial_offset:.2f})")
+            self._send_order(entry_type, entry_price, sl=0.0, tp=0.0, comment="AI-Grid-Initial-Limit")
 
             # 6. 生成后续网格计划
             # 注意: 首单现在是 Limit 单，后续网格应该基于这个 Limit 价格继续向下/向上铺设
@@ -1241,79 +1168,7 @@ class SymbolTrader:
             dynamic_step = grid_config.get('grid_step_pips')
             grid_level_tps = self.latest_strategy.get('position_management', {}).get('grid_level_tp_pips')
             
-            # [NEW] Pre-calculate Optimal Lot Sequence based on AI Config
-            # "开仓数量也是根据大模型和策略集成分析后配置最优的每个网格仓位"
-            # We construct the lot sequence here to ensure total control.
-            
-            # Get parameters (ensure defaults)
-            gc_init_lot = float(grid_config.get('initial_lot', self.lot_size))
-            gc_mult = float(grid_config.get('martingale_multiplier', 1.5))
-            gc_mode = grid_config.get('martingale_mode', 'multiply') # multiply, add, fibonacci
-            gc_max_levels = int(grid_config.get('max_grid_levels', 5))
-            
-            # If lot_type is in grid_config, respect it
-            if 'lot_type' in grid_config:
-                if grid_config['lot_type'].upper() == 'FIBONACCI':
-                    gc_mode = 'fibonacci'
-            
-            logger.info(f"Generating Optimal Lot Sequence: Init={gc_init_lot}, Mult={gc_mult}, Mode={gc_mode}")
-            
-            lot_sequence = []
-            current_lot = gc_init_lot
-            
-            # Helper for Fib
-            def fib(n):
-                if n <= 1: return 1
-                a, b = 1, 1
-                for _ in range(2, n + 1):
-                    a, b = b, a + b
-                return b
-
-            for lvl in range(gc_max_levels):
-                # Calculate lot for this level (0-indexed for sequence)
-                # Note: Level 0 in sequence corresponds to the 1st grid order AFTER initial entry?
-                # Usually grid plan generates orders starting from level 1 distance.
-                # So sequence[0] is for the first pending order.
-                
-                # Logic alignment with grid_strategy.calculate_next_lot:
-                # calculate_next_lot(base_count + i) where base_count is existing positions.
-                # Here we are generating a FRESH plan (base_count usually 1 if initial entry is placed).
-                # Let's assume sequence[0] -> Level 1 (First Add), sequence[1] -> Level 2...
-                
-                # Level index for calculation (1-based relative to initial)
-                calc_index = lvl + 1 
-                
-                next_lot = 0.01
-                if gc_mode == 'fibonacci':
-                     # Fib(1)=1, Fib(2)=1, Fib(3)=2...
-                     # Lot = Base * Fib(calc_index)
-                     # But if Base is 0.02, Fib(1)*0.02 = 0.02.
-                     f_val = fib(calc_index)
-                     next_lot = gc_init_lot * f_val
-                elif gc_mode == 'add':
-                     # Arithmetic: Base * (1 + Index) ? or Base + Step?
-                     # Standard arithmetic often means linear increase
-                     next_lot = gc_init_lot * (1 + calc_index * (gc_mult - 1)) # Approx
-                else:
-                     # Geometric (Default)
-                     # Base * (Mult ^ Index)
-                     next_lot = gc_init_lot * (gc_mult ** calc_index)
-                
-                # Round to 2 decimals
-                next_lot = float(f"{next_lot:.2f}")
-                lot_sequence.append(next_lot)
-            
-            logger.info(f"Optimal Lot Sequence: {lot_sequence}")
-
-            grid_orders = self.grid_strategy.generate_grid_plan(
-                current_price, 
-                direction, 
-                atr, 
-                point=point, 
-                dynamic_step_pips=dynamic_step, 
-                grid_level_tps=grid_level_tps,
-                override_lot_sequence=lot_sequence
-            )
+            grid_orders = self.grid_strategy.generate_grid_plan(current_price, direction, atr, point=point, dynamic_step_pips=dynamic_step, grid_level_tps=grid_level_tps)
             
             # 7. 执行挂单
             if grid_orders:
@@ -1369,9 +1224,7 @@ class SymbolTrader:
                     except Exception as e:
                         logger.warning(f"Margin calc warning: {e}")
                         # Fallback approx
-                        # Ensure o_vol is defined in exception scope by defaulting above, or here
-                        safe_vol = order.get('volume', self.lot_size)
-                        total_margin_required += (safe_vol * 100000 / 100) * 0.01 # Rough guess if fails
+                        total_margin_required += (o_vol * 100000 / 100) * 0.01 # Rough guess if fails
                 
                 # Check against Free Margin (with buffer)
                 if total_margin_required > (account_info.margin_free * 0.8):
@@ -3059,19 +2912,9 @@ class SymbolTrader:
             current_atr = max(tr1, max(tr2, tr3))
             
             # Check Grid TP / Lock
-            should_close_long, should_close_short = self.grid_strategy.check_basket_tp(positions, current_atr=current_atr)
-            
-            if should_close_long:
-                logger.info("Grid Strategy triggered Basket TP/Lock (LONG)! Closing BUY positions...")
-                long_positions = [p for p in positions if p.magic == self.magic_number and p.type == mt5.POSITION_TYPE_BUY]
-                self.close_all_positions(long_positions, reason="Grid Basket TP/Lock (Long)")
-                
-            if should_close_short:
-                logger.info("Grid Strategy triggered Basket TP/Lock (SHORT)! Closing SELL positions...")
-                short_positions = [p for p in positions if p.magic == self.magic_number and p.type == mt5.POSITION_TYPE_SELL]
-                self.close_all_positions(short_positions, reason="Grid Basket TP/Lock (Short)")
-            
-            if should_close_long or should_close_short:
+            if self.grid_strategy.check_basket_tp(positions, current_atr=current_atr):
+                logger.info("Grid Strategy triggered Basket TP/Lock! Closing all positions...")
+                self.close_all_positions(positions, reason="Grid Basket TP/Lock")
                 return
 
             # Single iteration logic (replacing while True)
@@ -3432,8 +3275,7 @@ class SymbolTrader:
                             # 尝试从远程获取 (Remote Storage is initialized in DatabaseManager)
                             if self.db_manager.remote_storage.enabled:
                                 logger.info("Fetching trade history from Remote PostgreSQL for Self-Learning...")
-                                # [User Request] Fetch ALL trades, not just 100
-                                remote_trades = self.db_manager.remote_storage.get_trades(limit=10000) # Increased to effective 'all'
+                                remote_trades = self.db_manager.remote_storage.get_trades(limit=100)
                                 if remote_trades:
                                     trade_stats = remote_trades
                                     logger.info(f"Successfully loaded {len(trade_stats)} trades from Remote DB.")
@@ -3442,11 +3284,11 @@ class SymbolTrader:
 
                         if not trade_stats:
                             # Fallback to local Master DB
-                            trade_stats = self.master_db_manager.get_trade_performance_stats(limit=10000)
+                            trade_stats = self.master_db_manager.get_trade_performance_stats(limit=100)
                         
                         if not trade_stats:
                              # Fallback to local Symbol DB
-                             trade_stats = self.db_manager.get_trade_performance_stats(symbol=self.symbol, limit=10000)
+                             trade_stats = self.db_manager.get_trade_performance_stats(symbol=self.symbol, limit=50)
                         
                         # 获取当前持仓状态
                         positions = mt5.positions_get(symbol=self.symbol)
@@ -3533,51 +3375,28 @@ class SymbolTrader:
                             trailing_config = {} # Disable trailing config as well
                             # trailing_config = pos_mgmt.get('trailing_stop_config')
                             
-                            # [RESTORED] Smart Basket TP Calculation (Independent Long/Short)
+                            # [RESTORED] Smart Basket TP Calculation
                             # Get ATR
                             atr_current = float(latest_features.get('atr', 0))
                             # Get Regime
                             regime_current = adv_result['regime']['regime'] if adv_result and 'regime' in adv_result else 'ranging'
                             
-                            # Filter positions
-                            long_positions = [p for p in current_positions_list if p['type'] == mt5.POSITION_TYPE_BUY]
-                            short_positions = [p for p in current_positions_list if p['type'] == mt5.POSITION_TYPE_SELL]
-                            
-                            # Parse Raw TP
-                            raw_tp_long = raw_basket_tp
-                            raw_tp_short = raw_basket_tp
-                            
-                            if isinstance(raw_basket_tp, dict):
-                                raw_tp_long = raw_basket_tp.get('long', raw_basket_tp.get('buy', 10.0))
-                                raw_tp_short = raw_basket_tp.get('short', raw_basket_tp.get('sell', 10.0))
-                            
-                            # Calculate Smart TP for Long
-                            smart_tp_long = self.calculate_smart_basket_tp(
-                                raw_tp_long,
+                            smart_basket_tp = self.calculate_smart_basket_tp(
+                                raw_basket_tp,
                                 atr_current,
                                 regime_current,
                                 smc_result,
-                                long_positions
+                                current_positions_list
                             )
                             
-                            # Calculate Smart TP for Short
-                            smart_tp_short = self.calculate_smart_basket_tp(
-                                raw_tp_short,
-                                atr_current,
-                                regime_current,
-                                smc_result,
-                                short_positions
-                            )
-                            
-                            if smart_tp_long or smart_tp_short or lock_trigger or trailing_config:
+                            if smart_basket_tp or lock_trigger or trailing_config:
                                 try:
                                     self.grid_strategy.update_dynamic_params(
-                                        basket_tp_long=smart_tp_long,
-                                        basket_tp_short=smart_tp_short,
+                                        basket_tp=smart_basket_tp, 
                                         lock_trigger=lock_trigger,
                                         trailing_config=trailing_config
                                     )
-                                    logger.info(f"Applied AI Dynamic Params: LongTP={smart_tp_long:.2f}, ShortTP={smart_tp_short:.2f} (LLM Base: {raw_basket_tp})")
+                                    logger.info(f"Applied AI Dynamic Params: BasketTP={smart_basket_tp:.2f} (LLM:{raw_basket_tp}), LockTrigger={lock_trigger}, Trailing={trailing_config}")
                                 except Exception as e:
                                     logger.error(f"Failed to update dynamic params: {e}")
 

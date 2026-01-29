@@ -5,33 +5,27 @@ from datetime import datetime, timedelta
 import json
 import os
 import sys
-try:
-    import yfinance as yf
-except ImportError:
-    yf = None
-    print("Warning: yfinance module not found. Real-time data will be unavailable.", file=sys.stderr)
-
+import yfinance as yf
 import plotly.graph_objects as go
 
 # Add project root to sys.path to ensure correct imports
 # dashboard.py is at src/trading_bot/analysis/dashboard.py
-# We want to add the project root (MT5/) and src/ to sys.path
+# We want to add the project root (MT5/) to sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
-src_path = os.path.join(project_root, 'src')
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_dir))))
 
 if project_root not in sys.path:
     sys.path.append(project_root)
-if src_path not in sys.path:
-    sys.path.insert(0, src_path)
 
-# Import using package paths (now that src is in path)
+# Import using full package paths
 try:
+    from src.trading_bot.data.database_manager import DatabaseManager
+    from src.trading_bot.analysis.visualization import TradingVisualizer
+except ImportError:
+    # Fallback for relative run
+    sys.path.append(os.path.join(project_root, 'src'))
     from trading_bot.data.database_manager import DatabaseManager
     from trading_bot.analysis.visualization import TradingVisualizer
-except ImportError as e:
-    st.error(f"Failed to import modules: {e}")
-    st.stop()
 
 # Page Config
 st.set_page_config(
@@ -162,8 +156,6 @@ SYMBOL_MAP = {
 @st.cache_data(ttl=60) # Cache for 1 min
 def fetch_online_price(symbol, period="1d", interval="15m"):
     """Fetch real-time data from Yahoo Finance"""
-    if yf is None:
-        return None
     try:
         ticker = SYMBOL_MAP.get(symbol.upper(), symbol)
         # Handle XAUUSD specifically if not found
@@ -200,18 +192,8 @@ def fetch_online_price(symbol, period="1d", interval="15m"):
 def get_db_manager(symbol):
     """Dynamically get the DatabaseManager for a specific symbol"""
     db_filename = f"trading_data_{symbol}.db"
-    # DBs are in src/trading_bot/
-    # dashboard.py is in src/trading_bot/analysis/
-    # So we go up one level from __file__
-    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), db_filename)
-    
-    # Handle the default case where symbol might not be in filename if using single DB
-    if not os.path.exists(db_path):
-         # Try default name
-         default_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "trading_data.db")
-         if os.path.exists(default_path):
-             return DatabaseManager(db_path=default_path)
-             
+    # Assuming the DBs are in the 'gold' directory relative to this script
+    db_path = os.path.join(os.path.dirname(__file__), 'gold', db_filename)
     return DatabaseManager(db_path=db_path)
 
 def update_dashboard():
@@ -306,7 +288,7 @@ def render_symbol_dashboard(symbol):
                     increasing_line_color='#00ff9d', decreasing_line_color='#ff0055'
                 )])
                 fig.update_layout(height=500, template="plotly_white", title=f"{symbol} Live Trend (Yahoo Finance)", font={'color': "black"})
-                st.plotly_chart(fig, use_container_width=True, key=f"live_trend_{symbol}")
+                st.plotly_chart(fig, use_container_width=True)
             else:
                 st.warning("Online data unavailable. Please check your internet connection.")
                 
@@ -336,7 +318,7 @@ def render_symbol_dashboard(symbol):
                     mode='lines', name='Equity', line=dict(color='#00ff9d'), fill='tonexty'
                 ))
                 fig_assets.update_layout(height=350, template='plotly_white', title="Account Growth", hovermode="x unified", font={'color': "black"})
-                st.plotly_chart(fig_assets, use_container_width=True, key=f"assets_{symbol}")
+                st.plotly_chart(fig_assets, use_container_width=True)
             else:
                 st.info("No account metrics history.")
                 
@@ -363,8 +345,7 @@ def render_symbol_dashboard(symbol):
                     
                     # Pie Chart
                     fig_pie = visualizer.create_pnl_distribution(trades_df)
-                    fig_pie.update_layout(height=200)
-                    st.plotly_chart(fig_pie, use_container_width=True, key=f"pnl_pie_{symbol}")
+                    st.plotly_chart(fig_pie, use_container_width=True, height=200)
                 else:
                     st.info("No closed trades yet.")
             else:
@@ -388,8 +369,7 @@ def render_symbol_dashboard(symbol):
                 # Signal Gauge
                 with c3:
                     fig_gauge = visualizer.create_gauge_chart(last_signal['strength'], title="Confidence")
-                    fig_gauge.update_layout(height=150)
-                    st.plotly_chart(fig_gauge, use_container_width=True, key=f"gauge_{symbol}")
+                    st.plotly_chart(fig_gauge, use_container_width=True, height=150)
                 
                 # Technical Details
                 with st.expander("Detailed Analysis"):
@@ -406,8 +386,7 @@ def render_symbol_dashboard(symbol):
             st.dataframe(
                 trades_df[['ticket', 'time', 'action', 'price', 'volume', 'profit', 'result', 'close_time']].sort_values('time', ascending=False),
                 use_container_width=True,
-                hide_index=True,
-                key=f"history_{symbol}"
+                hide_index=True
             )
         else:
             st.info("No trade history.")
