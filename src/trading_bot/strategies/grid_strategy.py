@@ -718,9 +718,6 @@ class KalmanGridStrategy:
              effective_trigger = self.lock_profit_trigger
              
         if max_profit >= effective_trigger:
-            # ... (Rest of locking logic)
-             
-        if max_profit >= effective_trigger:
             # We are in locking mode
             lock_ratio = 0.7 # Default 70%
             dynamic_sl_profit_dist = 0.0
