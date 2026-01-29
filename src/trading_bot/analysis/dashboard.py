@@ -5,7 +5,12 @@ from datetime import datetime, timedelta
 import json
 import os
 import sys
-import yfinance as yf
+try:
+    import yfinance as yf
+except ImportError:
+    yf = None
+    print("Warning: yfinance module not found. Real-time data will be unavailable.", file=sys.stderr)
+
 import plotly.graph_objects as go
 
 # Add project root to sys.path to ensure correct imports
