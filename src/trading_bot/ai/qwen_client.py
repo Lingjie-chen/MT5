@@ -420,13 +420,16 @@ class QwenClient:
               - **必须参考** `historical_seeds` 中的最佳参数组合。
               - 如果历史数据显示某组参数 (如特定的 SMC ATR 阈值或 Grid Step) 长期表现优异，应在策略制定中给予更高权重。
               - 将历史最优参数作为决策的 "Anchor" (锚点)，在此基础上进行微调，而不是凭空猜测。
-         - **计算公式参考**:
-           - `Base_Target` = (ATR * Position_Size * Contract_Size)
-           - `Sentiment_Multiplier`: 0.5 (Weak) to 3.0 (Strong Trend)
-           - `Structure_Multiplier`: 0.8 (Range) to 2.0 (Trend Surfing)
-           - `Dynamic_Basket_TP` = `Base_Target` * `Sentiment_Multiplier` * `Structure_Multiplier` (并用 Avg_MFE 做校验)
-         - **拒绝固定值**: 严禁使用固定的数值 (如 50.0)！必须是经过上述逻辑计算后的结果。
-         - **更新指令**: 在 `position_management` -> `dynamic_basket_tp` 中返回计算后的数值。
+        - **计算公式参考**:
+          - `Base_Target` = (ATR * Position_Size * Contract_Size)
+          - `Sentiment_Multiplier`: 0.5 (Weak) to 3.0 (Strong Trend)
+          - `Structure_Multiplier`: 0.8 (Range) to 2.0 (Trend Surfing)
+          - `Dynamic_Basket_TP` = `Base_Target` * `Sentiment_Multiplier` * `Structure_Multiplier` (并用 Avg_MFE 做校验)
+          - **Hybrid Weighting**:
+            - 趋势行情: `llm_weight=0.9`, `atr_weight=0.1`，允许 `ATR_Ratio_Cap` 扩展至 `<= 5.0` 若大模型建议更远目标
+            - 震荡行情: `llm_weight=0.7`, `atr_weight=0.3`，允许 `Soft_Floor=1.0 * ATR_Value` 以支持快进快出
+        - **拒绝固定值**: 严禁使用固定的数值 (如 50.0)！必须是经过上述逻辑计算后的结果。
+        - **更新指令**: 在 `position_management` -> `dynamic_basket_tp` 中返回计算后的数值。
        - **Lock Profit Trigger (Profit Locking)**:
          - **User Instruction**: **已被禁用**。请不要设置此值，或将其设置为 null / 0。我们不再使用利润锁定机制，完全依赖 Basket TP。
          - **更新指令**: 在 `position_management` -> `lock_profit_trigger` 中返回 null 或 0。
@@ -718,11 +721,13 @@ class QwenClient:
         - "basket_tp_usd": float (整体止盈金额 USD, e.g., 50.0)
         - "basket_sl_usd": float (整体止损金额 USD, e.g., -200.0)
         - "max_drawdown_usd": float (网格交易最大允许回撤 USD, e.g., 500.0. 必须基于账户资金和风险偏好由大模型分析得出)
+        - "dynamic_tp_policy": { "regime": "trending|ranging", "llm_weight": float, "atr_weight": float, "atr_ratio_cap": float }
     - **strategy_rationale**: str (中文, 详细解释 SMC 结构、为什么在此处启动网格、ATR 分析等)
     - **market_structure**: dict (SMC 分析摘要)
         - "trend_h4": str
         - "trend_m15": str
         - "key_level": str
+    - **basket_tp_rationale**: str (中文，解释 Basket TP 的推导逻辑：权重、ATR比例、情绪与结构依据)
     - **telegram_report**: str (Markdown 格式的简报，用于发送通知。包含 emoji，简洁明了)
         """
         
