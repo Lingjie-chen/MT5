@@ -3337,6 +3337,14 @@ class SymbolTrader:
                         self.latest_strategy = strategy
                         self.last_llm_time = time.time()
                         
+                        # [NEW] Extract Sentiment from Strategy for Consistency
+                        if 'market_analysis' in strategy:
+                            ma = strategy['market_analysis']
+                            if 'sentiment_analysis' in ma:
+                                sa = ma['sentiment_analysis']
+                                qwen_sent_label = sa.get('sentiment', 'neutral')
+                                qwen_sent_score = sa.get('sentiment_score', 0)
+                        
                         # --- [NEW] Update Grid Strategy Dynamic Params (Basket TP & Lock Trigger) ---
                         # Ensure AI Dynamic TP is applied
                         pos_mgmt = strategy.get('position_management', {})
@@ -3593,7 +3601,7 @@ class SymbolTrader:
                                 f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
                                 f"{telegram_report}\n\n"
                                 f"📊 *Live Status*\n"
-                                f"• Action: *{final_signal.upper()}*\n"
+                                f"• Action: *{strategy.get('action', final_signal).upper()}*\n"
                                 f"• Lots: `{strategy.get('position_size', 0.01)}`\n"
                                 f"• Strength: {strength:.0f}%\n"
                                 f"• Sentiment: {qwen_sent_label.upper()} ({qwen_sent_score:.2f})\n\n"
