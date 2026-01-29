@@ -195,7 +195,7 @@ class TradingVisualizer:
             margin=dict(l=20, r=20, t=30, b=20),
             height=250,
             paper_bgcolor='rgba(0,0,0,0)',
-            font={'color': "white"}
+            font={'color': "black"} # Light mode font
         )
         return fig
 
@@ -233,11 +233,12 @@ class TradingVisualizer:
             title='Portfolio Equity Curve',
             xaxis_title='Time',
             yaxis_title='Net Profit',
-            template='plotly_dark',
+            template='plotly_white', # Changed to white
             height=300,
             margin=dict(l=20, r=20, t=40, b=20),
             paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)'
+            plot_bgcolor='rgba(0,0,0,0)',
+            font={'color': "black"} # Explicit font color
         )
         return fig
 
@@ -264,10 +265,11 @@ class TradingVisualizer:
         
         fig.update_layout(
             title='Win/Loss Ratio',
-            template='plotly_dark',
+            template='plotly_white', # Changed to white
             height=250,
             margin=dict(l=20, r=20, t=40, b=20),
             paper_bgcolor='rgba(0,0,0,0)',
-            showlegend=True
+            showlegend=True,
+            font={'color': "black"} # Explicit font color
         )
         return fig

@@ -287,7 +287,7 @@ def render_symbol_dashboard(symbol):
                     close=c,
                     increasing_line_color='#00ff9d', decreasing_line_color='#ff0055'
                 )])
-                fig.update_layout(height=500, template="plotly_dark", title=f"{symbol} Live Trend (Yahoo Finance)")
+                fig.update_layout(height=500, template="plotly_white", title=f"{symbol} Live Trend (Yahoo Finance)", font={'color': "black"})
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.warning("Online data unavailable. Please check your internet connection.")
