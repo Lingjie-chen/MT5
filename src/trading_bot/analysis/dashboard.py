@@ -23,7 +23,7 @@ src_path = os.path.join(project_root, 'src')
 if project_root not in sys.path:
     sys.path.append(project_root)
 if src_path not in sys.path:
-    sys.path.append(src_path)
+    sys.path.insert(0, src_path)
 
 # Import using package paths (now that src is in path)
 try:
