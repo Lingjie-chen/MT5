@@ -1219,7 +1219,79 @@ class SymbolTrader:
             dynamic_step = grid_config.get('grid_step_pips')
             grid_level_tps = self.latest_strategy.get('position_management', {}).get('grid_level_tp_pips')
             
-            grid_orders = self.grid_strategy.generate_grid_plan(current_price, direction, atr, point=point, dynamic_step_pips=dynamic_step, grid_level_tps=grid_level_tps)
+            # [NEW] Pre-calculate Optimal Lot Sequence based on AI Config
+            # "开仓数量也是根据大模型和策略集成分析后配置最优的每个网格仓位"
+            # We construct the lot sequence here to ensure total control.
+            
+            # Get parameters (ensure defaults)
+            gc_init_lot = float(grid_config.get('initial_lot', self.lot_size))
+            gc_mult = float(grid_config.get('martingale_multiplier', 1.5))
+            gc_mode = grid_config.get('martingale_mode', 'multiply') # multiply, add, fibonacci
+            gc_max_levels = int(grid_config.get('max_grid_levels', 10))
+            
+            # If lot_type is in grid_config, respect it
+            if 'lot_type' in grid_config:
+                if grid_config['lot_type'].upper() == 'FIBONACCI':
+                    gc_mode = 'fibonacci'
+            
+            logger.info(f"Generating Optimal Lot Sequence: Init={gc_init_lot}, Mult={gc_mult}, Mode={gc_mode}")
+            
+            lot_sequence = []
+            current_lot = gc_init_lot
+            
+            # Helper for Fib
+            def fib(n):
+                if n <= 1: return 1
+                a, b = 1, 1
+                for _ in range(2, n + 1):
+                    a, b = b, a + b
+                return b
+
+            for lvl in range(gc_max_levels):
+                # Calculate lot for this level (0-indexed for sequence)
+                # Note: Level 0 in sequence corresponds to the 1st grid order AFTER initial entry?
+                # Usually grid plan generates orders starting from level 1 distance.
+                # So sequence[0] is for the first pending order.
+                
+                # Logic alignment with grid_strategy.calculate_next_lot:
+                # calculate_next_lot(base_count + i) where base_count is existing positions.
+                # Here we are generating a FRESH plan (base_count usually 1 if initial entry is placed).
+                # Let's assume sequence[0] -> Level 1 (First Add), sequence[1] -> Level 2...
+                
+                # Level index for calculation (1-based relative to initial)
+                calc_index = lvl + 1 
+                
+                next_lot = 0.01
+                if gc_mode == 'fibonacci':
+                     # Fib(1)=1, Fib(2)=1, Fib(3)=2...
+                     # Lot = Base * Fib(calc_index)
+                     # But if Base is 0.02, Fib(1)*0.02 = 0.02.
+                     f_val = fib(calc_index)
+                     next_lot = gc_init_lot * f_val
+                elif gc_mode == 'add':
+                     # Arithmetic: Base * (1 + Index) ? or Base + Step?
+                     # Standard arithmetic often means linear increase
+                     next_lot = gc_init_lot * (1 + calc_index * (gc_mult - 1)) # Approx
+                else:
+                     # Geometric (Default)
+                     # Base * (Mult ^ Index)
+                     next_lot = gc_init_lot * (gc_mult ** calc_index)
+                
+                # Round to 2 decimals
+                next_lot = float(f"{next_lot:.2f}")
+                lot_sequence.append(next_lot)
+            
+            logger.info(f"Optimal Lot Sequence: {lot_sequence}")
+
+            grid_orders = self.grid_strategy.generate_grid_plan(
+                current_price, 
+                direction, 
+                atr, 
+                point=point, 
+                dynamic_step_pips=dynamic_step, 
+                grid_level_tps=grid_level_tps,
+                override_lot_sequence=lot_sequence
+            )
             
             # 7. 执行挂单
             if grid_orders:
