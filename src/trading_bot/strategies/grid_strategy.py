@@ -36,8 +36,16 @@ class KalmanGridStrategy:
         self.dynamic_global_tp = None # Store AI recommended TP
         self.lock_profit_trigger = None # Store AI recommended Lock Trigger
         self.trailing_stop_config = None # Store AI recommended Trailing Config
-        self.basket_lock_level = None # Fixed lock level once triggered
-        self.max_basket_profit = 0.0 # Track max profit for current basket
+        
+        # [MODIFIED] Separate State for Long and Short Baskets
+        self.basket_lock_level_long = None 
+        self.max_basket_profit_long = 0.0 
+        self.basket_lock_level_short = None
+        self.max_basket_profit_short = 0.0
+        
+        # Deprecated mixed state (kept for safety if referenced elsewhere)
+        self.basket_lock_level = None 
+        self.max_basket_profit = 0.0 
         
         # State
         self.last_long_price = 0.0
