@@ -13,11 +13,11 @@ import MetaTrader5 as mt5
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-from trading_bot.main import TradingBot
+from trading_bot.main import SymbolTrader
 
 class TestGridDirection(unittest.TestCase):
     def setUp(self):
-        self.bot = TradingBot()
+        self.bot = SymbolTrader()
         self.bot.symbol = "XAUUSD"
         self.bot.grid_strategy = MagicMock()
         self.bot.magic_number = 123456
