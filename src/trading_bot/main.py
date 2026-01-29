@@ -1180,47 +1180,57 @@ class SymbolTrader:
                     suggested_price = self.latest_strategy.get('entry_price')
             
             # 3. Fallback logic (ATR Offset)
-            # [User Requirement] Ensure not executed at market price. Increased offset.
-            initial_offset = atr * 0.25 if atr > 0 else 100 * point
+            # [User Requirement] Use Market Order if AI is confident or price is valid.
+            # "这边首单还是直接根据大模型分析如果值得买入就开市场价买入"
+            
+            # Default to Market Order for Initial Entry
+            use_market_order = True 
             
             if direction == 'bullish':
-                entry_type = "limit_buy" 
+                entry_type = "buy" # Market Buy
                 
                 if suggested_price and float(suggested_price) > 0:
                      entry_price = float(suggested_price)
-                     # Safety check: Don't buy above Ask (that would be a market order essentially)
-                     if entry_price >= tick.ask: # Relaxed check: >= instead of >
-                         logger.warning(f"LLM 建议买入价 {entry_price} >= 当前 Ask {tick.ask}，回退到 Ask - Offset")
-                         entry_price = tick.ask - initial_offset
+                     # If suggested price is significantly lower than current Ask, use Limit
+                     # "如果值得买入" -> Usually means current price is good.
+                     # If LLM gives a specific Limit Price (much lower), we respect it as Limit.
+                     if entry_price < (tick.ask - 50 * point):
+                         logger.info(f"LLM suggested Limit Price {entry_price} is lower than market {tick.ask}, using LIMIT BUY.")
+                         entry_type = "limit_buy"
                      else:
-                         logger.info(f"Using LLM Suggested Entry Price: {entry_price}")
+                         # Treat as Market Buy (Entry Price ~ Market Price)
+                         entry_price = tick.ask 
+                         logger.info(f"LLM suggested price {entry_price} is close to market, using MARKET BUY.")
                 else:
-                     # 挂单价格 = 当前Ask - Offset (等待回调接多)
-                     entry_price = tick.ask - initial_offset
+                     # No specific price, execute at Market
+                     entry_price = tick.ask
+                     logger.info("No specific entry price, executing MARKET BUY.")
+                     
             else:
-                entry_type = "limit_sell"
+                entry_type = "sell" # Market Sell
                 
                 if suggested_price and float(suggested_price) > 0:
                      entry_price = float(suggested_price)
-                     # Safety check: Don't sell below Bid
-                     if entry_price <= tick.bid: # Relaxed check: <= instead of <
-                         logger.warning(f"LLM 建议卖出价 {entry_price} <= 当前 Bid {tick.bid}，回退到 Bid + Offset")
-                         entry_price = tick.bid + initial_offset
+                     # If suggested price is significantly higher than current Bid, use Limit
+                     if entry_price > (tick.bid + 50 * point):
+                         logger.info(f"LLM suggested Limit Price {entry_price} is higher than market {tick.bid}, using LIMIT SELL.")
+                         entry_type = "limit_sell"
                      else:
-                         logger.info(f"Using LLM Suggested Entry Price: {entry_price}")
+                         # Treat as Market Sell
+                         entry_price = tick.bid
+                         logger.info(f"LLM suggested price {entry_price} is close to market, using MARKET SELL.")
                 else:
-                     # 挂单价格 = 当前Bid + Offset (等待反弹接空)
-                     entry_price = tick.bid + initial_offset
+                     # No specific price, execute at Market
+                     entry_price = tick.bid
+                     logger.info("No specific entry price, executing MARKET SELL.")
                 
             entry_price = self._normalize_price(entry_price)
             
             # [User Request Fix] Ensure SL/TP are 0.0 to prevent immediate SL/TP triggering
-            # "为啥网格交易的首单还是被打止损，并且系统输出是 INFO - Grid Strategy: Basket TP Reached"
-            # -> This means SL/TP was set on the order itself, or the strategy logic closed it.
-            # Since we disabled strategy close, let's ensure order level SL/TP is 0.
+            # Even for Market Orders, we rely on Strategy Close.
             
-            logger.info(f"执行网格首单(挂单): {entry_type.upper()} {initial_lot} Lots @ {entry_price:.2f} (Offset: {initial_offset:.2f})")
-            self._send_order(entry_type, entry_price, sl=0.0, tp=0.0, comment="AI-Grid-Initial-Limit")
+            logger.info(f"执行网格首单: {entry_type.upper()} {initial_lot} Lots @ {entry_price:.2f}")
+            self._send_order(entry_type, entry_price, sl=0.0, tp=0.0, comment="AI-Grid-Initial")
 
             # 6. 生成后续网格计划
             # 注意: 首单现在是 Limit 单，后续网格应该基于这个 Limit 价格继续向下/向上铺设
