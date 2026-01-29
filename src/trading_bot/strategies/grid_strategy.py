@@ -33,7 +33,10 @@ class KalmanGridStrategy:
         self.bb_period = 100
         self.bb_deviation = 2.0
         
-        self.dynamic_global_tp = None # Store AI recommended TP
+        self.dynamic_global_tp = None # Deprecated, use specific ones
+        self.dynamic_tp_long = None
+        self.dynamic_tp_short = None
+        
         self.lock_profit_trigger = None # Store AI recommended Lock Trigger
         self.trailing_stop_config = None # Store AI recommended Trailing Config
         
@@ -604,8 +607,16 @@ class KalmanGridStrategy:
             
         # --- 1. Regular Basket TP ---
         target_tp = self.global_tp # Default fallback
-        if self.dynamic_global_tp is not None and self.dynamic_global_tp > 0:
-            target_tp = self.dynamic_global_tp
+        
+        # Select Dynamic TP based on direction
+        dynamic_tp = self.dynamic_tp_long if is_long else self.dynamic_tp_short
+        
+        # Fallback to legacy single dynamic var if specific not set (backward compatibility)
+        if dynamic_tp is None:
+            dynamic_tp = self.dynamic_global_tp
+            
+        if dynamic_tp is not None and dynamic_tp > 0:
+            target_tp = dynamic_tp
         else:
             target_tp = self.tp_steps.get(count, self.global_tp)
             if count > 9: target_tp = self.global_tp
