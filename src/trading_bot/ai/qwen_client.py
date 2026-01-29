@@ -698,8 +698,8 @@ class QwenClient:
        - 适用场景: 市场方向不明、处于震荡区间中间、或已有网格在运行中。
        - **注意**: 如果已有持仓，HOLD 意味着维持当前网格策略不变。
     4. **CLOSE_ALL**:
-       - 含义: 紧急平仓所有头寸 (Panic Button)。
-       - 适用场景: 发生重大基本面利空、SMC 结构完全失效 (失效位被强力击穿)、或达到总账户风控阈值。
+       - 含义: 紧急平仓所有头寸。
+       - 适用场景: **仅限盈利出场** 或 **用户强制指令**。严禁在亏损状态下使用此 Action (除非账户即将爆仓)。
 
     **自我学习与适应 (Self-Learning & Adaptation)**:
     - **数据源**: 你现在接收来自远程数据库 (Remote DB) 的实时历史交易数据 (`performance_stats`)。
@@ -727,8 +727,8 @@ class QwenClient:
         - "martingale_multiplier": float (马丁倍数, e.g., 1.5)
         - "max_grid_levels": int (最大网格层数, e.g., 5)
         - "basket_tp_usd": float (整体止盈金额 USD, e.g., 50.0)
-        - "basket_sl_usd": float (整体止损金额 USD, e.g., -200.0)
-        - "max_drawdown_usd": float (网格交易最大允许回撤 USD, e.g., 500.0. 必须基于账户资金和风险偏好由大模型分析得出)
+        - "basket_sl_usd": float (整体止损金额 USD. **必须设为 -999999.0** 以禁用止损，只允许止盈)
+        - "max_drawdown_usd": float (网格交易最大允许回撤 USD. 建议设为账户余额的 90% 或更高，防止因普通回撤而触发平仓)
         - "dynamic_tp_policy": { "regime": "trending|ranging", "llm_weight": float, "atr_weight": float, "atr_ratio_cap": float }
     - **strategy_rationale**: str (中文, 详细解释 SMC 结构、为什么在此处启动网格、ATR 分析等)
     - **market_structure**: dict (SMC 分析摘要)
