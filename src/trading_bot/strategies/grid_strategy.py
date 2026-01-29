@@ -609,7 +609,8 @@ class KalmanGridStrategy:
             target_tp = self.tp_steps.get(count, self.global_tp)
             if count > 9: target_tp = self.global_tp
             
-        if profit >= target_tp:
+        # [Safety Check] Ensure we only close in profit for TP logic
+        if profit >= target_tp and profit > 0:
             logger.info(f"[{direction_label}] Basket TP Reached: Profit {profit:.2f} >= Target {target_tp}")
             # Reset Max on close signal
             if direction_label == "LONG": 
@@ -651,7 +652,8 @@ class KalmanGridStrategy:
             if direction_label == "LONG": self.long_lock_level = current_lock
             else: self.short_lock_level = current_lock
             
-            if profit <= current_lock:
+            # [Safety Check] Ensure we only close in profit for Lock logic
+            if profit <= current_lock and profit > 0:
                 logger.info(f"[{direction_label}] Lock Triggered: Profit {profit:.2f} <= Lock {current_lock:.2f}")
                 # Reset
                 if direction_label == "LONG": 
