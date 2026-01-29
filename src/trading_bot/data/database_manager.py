@@ -355,6 +355,31 @@ class DatabaseManager:
             logger.error(f"Failed to get historical metrics: {e}")
             return None
 
+    def get_account_metrics_history(self, limit=500):
+        """Get account metrics history for plotting"""
+        try:
+            conn = self._get_connection()
+            query = "SELECT timestamp, balance, equity, total_profit FROM account_metrics ORDER BY timestamp ASC LIMIT ?"
+            # Note: We want latest N but sorted ASC for plotting. 
+            # Subquery approach: SELECT * FROM (SELECT ... DESC LIMIT N) ORDER BY ASC
+            query = """
+                SELECT timestamp, balance, equity, total_profit 
+                FROM (
+                    SELECT timestamp, balance, equity, total_profit 
+                    FROM account_metrics 
+                    ORDER BY timestamp DESC 
+                    LIMIT ?
+                ) 
+                ORDER BY timestamp ASC
+            """
+            df = pd.read_sql_query(query, conn, params=(limit,))
+            if not df.empty:
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+            return df
+        except Exception as e:
+            logger.error(f"Failed to get account metrics history: {e}")
+            return pd.DataFrame()
+
     def get_start_of_day_metrics(self):
         """Get account metrics from the start of the current day"""
         try:

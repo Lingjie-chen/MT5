@@ -233,7 +233,7 @@ def render_symbol_dashboard(symbol):
             # yfinance > 0.2 returns MultiIndex columns sometimes
             c = online_df['close']
             if isinstance(c, pd.DataFrame):
-                c = c.iloc[:, 0]
+                c = c[c.columns[0]]
             
             current_price = float(c.iloc[-1])
             prev_price = float(c.iloc[-2])
