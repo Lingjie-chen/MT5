@@ -3018,11 +3018,23 @@ class SymbolTrader:
             tr3 = abs(low[-1] - close[-2])
             current_atr = max(tr1, max(tr2, tr3))
             
-            # Check Grid TP / Lock
-            if self.grid_strategy.check_basket_tp(positions, current_atr=current_atr):
-                logger.info("Grid Strategy triggered Basket TP/Lock! Closing all positions...")
-                self.close_all_positions(positions, reason="Grid Basket TP/Lock")
-                return
+            # Check Grid TP / Lock (Separately for Long/Short)
+            should_close_long, should_close_short = self.grid_strategy.check_basket_tp(positions, current_atr=current_atr)
+            
+            if should_close_long:
+                logger.info("Grid Strategy triggered LONG Basket TP/Lock! Closing LONG positions...")
+                long_positions = [p for p in positions if p.magic == self.magic_number and p.type == mt5.ORDER_TYPE_BUY]
+                self.close_all_positions(long_positions, reason="Grid Basket TP/Lock (LONG)")
+                
+            if should_close_short:
+                logger.info("Grid Strategy triggered SHORT Basket TP/Lock! Closing SHORT positions...")
+                short_positions = [p for p in positions if p.magic == self.magic_number and p.type == mt5.ORDER_TYPE_SELL]
+                self.close_all_positions(short_positions, reason="Grid Basket TP/Lock (SHORT)")
+                
+            if should_close_long or should_close_short:
+                 # If we closed something, maybe refresh positions?
+                 # But the next loop iteration will handle updated state naturally.
+                 pass
 
             # Single iteration logic (replacing while True)
             if True:
