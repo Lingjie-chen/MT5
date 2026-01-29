@@ -3354,10 +3354,10 @@ class SymbolTrader:
                             raw_basket_tp = pos_mgmt.get('dynamic_basket_tp')
                             
                             # User Requirement: Disable trigger locked entirely
-                            lock_trigger = None 
+                            lock_trigger = 0.0 
                             # lock_trigger = pos_mgmt.get('lock_profit_trigger')
                             
-                            trailing_config = None # Disable trailing config as well
+                            trailing_config = {} # Disable trailing config as well
                             # trailing_config = pos_mgmt.get('trailing_stop_config')
                             
                             # [RESTORED] Smart Basket TP Calculation
