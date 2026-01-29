@@ -680,11 +680,18 @@ class QwenClient:
     1. **GRID_START_LONG**:
        - 含义: 启动多头网格策略 (Initial Entry + Grid Setup)。
        - 适用场景: SMC 确认看涨趋势 (BOS/CHOCH)，价格位于 H4/H1 关键支撑位 (OB/FVG)。
-       - **执行逻辑**: 系统将立即开启首单 BUY，并自动挂出后续的 LIMIT_BUY 网格单。
+       - **执行逻辑 (Entry Execution)**: 
+         - **首选市价单 (Market Order Preferred)**: 默认情况，首单将以**市价 (Market)** 立即成交，确保不错过行情。
+         - **挂单例外**: 仅当你认为当前价格过高，必须等待深度回调 (Deep Retracement) 时，才在 `entry_price` 中指定具体价格 (Limit Order)。
+       - **后续网格**: 首单成交后，系统自动计算并挂出后续的 LIMIT_BUY 网格单。
+
     2. **GRID_START_SHORT**:
        - 含义: 启动空头网格策略 (Initial Entry + Grid Setup)。
        - 适用场景: SMC 确认看跌趋势 (BOS/CHOCH)，价格位于 H4/H1 关键阻力位 (OB/FVG)。
-       - **执行逻辑**: 系统将立即开启首单 SELL，并自动挂出后续的 LIMIT_SELL 网格单。
+       - **执行逻辑 (Entry Execution)**: 
+         - **首选市价单 (Market Order Preferred)**: 默认情况，首单将以**市价 (Market)** 立即成交，确保不错过行情。
+         - **挂单例外**: 仅当你认为当前价格过低，必须等待深度反弹 (Deep Retracement) 时，才在 `entry_price` 中指定具体价格 (Limit Order)。
+       - **后续网格**: 首单成交后，系统自动计算并挂出后续的 LIMIT_SELL 网格单。
     3. **HOLD**:
        - 含义: 暂时观望，不开启新网格。
        - 适用场景: 市场方向不明、处于震荡区间中间、或已有网格在运行中。
