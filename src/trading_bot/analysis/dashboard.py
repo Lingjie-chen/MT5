@@ -317,7 +317,7 @@ def render_symbol_dashboard(symbol):
                     x=metrics_df['timestamp'], y=metrics_df['equity'],
                     mode='lines', name='Equity', line=dict(color='#00ff9d'), fill='tonexty'
                 ))
-                fig_assets.update_layout(height=350, template='plotly_dark', title="Account Growth", hovermode="x unified")
+                fig_assets.update_layout(height=350, template='plotly_white', title="Account Growth", hovermode="x unified", font={'color': "black"})
                 st.plotly_chart(fig_assets, use_container_width=True)
             else:
                 st.info("No account metrics history.")
