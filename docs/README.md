@@ -9,7 +9,7 @@
 *   **Python 3.10+**: [下载 Python](https://www.python.org/downloads/)
 *   **Git**: [下载 Git](https://git-scm.com/downloads)
 *   **PostgreSQL**: [下载 PostgreSQL](https://www.postgresql.org/download/)
-*   **MetaTrader 5 (仅限 Windows)**: 运行交易机器人所需。
+*   **MetaTrader 5 (仅限 Windows)**:（ https://www.metatrader5.com/）
 
 ## 2. 安装步骤
 
