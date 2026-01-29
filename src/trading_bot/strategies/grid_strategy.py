@@ -348,10 +348,11 @@ class KalmanGridStrategy:
             
         return float(f"{self.lot * multiplier:.2f}")
 
-    def generate_grid_plan(self, current_price, trend_direction, atr, point=0.01, dynamic_step_pips=None, grid_level_tps=None):
+    def generate_grid_plan(self, current_price, trend_direction, atr, point=0.01, dynamic_step_pips=None, grid_level_tps=None, override_lot_sequence=None):
         """
         Generate a plan for grid deployment (for limit orders)
         Uses Fibonacci Retracement Levels for placement if applicable.
+        override_lot_sequence: Optional list of lot sizes for each grid level [lot_1, lot_2, ...]
         """
         orders = []
         
