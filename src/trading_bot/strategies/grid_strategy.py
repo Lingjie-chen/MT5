@@ -666,13 +666,21 @@ class KalmanGridStrategy:
             self.dynamic_global_tp = float(basket_tp)
             logger.info(f"Updated Dynamic Basket TP: {self.dynamic_global_tp}")
             
-        if lock_trigger is not None and lock_trigger > 0:
-            self.lock_profit_trigger = float(lock_trigger)
-            logger.info(f"Updated Dynamic Lock Trigger: {self.lock_profit_trigger}")
+        if lock_trigger is not None:
+            if lock_trigger > 0:
+                self.lock_profit_trigger = float(lock_trigger)
+                logger.info(f"Updated Dynamic Lock Trigger: {self.lock_profit_trigger}")
+            else:
+                self.lock_profit_trigger = None
+                logger.info("Dynamic Lock Trigger DISABLED (User Request)")
             
-        if trailing_config is not None and isinstance(trailing_config, dict):
-            self.trailing_stop_config = trailing_config
-            logger.info(f"Updated Dynamic Trailing Config: {self.trailing_stop_config}")
+        if trailing_config is not None:
+            if isinstance(trailing_config, dict) and trailing_config:
+                self.trailing_stop_config = trailing_config
+                logger.info(f"Updated Dynamic Trailing Config: {self.trailing_stop_config}")
+            else:
+                self.trailing_stop_config = None
+                logger.info("Dynamic Trailing Config DISABLED (User Request)")
 
     def update_config(self, params):
         if not params: return
