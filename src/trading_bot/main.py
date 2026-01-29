@@ -1110,6 +1110,34 @@ class SymbolTrader:
                 if basket_tp:
                     self.grid_strategy.update_dynamic_params(basket_tp=basket_tp)
             
+            if llm_action == 'grid_start':
+                chosen = direction
+                try:
+                    ma = self.latest_strategy.get('market_analysis', {}) if self.latest_strategy else {}
+                    sent = str(ma.get('sentiment_analysis', {}).get('sentiment', '')).lower()
+                    m_struct = ma.get('market_structure', {})
+                    trend = str(m_struct.get('trend', '')).lower()
+                    tf = m_struct.get('timeframe_analysis', {}) if isinstance(m_struct, dict) else {}
+                    tf_h4 = str(tf.get('h4', '')).lower()
+                    tf_daily = str(tf.get('daily', '')).lower()
+                    ms = self.latest_strategy.get('market_structure', {}) if self.latest_strategy else {}
+                    t_h4 = str(ms.get('trend_h4', '')).lower() if isinstance(ms, dict) else ''
+                    t_m15 = str(ms.get('trend_m15', '')).lower() if isinstance(ms, dict) else ''
+                    act = str(self.latest_strategy.get('action', '')).lower() if self.latest_strategy else ''
+                    if signal == 'sell' or 'sell' in act:
+                        chosen = 'bearish'
+                    elif signal == 'buy' or 'buy' in act:
+                        chosen = 'bullish'
+                    else:
+                        if 'bear' in sent or 'bear' in trend or 'bear' in tf_h4 or 'bear' in tf_daily or 'bear' in t_h4 or 'bear' in t_m15:
+                            chosen = 'bearish'
+                        elif 'bull' in sent or 'bull' in trend or 'bull' in tf_h4 or 'bull' in tf_daily or 'bull' in t_h4 or 'bull' in t_m15:
+                            chosen = 'bullish'
+                    direction = chosen
+                    logger.info(f"Grid Start direction resolved: {direction} (sent={sent}, trend={trend}, h4={tf_h4}/{t_h4}, m15={t_m15}, signal={signal})")
+                except Exception as e:
+                    logger.warning(f"Grid direction inference failed: {e}. Using default: {direction}")
+            
             # 4. 获取 ATR (用于网格间距)
             rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
             atr = 0.0
