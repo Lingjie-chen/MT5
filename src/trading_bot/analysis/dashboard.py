@@ -35,62 +35,62 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Clean Professional Styling
+# Clean Professional Styling (Light Mode)
 def apply_clean_style():
     st.markdown("""
         <style>
         /* Global App Background */
         .stApp {
-            background-color: #0e1117;
-            color: #fafafa;
+            background-color: #ffffff;
+            color: #333333;
         }
         
         /* Headers */
         h1, h2, h3 {
-            color: #ffffff !important;
+            color: #000000 !important;
             font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             font-weight: 600;
         }
         
         /* Metrics */
         div[data-testid="stMetric"] {
-            background-color: #1e2127;
-            border: 1px solid #2e3136;
+            background-color: #f8f9fa;
+            border: 1px solid #e0e0e0;
             padding: 15px;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
         div[data-testid="stMetricLabel"] {
-            color: #b0b0b0 !important;
+            color: #666666 !important;
             font-size: 0.9rem;
         }
         div[data-testid="stMetricValue"] {
-            color: #ffffff !important;
+            color: #000000 !important;
             font-family: 'Segoe UI', sans-serif;
         }
         
         /* Dataframes */
         .stDataFrame {
-            border: 1px solid #2e3136;
+            border: 1px solid #e0e0e0;
         }
         
         /* Sidebar */
         section[data-testid="stSidebar"] {
-            background-color: #161920;
-            border-right: 1px solid #2e3136;
+            background-color: #f0f2f6;
+            border-right: 1px solid #e0e0e0;
         }
         
         /* Buttons */
         .stButton > button {
-            background-color: #262730;
-            color: #ffffff;
-            border: 1px solid #4f5359;
+            background-color: #ffffff;
+            color: #333333;
+            border: 1px solid #cccccc;
             border-radius: 4px;
             transition: all 0.2s;
         }
         .stButton > button:hover {
-            border-color: #ffffff;
-            background-color: #363940;
+            border-color: #999999;
+            background-color: #f0f0f0;
         }
         
         /* Tabs */
@@ -102,12 +102,12 @@ def apply_clean_style():
             white-space: pre-wrap;
             background-color: transparent;
             border-radius: 4px 4px 0px 0px;
-            color: #b0b0b0;
+            color: #666666;
             font-weight: 600;
         }
         .stTabs [aria-selected="true"] {
             background-color: transparent;
-            color: #ffffff;
+            color: #000000;
             border-bottom: 2px solid #4f8bf9;
         }
         

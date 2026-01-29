@@ -123,18 +123,18 @@ class TradingVisualizer:
             name='Volume'
         ), row=2, col=1)
 
-        # Layout updates for Clean Theme
+        # Layout updates for Clean Theme (Light)
         fig.update_layout(
-            title=dict(text='Market Analysis', font=dict(color='#ffffff', size=20)),
+            title=dict(text='Market Analysis', font=dict(color='#000000', size=20)),
             xaxis_rangeslider_visible=False,
             height=600,
-            template='plotly_dark',
+            template='plotly_white', # Changed from plotly_dark
             paper_bgcolor='rgba(0,0,0,0)', 
             plot_bgcolor='rgba(0,0,0,0)',
-            xaxis=dict(showgrid=True, gridcolor='#2e3136', gridwidth=1),
-            yaxis=dict(showgrid=True, gridcolor='#2e3136', gridwidth=1),
+            xaxis=dict(showgrid=True, gridcolor='#e0e0e0', gridwidth=1),
+            yaxis=dict(showgrid=True, gridcolor='#e0e0e0', gridwidth=1),
             yaxis2=dict(showgrid=False),
-            font=dict(family="Segoe UI", color="#b0b0b0"),
+            font=dict(family="Segoe UI", color="#333333"),
             hovermode='x unified',
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
