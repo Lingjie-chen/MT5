@@ -1057,12 +1057,26 @@ class SymbolTrader:
             if llm_action == 'grid_start_long': direction = 'bullish'
             elif llm_action == 'grid_start_short': direction = 'bearish'
             else:
-                # Legacy grid_start inference
-                if self.latest_strategy:
-                    market_state = str(self.latest_strategy.get('market_state', '')).lower()
-                    pred = str(self.latest_strategy.get('short_term_prediction', '')).lower()
-                    if 'down' in market_state or 'bear' in pred or 'sell' in str(self.latest_strategy.get('action', '')).lower():
-                        direction = 'bearish'
+                # [MODIFIED] Logic to check sentiment properly
+                direction = 'bullish' # Default
+                
+                # Check Sentiment Analysis
+                if self.latest_strategy and 'market_analysis' in self.latest_strategy:
+                    ma = self.latest_strategy['market_analysis']
+                    if 'sentiment_analysis' in ma:
+                         sa = ma['sentiment_analysis']
+                         sentiment = sa.get('sentiment', 'neutral').lower()
+                         if sentiment == 'bearish':
+                             direction = 'bearish'
+                         elif sentiment == 'bullish':
+                             direction = 'bullish'
+                
+                # Fallback to market structure trend if sentiment is neutral
+                if self.latest_strategy and 'market_analysis' in self.latest_strategy:
+                     ms = self.latest_strategy['market_analysis'].get('market_structure', {})
+                     trend = ms.get('trend', '').lower()
+                     if 'bear' in trend or 'down' in trend:
+                         direction = 'bearish'
                         
         elif llm_action in ['buy', 'add_buy', 'limit_buy', 'buy_limit']:
              # Convert Buy -> Grid Start Long
@@ -1159,7 +1173,8 @@ class SymbolTrader:
                     suggested_price = self.latest_strategy.get('entry_price')
             
             # 3. Fallback logic (ATR Offset)
-            initial_offset = atr * 0.1 if atr > 0 else 50 * point
+            # [User Requirement] Ensure not executed at market price. Increased offset.
+            initial_offset = atr * 0.25 if atr > 0 else 100 * point
             
             if direction == 'bullish':
                 entry_type = "limit_buy" 
@@ -2948,9 +2963,19 @@ class SymbolTrader:
             current_atr = max(tr1, max(tr2, tr3))
             
             # Check Grid TP / Lock
-            if self.grid_strategy.check_basket_tp(positions, current_atr=current_atr):
-                logger.info("Grid Strategy triggered Basket TP/Lock! Closing all positions...")
-                self.close_all_positions(positions, reason="Grid Basket TP/Lock")
+            should_close_long, should_close_short = self.grid_strategy.check_basket_tp(positions, current_atr=current_atr)
+            
+            if should_close_long:
+                logger.info("Grid Strategy triggered Basket TP/Lock (LONG)! Closing BUY positions...")
+                long_positions = [p for p in positions if p.magic == self.magic_number and p.type == mt5.POSITION_TYPE_BUY]
+                self.close_all_positions(long_positions, reason="Grid Basket TP/Lock (Long)")
+                
+            if should_close_short:
+                logger.info("Grid Strategy triggered Basket TP/Lock (SHORT)! Closing SELL positions...")
+                short_positions = [p for p in positions if p.magic == self.magic_number and p.type == mt5.POSITION_TYPE_SELL]
+                self.close_all_positions(short_positions, reason="Grid Basket TP/Lock (Short)")
+            
+            if should_close_long or should_close_short:
                 return
 
             # Single iteration logic (replacing while True)
