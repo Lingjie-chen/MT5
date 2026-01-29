@@ -230,12 +230,12 @@ def render_symbol_dashboard(symbol):
     if online_df is not None and not online_df.empty:
         # Check if 'close' is a tuple (MultiIndex) or Series
         try:
-             # yfinance > 0.2 returns MultiIndex columns sometimes
-             close_data = online_df['close'].squeeze()
-             
-             current_price = float(close_data.iloc[-1])
-             prev_price = float(close_data.iloc[-2])
-             delta = current_price - prev_price
+            # yfinance > 0.2 returns MultiIndex columns sometimes
+            close_data = online_df['close'].squeeze()
+            
+            current_price = float(close_data.iloc[-1])
+            prev_price = float(close_data.iloc[-2])
+            delta = current_price - prev_price
             source = "🟢 Live (Net)"
         except Exception as e:
              st.error(f"Error parsing online data: {e}")
