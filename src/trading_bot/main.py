@@ -246,22 +246,29 @@ class SymbolTrader:
 
     def get_market_data(self, num_candles=100):
         """直接从 MT5 获取历史数据"""
-        rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, num_candles)
-        
-        if rates is None or len(rates) == 0:
-            logger.error("无法获取 K 线数据")
-            return None
+        # [Optimized] Retry mechanism for data fetching
+        max_retries = 3
+        for attempt in range(max_retries):
+            rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, num_candles)
             
-        # 转换为 DataFrame
-        df = pd.DataFrame(rates)
-        df['time'] = pd.to_datetime(df['time'], unit='s')
-        df.set_index('time', inplace=True)
-        
-        # 将 tick_volume 重命名为 volume 以保持一致性
-        if 'tick_volume' in df.columns:
-            df.rename(columns={'tick_volume': 'volume'}, inplace=True)
-        
-        return df
+            if rates is not None and len(rates) > 0:
+                # 转换为 DataFrame
+                df = pd.DataFrame(rates)
+                df['time'] = pd.to_datetime(df['time'], unit='s')
+                df.set_index('time', inplace=True)
+                
+                # 将 tick_volume 重命名为 volume 以保持一致性
+                if 'tick_volume' in df.columns:
+                    df.rename(columns={'tick_volume': 'volume'}, inplace=True)
+                
+                return df
+                
+            # If failed, wait and retry
+            logger.warning(f"Failed to get rates for {self.symbol} (Attempt {attempt+1}/{max_retries})")
+            time.sleep(1) # Wait 1s before retry
+            
+        logger.error(f"无法获取 K 线数据 ({self.symbol}) after {max_retries} retries")
+        return None
 
     def get_position_stats(self, pos):
         """
