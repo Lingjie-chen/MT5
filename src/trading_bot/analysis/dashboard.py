@@ -15,22 +15,23 @@ import plotly.graph_objects as go
 
 # Add project root to sys.path to ensure correct imports
 # dashboard.py is at src/trading_bot/analysis/dashboard.py
-# We want to add the project root (MT5/) to sys.path
+# We want to add the project root (MT5/) and src/ to sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+src_path = os.path.join(project_root, 'src')
 
 if project_root not in sys.path:
     sys.path.append(project_root)
+if src_path not in sys.path:
+    sys.path.append(src_path)
 
-# Import using full package paths
+# Import using package paths (now that src is in path)
 try:
-    from src.trading_bot.data.database_manager import DatabaseManager
-    from src.trading_bot.analysis.visualization import TradingVisualizer
-except ImportError:
-    # Fallback for relative run
-    sys.path.append(os.path.join(project_root, 'src'))
     from trading_bot.data.database_manager import DatabaseManager
     from trading_bot.analysis.visualization import TradingVisualizer
+except ImportError as e:
+    st.error(f"Failed to import modules: {e}")
+    st.stop()
 
 # Page Config
 st.set_page_config(
