@@ -1124,32 +1124,45 @@ class SymbolTrader:
 
             logger.info(f"网格方向: {direction} (ATR: {atr:.5f})")
 
-            # 5. 执行首单 (Initial Entry) - Market Order
+            # 5. 执行首单 (Initial Entry)
+            # User Requirement: 不要立即执行市价首单，改为挂单 (Limit Order)
+            # 原因: 很多次 Initial Entry 市价进场即亏损
+            # 策略: 将首单也作为 Limit 单挂在当前价格下方一点点 (做多) 或 上方一点点 (做空)
+            
             initial_lot = 0.02 # [User Requirement] Fixed Initial Lot 0.02
-            # User Requirement: Disable override from AI config to ensure safety start
-            # if grid_config.get('initial_lot'): ...
-            # elif suggested_lot: ...
-                
+            
             # Update class lot_size for consistency
             self.lot_size = initial_lot
-            
-            # Update GridStrategy base lot size for calculations
             self.grid_strategy.lot = initial_lot
-            
-            entry_type = "buy" if direction == 'bullish' else "sell"
-            entry_price = tick.ask if direction == 'bullish' else tick.bid
-            
-            logger.info(f"执行网格首单: {entry_type.upper()} {initial_lot} Lots")
-            # Force explicit_tp=0.0 for initial entry (User Requirement: Only Basket TP)
-            self._send_order(entry_type, entry_price, sl=0.0, tp=0.0, comment="AI-Grid-Initial")
-
-            # 6. 生成网格计划
-            # 使用当前价格作为基准
-            current_price = tick.ask if direction == 'bullish' else tick.bid
             
             # 获取 Point
             symbol_info = mt5.symbol_info(self.symbol)
             point = symbol_info.point if symbol_info else 0.01
+            
+            # 计算首单挂单位置 (Offset based on ATR or Fixed Points)
+            # 使用 ATR 的 10% 作为微小回撤等待，或者直接挂在 Grid Step 的第一个位置？
+            # 用户只说 "不要立刻开仓"， implying wait for better price.
+            # Let's use a small offset: 0.1 * ATR or 50 points
+            initial_offset = atr * 0.1 if atr > 0 else 50 * point
+            
+            if direction == 'bullish':
+                entry_type = "limit_buy" # Convert to pending
+                # 挂单价格 = 当前Ask - Offset (等待回调接多)
+                entry_price = tick.ask - initial_offset
+            else:
+                entry_type = "limit_sell"
+                # 挂单价格 = 当前Bid + Offset (等待反弹接空)
+                entry_price = tick.bid + initial_offset
+                
+            entry_price = self._normalize_price(entry_price)
+            
+            logger.info(f"执行网格首单(挂单): {entry_type.upper()} {initial_lot} Lots @ {entry_price:.2f} (Offset: {initial_offset:.2f})")
+            self._send_order(entry_type, entry_price, sl=0.0, tp=0.0, comment="AI-Grid-Initial-Limit")
+
+            # 6. 生成后续网格计划
+            # 注意: 首单现在是 Limit 单，后续网格应该基于这个 Limit 价格继续向下/向上铺设
+            # 使用 entry_price 作为基准
+            current_price = entry_price 
             
             # 提取 LLM 建议的动态网格间距 (Pips) 和 动态TP配置
             dynamic_step = grid_config.get('grid_step_pips')
