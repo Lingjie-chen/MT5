@@ -3353,10 +3353,12 @@ class SymbolTrader:
                         if pos_mgmt:
                             raw_basket_tp = pos_mgmt.get('dynamic_basket_tp')
                             
-                            # User Requirement: Restore lock_trigger from AI strategy
-                            lock_trigger = pos_mgmt.get('lock_profit_trigger')
+                            # User Requirement: Disable trigger locked entirely
+                            lock_trigger = None 
+                            # lock_trigger = pos_mgmt.get('lock_profit_trigger')
                             
-                            trailing_config = pos_mgmt.get('trailing_stop_config')
+                            trailing_config = None # Disable trailing config as well
+                            # trailing_config = pos_mgmt.get('trailing_stop_config')
                             
                             # [RESTORED] Smart Basket TP Calculation
                             # Get ATR

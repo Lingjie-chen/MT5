@@ -428,18 +428,11 @@ class QwenClient:
          - **拒绝固定值**: 严禁使用固定的数值 (如 50.0)！必须是经过上述逻辑计算后的结果。
          - **更新指令**: 在 `position_management` -> `dynamic_basket_tp` 中返回计算后的数值。
        - **Lock Profit Trigger (Profit Locking)**:
-         - **定义**: 当 Basket 整体利润达到此数值时，启动强制利润锁定机制 (Trailing Stop for Basket)。
-         - **逻辑**: 如果利润达到此阈值，系统将锁定大部分利润 (如 60%)，防止利润回撤。
-         - **趋势保护**: 在强趋势中，应将 Trigger 设置得更高 (例如 Basket TP 的 80%)，给予价格充分的波动空间，避免被微小的回调震出。
-         - **最小值**: 必须 >= 10.0 USD。
-         - **量化优化**: Trigger 值应设置为 `Dynamic_Basket_TP` 的 60%-75% (震荡) 或 80% (强趋势)。
-          - **更新指令**: 在 `position_management` -> `lock_profit_trigger` 中返回计算后的数值。
+         - **User Instruction**: **已被禁用**。请不要设置此值，或将其设置为 null / 0。我们不再使用利润锁定机制，完全依赖 Basket TP。
+         - **更新指令**: 在 `position_management` -> `lock_profit_trigger` 中返回 null 或 0。
        - **Trailing Stop Config (移动止损配置)**:
-         - **核心逻辑**: 一旦 Trigger 触发，使用何种机制进行利润保护。
-         - **动态调整**:
-           - **强趋势 (Trend Surfing)**: 必须使用更宽的 ATR 倍数 (e.g., ATR * 3.0 或 4.0)，允许价格在趋势中大幅呼吸，防止被噪音洗出。
-           - **震荡/剥头皮**: 使用紧凑的 ATR 倍数 (e.g., ATR * 1.5)，快速锁住利润。
-         - **更新指令**: 在 `position_management` -> `trailing_stop_config` 中返回 (e.g., `{"type": "atr_distance", "value": 3.5}`).
+         - **User Instruction**: **已被禁用**。请不要设置此值。
+         - **更新指令**: 在 `position_management` -> `trailing_stop_config` 中返回 null。
 
     5. **CandleSmoothing EMA 策略 (Strategy B)**:
        - **核心逻辑**: 基于 EMA50 趋势过滤，结合 EMA20 High/Low 通道突破和 Heiken Ashi 蜡烛形态。
