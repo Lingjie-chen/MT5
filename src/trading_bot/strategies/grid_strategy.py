@@ -610,6 +610,9 @@ class KalmanGridStrategy:
             if count > 9: target_tp = self.global_tp
             
         # [Safety Check] Ensure we only close in profit for TP logic
+        # And ensure the target_tp is reasonable (not effectively zero or negative)
+        if target_tp <= 0: target_tp = 10.0 # Safety fallback
+        
         if profit >= target_tp and profit > 0:
             logger.info(f"[{direction_label}] Basket TP Reached: Profit {profit:.2f} >= Target {target_tp}")
             # Reset Max on close signal
