@@ -200,8 +200,18 @@ def fetch_online_price(symbol, period="1d", interval="15m"):
 def get_db_manager(symbol):
     """Dynamically get the DatabaseManager for a specific symbol"""
     db_filename = f"trading_data_{symbol}.db"
-    # Assuming the DBs are in the 'gold' directory relative to this script
-    db_path = os.path.join(os.path.dirname(__file__), 'gold', db_filename)
+    # DBs are in src/trading_bot/
+    # dashboard.py is in src/trading_bot/analysis/
+    # So we go up one level from __file__
+    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), db_filename)
+    
+    # Handle the default case where symbol might not be in filename if using single DB
+    if not os.path.exists(db_path):
+         # Try default name
+         default_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "trading_data.db")
+         if os.path.exists(default_path):
+             return DatabaseManager(db_path=default_path)
+             
     return DatabaseManager(db_path=db_path)
 
 def update_dashboard():
