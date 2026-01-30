@@ -1074,7 +1074,7 @@ class TimeframeVisualAnalyzer:
         return {"signal": signal, "strength": strength, "reason": reason, "details": trends}
 
 class MTFAnalyzer:
-    def __init__(self, htf1=mt5.TIMEFRAME_H1, htf2=mt5.TIMEFRAME_H4, swing_length=20):
+    def __init__(self, htf1=mt5.TIMEFRAME_M15, htf2=mt5.TIMEFRAME_H1, swing_length=20):
         self.htf1 = htf1; self.htf2 = htf2; self.swing_length = swing_length
         self.demand_zones = []; self.supply_zones = []; self.last_zone_update = 0
     def analyze(self, symbol, current_price, current_time):
