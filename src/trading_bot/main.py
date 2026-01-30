@@ -2707,7 +2707,7 @@ class SymbolTrader:
         self.sync_account_history()
         self.is_running = True
 
-    def calculate_smart_basket_tp(self, llm_tp, atr, market_regime, smc_data, current_positions):
+    def calculate_smart_basket_tp(self, llm_tp, atr, market_regime, smc_data, current_positions, performance_stats=None):
         """
         结合 LLM 建议、市场波动率 (ATR)、市场结构 (SMC) 和风险状态计算最终的 Dynamic Basket TP
         """
@@ -3379,7 +3379,8 @@ class SymbolTrader:
                                 atr_current,
                                 regime_current,
                                 smc_result,
-                                current_positions_list
+                                current_positions_list,
+                                performance_stats=trade_stats
                             )
                             
                             if smart_basket_tp or lock_trigger or trailing_config:
