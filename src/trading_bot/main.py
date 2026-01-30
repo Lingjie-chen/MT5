@@ -3084,19 +3084,19 @@ class SymbolTrader:
             elif 1 <= weekday <= 4:
                 return True
                 
-            # Saturday(5): Allow until 04:00 (Safe buffer before 05:00 Summer Close)
+            # Saturday(5): Allow until 06:00 (Safe buffer before 05:00 Summer Close)
             elif weekday == 5:
-                if current_time.hour < 4:
+                if current_time.hour < 6:
                     return True
                 else:
                     if current_time.minute % 30 == 0 and current_time.second < 2:
-                        logger.info(f"[{self.symbol}] 非交易时间 (Forex Weekend). 允许: 周一06:30 - 周六04:00. 当前: {now.strftime('%A %H:%M')}")
+                        logger.info(f"[{self.symbol}] 非交易时间 (Forex Weekend). 允许: 周一06:30 - 周六06:00. 当前: {now.strftime('%A %H:%M')}")
                     return False
             
             # Sunday(6): Closed
             else:
                 if current_time.minute % 30 == 0 and current_time.second < 2:
-                    logger.info(f"[{self.symbol}] 非交易时间 (Forex Weekend). 允许: 周一06:30 - 周六04:00. 当前: {now.strftime('%A %H:%M')}")
+                    logger.info(f"[{self.symbol}] 非交易时间 (Forex Weekend). 允许: 周一06:30 - 周六06:00. 当前: {now.strftime('%A %H:%M')}")
                 return False
                 
         # Default: Allow if not specified
