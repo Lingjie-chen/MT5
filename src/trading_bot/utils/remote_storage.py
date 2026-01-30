@@ -138,14 +138,22 @@ class RemoteStorage:
             return []
             
         try:
-            endpoint = f"trades?limit={limit}"
-            if symbol:
-                endpoint += f"&symbol={symbol}"
-                
+            endpoint = "trades"
             url = f"{self.api_url}/{endpoint}"
             headers = {"X-API-Key": self.api_key}
             
-            response = requests.get(url, headers=headers, timeout=10)
+            params = {}
+            if limit is not None:
+                params['limit'] = limit
+            else:
+                # If limit is explicitly None, try to fetch a large number to get "all"
+                # (assuming backend might default to a small page size if parameter is missing)
+                params['limit'] = 100000
+                
+            if symbol:
+                params['symbol'] = symbol
+                
+            response = requests.get(url, headers=headers, params=params, timeout=30) # Increased timeout for large data
             if response.status_code == 200:
                 return response.json()
             else:
