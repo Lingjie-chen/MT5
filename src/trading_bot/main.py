@@ -246,11 +246,22 @@ class SymbolTrader:
 
     def get_market_data(self, num_candles=100):
         """直接从 MT5 获取历史数据"""
+        # Ensure symbol is selected and available
+        if not mt5.symbol_select(self.symbol, True):
+            logger.error(f"Failed to select symbol {self.symbol}")
+            return None
+            
         rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, num_candles)
         
-        if rates is None or len(rates) == 0:
-            logger.error("无法获取 K 线数据")
+        if rates is None:
+            # Try to get last error
+            err = mt5.last_error()
+            logger.error(f"无法获取 K 线数据 ({self.symbol}): Error={err}")
             return None
+            
+        if len(rates) == 0:
+             logger.error(f"无法获取 K 线数据 ({self.symbol}): Empty result")
+             return None
             
         # 转换为 DataFrame
         df = pd.DataFrame(rates)
