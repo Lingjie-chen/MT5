@@ -261,6 +261,11 @@ class KalmanGridStrategy:
         """
         # User Requirement: Disable autonomous grid adding. Rely on LLM/Grid Plan (Limit Orders).
         # "Grid Add BUY Signal... cancel this module, completely judge based on the big model"
+        
+        # [NEW POLICY]
+        # Autonomous Grid Adding is PERMANENTLY DISABLED.
+        # Adding positions is only allowed via LLM explicit signals (Pyramiding) or Limit Orders.
+        
         return None, 0.0
 
     def calculate_next_lot(self, current_count, ai_override_multiplier=None):
@@ -553,6 +558,11 @@ class KalmanGridStrategy:
         Separates Long and Short baskets.
         Returns: (close_long_bool, close_short_bool)
         """
+        # [NEW POLICY]
+        # Basket TP Logic is now partially deprecated or shifted to "Trend Exit" logic.
+        # However, we still use this to close positions if the LLM-calculated "Dynamic Basket TP" is hit.
+        # This acts as a "Take Profit" for the entire trend position (which might be a single large trade).
+        
         profit_long = 0.0
         count_long = 0
         vol_long = 0.0
