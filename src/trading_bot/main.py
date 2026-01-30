@@ -3664,6 +3664,22 @@ class SymbolTrader:
                                 suggested_lot=suggested_lot
                             )
                 
+                # Check Grid TP / Lock (Moved from start)
+                should_close_long, should_close_short = self.grid_strategy.check_basket_tp(positions, current_atr=current_atr)
+                
+                if should_close_long or should_close_short:
+                    logger.info(f"Grid Strategy triggered Basket TP/Lock! (Long:{should_close_long}, Short:{should_close_short}) Closing positions...")
+                    
+                    to_close = []
+                    if should_close_long:
+                        to_close.extend([p for p in positions if p.type == mt5.POSITION_TYPE_BUY])
+                    if should_close_short:
+                        to_close.extend([p for p in positions if p.type == mt5.POSITION_TYPE_SELL])
+                    
+                    if to_close:
+                        self.close_all_positions(to_close, reason="Grid Basket TP/Lock")
+                    return
+
         except KeyboardInterrupt:
             logger.info("用户停止机器人")
             mt5.shutdown()
