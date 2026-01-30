@@ -799,6 +799,9 @@ class SMCAnalyzer:
         # Uptrend: Break above recent SH
         if (micro_trend == "bullish" or sentiment_score >= 0) and current_close > recent_sh['price']:
             # 确认是有效突破 (Close > SH)
+            # 增加回踩确认 (Pullback Confirmation) 逻辑
+            # BOS 发生后，理想情况是价格回调测试了之前的阻力(现支撑)或 OB，然后再上涨
+            # 这里我们只标记 BOS 发生，具体的入场时机由主逻辑控制
             signal = "buy"
             reason = f"BOS Bullish: Closed above SH ({recent_sh['price']})"
             pattern_type = "BOS"
@@ -824,7 +827,7 @@ class SMCAnalyzer:
              reason = f"CHoCH Bullish: Structure Broken (SH {recent_sh['price']} violated)"
              pattern_type = "CHoCH"
              
-        return {"signal": signal, "reason": reason, "type": pattern_type, "price": current_close}
+        return {"signal": signal, "reason": reason, "type": pattern_type, "price": current_close, "recent_sh": recent_sh['price'], "recent_sl": recent_sl['price']}
 
     def detect_bos(self, df):
         # Legacy method kept for compatibility, redirected to new logic internally if needed
