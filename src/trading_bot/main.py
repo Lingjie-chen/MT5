@@ -247,10 +247,12 @@ class SymbolTrader:
     def get_market_data(self, num_candles=100):
         """直接从 MT5 获取历史数据"""
         # Ensure symbol is selected and available
-        if not mt5.symbol_select(self.symbol, True):
-            logger.error(f"Failed to select symbol {self.symbol}")
-            return None
-            
+        s_info = mt5.symbol_info(self.symbol)
+        if s_info and not s_info.visible:
+             if not mt5.symbol_select(self.symbol, True):
+                logger.error(f"Failed to select symbol {self.symbol}")
+                return None
+        
         rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, num_candles)
         
         if rates is None:
