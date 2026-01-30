@@ -2980,9 +2980,19 @@ class SymbolTrader:
             # [User Request]: "改成交易周期 10 分钟" -> self.timeframe should be TIMEFRAME_M10
             # Ensure we are using the correct timeframe property
             
+            # Ensure symbol is selected and available
+            if not mt5.symbol_select(self.symbol, True):
+                logger.warning(f"Failed to select symbol {self.symbol} in process_tick")
+                return
+
             rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 500)
-            if rates is None or len(rates) < 100:
-                logger.warning(f"Failed to get rates for {self.symbol}")
+            if rates is None:
+                 err = mt5.last_error()
+                 logger.warning(f"Failed to get rates for {self.symbol} (Error={err})")
+                 return
+                 
+            if len(rates) < 100:
+                logger.warning(f"Insufficient rates for {self.symbol} (Got {len(rates)}, Need 100)")
                 return
 
             df = pd.DataFrame(rates)
