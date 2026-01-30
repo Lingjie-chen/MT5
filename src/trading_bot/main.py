@@ -1179,8 +1179,48 @@ class SymbolTrader:
              if entry_params:
                  if not explicit_sl and 'sl' in entry_params: explicit_sl = float(entry_params['sl'])
                  if not explicit_tp and 'tp' in entry_params: explicit_tp = float(entry_params['tp'])
+                 
+                 # Extract suggested lot from entry_params if available
+                 if 'lots' in entry_params:
+                     try: suggested_lot = float(entry_params['lots'])
+                     except: pass
+                 elif 'volume' in entry_params:
+                     try: suggested_lot = float(entry_params['volume'])
+                     except: pass
 
-             logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid. Price={price}")
+             # [Validation] Fix Inverted SL/TP
+             if explicit_sl and explicit_sl > 0 and explicit_tp and explicit_tp > 0:
+                 if "buy" in llm_action: # Buy
+                     if explicit_sl > price and explicit_tp < price:
+                         logger.warning(f"Swapping inverted SL/TP for BUY (SL={explicit_sl}, TP={explicit_tp})")
+                         explicit_sl, explicit_tp = explicit_tp, explicit_sl
+                 elif "sell" in llm_action: # Sell
+                     if explicit_sl < price and explicit_tp > price:
+                         logger.warning(f"Swapping inverted SL/TP for SELL (SL={explicit_sl}, TP={explicit_tp})")
+                         explicit_sl, explicit_tp = explicit_tp, explicit_sl
+
+             # [Defaults] Calculate SL/TP if missing (to ensure R:R check works)
+             if (not explicit_sl or explicit_sl <= 0) or (not explicit_tp or explicit_tp <= 0):
+                 # Need ATR
+                 rates_atr = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+                 local_atr = 0.0
+                 if rates_atr is not None and len(rates_atr) > 14:
+                     df_atr = pd.DataFrame(rates_atr)
+                     hl = df_atr['high'] - df_atr['low']
+                     local_atr = hl.rolling(14).mean().iloc[-1]
+                 
+                 if local_atr > 0:
+                     if "buy" in llm_action:
+                         if not explicit_sl or explicit_sl <= 0: explicit_sl = price - 1.5 * local_atr
+                         if not explicit_tp or explicit_tp <= 0: explicit_tp = price + 2.0 * local_atr
+                     elif "sell" in llm_action:
+                         if not explicit_sl or explicit_sl <= 0: explicit_sl = price + 1.5 * local_atr
+                         if not explicit_tp or explicit_tp <= 0: explicit_tp = price - 2.0 * local_atr
+                     logger.info(f"Generated Default SL/TP using ATR: SL={explicit_sl:.2f}, TP={explicit_tp:.2f}")
+
+             logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid. Price={price}, SL={explicit_sl}, TP={explicit_tp}, Lot={suggested_lot}")
+             
+             pass
         
         if is_grid_action:
             # [NEW POLICY] 
