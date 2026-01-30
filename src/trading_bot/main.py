@@ -1399,6 +1399,7 @@ class SymbolTrader:
                     logger.warning("可用资金不足以部署任何网格单，取消操作")
                     return
 
+
                 # 临时保存原始 lot_size (although we updated it above, keep logic safe)
                 original_lot = self.lot_size
                 
@@ -1480,8 +1481,26 @@ class SymbolTrader:
             
             # --- 动态仓位计算 ---
             if suggested_lot and suggested_lot > 0:
+                # [NEW] Margin Check for Suggested Lot
+                try:
+                    account_info = mt5.account_info()
+                    if account_info:
+                         o_type_check = mt5.ORDER_TYPE_BUY if "buy" in action_str.lower() else mt5.ORDER_TYPE_SELL
+                         margin_needed = mt5.order_calc_margin(o_type_check, self.symbol, suggested_lot, price)
+                         
+                         if margin_needed and margin_needed > (account_info.margin_free * 0.9): # 90% buffer
+                             max_lot = (account_info.margin_free * 0.9) / (margin_needed / suggested_lot)
+                             # Round down to 2 decimal places
+                             max_lot = int(max_lot * 100) / 100.0
+                             if max_lot < 0.01: max_lot = 0.01
+                             
+                             logger.warning(f"⚠️ 建议仓位 {suggested_lot} 超过保证金限制 ({margin_needed:.2f} > {account_info.margin_free * 0.9:.2f}). 调整为: {max_lot}")
+                             suggested_lot = max_lot
+                except Exception as e:
+                    logger.error(f"Margin check failed: {e}")
+
                 optimized_lot = suggested_lot
-                logger.info(f"使用预计算的建议手数: {optimized_lot}")
+                logger.info(f"使用建议手数 (经过风控检查): {optimized_lot}")
             else:
                 # 准备上下文 (Fallback)
                 # 获取历史 MFE/MAE 统计 (如果有缓存，从 db_manager 获取)
