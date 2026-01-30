@@ -3187,16 +3187,15 @@ class SymbolTrader:
         symbol_upper = self.symbol.upper()
         
         # Crypto Rules (ETHUSD)
-        # User Requirement: "周六早上8点后开始交易，周一早上6:30结束交易"
-        # (Assuming "早上点" implies 08:00 AM based on context)
+        # User Requirement: "周六早上6点后开始交易，周一早上6:30结束交易"
         if "ETH" in symbol_upper:
-            # Saturday (5): Allow after 08:00
+            # Saturday (5): Allow after 06:00
             if weekday == 5:
-                if current_time.hour >= 8:
+                if current_time.hour >= 6:
                     return True
                 else:
                     if current_time.minute % 30 == 0 and current_time.second < 2:
-                        logger.info(f"[{self.symbol}] 非交易时间 (Crypto Sat). 等待周六 08:00 开盘. 当前: {now.strftime('%H:%M')}")
+                        logger.info(f"[{self.symbol}] 非交易时间 (Crypto Sat). 等待周六 06:00 开盘. 当前: {now.strftime('%H:%M')}")
                     return False
             
             # Sunday (6): Allow All Day
