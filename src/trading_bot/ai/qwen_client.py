@@ -344,7 +344,7 @@ class QwenClient:
             "DEFAULT": """
     **交易员与风控团队必须严格遵守的【单边趋势交易技术规范 (Trend Only)】**:
     1. **仓位管理 (Position Sizing)**: 
-       - **完全由大模型决定**: 必须基于 M15/H1 的市场情绪 (Sentiment) 和 SMC 结构置信度，计算出精确的首单手数 (Initial Lot)。
+       - **完全由大模型决定**: 必须基于 M6/H1 的市场情绪 (Sentiment) 和 SMC 结构置信度，计算出精确的首单手数 (Initial Lot)。
        - **禁止固定手数**: 严禁无脑使用 0.01。如果机会好，应该重仓 (e.g., 0.5, 1.0, etc.)；如果风险大，轻仓或空仓。
     2. **加仓 (Adding)**: 
        - **禁止网格加仓 (No Grid)**。
