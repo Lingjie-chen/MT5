@@ -2197,7 +2197,7 @@ class SymbolTrader:
         
         # 1. Load from DB (Best historical results)
         try:
-            db_seeds = self.db_manager.get_top_optimization_results(self.symbol, limit=20)
+            db_seeds = self.db_manager.get_top_optimization_results(self.symbol, limit=100) # Load up to 100 historical seeds
             if db_seeds:
                 historical_seeds.extend(db_seeds)
                 logger.info(f"Loaded {len(db_seeds)} historical optimization seeds from DB")
