@@ -2981,9 +2981,17 @@ class SymbolTrader:
             # Ensure we are using the correct timeframe property
             
             # Ensure symbol is selected and available
-            if not mt5.symbol_select(self.symbol, True):
-                logger.warning(f"Failed to select symbol {self.symbol} in process_tick")
+            # Optimization: Check visibility first to avoid unnecessary select calls
+            s_info = mt5.symbol_info(self.symbol)
+            if s_info is None:
+                logger.warning(f"Symbol info not found for {self.symbol} in process_tick")
                 return
+
+            if not s_info.visible:
+                if not mt5.symbol_select(self.symbol, True):
+                    err = mt5.last_error()
+                    logger.warning(f"Failed to select symbol {self.symbol} in process_tick (Error={err})")
+                    return
 
             rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 500)
             if rates is None:
