@@ -1083,9 +1083,9 @@ class SymbolTrader:
              is_grid_action = False
              
              if 'limit' in llm_action:
-                 trade_type = mt5.ORDER_TYPE_BUY_LIMIT
+                 trade_type = "limit_buy"
              else:
-                 trade_type = mt5.ORDER_TYPE_BUY # Market Buy
+                 trade_type = "buy" # Market Buy
                  price = tick.ask
              
              logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid. Price={price}")
@@ -1095,9 +1095,9 @@ class SymbolTrader:
              is_grid_action = False
              
              if 'limit' in llm_action:
-                 trade_type = mt5.ORDER_TYPE_SELL_LIMIT
+                 trade_type = "limit_sell"
              else:
-                 trade_type = mt5.ORDER_TYPE_SELL # Market Sell
+                 trade_type = "sell" # Market Sell
                  price = tick.bid
                  
              logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid. Price={price}")
@@ -2986,22 +2986,25 @@ class SymbolTrader:
             # Ensure symbol is selected and available
             # Optimization: Check visibility first to avoid unnecessary select calls
             s_info = mt5.symbol_info(self.symbol)
+            
+            # If symbol info is missing, force selection immediately
             if s_info is None:
-                # Retry logic for symbol info (sometimes fails transiently)
-                time.sleep(0.5)
+                if not mt5.symbol_select(self.symbol, True):
+                    err = mt5.last_error()
+                    logger.warning(f"Failed to force select symbol {self.symbol} in process_tick (Error={err})")
+                    return
+                
+                # Check again after selection
                 s_info = mt5.symbol_info(self.symbol)
                 if s_info is None:
-                    logger.warning(f"Symbol info not found for {self.symbol} in process_tick (after retry)")
+                    logger.warning(f"Symbol info still not found for {self.symbol} after selection")
                     return
 
             if not s_info.visible:
                 if not mt5.symbol_select(self.symbol, True):
-                    # Retry selection once
-                    time.sleep(0.5)
-                    if not mt5.symbol_select(self.symbol, True):
-                        err = mt5.last_error()
-                        logger.warning(f"Failed to select symbol {self.symbol} in process_tick (Error={err})")
-                        return
+                    err = mt5.last_error()
+                    logger.warning(f"Failed to select symbol {self.symbol} in process_tick (Error={err})")
+                    return
 
             rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 500)
             if rates is None:
