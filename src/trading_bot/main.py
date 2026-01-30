@@ -1345,10 +1345,13 @@ class SymbolTrader:
                      high_low = df_temp['high'] - df_temp['low']
                      atr = high_low.rolling(14).mean().iloc[-1]
             
-            valid, rr = self.check_risk_reward_ratio(price, explicit_sl, explicit_tp, atr=atr)
-            if not valid:
-                 logger.warning(f"最终 R:R 检查未通过: {rr:.2f} < 1.5. 交易取消.")
-                 return
+            # [MODIFIED] Disable Hard R:R Check when SL/TP are 0 (Full AI Control)
+            # valid, rr = self.check_risk_reward_ratio(price, explicit_sl, explicit_tp, atr=atr)
+            # if not valid:
+            #      logger.warning(f"最终 R:R 检查未通过: {rr:.2f} < 1.5. 交易取消.")
+            #      return
+            
+            logger.info("Skipping Hard R:R Check (Full AI Control Mode)")
 
             # FIX: Ensure 'action' is defined for the comment
             # action variable was used in _send_order's comment but was coming from llm_action
