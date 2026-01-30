@@ -1751,11 +1751,13 @@ class SymbolTrader:
         # 2. 检查最小间距 (Stops Level)
         # 防止 SL/TP 距离价格太近导致 Error 10016
         # 增加额外的 buffer 确保调整后的价格能够满足 Broker 要求
-        safe_buffer = point * 20
+        # [FIX] Increase safe buffer significantly (50 points + 50% of StopsLevel)
+        safe_buffer = (stops_level * 0.5) + (point * 50)
         
         if sl > 0:
             dist = abs(price - sl)
-            if dist < stops_level:
+            # Check against stops_level + small margin
+            if dist < (stops_level + point * 10):
                 logger.warning(f"SL too close (Dist {dist:.5f} < Level {stops_level:.5f}). Adjusting.")
                 if is_buy: 
                     sl = price - (stops_level + safe_buffer)
@@ -1765,7 +1767,7 @@ class SymbolTrader:
                 
         if tp > 0:
             dist = abs(price - tp)
-            if dist < stops_level:
+            if dist < (stops_level + point * 10):
                 logger.warning(f"TP too close (Dist {dist:.5f} < Level {stops_level:.5f}). Adjusting.")
                 if is_buy: 
                     tp = price + (stops_level + safe_buffer)
