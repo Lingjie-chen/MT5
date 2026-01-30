@@ -1661,10 +1661,19 @@ class SymbolTrader:
         # 增加 LLM 权限控制: 默认允许，但如果 LLM 明确禁止 (allow_grid=False)，则暂停加仓
         allow_grid = True
         if self.latest_strategy and isinstance(self.latest_strategy, dict):
-            # 检查是否有 'grid_settings' 且其中有 'allow_add'
-            grid_settings = self.latest_strategy.get('parameter_updates', {}).get('grid_settings', {})
-            if 'allow_add' in grid_settings:
-                allow_grid = bool(grid_settings['allow_add'])
+            # 0. Check Strategy Mode (Trend Mode disables Grid)
+            if self.latest_strategy.get('strategy_mode') == 'trend':
+                allow_grid = False
+            else:
+                # 1. Check root 'grid_config' (New Standard)
+                grid_config = self.latest_strategy.get('grid_config', {})
+                if 'allow_add' in grid_config:
+                     allow_grid = bool(grid_config['allow_add'])
+                else:
+                     # 2. Check legacy 'parameter_updates'
+                     grid_settings = self.latest_strategy.get('parameter_updates', {}).get('grid_settings', {})
+                     if 'allow_add' in grid_settings:
+                         allow_grid = bool(grid_settings['allow_add'])
         
         tick = mt5.symbol_info_tick(self.symbol)
         if tick and allow_grid:
