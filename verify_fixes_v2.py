@@ -50,6 +50,16 @@ class TestFixesV2(unittest.TestCase):
         for i in range(20):
             records.append((1000+i, 2000.0, 2005.0, 1995.0, 2000.0, 100, 1, 0))
         mt5.copy_rates_from_pos.return_value = np.array(records, dtype=dtype)
+        
+        # Mock account_info
+        mock_account = MagicMock()
+        mock_account.margin_level = 500.0
+        mock_account.margin_free = 10000.0
+        mock_account.balance = 10000.0
+        mt5.account_info = MagicMock(return_value=mock_account)
+        
+        # Mock positions_get (return empty list by default)
+        mt5.positions_get = MagicMock(return_value=[])
 
     def test_inverted_sl_tp_sell(self):
         """Test if Sell Entry 2000, SL 1980, TP 2020 gets swapped to SL 2020, TP 1980"""
