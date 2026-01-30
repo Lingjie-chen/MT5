@@ -1709,6 +1709,13 @@ class SymbolTrader:
         # 2. Check Grid Add (Only if allowed by LLM)
         # 增加 LLM 权限控制: 默认允许，但如果 LLM 明确禁止 (allow_grid=False)，则暂停加仓
         allow_grid = True
+        
+        # [USER REQUEST] Cancel Grid Strategy Completely
+        # "取消网格交易策略...仓位完全有大模型来分析判断"
+        # We force allow_grid to False to disable adding positions autonomously.
+        # Position sizing is handled by 'execute_trade' calling 'calculate_dynamic_lot' based on LLM input.
+        allow_grid = False 
+        
         if self.latest_strategy and isinstance(self.latest_strategy, dict):
             # 0. Check Strategy Mode (Trend Mode disables Grid)
             if self.latest_strategy.get('strategy_mode') == 'trend':
@@ -1723,6 +1730,10 @@ class SymbolTrader:
                      grid_settings = self.latest_strategy.get('parameter_updates', {}).get('grid_settings', {})
                      if 'allow_add' in grid_settings:
                          allow_grid = bool(grid_settings['allow_add'])
+        
+        # Override again to be sure, based on user's latest instruction
+        # "取消网格交易策略" means NO autonomous grid adding.
+        allow_grid = False
         
         tick = mt5.symbol_info_tick(self.symbol)
         if tick and allow_grid:
