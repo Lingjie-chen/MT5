@@ -58,26 +58,77 @@ class TestExecutionLogic(unittest.TestCase):
             'tp': 2010.0
         }
         
-        # We need to spy on what is passed to _send_order (internally self.lot_size is usually updated or passed via volume)
-        # In execute_trade logic: 
-        #   if suggested_lot ... optimized_lot = suggested_lot ...
-        #   self.execute_trade calls _send_order.
-        #   Note: execute_trade signature in main.py does NOT take volume as arg directly to _send_order 
-        #   UNLESS it's passed via grid logic or if execute_trade updates self.lot_size?
-        #   Wait, let's check execute_trade implementation in main.py again.
+        # We assume explicit_sl/tp and suggested_lot extraction works (tested elsewhere)
+        # We bypass extraction and call execute_trade logic directly?
+        # Or better: mimic call to execute_trade with extracted args
         
-        # Looking at previous read:
-        # execute_trade(..., suggested_lot=None)
-        # ... logic determines optimized_lot ...
-        # self.lot_size = optimized_lot  <-- This is what I expect to see, or passing it to _send_order?
+        # main.py: execute_trade(self, llm_action, signal, strength, sl_tp_params=None, explicit_sl=None, explicit_tp=None, suggested_lot=None, entry_params=None)
         
-        # Let's verify via code read if I missed where optimized_lot is applied.
-        # I'll rely on the test to tell me.
+        self.bot.execute_trade(
+            'buy', 0.8, {}, 
+            explicit_sl=1990.0, 
+            explicit_tp=2010.0, 
+            suggested_lot=0.1,
+            entry_params=entry_params
+        )
         
-        pass
+        # Verify lot_size was updated to 0.1
+        self.assertEqual(self.bot.lot_size, 0.1)
+        
+        # Verify _send_order was called
+        self.bot._send_order.assert_called()
 
-    def test_execution_flow(self):
-        pass
+    def test_suggested_lot_exceeds_margin(self):
+        """Test that suggested lot is reduced when exceeding margin limits"""
+        # Scenario: Suggest 1.0 lot. Margin needed = $2000. Free Margin = $1000.
+        # Limit = 1000 * 0.9 = 900.
+        # Ratio needed: 900 / 2000 = 0.45.
+        # Max Lot = 1.0 * 0.45 = 0.45.
+        
+        mt5.order_calc_margin.return_value = 2000.0
+        
+        entry_params = {
+            'lots': 1.0,
+            'action': 'buy',
+            'sl': 1990.0,
+            'tp': 2010.0
+        }
+        
+        self.bot.execute_trade(
+            'buy', 0.8, {}, 
+            explicit_sl=1990.0, 
+            explicit_tp=2010.0, 
+            suggested_lot=1.0,
+            entry_params=entry_params
+        )
+        
+        # Verify lot_size was reduced to 0.45
+        self.assertAlmostEqual(self.bot.lot_size, 0.45)
+        
+        # Verify _send_order was called
+        self.bot._send_order.assert_called()
+
+    def test_margin_check_exception(self):
+        """Test fallback when margin check fails"""
+        mt5.order_calc_margin.side_effect = Exception("MT5 Error")
+        
+        entry_params = {
+            'lots': 0.5,
+            'action': 'buy',
+            'sl': 1990.0,
+            'tp': 2010.0
+        }
+        
+        self.bot.execute_trade(
+            'buy', 0.8, {}, 
+            explicit_sl=1990.0, 
+            explicit_tp=2010.0, 
+            suggested_lot=0.5,
+            entry_params=entry_params
+        )
+        
+        # Should fallback to original suggested lot
+        self.assertEqual(self.bot.lot_size, 0.5)
 
 if __name__ == '__main__':
     unittest.main()
