@@ -2741,6 +2741,23 @@ class SymbolTrader:
         elif market_regime == 'ranging':
             regime_multiplier = 0.8 # 震荡中缩小目标
             
+        # [NEW] 3.5 MFE/MAE 历史绩效修正
+        mfe_multiplier = 1.0
+        if performance_stats:
+            try:
+                # Filter recent winners
+                winners = [t for t in performance_stats if t.get('profit', 0) > 0]
+                if len(winners) > 5:
+                    avg_mfe = sum([float(t.get('mfe', 0)) for t in winners]) / len(winners)
+                    avg_profit = sum([float(t.get('profit', 0)) for t in winners]) / len(winners)
+                    
+                    if avg_profit > 0 and avg_mfe > (avg_profit * 1.5):
+                        # Historical MFE is 1.5x larger than realized profit -> We are leaving money on table
+                        mfe_multiplier = 1.3
+                        logger.info(f"Performance Optimization: Avg MFE ({avg_mfe:.2f}) >> Avg Profit ({avg_profit:.2f}). Boosting TP by 30%.")
+            except Exception as e:
+                logger.warning(f"Failed to calc MFE stats: {e}")
+            
         # 4. SMC 阻力位修正 (SMC Resistance Cap)
         # 如果是做多，TP 不应超过最近的 Bearish OB 太多
         # 如果是做空，TP 不应超过最近的 Bullish OB 太多
@@ -2748,16 +2765,17 @@ class SymbolTrader:
         
         # 计算混合 TP
         # 逻辑: 加权平均
-        # 70% LLM, 30% Volatility-based
-        # 且应用 Regime Multiplier
+        # 60% LLM, 40% Volatility-based
+        # 且应用 Regime & MFE Multiplier
         
         tech_tp = min_tp_volatility
         
         # 如果 LLM 值异常小 (小于 ATR 价值)，可能是保守或错误，取较大值
         # 如果 LLM 值异常大，可能是贪婪，取加权
         
-        final_tp = (base_tp * 0.7) + (tech_tp * 0.3)
+        final_tp = (base_tp * 0.6) + (tech_tp * 0.4)
         final_tp *= regime_multiplier
+        final_tp *= mfe_multiplier
         
         # 5. 硬性下限
         final_tp = max(final_tp, min_tp_volatility)
@@ -2779,13 +2797,13 @@ class SymbolTrader:
             atr_ratio = target_dist_price / atr
             
             # Define reasonable bounds based on Regime
-            min_atr_ratio = 0.2 # Minimum 20% of ATR (Avoid Spread noise)
-            max_atr_ratio = 1.0 # Default Max 100% ATR
+            min_atr_ratio = 0.2 
+            max_atr_ratio = 1.0 
             
             if market_regime == 'trending':
-                max_atr_ratio = 2.5 # Allow 250% ATR in trends
+                max_atr_ratio = 3.5 # [Optimized] Increased from 2.5 to 3.5 to allow Trend Surfing
             elif market_regime == 'ranging':
-                max_atr_ratio = 0.8 # Limit to 80% ATR in ranges
+                max_atr_ratio = 1.0 # [Optimized] Increased from 0.8 to 1.0
             
             # Clamp Distance
             clamped_dist = max(min_atr_ratio * atr, min(target_dist_price, max_atr_ratio * atr))
@@ -2796,16 +2814,17 @@ class SymbolTrader:
             if abs(adjusted_tp - final_tp) > 0.5:
                 logger.info(f"TP Adjusted by ATR Structure: {final_tp:.2f} -> {adjusted_tp:.2f} (Dist: {target_dist_price:.2f} -> {clamped_dist:.2f}, ATR: {atr:.2f})")
                 final_tp = adjusted_tp
-
+                
         # Final Hard Limits
-        upper_limit = 8.0
+        # [Optimized] Relaxed Upper Limits significantly to allow big wins
+        upper_limit = 500.0 
         if market_regime == 'trending':
-            upper_limit = 15.0
+            upper_limit = 2000.0
             
-        final_tp = max(final_tp, 2.0)
+        final_tp = max(final_tp, 5.0) # Min $5
         final_tp = min(final_tp, upper_limit)
         
-        logger.info(f"Smart Basket TP Calc: Base(LLM)={base_tp:.2f}, ATR_Val={tech_tp:.2f}, Regime={market_regime} -> Final={final_tp:.2f}")
+        logger.info(f"Smart Basket TP Calc: Base(LLM)={base_tp:.2f}, ATR_Val={tech_tp:.2f}, Regime={market_regime}, MFE_Mult={mfe_multiplier} -> Final={final_tp:.2f}")
         return final_tp
 
     def check_trading_schedule(self):
