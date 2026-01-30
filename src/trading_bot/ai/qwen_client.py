@@ -749,9 +749,9 @@ class QwenClient:
         - "max_drawdown_usd": float (网格交易最大允许回撤 USD, e.g., 500.0. 必须基于账户资金和风险偏好由大模型分析得出)
     - **strategy_rationale**: str (中文, 详细解释 SMC 结构、为什么在此处启动网格、ATR 分析等)
     - **market_structure**: dict (SMC 分析摘要)
-        - "trend_h4": str
-        - "trend_m15": str
-        - "key_level": str
+        - "trend_h1": str (H1 趋势分析)
+        - "trend_m15": str (M15 趋势分析)
+        - "key_level": str (关键位分析)
     - **telegram_report**: str (Markdown 格式的简报，用于发送通知。包含 emoji，简洁明了)
         """
         
@@ -1047,7 +1047,8 @@ class QwenClient:
                     "monthly": str,
                     "weekly": str,
                     "daily": str,
-                    "h4": str
+                    "h1": str,
+                    "m15": str
                 }},
                 "key_levels": {{
                     "support": [list of support levels],
