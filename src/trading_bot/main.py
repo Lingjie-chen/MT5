@@ -1084,6 +1084,15 @@ class SymbolTrader:
              
              if 'limit' in llm_action:
                  trade_type = "limit_buy"
+                 # Try to extract price from entry_params
+                 if entry_params and 'price' in entry_params:
+                     try:
+                         price = float(entry_params['price'])
+                     except: pass
+                 
+                 # If price missing, default to Ask - 50 points (Buy Limit)
+                 if price <= 0:
+                     price = tick.ask - (50 * point)
              else:
                  trade_type = "buy" # Market Buy
                  price = tick.ask
@@ -1096,6 +1105,15 @@ class SymbolTrader:
              
              if 'limit' in llm_action:
                  trade_type = "limit_sell"
+                 # Try to extract price from entry_params
+                 if entry_params and 'price' in entry_params:
+                     try:
+                         price = float(entry_params['price'])
+                     except: pass
+                 
+                 # If price missing, default to Bid + 50 points (Sell Limit)
+                 if price <= 0:
+                     price = tick.bid + (50 * point)
              else:
                  trade_type = "sell" # Market Sell
                  price = tick.bid
