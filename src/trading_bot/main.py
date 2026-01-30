@@ -3796,7 +3796,7 @@ class SymbolTrader:
             mt5.shutdown()
 
 class MultiSymbolBot:
-    def __init__(self, symbols, timeframe=mt5.TIMEFRAME_M15):
+    def __init__(self, symbols, timeframe=mt5.TIMEFRAME_M6):
         self.symbols = symbols
         self.timeframe = timeframe
         self.traders = []
