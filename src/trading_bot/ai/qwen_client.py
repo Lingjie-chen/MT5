@@ -365,47 +365,16 @@ class QwenClient:
        - M15 为执行周期，必须服从 H1/H4 趋势。
        - **量化书籍参考**: 遵循《量化交易策略》中的均值回归与趋势跟踪双重验证原则。
        - 只有在确认趋势反转或SMC结构破坏时才平仓。
-       - **网格策略**: 当市场处于震荡或需左侧挂单时，使用 'grid_start' Action，系统将自动生成基于 ATR 和 SMC 阻力位的网格挂单。
+       - **单边策略**: 严禁使用 Grid Start。只能使用 BUY/SELL Action。
     4. **动态风控 (MFE Optimization Protocol)**: 
        - **智能配置 (Smart Configuration)**: 开仓时，TP 必须结合 **市场趋势情绪 (Sentiment)**、**MFE (最大有利偏移)** 以及所有高级算法进行自动优化配置。
        - **智能移动 (Smart Strategic Move)**: 
          - **仅限结构性调整**: 只有当市场结构发生重大变化（如新的支撑/阻力形成、SMC 结构破坏）或情绪发生根本性逆转时，才允许移动 TP。
          - **MFE 驱动**: 
              - **TP**: 根据实时 MFE 预测，如果动能衰竭，提前移动 TP 锁定利润。
-       - **Basket TP 动态实时配置 (Real-time Dynamic Basket TP)**:
-         - **核心要求**: 对于每个品种的网格 Basket TP (整体止盈)，必须根据以下所有维度进行综合分析和自我学习，给出一个**最优的美元数值**：
-           1. **市场情绪 (Sentiment)**: 如果情绪极度乐观(Bullish)且方向做多，大幅上调 Basket TP；反之则保守。
-           2. **结构趋势 (Structure)**: 
-              - **强趋势 (Trend Surfing)**: 若市场处于单边强趋势 (如 H1/H4 结构破坏且 MA 发散)，**必须大幅上调 Basket TP** (例如正常值的 2-3 倍)，防止只吃了一小部分利润就过早离场。
-              - **震荡/逆势**: 目标应保守，快速落袋为安。
-           3. **高级算法 (Algo Metrics)**: 
-              - 参考 `technical_signals` 中的 **EMA/HA** 数据。
-              - 如果价格远离 EMA 50 (乖离率高)，预期会有回归，TP 应保守。
-              - 如果 EMA 50 强劲倾斜且 HA 连续同色，TP 应激进。
-           4. **历史绩效 (Self-Learning)**: 
-              - **必须参考** `performance_stats` 中的 `avg_mfe` (平均最大有利偏移)。
-              - **Basket TP 上限** = (Position Size * Contract Size * Avg_MFE_Points * 0.8)。不要设定超过历史平均表现太多的不切实际目标。
-              - **Basket TP 下限** = 能够覆盖交易成本 (Spread + Swap + Commission) 的最小利润。
-           5. **量化书籍优化**: 
-              - 引入 Kelly Criterion (凯利公式) 思想，在胜率高时允许更大的 TP 以最大化几何增长。
-              - 参考《交易系统的胜算》中的 "Expectancy" (期望值) 概念，确保 (WinRate * AvgWin) > (LossRate * AvgLoss)。
-           6. **长期历史优化种子 (Long-term Optimization Seeds)**:
-              - **必须参考** `historical_seeds` 中的最佳参数组合。
-              - 如果历史数据显示某组参数 (如特定的 SMC ATR 阈值或 Grid Step) 长期表现优异，应在策略制定中给予更高权重。
-              - 将历史最优参数作为决策的 "Anchor" (锚点)，在此基础上进行微调，而不是凭空猜测。
-         - **计算公式参考**:
-           - `Base_Target` = (ATR * Position_Size * Contract_Size)
-           - `Sentiment_Multiplier`: 0.5 (Weak) to 3.0 (Strong Trend)
-           - `Structure_Multiplier`: 0.8 (Range) to 2.0 (Trend Surfing)
-           - `Dynamic_Basket_TP` = `Base_Target` * `Sentiment_Multiplier` * `Structure_Multiplier` (并用 Avg_MFE 做校验)
-         - **拒绝固定值**: 严禁使用固定的数值 (如 50.0)！必须是经过上述逻辑计算后的结果。
-         - **更新指令**: 在 `position_management` -> `dynamic_basket_tp` 中返回计算后的数值。
-       - **Lock Profit Trigger (Profit Locking)**:
-         - **User Instruction**: **已被禁用**。请不要设置此值，或将其设置为 null / 0。我们不再使用利润锁定机制，完全依赖 Basket TP。
-         - **更新指令**: 在 `position_management` -> `lock_profit_trigger` 中返回 null 或 0。
-       - **Trailing Stop Config (移动止损配置)**:
-         - **User Instruction**: **已被禁用**。请不要设置此值。
-         - **更新指令**: 在 `position_management` -> `trailing_stop_config` 中返回 null。
+       - **Basket TP**: 已被禁用 (Trend Only)。
+       - **Lock Profit Trigger**: 已被禁用。
+       - **Trailing Stop Config**: 建议使用 `atr_distance` 类型的移动止损。
 
     5. **CandleSmoothing EMA 策略 (Strategy B)**:
        - **核心逻辑**: 基于 EMA50 趋势过滤，结合 EMA20 High/Low 通道突破和 Heiken Ashi 蜡烛形态。
@@ -1530,7 +1499,7 @@ class QwenClient:
         """获取字段默认值"""
         defaults = {
             'action': 'hold',
-            'strategy_mode': 'grid',
+            'strategy_mode': 'trend',
             'entry_conditions': {"trigger_type": "market"},
             'exit_conditions': {"sl_atr_multiplier": 1.5, "tp_atr_multiplier": 2.5},
             'position_management': {
@@ -1543,7 +1512,7 @@ class QwenClient:
             },
             'grid_config': {
                 "initial_lot": 0.01,
-                "allow_add": True,
+                "allow_add": False,
                 "grid_step_mode": "atr",
                 "grid_step_pips": 20.0,
                 "martingale_mode": "multiply",
