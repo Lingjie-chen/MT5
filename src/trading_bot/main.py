@@ -3066,9 +3066,12 @@ class SymbolTrader:
                 return False
                 
         # Forex/Metal Rules (GOLD, EURUSD)
-        # 允许交易时间: 周一 06:30 - 周六 13:00
+        # Standard Market Time (UTC+8 approx):
+        # Open: Monday 06:00 (Winter) / 05:00 (Summer)
+        # Close: Saturday 06:00 (Winter) / 05:00 (Summer)
+        # We use a conservative schedule to ensure safety across seasons.
         if "GOLD" in symbol_upper or "XAU" in symbol_upper or "EUR" in symbol_upper:
-            # 周一: 需 06:30 之后
+            # Monday: Allow from 06:30 (Safe buffer after 06:00 Winter Open)
             if weekday == 0:
                 if (current_time.hour > 6) or (current_time.hour == 6 and current_time.minute >= 30):
                     return True
@@ -3077,23 +3080,23 @@ class SymbolTrader:
                         logger.info(f"[{self.symbol}] 非交易时间 (Forex Start). 允许: 周一 06:30+. 当前: {now.strftime('%A %H:%M')}")
                     return False
             
-            # 周二(1) - 周五(4): 全天允许
+            # Tuesday(1) - Friday(4): All Day
             elif 1 <= weekday <= 4:
                 return True
                 
-            # 周六(5): 允许直到 13:00
+            # Saturday(5): Allow until 04:00 (Safe buffer before 05:00 Summer Close)
             elif weekday == 5:
-                if current_time.hour < 13:
+                if current_time.hour < 4:
                     return True
                 else:
                     if current_time.minute % 30 == 0 and current_time.second < 2:
-                        logger.info(f"[{self.symbol}] 非交易时间 (Forex Weekend). 允许: 周一06:30 - 周六13:00. 当前: {now.strftime('%A %H:%M')}")
+                        logger.info(f"[{self.symbol}] 非交易时间 (Forex Weekend). 允许: 周一06:30 - 周六04:00. 当前: {now.strftime('%A %H:%M')}")
                     return False
             
-            # 周日(6): 禁止
+            # Sunday(6): Closed
             else:
                 if current_time.minute % 30 == 0 and current_time.second < 2:
-                    logger.info(f"[{self.symbol}] 非交易时间 (Forex Weekend). 允许: 周一06:30 - 周六13:00. 当前: {now.strftime('%A %H:%M')}")
+                    logger.info(f"[{self.symbol}] 非交易时间 (Forex Weekend). 允许: 周一06:30 - 周六04:00. 当前: {now.strftime('%A %H:%M')}")
                 return False
                 
         # Default: Allow if not specified
