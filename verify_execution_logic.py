@@ -42,6 +42,7 @@ class TestExecutionLogic(unittest.TestCase):
         # Mock account info
         self.mock_account = MagicMock()
         self.mock_account.margin_free = 1000.0 # $1000 free margin
+        self.mock_account.margin_level = 500.0 # Safe margin level
         mt5.account_info.return_value = self.mock_account
 
     def test_suggested_lot_within_margin(self):
