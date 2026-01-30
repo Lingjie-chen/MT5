@@ -989,90 +989,90 @@ class SymbolTrader:
         is_opening_action = llm_action in ['buy', 'sell', 'add_buy', 'add_sell', 'limit_buy', 'limit_sell', 'buy_limit', 'sell_limit', 'grid_start', 'close_buy_open_sell', 'close_sell_open_buy']
         
         if is_opening_action:
-             is_safe, reason = self.check_account_safety(close_if_critical=False)
-             if not is_safe:
-                 logger.warning(f"🚫 拒绝开仓/网格指令 ({llm_action}): 账户风险检查未通过 ({reason})")
-                 return
-             
-             # [NEW] Price Position Check (Callback/Pullback Logic)
-             # User Requirement: 如果当前位置不适合开仓，则等待回调
-             # 简单的逻辑：如果做多 (Buy)，当前价格不应在近期最高点附近；如果做空 (Sell)，不应在最低点附近。
-             # 或者使用 entry_params 中的价格作为必须条件。
-             
-             # 1. Check if specific entry price is required by LLM
-             required_entry = 0.0
-             if entry_params and 'price' in entry_params:
-                 try: required_entry = float(entry_params['price'])
-                 except: pass
-             
-             current_ask = tick.ask
-             current_bid = tick.bid
-             
-             if required_entry > 0:
-                 # Check deviation
-                 threshold_pips = 10 * mt5.symbol_info(self.symbol).point * 10 # 10 pips tolerance? or strict?
-                 # Let's use points directly. 100 points = 10 pips (usually)
-                 threshold_points = 50 * mt5.symbol_info(self.symbol).point 
-                 
-                 if "buy" in llm_action or "long" in llm_action:
-                     # For Buy, we want price <= required_entry (better or equal)
-                     # But if price is slightly above, maybe wait?
-                     if current_ask > (required_entry + threshold_points):
-                         logger.info(f"⏳ 价格过高，等待回调 (Current: {current_ask:.2f} > Target: {required_entry:.2f}). 跳过本次开仓。")
-                         return
-                 elif "sell" in llm_action or "short" in llm_action:
-                     # For Sell, we want price >= required_entry
-                     if current_bid < (required_entry - threshold_points):
-                         logger.info(f"⏳ 价格过低，等待反弹 (Current: {current_bid:.2f} < Target: {required_entry:.2f}). 跳过本次开仓。")
-                         return
-             
-             # 2. General Pullback Logic (if no specific price)
-             # If Strength is not super high, avoid buying at local top / selling at local bottom
-             # Use simple 20-bar Donchian Channel logic
-             else:
-                 if strength < 0.9: # Only check if not super confident
-                     rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
-                     if rates is not None and len(rates) > 0:
-                         highs = [x['high'] for x in rates]
-                         lows = [x['low'] for x in rates]
-                         recent_high = max(highs)
-                         recent_low = min(lows)
-                         
-                         # Check Buy at Top
-                         if "buy" in llm_action or "long" in llm_action:
-                             # If current price is very close to recent high (e.g. within top 10% of range)
-                             rng = recent_high - recent_low
-                             if rng > 0 and (current_ask - recent_low) / rng > 0.9:
-                                  logger.info(f"⏳ 价格处于近期高位 ({current_ask:.2f} near High {recent_high:.2f})，等待回调。")
-                                  return
-                         
-                         # Check Sell at Bottom
-                         elif "sell" in llm_action or "short" in llm_action:
-                             # If current price is very close to recent low (e.g. within bottom 10% of range)
-                             rng = recent_high - recent_low
-                             if rng > 0 and (current_bid - recent_low) / rng < 0.1:
-                                  logger.info(f"⏳ 价格处于近期低位 ({current_bid:.2f} near Low {recent_low:.2f})，等待反弹。")
-                                  return
+            is_safe, reason = self.check_account_safety(close_if_critical=False)
+            if not is_safe:
+                logger.warning(f"🚫 拒绝开仓/网格指令 ({llm_action}): 账户风险检查未通过 ({reason})")
+                return
+            
+            # [NEW] Price Position Check (Callback/Pullback Logic)
+            # User Requirement: 如果当前位置不适合开仓，则等待回调
+            # 简单的逻辑：如果做多 (Buy)，当前价格不应在近期最高点附近；如果做空 (Sell)，不应在最低点附近。
+            # 或者使用 entry_params 中的价格作为必须条件。
+            
+            # 1. Check if specific entry price is required by LLM
+            required_entry = 0.0
+            if entry_params and 'price' in entry_params:
+                try: required_entry = float(entry_params['price'])
+                except: pass
+            
+            current_ask = tick.ask
+            current_bid = tick.bid
+            
+            if required_entry > 0:
+                # Check deviation
+                threshold_pips = 10 * mt5.symbol_info(self.symbol).point * 10 # 10 pips tolerance? or strict?
+                # Let's use points directly. 100 points = 10 pips (usually)
+                threshold_points = 50 * mt5.symbol_info(self.symbol).point 
+                
+                if "buy" in llm_action or "long" in llm_action:
+                    # For Buy, we want price <= required_entry (better or equal)
+                    # But if price is slightly above, maybe wait?
+                    if current_ask > (required_entry + threshold_points):
+                        logger.info(f"⏳ 价格过高，等待回调 (Current: {current_ask:.2f} > Target: {required_entry:.2f}). 跳过本次开仓。")
+                        return
+                elif "sell" in llm_action or "short" in llm_action:
+                    # For Sell, we want price >= required_entry
+                    if current_bid < (required_entry - threshold_points):
+                        logger.info(f"⏳ 价格过低，等待反弹 (Current: {current_bid:.2f} < Target: {required_entry:.2f}). 跳过本次开仓。")
+                        return
+            
+            # 2. General Pullback Logic (if no specific price)
+            # If Strength is not super high, avoid buying at local top / selling at local bottom
+            # Use simple 20-bar Donchian Channel logic
+            else:
+                if strength < 0.9: # Only check if not super confident
+                    rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+                    if rates is not None and len(rates) > 0:
+                        highs = [x['high'] for x in rates]
+                        lows = [x['low'] for x in rates]
+                        recent_high = max(highs)
+                        recent_low = min(lows)
+                        
+                        # Check Buy at Top
+                        if "buy" in llm_action or "long" in llm_action:
+                            # If current price is very close to recent high (e.g. within top 10% of range)
+                            rng = recent_high - recent_low
+                            if rng > 0 and (current_ask - recent_low) / rng > 0.9:
+                                 logger.info(f"⏳ 价格处于近期高位 ({current_ask:.2f} near High {recent_high:.2f})，等待回调。")
+                                 return
+                        
+                        # Check Sell at Bottom
+                        elif "sell" in llm_action or "short" in llm_action:
+                            # If current price is very close to recent low (e.g. within bottom 10% of range)
+                            rng = recent_high - recent_low
+                            if rng > 0 and (current_bid - recent_low) / rng < 0.1:
+                                 logger.info(f"⏳ 价格处于近期低位 ({current_bid:.2f} near Low {recent_low:.2f})，等待反弹。")
+                                 return
 
-              # 3. SMC / Supply & Demand / BOS / CHoCH Validation (Enhanced)
-              # 如果 LLM 分析中包含这些关键词，尝试进一步校验
-              # (注：SMC 分析结果已包含在 self.latest_strategy['details'] 中，如果存在)
-              if self.latest_strategy and 'details' in self.latest_strategy:
-                  smc_details = self.latest_strategy['details'].get('smc_structure', {})
-                  
-                  # 获取关键区域
-                  # 这里假设 smc_structure 包含 'poi' (Points of Interest) 或 'liquidity' 等
-                  # 由于具体结构未完全标准化，我们进行关键词匹配
-                  
-                  # A. BOS (Break of Structure) Check
-                  # 如果是 Buy，我们希望看到 bullish BOS 已经发生，或者正在回踩 OB (Order Block)
-                  # 如果是 Sell，我们希望看到 bearish BOS
-                  
-                  # B. Premium/Discount Zone
-                  # Buy should be in Discount zone (< 0.5 of range)
-                  # Sell should be in Premium zone (> 0.5 of range)
-                  
-                  pass # (此逻辑目前作为占位符，因为需要更复杂的 SMC 计算模块支持。当前通过 K 线高低点已实现基础的 Discount/Premium 检查)
+            # 3. SMC / Supply & Demand / BOS / CHoCH Validation (Enhanced)
+            # 如果 LLM 分析中包含这些关键词，尝试进一步校验
+            # (注：SMC 分析结果已包含在 self.latest_strategy['details'] 中，如果存在)
+            if self.latest_strategy and 'details' in self.latest_strategy:
+                smc_details = self.latest_strategy['details'].get('smc_structure', {})
+                
+                # 获取关键区域
+                # 这里假设 smc_structure 包含 'poi' (Points of Interest) 或 'liquidity' 等
+                # 由于具体结构未完全标准化，我们进行关键词匹配
+                
+                # A. BOS (Break of Structure) Check
+                # 如果是 Buy，我们希望看到 bullish BOS 已经发生，或者正在回踩 OB (Order Block)
+                # 如果是 Sell，我们希望看到 bearish BOS
+                
+                # B. Premium/Discount Zone
+                # Buy should be in Discount zone (< 0.5 of range)
+                # Sell should be in Premium zone (> 0.5 of range)
+                
+                pass # (此逻辑目前作为占位符，因为需要更复杂的 SMC 计算模块支持。当前通过 K 线高低点已实现基础的 Discount/Premium 检查)
 
         # 如果当前没有仓位，或者上面的逻辑没有触发 Close (即是 Hold)，
         # 或者是 Reversal (Close 之后)，我们需要看是否需要开新仓。
