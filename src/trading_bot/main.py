@@ -1349,7 +1349,7 @@ class SymbolTrader:
                 #          if "buy" in trade_type: explicit_tp = price + 3.0 * atr
                 #          else: explicit_tp = price - 3.0 * atr 
 
-            # User Requirement: 只有盈利比亏损的风险大于 1.5 的情况下交易
+            # User Requirement: 只有盈利比亏损的风险大于 1.2 的情况下交易
             # Enforce R:R check for ALL trade types (Limit/Stop AND Market Buy/Sell)
             # Need ATR for risk estimation if SL is 0
             if atr <= 0:
@@ -1359,13 +1359,20 @@ class SymbolTrader:
                      high_low = df_temp['high'] - df_temp['low']
                      atr = high_low.rolling(14).mean().iloc[-1]
             
-            # [MODIFIED] Disable Hard R:R Check when SL/TP are 0 (Full AI Control)
-            # valid, rr = self.check_risk_reward_ratio(price, explicit_sl, explicit_tp, atr=atr)
-            # if not valid:
-            #      logger.warning(f"最终 R:R 检查未通过: {rr:.2f} < 1.5. 交易取消.")
-            #      return
-            
-            logger.info("Skipping Hard R:R Check (Full AI Control Mode)")
+            # [MODIFIED] Re-enable Hard R:R Check >= 1.2
+            if explicit_sl and explicit_sl > 0 and explicit_tp and explicit_tp > 0:
+                potential_profit = abs(explicit_tp - price)
+                potential_loss = abs(price - explicit_sl)
+                
+                if potential_loss > 0:
+                    rr_ratio = potential_profit / potential_loss
+                    if rr_ratio < 1.2:
+                        logger.warning(f"R:R check failed: {rr_ratio:.2f} < 1.2 (Profit: {potential_profit:.2f}, Loss: {potential_loss:.2f}). Cancel trade.")
+                        return
+                    else:
+                        logger.info(f"R:R check passed: {rr_ratio:.2f} >= 1.2")
+            else:
+                logger.info("Skipping Hard R:R Check (SL/TP not fully defined)")
 
             # FIX: Ensure 'action' is defined for the comment
             # action variable was used in _send_order's comment but was coming from llm_action
@@ -3764,11 +3771,11 @@ class SymbolTrader:
                                 f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
                                 f"{telegram_report}\n\n"
                                 f"📊 *Live Status*\n"
-                                f"• Action: *{strategy.get('action', final_signal).upper()}*\n"
-                                f"• Lots: `{strategy.get('position_size', 0.01)}`\n"
-                                f"• Strength: {strength:.0f}%\n"
-                                f"• Sentiment: {qwen_sent_label.upper()} ({qwen_sent_score:.2f})\n\n"
-                                f"💼 *Positions*\n"
+                        f"• Action: *{strategy.get('action', final_signal).upper()}*\n"
+                        f"• Lots: `{self.lot_size if self.lot_size else strategy.get('position_size', 0.01)}`\n"
+                        f"• Strength: {strength:.0f}%\n"
+                        f"• Sentiment: {qwen_sent_label.upper()} ({qwen_sent_score:.2f})\n\n"
+                        f"💼 *Positions*\n"
                                 f"{self.escape_markdown(pos_summary)}"
                             )
                         else:
