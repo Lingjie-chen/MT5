@@ -1104,10 +1104,23 @@ class SymbolTrader:
                  logger.info(f"Converting '{llm_action}' to Grid Start (Short) due to Grid Mode policy.")
         
         if is_grid_action:
-            logger.info(f">>> 执行网格部署 (Direction: {direction}) <<<")
+            # [NEW POLICY] 
+            # Grid Deployment is PERMANENTLY DISABLED based on User Request.
+            # Even if 'is_grid_action' is True (which shouldn't happen given the updated logic above),
+            # we block it here.
+            
+            logger.warning(f"Grid Deployment Blocked (User Policy: Trend Only). Converting to Single Limit Entry if applicable.")
+            
+            # Fallback: Execute a single Limit Order instead of a full grid
+            # if it was intended as a grid start.
+            
+            # ... (Rest of grid logic is skipped) ...
+            return
+
+            # logger.info(f">>> 执行网格部署 (Direction: {direction}) <<<")
             
             # [NEW] Clear existing pending orders before starting new grid
-            self.cancel_all_pending_orders()
+            # self.cancel_all_pending_orders()
             
             # 2. 提取配置 (Grid Config)
             grid_config = {}
