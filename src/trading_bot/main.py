@@ -1091,8 +1091,10 @@ class SymbolTrader:
                      except: pass
                  
                  # If price missing, default to Ask - 50 points (Buy Limit)
-                 if price <= 0:
-                     price = tick.ask - (50 * point)
+                  if price <= 0:
+                      si = mt5.symbol_info(self.symbol)
+                      point = si.point if si else 0.01
+                      price = tick.ask - (50 * point)
              else:
                  trade_type = "buy" # Market Buy
                  price = tick.ask
