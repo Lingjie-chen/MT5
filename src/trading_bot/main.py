@@ -2977,7 +2977,7 @@ class SymbolTrader:
                 return False
                 
         # Forex/Metal Rules (GOLD, EURUSD)
-        # 允许交易时间: 周一 06:30 - 周六 00:00 (即周五 23:59:59)
+        # 允许交易时间: 周一 06:30 - 周六 13:00
         if "GOLD" in symbol_upper or "XAU" in symbol_upper or "EUR" in symbol_upper:
             # 周一: 需 06:30 之后
             if weekday == 0:
@@ -2992,10 +2992,19 @@ class SymbolTrader:
             elif 1 <= weekday <= 4:
                 return True
                 
-            # 周六(5) - 周日(6): 禁止
+            # 周六(5): 允许直到 13:00
+            elif weekday == 5:
+                if current_time.hour < 13:
+                    return True
+                else:
+                    if current_time.minute % 30 == 0 and current_time.second < 2:
+                        logger.info(f"[{self.symbol}] 非交易时间 (Forex Weekend). 允许: 周一06:30 - 周六13:00. 当前: {now.strftime('%A %H:%M')}")
+                    return False
+            
+            # 周日(6): 禁止
             else:
                 if current_time.minute % 30 == 0 and current_time.second < 2:
-                    logger.info(f"[{self.symbol}] 非交易时间 (Forex Weekend). 允许: 周一06:30 - 周六00:00. 当前: {now.strftime('%A %H:%M')}")
+                    logger.info(f"[{self.symbol}] 非交易时间 (Forex Weekend). 允许: 周一06:30 - 周六13:00. 当前: {now.strftime('%A %H:%M')}")
                 return False
                 
         # Default: Allow if not specified
