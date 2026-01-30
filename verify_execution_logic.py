@@ -52,18 +52,14 @@ class TestExecutionLogic(unittest.TestCase):
         
         mt5.order_calc_margin.return_value = 100.0
         
+        # Adjust SL/TP for R:R > 1.2
+        # Buy @ 2000. SL 1990 (Risk 10). TP 2020 (Reward 20). Ratio 2.0.
         entry_params = {
             'lots': 0.1,
             'action': 'buy',
             'sl': 1990.0,
-            'tp': 2010.0
+            'tp': 2020.0
         }
-        
-        # We assume explicit_sl/tp and suggested_lot extraction works (tested elsewhere)
-        # We bypass extraction and call execute_trade logic directly?
-        # Or better: mimic call to execute_trade with extracted args
-        
-        # main.py: execute_trade(self, signal, strength, sl_tp_params, entry_params=None, suggested_lot=None)
         
         self.bot.execute_trade(
             'buy', 0.8, {}, 
@@ -86,11 +82,12 @@ class TestExecutionLogic(unittest.TestCase):
         
         mt5.order_calc_margin.return_value = 2000.0
         
+        # Adjust SL/TP for R:R > 1.2
         entry_params = {
             'lots': 1.0,
             'action': 'buy',
             'sl': 1990.0,
-            'tp': 2010.0
+            'tp': 2020.0
         }
         
         self.bot.execute_trade(
@@ -109,11 +106,12 @@ class TestExecutionLogic(unittest.TestCase):
         """Test fallback when margin check fails"""
         mt5.order_calc_margin.side_effect = Exception("MT5 Error")
         
+        # Adjust SL/TP for R:R > 1.2
         entry_params = {
             'lots': 0.5,
             'action': 'buy',
             'sl': 1990.0,
-            'tp': 2010.0
+            'tp': 2020.0
         }
         
         self.bot.execute_trade(
