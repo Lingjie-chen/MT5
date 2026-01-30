@@ -3047,8 +3047,13 @@ class SymbolTrader:
         """
         结合 LLM 建议、市场波动率 (ATR)、市场结构 (SMC) 和风险状态计算最终的 Dynamic Basket TP
         """
+        # [FIX] If LLM explicitly returns 0.0 (or None), we should respect it or handle it carefully.
+        # If llm_tp is explicitly provided as 0, return 0.0 (Disable Basket TP).
+        if llm_tp is not None and float(llm_tp) == 0.0:
+            return 0.0
+
         if not current_positions:
-            return llm_tp if llm_tp else 100.0
+            return float(llm_tp) if llm_tp else 100.0
             
         # 1. 基础值: LLM 建议 (权重最高，因为包含了宏观和综合判断)
         base_tp = float(llm_tp) if llm_tp and float(llm_tp) > 0 else 100.0
@@ -3799,6 +3804,25 @@ class SymbolTrader:
                             try:
                                 qwen_lot = float(strategy['position_size'])
                                 if qwen_lot > 0:
+                                    # [FIX] Validate against Symbol Info (Min/Max/Step)
+                                    symbol_info = mt5.symbol_info(self.symbol)
+                                    if symbol_info:
+                                        step = symbol_info.volume_step
+                                        min_vol = symbol_info.volume_min
+                                        max_vol = symbol_info.volume_max
+                                        
+                                        # 1. Normalize to step
+                                        if step > 0:
+                                            qwen_lot = round(qwen_lot / step) * step
+                                            qwen_lot = round(qwen_lot, 2) # Safety round
+                                        
+                                        # 2. Clamp to limits
+                                        if qwen_lot < min_vol:
+                                            logger.warning(f"Qwen Lot {qwen_lot} < Min {min_vol}. Adjusting to Min.")
+                                            qwen_lot = min_vol
+                                        elif qwen_lot > max_vol:
+                                            qwen_lot = max_vol
+                                    
                                     self.lot_size = qwen_lot
                                     # Update grid strategy lot size too for consistency
                                     if hasattr(self, 'grid_strategy'):
