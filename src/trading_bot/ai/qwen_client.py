@@ -974,11 +974,13 @@ class QwenClient:
            - 找出关键的市场结构点（BOS/CHoch）
            - 评估市场当前处于哪个阶段（积累/扩张/分配）
         
-        3. **SMC信号识别**
-           - 识别活跃的订单块(Order Blocks)
+        3. **SMC信号识别 (详细)**
+           - 识别活跃的订单块(Order Blocks) 和 严格的供需区 (Supply/Demand Zones)
            - 识别重要的失衡区(FVGs)
-           - 评估流动性池位置
-        
+           - 评估流动性池位置 (Liquidity Pools)
+           - **结构确认**: 明确指出最近的 BOS (结构破坏) 和 CHoCH (特性改变) 位置
+           - **位置评估**: 当前价格是否处于 Premium (溢价区) 还是 Discount (折扣区)？
+
         4. **情绪分析**
            - 情绪得分 (Sentiment Score): -1.0 (极度看空) 到 1.0 (极度看多)
            - 市场情绪状态: bullish/bearish/neutral
