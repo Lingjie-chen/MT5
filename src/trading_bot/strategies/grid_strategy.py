@@ -630,12 +630,18 @@ class KalmanGridStrategy:
             target_tp = dynamic_tp
             used_source = f"Dynamic (Val={dynamic_tp})"
         else:
-            target_tp = self.tp_steps.get(count, self.global_tp)
-            if count > 9: target_tp = self.global_tp
-            used_source = f"Step (Count={count})"
+            # [NEW POLICY] If no Dynamic TP from LLM, do NOT fallback to small step TPs.
+            # In Trend Mode, we want to let profits run unless LLM says otherwise.
+            # We use a very high safety default if LLM is silent.
+            target_tp = 99999.0 
+            used_source = "Safety Max (No LLM TP)"
+            
+            # target_tp = self.tp_steps.get(count, self.global_tp)
+            # if count > 9: target_tp = self.global_tp
+            # used_source = f"Step (Count={count})"
 
         if total_profit >= target_tp:
-            logger.info(f"Grid Basket TP ({'LONG' if is_long else 'SHORT'}) Reached: Profit {total_profit:.2f} >= Target {target_tp} (Source: {used_source})")
+            logger.info(f"Trend Position TP ({'LONG' if is_long else 'SHORT'}) Reached: Profit {total_profit:.2f} >= Target {target_tp} (Source: {used_source})")
             return True
             
         # --- 2. Profit Locking Logic (Trailing Stop for Basket) ---
