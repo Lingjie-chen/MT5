@@ -62,14 +62,12 @@ class TestExecutionLogic(unittest.TestCase):
         # We bypass extraction and call execute_trade logic directly?
         # Or better: mimic call to execute_trade with extracted args
         
-        # main.py: execute_trade(self, llm_action, signal, strength, sl_tp_params=None, explicit_sl=None, explicit_tp=None, suggested_lot=None, entry_params=None)
+        # main.py: execute_trade(self, signal, strength, sl_tp_params, entry_params=None, suggested_lot=None)
         
         self.bot.execute_trade(
             'buy', 0.8, {}, 
-            explicit_sl=1990.0, 
-            explicit_tp=2010.0, 
-            suggested_lot=0.1,
-            entry_params=entry_params
+            entry_params=entry_params,
+            suggested_lot=0.1
         )
         
         # Verify lot_size was updated to 0.1
@@ -96,10 +94,8 @@ class TestExecutionLogic(unittest.TestCase):
         
         self.bot.execute_trade(
             'buy', 0.8, {}, 
-            explicit_sl=1990.0, 
-            explicit_tp=2010.0, 
-            suggested_lot=1.0,
-            entry_params=entry_params
+            entry_params=entry_params,
+            suggested_lot=1.0
         )
         
         # Verify lot_size was reduced to 0.45
@@ -121,10 +117,8 @@ class TestExecutionLogic(unittest.TestCase):
         
         self.bot.execute_trade(
             'buy', 0.8, {}, 
-            explicit_sl=1990.0, 
-            explicit_tp=2010.0, 
-            suggested_lot=0.5,
-            entry_params=entry_params
+            entry_params=entry_params,
+            suggested_lot=0.5
         )
         
         # Should fallback to original suggested lot
