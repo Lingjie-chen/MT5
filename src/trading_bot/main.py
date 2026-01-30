@@ -3187,17 +3187,35 @@ class SymbolTrader:
         symbol_upper = self.symbol.upper()
         
         # Crypto Rules (ETHUSD)
-        # 允许交易时间: 周六(5), 周日(6), 周一(0) 07:00 之前
+        # User Requirement: "周六早上8点后开始交易，周一早上6:30结束交易"
+        # (Assuming "早上点" implies 08:00 AM based on context)
         if "ETH" in symbol_upper:
-            is_weekend = weekday >= 5
-            is_monday_morning = (weekday == 0 and current_time.hour < 7)
+            # Saturday (5): Allow after 08:00
+            if weekday == 5:
+                if current_time.hour >= 8:
+                    return True
+                else:
+                    if current_time.minute % 30 == 0 and current_time.second < 2:
+                        logger.info(f"[{self.symbol}] 非交易时间 (Crypto Sat). 等待周六 08:00 开盘. 当前: {now.strftime('%H:%M')}")
+                    return False
             
-            if is_weekend or is_monday_morning:
+            # Sunday (6): Allow All Day
+            elif weekday == 6:
                 return True
+                
+            # Monday (0): Allow before 06:30
+            elif weekday == 0:
+                if (current_time.hour < 6) or (current_time.hour == 6 and current_time.minute < 30):
+                    return True
+                else:
+                    if current_time.minute % 30 == 0 and current_time.second < 2:
+                        logger.info(f"[{self.symbol}] 非交易时间 (Crypto Mon). 周一 06:30 收盘. 当前: {now.strftime('%H:%M')}")
+                    return False
+            
+            # Tue-Fri (1-4): Closed
             else:
-                # 只有在整点或半点打印日志，避免刷屏
                 if current_time.minute % 30 == 0 and current_time.second < 2:
-                    logger.info(f"[{self.symbol}] 非交易时间 (Crypto). 允许: 周六-周一07:00. 当前: {now.strftime('%A %H:%M')}")
+                    logger.info(f"[{self.symbol}] 非交易时间 (Crypto Weekday). 仅限周末交易. 当前: {now.strftime('%A %H:%M')}")
                 return False
                 
         # Forex/Metal Rules (GOLD, EURUSD)
