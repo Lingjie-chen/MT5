@@ -1,9 +1,21 @@
 
 import MetaTrader5 as mt5
 
-if not mt5.initialize():
-    print("Init failed")
-    quit()
+# Credentials from main.py (Account 1)
+account = 89633982
+server = "Ava-Real 1-MT5"
+password = "Clj568741230#"
+
+if not mt5.initialize(login=account, server=server, password=password):
+    print(f"Init failed with specific credentials: {mt5.last_error()}")
+    # Fallback
+    if not mt5.initialize():
+        print("Init failed with default")
+        quit()
+    else:
+        print("Initialized with default (fallback)")
+else:
+    print(f"Initialized with Account {account}")
 
 symbol_info = mt5.symbol_info("GOLD")
 if symbol_info:
