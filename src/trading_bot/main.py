@@ -2906,21 +2906,9 @@ class SymbolTrader:
             tr3 = abs(low[-1] - close[-2])
             current_atr = max(tr1, max(tr2, tr3))
             
-            # Check Grid TP / Lock
-            should_close_long, should_close_short = self.grid_strategy.check_basket_tp(positions, current_atr=current_atr)
-            
-            if should_close_long or should_close_short:
-                logger.info(f"Grid Strategy triggered Basket TP/Lock! (Long:{should_close_long}, Short:{should_close_short}) Closing positions...")
-                
-                to_close = []
-                if should_close_long:
-                    to_close.extend([p for p in positions if p.type == mt5.POSITION_TYPE_BUY])
-                if should_close_short:
-                    to_close.extend([p for p in positions if p.type == mt5.POSITION_TYPE_SELL])
-                
-                if to_close:
-                    self.close_all_positions(to_close, reason="Grid Basket TP/Lock")
-                return
+            # Check Grid TP / Lock (Moved to end of loop)
+            # should_close_long, should_close_short = self.grid_strategy.check_basket_tp(positions, current_atr=current_atr)
+
 
             # Single iteration logic (replacing while True)
             if True:
