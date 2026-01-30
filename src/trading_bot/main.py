@@ -1076,8 +1076,9 @@ class SymbolTrader:
                      trade_type = mt5.ORDER_TYPE_BUY_LIMIT
                  else:
                      trade_type = mt5.ORDER_TYPE_BUY # Market Buy
+                     price = tick.ask
                  
-                 logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid.")
+                 logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid. Price={price}")
              else:
                  # Convert Buy -> Grid Start Long (Legacy/Grid Mode)
                  is_grid_action = True
@@ -1095,9 +1096,8 @@ class SymbolTrader:
                      trade_type = mt5.ORDER_TYPE_SELL_LIMIT
                  else:
                      trade_type = mt5.ORDER_TYPE_SELL # Market Sell
-                     price = tick.bid
                      
-                 logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid. Price={price}")
+                 logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid.")
              else:
                  # Convert Sell -> Grid Start Short
                  is_grid_action = True
@@ -4017,5 +4017,4 @@ if __name__ == "__main__":
             
     # User Requirement: Change Timeframe back to 15 Minutes
     bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M15)
-    bot.start(account_index=args.account) timeframe=mt5.TIMEFRAME_M15)
     bot.start(account_index=args.account)
