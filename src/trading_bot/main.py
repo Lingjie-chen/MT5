@@ -4015,6 +4015,6 @@ if __name__ == "__main__":
     
     logger.info(f"Starting Bot with Account {args.account} for symbols: {symbols}")
             
-    # User Requirement: Change Timeframe back to 15 Minutes
-    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M15)
+    # User Requirement: Change Timeframe back to 6 Minutes
+    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M6)
     bot.start(account_index=args.account)
