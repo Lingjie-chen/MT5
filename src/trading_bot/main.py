@@ -1047,12 +1047,12 @@ class SymbolTrader:
                                   return
                          
                          # Check Sell at Bottom
-                          elif "sell" in llm_action or "short" in llm_action:
-                              # If current price is very close to recent low (e.g. within bottom 10% of range)
-                              rng = recent_high - recent_low
-                              if rng > 0 and (current_bid - recent_low) / rng < 0.1:
-                                   logger.info(f"⏳ 价格处于近期低位 ({current_bid:.2f} near Low {recent_low:.2f})，等待反弹。")
-                                   return
+                         elif "sell" in llm_action or "short" in llm_action:
+                             # If current price is very close to recent low (e.g. within bottom 10% of range)
+                             rng = recent_high - recent_low
+                             if rng > 0 and (current_bid - recent_low) / rng < 0.1:
+                                  logger.info(f"⏳ 价格处于近期低位 ({current_bid:.2f} near Low {recent_low:.2f})，等待反弹。")
+                                  return
 
               # 3. SMC / Supply & Demand / BOS / CHoCH Validation (Enhanced)
               # 如果 LLM 分析中包含这些关键词，尝试进一步校验
