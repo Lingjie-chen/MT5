@@ -734,6 +734,8 @@ class QwenClient:
 
     - **action**: str ("GRID_START_LONG", "GRID_START_SHORT", "HOLD", "CLOSE_ALL", "BUY", "SELL")
     - **strategy_mode**: str ("grid" 或 "trend") -- 必须明确指定当前策略模式
+    - **sl**: float (趋势交易止损价格. 对于 BUY/SELL Action 必须提供)
+    - **tp**: float (趋势交易止盈价格. 对于 BUY/SELL Action 必须提供)
     - **grid_config**: dict (网格策略核心参数)
         - "initial_lot": float (首单手数, e.g., 0.01)
         - "allow_add": bool (是否允许网格加仓. Grid模式=true, Trend模式=false)
