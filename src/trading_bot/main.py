@@ -1096,8 +1096,10 @@ class SymbolTrader:
                      trade_type = mt5.ORDER_TYPE_SELL_LIMIT
                  else:
                      trade_type = mt5.ORDER_TYPE_SELL # Market Sell
+                     # FIX: Ensure price is set for Market Sell
+                     price = tick.bid
                      
-                 logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid.")
+                 logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid. Price={price}")
              else:
                  # Convert Sell -> Grid Start Short
                  is_grid_action = True
