@@ -3285,7 +3285,7 @@ class SymbolTrader:
                             # 尝试从远程获取 (Remote Storage is initialized in DatabaseManager)
                             if self.db_manager.remote_storage.enabled:
                                 logger.info("Fetching trade history from Remote PostgreSQL for Self-Learning...")
-                                remote_trades = self.db_manager.remote_storage.get_trades(limit=100)
+                                remote_trades = self.db_manager.remote_storage.get_trades(limit=None)
                                 if remote_trades:
                                     trade_stats = remote_trades
                                     logger.info(f"Successfully loaded {len(trade_stats)} trades from Remote DB.")
