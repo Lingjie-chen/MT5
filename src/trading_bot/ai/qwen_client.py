@@ -347,6 +347,52 @@ class QwenClient:
         # --- 3. 策略技术规范 (Trend Only) ---
         # 必须保留原有的参数结构，但内容更新为单边趋势
         
+        strategy_specs = """
+    ## 交易策略规范 (Trend Following - Strict Mode)
+
+    **核心理念**: 宁可错过，绝不做错。严格等待高质量的回调确认。
+
+    **交易节奏控制 (Trend Cycle Control)**:
+    - **拒绝频繁交易**: 不需要每根K线都交易。
+    - **趋势跟随模式**: 当持有仓位时，你的核心任务是**持有 (HOLD)**，直到趋势结束。
+    - **趋势结束判定**: 只有当明确的市场结构被破坏 (Structure Break) 或达到主要盈利目标时，才结束当前趋势交易。
+    - **新一轮分析**: 只有在当前趋势明确结束（平仓）后，才开始寻找下一波大的趋势机会。
+    - **拒绝追涨杀跌 (Anti-FOMO)**: 
+      - **严禁在局部高点追多 (No Buying at Tops)**: 如果价格处于近期高位 (Premium Zone)，必须等待回调 (Pullback/Callback) 至合理区域 (Discount Zone) 或关键支撑位 (Order Block/FVG) 后再考虑入场。
+      - **严禁在局部低点追空 (No Selling at Bottoms)**: 如果价格处于近期低位 (Discount Zone)，必须等待反弹至合理区域 (Premium Zone) 或关键阻力位后再考虑入场。
+    - **Trend Surfing (趋势冲浪)**: 如果识别到强劲的单边趋势（如价格持续在MA上方或突破关键阻力），不要等待深度回调，但仍需等待微小级别的结构确认 (Micro-Structure Confirmation)。
+
+    **策略模式 (Strategy Mode) - 单边趋势专用**:
+    *   **模式**: **Trend Following (趋势跟随)** - 顺势而为，果断追击。
+    *   **Action**: `BUY` (做多) 或 `SELL` (做空) - **市价单或挂单入场**。
+    *   **Grid Add**: **永久禁止 (Disabled)**。
+    *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M6/M15 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
+
+    1. **SMC (Smart Money Concepts) - 核心入场逻辑**:
+       - **结构确认 (Structure Mapping)**:
+         - **BOS (Break of Structure)**: 顺势突破结构，确认趋势延续。
+         - **CHoCH (Change of Character)**: 逆势反转信号，确认趋势改变。
+         - **入场时机**: 必须等待 BOS 后产生的回调 (Retracement) 测试关键区域。
+       - **关键区域 (POI - Points of Interest)**:
+         - **Order Block (OB)**: 机构留下的未成交订单区域。
+         - **FVG (Fair Value Gap)**: 快速移动留下的失衡区，价格倾向于回补。
+         - **Supply & Demand Zones**: 严格的供需区。
+       - **CRT (Candle Range Theory)**: 确认关键位置的 M6 K线反应(如Pinbar, Engulfing)。
+       - **CCI/RVGI**: 辅助确认超买超卖和动量背离。
+
+    2. **出场与风控 (Exit & Risk)**:
+       - **止损 (SL)**: 必须设置在结构保护点之外 (Recent Swing Low/High)。
+       - **止盈 (TP)**: 分批止盈。
+         - TP1: 1:1.5 RR (风险回报比)。
+         - TP2: 下一个关键流动性池 (Liquidity Pool) 或 OB。
+         - Trailing Stop: 价格突破关键结构后，将 SL 移动至保本或盈利位。
+
+    3. **市场分析要求**:
+       - 在 `analysis_summary` 中，必须明确指出当前的**市场结构 (Bullish/Bearish Structure)**。
+       - 必须明确指出当前的**价格位置 (Premium vs Discount)**。
+       - 必须明确指出最近的 **BOS** 和 **CHoCH** 位置。
+        """
+
         martingale_configs = {
             "DEFAULT": """
     **交易员与风控团队必须严格遵守的【单边趋势交易技术规范 (Trend Only)】**:
