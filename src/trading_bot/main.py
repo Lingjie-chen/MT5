@@ -1099,6 +1099,11 @@ class SymbolTrader:
                  trade_type = "buy" # Market Buy
                  price = tick.ask
              
+             # If explicit_sl/tp not set by now (from strategy), try to extract from entry_params if present
+             if entry_params:
+                 if not explicit_sl and 'sl' in entry_params: explicit_sl = float(entry_params['sl'])
+                 if not explicit_tp and 'tp' in entry_params: explicit_tp = float(entry_params['tp'])
+
              logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid. Price={price}")
              
         elif llm_action in ['sell', 'add_sell', 'limit_sell', 'sell_limit']:
@@ -1122,6 +1127,11 @@ class SymbolTrader:
                  trade_type = "sell" # Market Sell
                  price = tick.bid
                  
+             # If explicit_sl/tp not set by now (from strategy), try to extract from entry_params if present
+             if entry_params:
+                 if not explicit_sl and 'sl' in entry_params: explicit_sl = float(entry_params['sl'])
+                 if not explicit_tp and 'tp' in entry_params: explicit_tp = float(entry_params['tp'])
+
              logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid. Price={price}")
         
         if is_grid_action:
