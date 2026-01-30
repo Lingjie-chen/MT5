@@ -78,6 +78,16 @@ class QwenClient:
     - **Trend Surfing (趋势冲浪)**: 如果识别到强劲的单边趋势（如价格持续在MA上方或突破关键阻力），不要等待深度回调。
     - **浅回调入场**: 在强趋势中，允许在浅回调（如触及EMA/MA）时果断入场，不要死守底部结构。
 
+    **策略模式切换 (Strategy Mode Switching) - 必须严格执行**:
+    1.  **震荡/盘整 (Ranging/Consolidation)**:
+        *   **模式**: **Grid Strategy (网格策略)** - 高抛低吸。
+        *   **Action**: `GRID_START_LONG` (支撑位) 或 `GRID_START_SHORT` (阻力位)。
+        *   **Grid Add**: **允许 (Enabled)**。
+    2.  **单边趋势 (Trending/Breakout)**:
+        *   **模式**: **Trend Following (趋势跟随/海龟)** - 顺势而为，果断追击。
+        *   **Action**: `BUY` (做多) 或 `SELL` (做空) - **市价单果断入场**。
+        *   **Grid Add**: **禁止 (Disabled)**。在趋势明确时，不要进行逆势网格加仓，而是采用金字塔加仓 (Pyramiding) 或 移动止损 (Trailing Stop)。
+
     1. **SMC (Smart Money Concepts) - 入场与方向**:
        - **方向判断**: 依据 H1/H4 确定主趋势，在 M15 寻找结构破坏(BOS)或特性改变(CHoch)。
        - **关键区域**: 重点关注 M15 和 H1 的订单块(Order Block)和失衡区(FVG)。
@@ -706,9 +716,11 @@ class QwenClient:
     请以 **JSON 格式** 返回结果，严禁包含 markdown 代码块标记 (如 ```json ... ```)，只返回纯 JSON 字符串。
     JSON 必须包含以下字段：
 
-    - **action**: str ("GRID_START_LONG", "GRID_START_SHORT", "HOLD", "CLOSE_ALL")
+    - **action**: str ("GRID_START_LONG", "GRID_START_SHORT", "HOLD", "CLOSE_ALL", "BUY", "SELL")
+    - **strategy_mode**: str ("grid" 或 "trend") -- 必须明确指定当前策略模式
     - **grid_config**: dict (网格策略核心参数)
         - "initial_lot": float (首单手数, e.g., 0.01)
+        - "allow_add": bool (是否允许网格加仓. Grid模式=true, Trend模式=false)
         - "grid_step_mode": str ("fixed" 或 "atr")
         - "grid_step_pips": float (基础网格间距, e.g., 20.0)
         - "martingale_mode": str ("multiply" 或 "add")
@@ -1542,6 +1554,7 @@ class QwenClient:
         """获取字段默认值"""
         defaults = {
             'action': 'hold',
+            'strategy_mode': 'grid',
             'entry_conditions': {"trigger_type": "market"},
             'exit_conditions': {"sl_atr_multiplier": 1.5, "tp_atr_multiplier": 2.5},
             'position_management': {
@@ -1554,6 +1567,7 @@ class QwenClient:
             },
             'grid_config': {
                 "initial_lot": 0.01,
+                "allow_add": True,
                 "grid_step_mode": "atr",
                 "grid_step_pips": 20.0,
                 "martingale_mode": "multiply",
