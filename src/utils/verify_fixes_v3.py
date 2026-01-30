@@ -6,12 +6,11 @@ import os
 # Add src to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
 
-from trading_bot.main import MT5Bot
+from trading_bot.main import SymbolTrader
 
 class TestFixesV3(unittest.TestCase):
     def setUp(self):
-        self.bot = MT5Bot()
-        self.bot.symbol = "XAUUSD"
+        self.bot = SymbolTrader(symbol="XAUUSD")
         self.bot.lot_size = 0.01
         
     def test_calculate_smart_basket_tp_zero(self):
