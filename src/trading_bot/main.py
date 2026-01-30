@@ -131,7 +131,7 @@ class SymbolTrader:
         # Advanced Models: SMC, CRT, CCI (via Adapter)
         # MTF kept for context structure
         self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_H1)
-        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_H1, htf2=mt5.TIMEFRAME_H4) 
+        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_M15, htf2=mt5.TIMEFRAME_H1) 
         self.advanced_adapter = AdvancedMarketAnalysisAdapter()
         self.smc_analyzer = SMCAnalyzer()
         
@@ -3236,12 +3236,12 @@ class SymbolTrader:
                                     "ema_slow": float(feat_h1.get('ema_slow', 0)),
                                     "trend": "bullish" if feat_h1.get('ema_fast', 0) > feat_h1.get('ema_slow', 0) else "bearish"
                                 },
-                                "H4": {
-                                    "close": float(feat_h4.get('close', 0)),
-                                    "rsi": float(feat_h4.get('rsi', 50)),
-                                    "ema_fast": float(feat_h4.get('ema_fast', 0)),
-                                    "ema_slow": float(feat_h4.get('ema_slow', 0)),
-                                    "trend": "bullish" if feat_h4.get('ema_fast', 0) > feat_h4.get('ema_slow', 0) else "bearish"
+                                "M15": {
+                                    "close": float(feat_m15.get('close', 0)),
+                                    "rsi": float(feat_m15.get('rsi', 50)),
+                                    "ema_fast": float(feat_m15.get('ema_fast', 0)),
+                                    "ema_slow": float(feat_m15.get('ema_slow', 0)),
+                                    "trend": "bullish" if feat_m15.get('ema_fast', 0) > feat_m15.get('ema_slow', 0) else "bearish"
                                 }
                             }
                         }
