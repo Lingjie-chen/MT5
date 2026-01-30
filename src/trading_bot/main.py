@@ -838,12 +838,41 @@ class SymbolTrader:
         if self.latest_strategy:
             explicit_sl = self.latest_strategy.get('sl')
             explicit_tp = self.latest_strategy.get('tp')
+            
+            # [Fix] Ensure explicit_sl/tp are floats and valid
+            try:
+                if explicit_sl is not None: explicit_sl = float(explicit_sl)
+                if explicit_tp is not None: explicit_tp = float(explicit_tp)
+            except:
+                explicit_sl = None
+                explicit_tp = None
         
         # 如果没有具体价格，回退到 sl_tp_params (通常也是 LLM 生成的)
-        if explicit_sl is None and sl_tp_params:
-             explicit_sl = sl_tp_params.get('sl_price')
-        if explicit_tp is None and sl_tp_params:
-             explicit_tp = sl_tp_params.get('tp_price')
+        if (explicit_sl is None or explicit_tp is None) and sl_tp_params:
+             if explicit_sl is None: explicit_sl = sl_tp_params.get('sl_price')
+             if explicit_tp is None: explicit_tp = sl_tp_params.get('tp_price')
+
+        # [NEW] Directional Validation for SL/TP
+        # 确保 SL/TP 对于当前操作方向是逻辑正确的
+        current_price_check = tick.ask if signal in ['buy', 'add_buy', 'limit_buy'] else tick.bid
+        
+        if signal in ['buy', 'add_buy', 'limit_buy', 'grid_start_long']:
+            # For Buy: SL < Price, TP > Price
+            if explicit_sl and explicit_sl >= current_price_check:
+                logger.warning(f"⚠️ Invalid Buy SL ({explicit_sl}) >= Price ({current_price_check}). Resetting to None.")
+                explicit_sl = None
+            if explicit_tp and explicit_tp <= current_price_check:
+                logger.warning(f"⚠️ Invalid Buy TP ({explicit_tp}) <= Price ({current_price_check}). Resetting to None.")
+                explicit_tp = None
+                
+        elif signal in ['sell', 'add_sell', 'limit_sell', 'grid_start_short']:
+            # For Sell: SL > Price, TP < Price
+            if explicit_sl and explicit_sl <= current_price_check:
+                logger.warning(f"⚠️ Invalid Sell SL ({explicit_sl}) <= Price ({current_price_check}). Resetting to None.")
+                explicit_sl = None
+            if explicit_tp and explicit_tp >= current_price_check:
+                logger.warning(f"⚠️ Invalid Sell TP ({explicit_tp}) >= Price ({current_price_check}). Resetting to None.")
+                explicit_tp = None
 
         logger.info(f"执行逻辑: Action={llm_action}, Signal={signal}, Explicit SL={explicit_sl}, TP={explicit_tp}")
 
