@@ -1065,16 +1065,43 @@ class SymbolTrader:
                         direction = 'bearish'
                         
         elif llm_action in ['buy', 'add_buy', 'limit_buy', 'buy_limit']:
-             # Convert Buy -> Grid Start Long
-             is_grid_action = True
-             direction = 'bullish'
-             logger.info(f"Converting '{llm_action}' to Grid Start (Long) due to Trend Surfing policy.")
+             # [NEW] Check Strategy Mode (Trend Mode disables Grid Conversion)
+             is_trend_mode = self.latest_strategy and self.latest_strategy.get('strategy_mode') == 'trend'
+             
+             if is_trend_mode:
+                 # Single Trade (Trend Following) - No Grid
+                 is_grid_action = False
+                 # Ensure trade_type is set correctly for the logic below
+                 if 'limit' in llm_action:
+                     trade_type = mt5.ORDER_TYPE_BUY_LIMIT
+                 else:
+                     trade_type = mt5.ORDER_TYPE_BUY # Market Buy
+                 
+                 logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid.")
+             else:
+                 # Convert Buy -> Grid Start Long (Legacy/Grid Mode)
+                 is_grid_action = True
+                 direction = 'bullish'
+                 logger.info(f"Converting '{llm_action}' to Grid Start (Long) due to Grid Mode policy.")
              
         elif llm_action in ['sell', 'add_sell', 'limit_sell', 'sell_limit']:
-             # Convert Sell -> Grid Start Short
-             is_grid_action = True
-             direction = 'bearish'
-             logger.info(f"Converting '{llm_action}' to Grid Start (Short) due to Trend Surfing policy.")
+             # [NEW] Check Strategy Mode
+             is_trend_mode = self.latest_strategy and self.latest_strategy.get('strategy_mode') == 'trend'
+             
+             if is_trend_mode:
+                 # Single Trade (Trend Following) - No Grid
+                 is_grid_action = False
+                 if 'limit' in llm_action:
+                     trade_type = mt5.ORDER_TYPE_SELL_LIMIT
+                 else:
+                     trade_type = mt5.ORDER_TYPE_SELL # Market Sell
+                     
+                 logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid.")
+             else:
+                 # Convert Sell -> Grid Start Short
+                 is_grid_action = True
+                 direction = 'bearish'
+                 logger.info(f"Converting '{llm_action}' to Grid Start (Short) due to Grid Mode policy.")
         
         if is_grid_action:
             logger.info(f">>> 执行网格部署 (Direction: {direction}) <<<")
