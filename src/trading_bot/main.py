@@ -1423,8 +1423,8 @@ class SymbolTrader:
                 return
 
         if trade_type and price > 0:
-            # User Requirement: Remove SL completely
-            explicit_sl = 0.0
+            # [MODIFIED] User Requirement: Enforce SL/TP for Trend Mode
+            # explicit_sl = 0.0 # REMOVED: Do not force SL to 0
             
             # Initialize atr to avoid UnboundLocalError
             atr = 0.0
@@ -1432,7 +1432,8 @@ class SymbolTrader:
             # 再次确认 TP 是否存在
             if explicit_tp is None:
                 # User Requirement: Disable Individual TP
-                explicit_tp = 0.0
+                # explicit_tp = 0.0 # REMOVED: Do not force TP to 0
+                pass
                 
                 # logger.info("LLM 未提供明确 TP，尝试计算优化值")
                 # 计算 ATR
