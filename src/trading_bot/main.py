@@ -3786,10 +3786,10 @@ class SymbolTrader:
                                 f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
                                 
                                 f"🧙‍♂️ *Qwen Analysis*\n"
-                                f"• Action: *{qw_action.upper()}*\n"
-                                f"• Lots: `{strategy.get('position_size', 0.01)}` (Dynamic)\n"
-                                f"• Sentiment: {qwen_sent_label.upper()} ({qwen_sent_score})\n"
-                                f"• Logic: _{self.escape_markdown(reason)}_\n\n"
+                        f"• Action: *{qw_action.upper()}*\n"
+                        f"• Lots: `{self.lot_size if self.lot_size else strategy.get('position_size', 0.01)}` (Dynamic)\n"
+                        f"• Sentiment: {qwen_sent_label.upper()} ({qwen_sent_score})\n"
+                        f"• Logic: _{self.escape_markdown(reason)}_\n\n"
                                 
                                 f"🏆 *Decision: {final_signal.upper()}*\n"
                                 f"• Strength: {strength:.0f}%\n"
