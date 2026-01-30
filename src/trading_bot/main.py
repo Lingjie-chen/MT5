@@ -1065,59 +1065,35 @@ class SymbolTrader:
                         direction = 'bearish'
                         
         elif llm_action in ['buy', 'add_buy', 'limit_buy', 'buy_limit']:
-             # [NEW] Check Strategy Mode (Trend Mode disables Grid Conversion)
-             is_trend_mode = self.latest_strategy and self.latest_strategy.get('strategy_mode') == 'trend'
+             # [NEW] Enforce Trend Mode (High/Low Swing) - No Grid
+             is_grid_action = False
              
-             if is_trend_mode:
-                 # Single Trade (Trend Following) - No Grid
-                 is_grid_action = False
-                 # Ensure trade_type is set correctly for the logic below
-                 if 'limit' in llm_action:
-                     trade_type = mt5.ORDER_TYPE_BUY_LIMIT
-                 else:
-                     trade_type = mt5.ORDER_TYPE_BUY # Market Buy
-                     price = tick.ask
-                 
-                 logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid. Price={price}")
+             if 'limit' in llm_action:
+                 trade_type = mt5.ORDER_TYPE_BUY_LIMIT
              else:
-                 # Convert Buy -> Grid Start Long (Legacy/Grid Mode)
-                 is_grid_action = True
-                 direction = 'bullish'
-                 logger.info(f"Converting '{llm_action}' to Grid Start (Long) due to Grid Mode policy.")
+                 trade_type = mt5.ORDER_TYPE_BUY # Market Buy
+                 price = tick.ask
+             
+             logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid. Price={price}")
              
         elif llm_action in ['sell', 'add_sell', 'limit_sell', 'sell_limit']:
-             # [NEW] Check Strategy Mode
-             is_trend_mode = self.latest_strategy and self.latest_strategy.get('strategy_mode') == 'trend'
+             # [NEW] Enforce Trend Mode (High/Low Swing) - No Grid
+             is_grid_action = False
              
-             if is_trend_mode:
-                 # Single Trade (Trend Following) - No Grid
-                 is_grid_action = False
-                 if 'limit' in llm_action:
-                     trade_type = mt5.ORDER_TYPE_SELL_LIMIT
-                 else:
-                     trade_type = mt5.ORDER_TYPE_SELL # Market Sell
-                     # FIX: Ensure price is set for Market Sell
-                     price = tick.bid
-                     
-                 logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid. Price={price}")
+             if 'limit' in llm_action:
+                 trade_type = mt5.ORDER_TYPE_SELL_LIMIT
              else:
-                 # Convert Sell -> Grid Start Short
-                 is_grid_action = True
-                 direction = 'bearish'
-                 logger.info(f"Converting '{llm_action}' to Grid Start (Short) due to Grid Mode policy.")
+                 trade_type = mt5.ORDER_TYPE_SELL # Market Sell
+                 price = tick.bid
+                 
+             logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid. Price={price}")
         
         if is_grid_action:
             # [NEW POLICY] 
             # Grid Deployment is PERMANENTLY DISABLED based on User Request.
-            # Even if 'is_grid_action' is True (which shouldn't happen given the updated logic above),
-            # we block it here.
+            # "这边把grid 网格交易取消掉，只有单一的高抛低吸模式"
             
-            logger.warning(f"Grid Deployment Blocked (User Policy: Trend Only). Converting to Single Limit Entry if applicable.")
-            
-            # Fallback: Execute a single Limit Order instead of a full grid
-            # if it was intended as a grid start.
-            
-            # ... (Rest of grid logic is skipped) ...
+            logger.warning(f"Grid Deployment Blocked (User Policy: Single Trend Only). Action '{llm_action}' ignored or needs manual conversion.")
             return
 
             # logger.info(f">>> 执行网格部署 (Direction: {direction}) <<<")
