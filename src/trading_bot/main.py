@@ -1508,6 +1508,28 @@ class SymbolTrader:
                     tp = price - (stops_level + safe_buffer)
                 tp = self._normalize_price(tp)
         
+        # 3. 检查 Pending Order 的挂单价格合法性 (Invalid Price Check)
+        # 对于 Limit Buy，挂单价必须低于当前 Ask
+        # 对于 Limit Sell，挂单价必须高于当前 Bid
+        # 否则 MT5 会返回 retcode=10015 (Invalid Price)
+        
+        tick = mt5.symbol_info_tick(self.symbol)
+        if tick:
+            current_ask = tick.ask
+            current_bid = tick.bid
+            
+            if type_str == "limit_buy":
+                if price >= current_ask:
+                    logger.warning(f"Limit Buy Price {price:.2f} >= Current Ask {current_ask:.2f}. Adjusting to Ask - 50 points.")
+                    price = current_ask - (50 * point) # Ensure it's below
+                    price = self._normalize_price(price)
+            
+            elif type_str == "limit_sell":
+                if price <= current_bid:
+                    logger.warning(f"Limit Sell Price {price:.2f} <= Current Bid {current_bid:.2f}. Adjusting to Bid + 50 points.")
+                    price = current_bid + (50 * point) # Ensure it's above
+                    price = self._normalize_price(price)
+
         # ----------------------------------------
         
         order_type = mt5.ORDER_TYPE_BUY
