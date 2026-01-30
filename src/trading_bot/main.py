@@ -250,7 +250,8 @@ class SymbolTrader:
         s_info = mt5.symbol_info(self.symbol)
         if s_info and not s_info.visible:
              if not mt5.symbol_select(self.symbol, True):
-                logger.error(f"Failed to select symbol {self.symbol}")
+                err = mt5.last_error()
+                logger.error(f"Failed to select symbol {self.symbol} in get_market_data (Error={err})")
                 return None
         
         rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, num_candles)
@@ -2986,14 +2987,21 @@ class SymbolTrader:
             # Optimization: Check visibility first to avoid unnecessary select calls
             s_info = mt5.symbol_info(self.symbol)
             if s_info is None:
-                logger.warning(f"Symbol info not found for {self.symbol} in process_tick")
-                return
+                # Retry logic for symbol info (sometimes fails transiently)
+                time.sleep(0.5)
+                s_info = mt5.symbol_info(self.symbol)
+                if s_info is None:
+                    logger.warning(f"Symbol info not found for {self.symbol} in process_tick (after retry)")
+                    return
 
             if not s_info.visible:
                 if not mt5.symbol_select(self.symbol, True):
-                    err = mt5.last_error()
-                    logger.warning(f"Failed to select symbol {self.symbol} in process_tick (Error={err})")
-                    return
+                    # Retry selection once
+                    time.sleep(0.5)
+                    if not mt5.symbol_select(self.symbol, True):
+                        err = mt5.last_error()
+                        logger.warning(f"Failed to select symbol {self.symbol} in process_tick (Error={err})")
+                        return
 
             rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 500)
             if rates is None:
