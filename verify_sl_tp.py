@@ -35,6 +35,9 @@ class TestSLTPLogic(unittest.TestCase):
         mt5.symbol_info_tick = MagicMock()
         mt5.positions_get = MagicMock(return_value=[])
         
+        # Mock check_account_safety to bypass risk check
+        self.bot.check_account_safety = MagicMock(return_value=(True, "Safe"))
+        
     def test_buy_sl_tp_validation(self):
         """Test SL/TP validation for BUY orders"""
         # Current Price: 2000
