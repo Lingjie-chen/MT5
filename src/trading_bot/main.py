@@ -1654,13 +1654,8 @@ class SymbolTrader:
             return
 
         # --- Grid Strategy Logic ---
-        # 1. Check Basket TP
-        if self.grid_strategy.check_basket_tp(positions):
-            logger.info("Grid Strategy: Basket TP Reached. Closing ALL positions.")
-            for pos in positions:
-                if pos.magic == self.magic_number:
-                    self.close_position(pos, comment="Grid Basket TP")
-            return
+        # 1. Check Basket TP (Moved to main loop for better ATR handling and Tuple fix)
+        # if self.grid_strategy.check_basket_tp(positions): ...
 
         # 2. Check Grid Add (Only if allowed by LLM)
         # 增加 LLM 权限控制: 默认允许，但如果 LLM 明确禁止 (allow_grid=False)，则暂停加仓
