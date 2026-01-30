@@ -1525,6 +1525,7 @@ class QwenClient:
         """获取默认决策"""
         return {
             "action": "hold",
+            "strategy_mode": "grid",
             "entry_conditions": {"trigger_type": "market"},
             "exit_conditions": {"sl_atr_multiplier": 1.5, "tp_atr_multiplier": 2.5},
             "position_management": {
@@ -1533,6 +1534,18 @@ class QwenClient:
                 "recommended_grid_step_pips": 20,
                 "grid_level_tp_pips": [30, 25, 20, 15, 10],
                 "dynamic_basket_tp": 50.0
+            },
+            "grid_config": {
+                "initial_lot": 0.01,
+                "allow_add": True,
+                "grid_step_mode": "atr",
+                "grid_step_pips": 20.0,
+                "martingale_mode": "multiply",
+                "martingale_multiplier": 1.5,
+                "max_grid_levels": 5,
+                "basket_tp_usd": 50.0,
+                "basket_sl_usd": -200.0,
+                "max_drawdown_usd": 500.0
             },
             "position_size": 0.01,
             "leverage": 1,
