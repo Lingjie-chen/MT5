@@ -62,14 +62,15 @@ class TestFixesV2(unittest.TestCase):
         mt5.positions_get = MagicMock(return_value=[])
 
     def test_inverted_sl_tp_sell(self):
-        """Test if Sell Entry 2000, SL 1980, TP 2020 gets swapped to SL 2020, TP 1980"""
+        """Test if Sell Entry 2000, SL 1960, TP 2010 gets swapped to SL 2010, TP 1960"""
         # "sell" action
-        # Entry 2000 (Bid is 1999, let's say limit sell at 2000)
+        # Entry 1999.0 (Market Sell at Bid)
+        # We provide SL=1960 (Profit side), TP=2010 (Loss side) -> Inverted
         entry_params = {
             'action': 'sell',
             'price': 2000.0,
-            'sl': 1980.0, # Wrong for Sell
-            'tp': 2020.0, # Wrong for Sell
+            'sl': 1960.0, # Wrong for Sell (Profit side)
+            'tp': 2010.0, # Wrong for Sell (Loss side)
             'lots': 0.15
         }
         
@@ -77,37 +78,19 @@ class TestFixesV2(unittest.TestCase):
         
         # Check _send_order arguments
         args, kwargs = self.bot._send_order.call_args
-        # args: (type_str, price, sl, tp)
-        # We expect type_str="sell" (or limit_sell if implicit), price=1999.0 (market) or 2000.0
-        # Wait, if action is 'sell', logic sets price = tick.bid (1999.0) unless 'limit' is in action
-        # The user said "entry 5060". If it was a limit order, action should be 'limit_sell'.
-        # If action is just 'sell', price is ignored/reset to bid.
-        # But let's assume 'limit_sell' for the user case, or maybe the code respects price if provided?
-        # Code: if 'limit' in llm_action: trade_type="limit_sell", price=params['price'].
-        # Code: else: trade_type="sell", price=tick.bid.
-        
-        # In this test case, I passed 'sell', so price will be tick.bid (1999.0).
-        # SL 1980 < 1999.0. TP 2020 > 1999.0.
-        # This is indeed inverted for a SELL.
-        # Expected: SL=2020, TP=1980.
-        
-        # Note: _send_order normalizes prices.
         
         call_sl = args[2]
         call_tp = args[3]
         
         print(f"Test Inverted Sell: SL={call_sl}, TP={call_tp}")
         
-        # Expect Swap
-        self.assertGreater(call_sl, call_tp) # For Sell, SL > TP
-        self.assertAlmostEqual(call_sl, 2020.0)
-        self.assertAlmostEqual(call_tp, 1980.0)
+        # Expect Swap: SL=2010, TP=1960
+        # Risk = |2010-1999| = 11. Reward = |1960-1999| = 39. Ratio > 1.2.
         
-        # Also check Lot Size
-        # _send_order doesn't take lot size as arg in the signature I see in main.py?
-        # Let's check main.py _send_order signature: def _send_order(self, type_str, price, sl, tp, comment=""):
-        # It uses self.lot_size internally!
-        # So I need to check self.lot_size
+        self.assertGreater(call_sl, call_tp) # For Sell, SL > TP
+        self.assertAlmostEqual(call_sl, 2010.0)
+        self.assertAlmostEqual(call_tp, 1960.0)
+        
         self.assertEqual(self.bot.lot_size, 0.15)
 
     def test_missing_sl_tp_defaults(self):
