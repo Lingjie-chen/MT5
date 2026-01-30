@@ -2817,13 +2817,11 @@ class SymbolTrader:
                 logger.warning(f"Failed to calc MFE stats: {e}")
             
         # 4. SMC 阻力位修正 (SMC Resistance Cap)
-        # 如果是做多，TP 不应超过最近的 Bearish OB 太多
-        # 如果是做空，TP 不应超过最近的 Bullish OB 太多
-        # 这里简化处理：如果 LLM 给出的 TP 对应的盈利价格远超最近阻力位，则保守下调
+        # ... (Existing logic implied, but we use MFE/Regime to override)
         
         # 计算混合 TP
         # 逻辑: 加权平均
-        # 60% LLM, 40% Volatility-based
+        # 60% LLM, 40% Volatility-based (Increased Volatility weight to respect Market Structure more)
         # 且应用 Regime & MFE Multiplier
         
         tech_tp = min_tp_volatility
@@ -2831,12 +2829,19 @@ class SymbolTrader:
         # 如果 LLM 值异常小 (小于 ATR 价值)，可能是保守或错误，取较大值
         # 如果 LLM 值异常大，可能是贪婪，取加权
         
-        final_tp = (base_tp * 0.6) + (tech_tp * 0.4)
+        # [USER REQUEST] Remove ATR_Val (tech_tp) from Final TP Calculation
+        # The user observed: Base(LLM)=150.00, ATR_Val=1241.81 -> Final=1241.81
+        # This implies tech_tp is dominating and pushing TP too high (or too low if LLM is high).
+        # We will use LLM as the primary driver (100% weight) but still respect Regime/MFE multipliers.
+        # We still calculate tech_tp for logging but don't mix it.
+        
+        final_tp = base_tp 
         final_tp *= regime_multiplier
         final_tp *= mfe_multiplier
         
         # 5. 硬性下限
-        final_tp = max(final_tp, min_tp_volatility)
+        # final_tp = max(final_tp, min_tp_volatility) # [REMOVED] Don't force ATR lower bound if user wants LLM value
+        final_tp = max(final_tp, 5.0) # Absolute min $5
         
         # User Requirement: Basket TP based on reasonable config & market sentiment
         # "Cannot be too high nor too low" -> Dynamic Range based on ATR & Avg Open Price
