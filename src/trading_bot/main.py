@@ -1114,8 +1114,10 @@ class SymbolTrader:
                      except: pass
                  
                  # If price missing, default to Bid + 50 points (Sell Limit)
-                 if price <= 0:
-                     price = tick.bid + (50 * point)
+                  if price <= 0:
+                      si = mt5.symbol_info(self.symbol)
+                      point = si.point if si else 0.01
+                      price = tick.bid + (50 * point)
              else:
                  trade_type = "sell" # Market Sell
                  price = tick.bid
