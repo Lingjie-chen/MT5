@@ -4184,7 +4184,7 @@ class SymbolTrader:
                                     # 如果没有有效的 SL/TP，也视为不合格 (因为无法验证 R:R)
                                     # 除非这是手动干预或特殊情况，但在严格模式下应过滤
                                     logger.info("⛔ 信号被过滤: 缺失有效的 SL/TP 价格，无法验证 R:R")
-                                    final_signal = 'hold'
+                                    final_signal = 'hold' if current_positions_list else 'wait'
                                     reason = f"[Filter] Missing SL/TP for R:R Check"
 
                         # 构建所有信号字典
