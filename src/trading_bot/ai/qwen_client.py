@@ -1347,12 +1347,18 @@ class QwenClient:
         
         ## 强制输出格式要求 (Format Enforcement)
         你必须返回一个严格符合 JSON 格式的响应，包含以下顶层字段：
-        - "action": "buy" | "sell" | "hold" | "close" | "grid_start"
+        - "action": "buy" | "sell" | "wait" | "hold" | "close" | "grid_start"
         - "position_size": float (例如 0.15) - **即使是 Hold 也要填一个建议值或 0**
         - "reason": "你的分析逻辑"
         - "confidence": 0-100
         - "exit_conditions": {{"tp_price": float, "sl_price": float}}
         - "market_state": string
+
+        **Action Definitions**:
+        - "wait": No positions exist, and it is NOT a good time to enter. (Display: 不开仓)
+        - "hold": Positions exist, and trend is still valid. Keep holding. (Display: 保持仓位)
+        - "buy"/"sell": Strong signal to enter market.
+        - "close": Close existing positions.
 
         ** CRITICAL INSTRUCTION **
         You MUST include the "position_size" field in your JSON response.
@@ -1559,7 +1565,12 @@ class QwenClient:
                         try:
                             raw_size = trading_decision["position_size"]
                             size = float(raw_size)
-                            logger.info(f"✅ 模型返回动态仓位: {raw_size} (已根据资金动态计算)")
+                            
+                            # Log dynamic position size only if action implies potential entry
+                            # Suppress log for 'hold' or 'wait' or 'close' to avoid noise as per user request
+                            action_val = trading_decision.get('action', 'hold').lower()
+                            if action_val not in ['hold', 'wait', 'close', 'neutral']:
+                                logger.info(f"✅ 模型返回动态仓位: {raw_size} (已根据资金动态计算)")
                             
                             # 0.01 到 10.0 手之间 (根据资金规模调整，放宽上限以适应大资金)
                             trading_decision["position_size"] = max(0.01, min(10.0, size))
