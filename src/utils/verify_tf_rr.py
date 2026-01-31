@@ -45,6 +45,7 @@ class TestTimeframeAndRR(unittest.TestCase):
                 comment = "OK"
                 order = 12345678
             mock_mt5.order_send.return_value = Result()
+            # Call
             result = self.bot._send_order(
                 type_str="buy",
                 price=2000.0,
@@ -52,11 +53,12 @@ class TestTimeframeAndRR(unittest.TestCase):
                 tp=2020.0,
                 comment="Test Good RR"
             )
-            # If rejected, it returns None. If sent, it returns the order result
-            self.assertIsNotNone(result, "Trade with RR 2.0 should be accepted")
+            # _send_order does not return result; verify that order_send was called
+            self.assertTrue(mock_mt5.order_send.called, "Order should be sent when RR >= 1.5")
             
             # Case 2: Bad RR (1.0) -> Should be rejected
             # Buy at 2000, SL 1990 (Risk 10), TP 2010 (Reward 10) -> RR 1.0
+            mock_mt5.order_send.reset_mock()
             result = self.bot._send_order(
                 type_str="buy",
                 price=2000.0,
@@ -65,9 +67,11 @@ class TestTimeframeAndRR(unittest.TestCase):
                 comment="Test Bad RR"
             )
             self.assertIsNone(result, "Trade with RR 1.0 should be rejected")
+            self.assertFalse(mock_mt5.order_send.called, "Order should NOT be sent when RR < 1.5")
             
             # Case 3: Bad RR (1.4) -> Should be rejected
             # Buy at 2000, SL 1990 (Risk 10), TP 2014 (Reward 14) -> RR 1.4
+            mock_mt5.order_send.reset_mock()
             result = self.bot._send_order(
                 type_str="buy",
                 price=2000.0,
@@ -76,6 +80,7 @@ class TestTimeframeAndRR(unittest.TestCase):
                 comment="Test Bad RR 1.4"
             )
             self.assertIsNone(result, "Trade with RR 1.4 should be rejected")
+            self.assertFalse(mock_mt5.order_send.called, "Order should NOT be sent when RR < 1.5")
 
 if __name__ == '__main__':
     unittest.main()
