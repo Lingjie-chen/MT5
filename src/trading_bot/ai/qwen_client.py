@@ -1394,10 +1394,11 @@ class QwenClient:
         
         如果你的分析结果显示信心只有 70 或盈亏比只有 1.2，**请直接返回 HOLD**，并在 `reason` 中说明原因 (例如 "Confidence 70 < 80" 或 "RR 1.2 < 1.5").
 
-        ## 强制要求：明确的最优 TP
-        无论 Action 是什么 (BUY/SELL/HOLD)，你 **必须** 在 `exit_conditions` 中返回明确的、最优的 `tp_price`。
-        - **TP**: 基于下一个流动性池 (Liquidity Pool) 或 MFE 统计。
-        - **严禁** 返回 0.0 或 null！
+        ## 强制要求：明确的最优 SL 和 TP (Optimal Stop Loss & Take Profit)
+        无论 Action 是什么 (BUY/SELL/HOLD)，你 **必须** 在 `exit_conditions` 中返回明确的、最优的 `sl_price` 和 `tp_price`。
+        - **TP (止盈)**: 基于下一个流动性池 (Liquidity Pool) 或 MFE 统计。
+        - **SL (止损)**: 必须设置在关键结构位之外 (SMC Invalid Point) 或基于 ATR 保护。
+        - **严禁** 返回 0.0 或 null！即使是 HOLD 状态，也请给出"如果现在进场，合理的SL/TP在哪里"的建议。
 
 
         ## 当前交易上下文
