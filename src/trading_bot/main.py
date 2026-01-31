@@ -4200,6 +4200,9 @@ class SymbolTrader:
                             "ema_ha": ema_ha_result['signal']
                         }
                         
+                        # Sync strategy action with final signal for consistent reporting
+                        strategy['action'] = final_signal
+                        
                         # Combine Signals (Using HybridOptimizer just for weighting record)
                         _, _, weights = self.optimizer.combine_signals(all_signals)
                         
@@ -4285,6 +4288,11 @@ class SymbolTrader:
 
                         # 构建消息
                         telegram_report = strategy.get('telegram_report', '')
+                        
+                        # Append warning if filtered
+                        if qw_action != final_signal and final_signal in ['hold', 'wait'] and qw_action in ['buy', 'sell']:
+                             filter_msg = f"\n⚠️ *System Filter*: Signal {qw_action.upper()} -> {final_signal.upper()}\nReason: {self.escape_markdown(reason)}"
+                             telegram_report += filter_msg
                         
                         # 获取当前使用的大模型名称 (从 QwenClient 配置中获取)
                         current_model_name = "Unknown Model"
