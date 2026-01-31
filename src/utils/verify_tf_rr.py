@@ -43,6 +43,7 @@ class TestTimeframeAndRR(unittest.TestCase):
             class Result:
                 retcode = 0
                 comment = "OK"
+                order = 12345678
             mock_mt5.order_send.return_value = Result()
             result = self.bot._send_order(
                 type_str="buy",
