@@ -83,7 +83,7 @@ class QwenClient:
     - **拒绝追涨杀跌 (Anti-FOMO)**: 
       - **严禁在局部高点追多 (No Buying at Tops)**: 如果价格处于近期高位 (Premium Zone)，必须等待回调 (Pullback/Callback) 至合理区域 (Discount Zone) 或关键支撑位 (Order Block/FVG) 后再考虑入场。
       - **严禁在局部低点追空 (No Selling at Bottoms)**: 如果价格处于近期低位 (Discount Zone)，必须等待反弹至合理区域 (Premium Zone) 或关键阻力位后再考虑入场。
-    - **Trend Surfing (趋势冲浪)**: 如果识别到强劲的单边趋势（如价格持续在MA上方或突破关键阻力），不要等待深度回调，但仍需等待微小级别的结构确认 (Micro-Structure Confirmation)。
+    -3. **Trend Surfing (趋势冲浪)**: 如果识别到强劲的单边趋势（如价格持续在MA上方或突破关键阻力），不要等待深度回调，但仍需等待 M15 级别的结构确认 (Micro-Structure Confirmation)。
 
     **策略模式 (Strategy Mode) - 单边趋势专用**:
     *   **模式**: **Trend Following (趋势跟随)** - 顺势而为，果断追击。
