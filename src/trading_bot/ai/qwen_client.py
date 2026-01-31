@@ -1406,10 +1406,16 @@ class QwenClient:
         如果你的分析结果显示信心只有 70 或盈亏比只有 1.2，**请直接返回 HOLD**，并在 `reason` 中说明原因 (例如 "Confidence 70 < 80" 或 "RR 1.2 < 1.5").
 
         ## 强制要求：明确的最优 SL 和 TP (Optimal Stop Loss & Take Profit)
-        无论 Action 是什么 (BUY/SELL/HOLD)，你 **必须** 在 `exit_conditions` 中返回明确的、最优的 `sl_price` 和 `tp_price`。
+        无论 Action 是什么 (BUY/SELL/HOLD/WAIT)，你 **必须** 在 `exit_conditions` 中返回明确的、最优的 `sl_price` 和 `tp_price`。
+        
+        **Directional Logic (Long vs Short)**:
+        - **Long (Buy)**: SL < Entry Price < TP. (SL must be BELOW price).
+        - **Short (Sell)**: TP < Entry Price < SL. (SL must be ABOVE price).
+        - **Validation**: Ensure `abs(Entry - SL)` > `2 * Spread` to cover costs.
+
         - **TP (止盈)**: 基于下一个流动性池 (Liquidity Pool) 或 MFE 统计。
         - **SL (止损)**: 必须设置在关键结构位之外 (SMC Invalid Point) 或基于 ATR 保护。
-        - **严禁** 返回 0.0 或 null！即使是 HOLD 状态，也请给出"如果现在进场，合理的SL/TP在哪里"的建议。
+        - **严禁** 返回 0.0 或 null！即使是 HOLD/WAIT 状态，也请给出"如果现在进场，合理的SL/TP在哪里"的建议。
         
         **点差适配 (Spread Awareness)**:
         - 不同的交易商 (Exness/Ava) 和品种 (XAUUSD/ETHUSD) 点差差异巨大。
@@ -1455,7 +1461,12 @@ class QwenClient:
         3. 参考MFE数据优化止盈
         4. 制定Martingale网格加仓计划
         5. 严格遵循风险管理规则
-        6. 生成Telegram简报（使用emoji图标增强可读性）
+        6. 生成Telegram简报 (Telegram Report):
+           - **Content Alignment**: Report MUST match Action.
+           - If "wait": Report "⏳ 观望中 (Waiting)" and brief reason.
+           - If "hold": Report "💎 持仓中 (Holding)" and PnL/Trend update.
+           - If "buy"/"sell": Report "🚀 信号触发 (Signal)" with Entry/SL/TP.
+           - **Consistency**: "hold" is ONLY for existing positions!
         """
         
         # 构建payload
