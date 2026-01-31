@@ -70,11 +70,12 @@ class TestPositionSizing(unittest.TestCase):
         self.bot.latest_strategy = {'position_size': 10.0, 'action': 'buy'}
         
         # 如果触发熔断，函数会跳过 return llm_lot，进入下方默认计算
-        # 默认计算会基于 base_risk (0.02) * Equity ($5000) / StopLoss ...
-        # 这里只要验证不等于 10.0 即可
+        # [UPDATED] 现在代码会触发自动调整到安全仓位，而不是回退到默认计算
+        # Risk Cap = $5000 * 0.25 = $1250
+        # Safe Lot = 1250 / (500 * 1.0) = 2.5 Lots
+        
         lot = self.bot.calculate_dynamic_lot(strength=80)
-        self.assertNotEqual(lot, 10.0, "Should reject extremely risky LLM lot")
-        self.assertTrue(lot < 10.0, "Should return a smaller safe lot")
+        self.assertEqual(lot, 2.5, f"Should auto-adjust risky lot to max safe limit. Expected 2.5, got {lot}")
 
 if __name__ == '__main__':
     unittest.main()

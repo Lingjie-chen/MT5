@@ -615,6 +615,12 @@ class SymbolTrader:
                                 return llm_lot
                             else:
                                 logger.warning(f"⚠️ 大模型建议仓位 {llm_lot} 极端风险过高 (StressTest ${est_risk:.2f} > ${max_risk:.2f})，触发熔断保护。")
+                                # [FIX] Risk Cap Hit -> Auto adjust to max allowed
+                                safe_lot = max_risk / (500.0 * tick_val)
+                                safe_lot = round(safe_lot / step) * step
+                                safe_lot = max(symbol_info.volume_min, safe_lot)
+                                logger.info(f"↘️ 熔断自动调整仓位: {llm_lot} -> {safe_lot}")
+                                return safe_lot
                 except Exception as e:
                     logger.warning(f"解析 LLM 仓位失败: {e}")
 
