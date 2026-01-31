@@ -1367,11 +1367,12 @@ class QwenClient:
            - **Exness (高杠杆/低点差)**: 允许更激进的网格加仓和稍大的首单风险 (Risk% 可上浮 20%)。但需注意滑点。
            - **AvaTrade (标准/监管严)**: 严格遵守标准风险模型，禁止过度激进。
            - **合约规格**: 请优先参考 `symbol_details` 中的 `trade_contract_size`。通常 XAUUSD=100, ETHUSD=1, EURUSD=100000。
-        3. **风险管理 (AI Driven Risk)**: 
+        3. **风险管理 (AI Driven Risk) - 你的最高优先级**: 
+           - **完全授权**: 忽略任何固定的 0.01 手限制。你必须根据你的信心水平和账户资金动态调整仓位。
            - **单笔风险**: **完全由你分析决定，不设固定限制**。
            - **建议范围**: 
-             - 低置信度 / 逆势 / 震荡: 建议 0.5% - 1.0%
-             - 中置信度 / 顺势 / 结构良好: 建议 1.0% - 3.0%
+             - 低置信度 / 逆势 / 震荡: 建议 0.5% - 1.0% 账户余额风险
+             - 中置信度 / 顺势 / 结构良好: 建议 1.0% - 3.0% 账户余额风险
              - 高置信度 (Strong Buy/Sell) / 极佳SMC结构: 可提升至 3.0% - 5.0% 甚至更高（如果你认为机会极佳）。
            - **计算公式**: Position Size (Lots) = (Account Balance * Risk Percentage) / (Stop Loss Distance * Contract Size).
         4. **具体示例**:
@@ -1380,7 +1381,7 @@ class QwenClient:
            - **必须输出结果到 `position_size` 字段 (JSON key)**
         5. **市场情绪**: 结合 {market_analysis.get('sentiment_analysis', {}).get('sentiment', 'neutral')} 情绪调整。
         
-        **绝对不要**默认使用 0.01 手！必须基于资金量和你的分析信心计算。
+        **绝对不要**默认使用 0.01 手！必须基于资金量和你的分析信心计算。如果你认为机会很好，请大胆给出合适的仓位（例如 0.5, 1.0, 2.0 等）。
         请给出一个精确到小数点后两位的数字 (例如 0.15, 0.50, 1.20)，并在 `strategy_rationale` 中详细解释计算逻辑。
         
         ** 重要提示 **: 如果你的 JSON 中缺少 `position_size` 字段，将被视为分析失败！
