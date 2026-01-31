@@ -1523,14 +1523,19 @@ class QwenClient:
 
                     # 再次校验模型返回的 position_size，确保其存在且合法
                     if "position_size" not in trading_decision:
+                        logger.warning("⚠️ 模型响应中缺失 'position_size' 字段，使用默认值 0.01")
                         trading_decision["position_size"] = 0.01 # 默认值作为保底
                     else:
                         # 限制范围，防止模型给出极端值
                         try:
-                            size = float(trading_decision["position_size"])
+                            raw_size = trading_decision["position_size"]
+                            size = float(raw_size)
+                            logger.info(f"✅ 模型返回原始仓位: {raw_size}")
+                            
                             # 0.01 到 10.0 手之间 (根据资金规模调整，放宽上限以适应大资金)
                             trading_decision["position_size"] = max(0.01, min(10.0, size))
                         except (ValueError, TypeError):
+                            logger.warning(f"⚠️ 模型返回的 'position_size' 无效 ({trading_decision['position_size']})，重置为 0.01")
                             trading_decision["position_size"] = 0.01
 
                     # 添加市场分析结果到决策中

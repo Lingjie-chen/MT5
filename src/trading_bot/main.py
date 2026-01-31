@@ -545,7 +545,10 @@ class SymbolTrader:
             # 策略要求: 不强制 0.01，优先采纳大模型基于资金分析的结果
             if self.latest_strategy and 'position_size' in self.latest_strategy:
                 try:
-                    llm_lot = float(self.latest_strategy['position_size'])
+                    raw_llm_lot = self.latest_strategy['position_size']
+                    logger.info(f"🔍 Raw LLM Position Size from Strategy: {raw_llm_lot}")
+                    
+                    llm_lot = float(raw_llm_lot)
                     if llm_lot > 0:
                         symbol_info = mt5.symbol_info(self.symbol)
                         if symbol_info:
