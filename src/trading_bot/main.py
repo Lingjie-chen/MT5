@@ -1727,6 +1727,17 @@ class SymbolTrader:
         is_buy = "buy" in type_str
         is_sell = "sell" in type_str
         
+        # [NEW] 0. Risk/Reward Ratio Check (Minimum 1.5)
+        # Check this BEFORE modifying SL/TP for distance, to ensure the intended strategy is sound
+        if sl > 0 and tp > 0:
+            sl_dist = abs(price - sl)
+            tp_dist = abs(price - tp)
+            if sl_dist > 0:
+                rr_ratio = tp_dist / sl_dist
+                if rr_ratio < 1.5:
+                    logger.warning(f"Risk/Reward Ratio {rr_ratio:.2f} < 1.5. Trade rejected.")
+                    return None # Reject trade
+
         # 1. 检查方向性 (Directionality)
         if is_buy:
             # Buy: SL must be < Price, TP must be > Price
