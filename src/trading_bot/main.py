@@ -4029,6 +4029,8 @@ class SymbolTrader:
                             final_signal = "close"
                         elif qw_action == 'hold':
                             final_signal = "hold"
+                        elif qw_action == 'wait':
+                            final_signal = "wait"
                         elif qw_action in ['grid_start', 'grid_start_long', 'grid_start_short']:
                             final_signal = qw_action
                             
