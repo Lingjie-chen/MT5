@@ -63,24 +63,30 @@ class TestRunV4(unittest.TestCase):
         print(f"Calculated TP: {tp}")
         self.assertGreater(tp, 100.0, "TP should be boosted by SMC target")
 
-    def test_check_grid_exit(self):
+    @patch('trading_bot.strategies.grid_strategy.mt5')
+    def test_check_grid_exit(self, mock_grid_mt5):
         """Test Grid Exit Logic"""
+        # Setup Mock MT5 constants
+        mock_grid_mt5.POSITION_TYPE_BUY = 0
+        mock_grid_mt5.POSITION_TYPE_SELL = 1
+        
         self.grid.dynamic_tp_long = 500.0
         self.grid.long_pos_count = 1
-        self.grid.magic_number = 123
+        self.grid.magic_number = 123456
         
         # Mock Position
         mock_pos = MagicMock()
         mock_pos.magic = 123456
-        mock_pos.type = mt5.POSITION_TYPE_BUY
+        mock_pos.type = 0 # Match BUY
         mock_pos.profit = 600.0 # > 500
         mock_pos.swap = 0.0
         mock_pos.volume = 0.1
         mock_pos.price_open = 1990.0
-        mock_pos.time_msc = 100000 # Mock timestamp
+        mock_pos.time_msc = 100000
         
         close_long, close_short = self.grid.check_grid_exit([mock_pos], current_price=2000.0)
         
+        print(f"Debug: LongCount={self.grid.long_pos_count}, CloseLong={close_long}")
         self.assertTrue(close_long, "Should trigger Long Basket Exit")
         self.assertFalse(close_short, "Should not trigger Short Exit")
 
