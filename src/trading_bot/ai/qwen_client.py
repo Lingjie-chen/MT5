@@ -1345,6 +1345,15 @@ class QwenClient:
         prompt = f"""
         {system_prompt}
         
+        ## 强制输出格式要求 (Format Enforcement)
+        你必须返回一个严格符合 JSON 格式的响应，包含以下顶层字段：
+        - "action": "buy" | "sell" | "hold" | "close" | "grid_start"
+        - "position_size": float (例如 0.15) - **即使是 Hold 也要填一个建议值或 0**
+        - "reason": "你的分析逻辑"
+        - "confidence": 0-100
+        - "exit_conditions": {"tp_price": float, "sl_price": float}
+        - "market_state": string
+
         ## 核心指令更新：动态仓位计算 (Dynamic Position Sizing)
         你必须根据以下因素，精确计算本次交易的 **position_size (Lots)**：
         1. **实时账户资金**: {current_market_data.get('account_info', {}).get('available_balance', 10000)} USD
@@ -1362,10 +1371,13 @@ class QwenClient:
         4. **具体示例**:
            - 资金 $10,000, 风险 2% ($200). 止损距离 $4.
            - Lots = 200 / (4 * 100) = 0.50 Lots.
+           - **必须输出结果到 `position_size` 字段 (JSON key)**
         5. **市场情绪**: 结合 {market_analysis.get('sentiment_analysis', {}).get('sentiment', 'neutral')} 情绪调整。
         
         **绝对不要**默认使用 0.01 手！必须基于资金量和你的分析信心计算。
         请给出一个精确到小数点后两位的数字 (例如 0.15, 0.50, 1.20)，并在 `strategy_rationale` 中详细解释计算逻辑。
+        
+        ** 重要提示 **: 如果你的 JSON 中缺少 `position_size` 字段，将被视为分析失败！
 
         ## 强制要求：明确的最优 TP
         无论 Action 是什么 (BUY/SELL/HOLD)，你 **必须** 在 `exit_conditions` 中返回明确的、最优的 `tp_price`。

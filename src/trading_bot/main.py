@@ -2427,7 +2427,8 @@ class SymbolTrader:
                 f"• ST: RVGI({p_rvgi_sma},{p_rvgi_cci}), IFVG({p_ifvg_gap})\n"
                 f"• Grid: Step={p_grid_step}, GlobalTP={p_grid_tp:.1f}"
             )
-            self.send_telegram_message(msg)
+            # [User Request] Disable Telegram for Optimization Report
+            # self.send_telegram_message(msg)
             logger.info(f"已更新所有策略参数: {msg}")
             
         else:
