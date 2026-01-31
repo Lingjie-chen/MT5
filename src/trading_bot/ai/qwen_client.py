@@ -378,7 +378,7 @@ class QwenClient:
          - **Order Block (OB)**: 机构留下的未成交订单区域。
          - **FVG (Fair Value Gap)**: 快速移动留下的失衡区，价格倾向于回补。
          - **Supply & Demand Zones**: 严格的供需区。
-       - **CRT (Candle Range Theory)**: 确认关键位置的 M6 K线反应(如Pinbar, Engulfing)。
+       - **CRT (Candle Range Theory)**: 确认关键位置的 M15 K线反应(如Pinbar, Engulfing)。
        - **CCI/RVGI**: 辅助确认超买超卖和动量背离。
 
     2. **出场与风控 (Exit & Risk)**:
@@ -398,7 +398,7 @@ class QwenClient:
             "DEFAULT": """
     **交易员与风控团队必须严格遵守的【单边趋势交易技术规范 (Trend Only)】**:
     1. **仓位管理 (Position Sizing)**: 
-       - **完全由大模型决定**: 必须基于 M6/H1 的市场情绪 (Sentiment) 和 SMC 结构置信度，计算出精确的首单手数 (Initial Lot)。
+       - **完全由大模型决定**: 必须基于 M15/H1 的市场情绪 (Sentiment) 和 SMC 结构置信度，计算出精确的首单手数 (Initial Lot)。
        - **禁止固定手数**: 严禁无脑使用 0.01。如果机会好，应该重仓 (e.g., 0.5, 1.0, etc.)；如果风险大，轻仓或空仓。
     2. **加仓 (Adding)**: 
        - **禁止网格加仓 (No Grid)**。
@@ -416,7 +416,7 @@ class QwenClient:
     1. **SMC 核心**: 所有的入场和加仓必须基于 **SMC (Smart Money Concepts)** —— 寻找 订单块(OB)、失衡区(FVG)、结构破坏(BOS) 和 特性改变(CHOCH)。
     2. **高级算法验证**: 必须结合 **OBV (能量潮)** 确认成交量支持，并关注 **Liquidity Sweep (流动性扫荡)**。
     3. **趋势控制**: 
-       - M6 为执行周期，必须服从 H1/H4 趋势。
+       - M15 为执行周期，必须服从 H1 趋势。
        - **量化书籍参考**: 遵循《量化交易策略》中的均值回归与趋势跟踪双重验证原则。
        - 只有在确认趋势反转或SMC结构破坏时才平仓。
        - **单边策略**: 严禁使用 Grid Start。只能使用 BUY/SELL Action。
@@ -562,8 +562,7 @@ class QwenClient:
     
     1. **时间框架层级分析**
        - **H1 (1小时)**: 确定长期趋势方向 (Trend Bias) 和主要支撑阻力。
-       - **M15 (15分钟)**: 确定中期市场结构 (Structure) 和关键流动性池。
-       - **M6 (6分钟)**: **执行周期**。寻找精确的入场触发信号 (Trigger)。
+       - **M15 (15分钟)**: **执行周期**。确定市场结构 (Structure)、关键流动性池，并寻找入场触发信号 (Trigger)。
     
     2. **市场结构识别**
        - 明确标注当前更高级别时间框架的趋势方向（牛市、熊市、盘整）
