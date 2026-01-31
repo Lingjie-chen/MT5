@@ -4207,7 +4207,12 @@ class SymbolTrader:
                             )
                 
                 # Check Grid TP / Lock (Moved from start)
-                should_close_long, should_close_short = self.grid_strategy.check_basket_tp(positions, current_atr=current_atr)
+                # [FIX] Updated method name from check_basket_tp to check_grid_exit
+                # And it requires current_price now.
+                current_tick = mt5.symbol_info_tick(self.symbol)
+                current_price = current_tick.bid if current_tick else 0.0
+                
+                should_close_long, should_close_short = self.grid_strategy.check_grid_exit(positions, current_price=current_price, current_atr=current_atr)
                 
                 if should_close_long or should_close_short:
                     logger.info(f"Grid Strategy triggered Basket TP/Lock! (Long:{should_close_long}, Short:{should_close_short}) Closing positions...")
