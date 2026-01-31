@@ -1386,6 +1386,14 @@ class QwenClient:
         
         ** 重要提示 **: 如果你的 JSON 中缺少 `position_size` 字段，将被视为分析失败！
 
+        ## 强制要求：高质量交易过滤器 (High Quality Filter)
+        只有满足以下 **所有** 条件时，才允许返回 `action: buy` 或 `action: sell`，否则请返回 `action: hold`：
+        1. **Confidence Score**: 必须 >= 80 (Out of 100). 如果信心不足，请不要强行交易。
+        2. **Risk:Reward Ratio**: 必须 >= 1.5. (潜在盈利空间 / 止损风险).
+           - 计算公式: Abs(TP - Entry) / Abs(Entry - SL) >= 1.5
+        
+        如果你的分析结果显示信心只有 70 或盈亏比只有 1.2，**请直接返回 HOLD**，并在 `reason` 中说明原因 (例如 "Confidence 70 < 80" 或 "RR 1.2 < 1.5").
+
         ## 强制要求：明确的最优 TP
         无论 Action 是什么 (BUY/SELL/HOLD)，你 **必须** 在 `exit_conditions` 中返回明确的、最优的 `tp_price`。
         - **TP**: 基于下一个流动性池 (Liquidity Pool) 或 MFE 统计。
