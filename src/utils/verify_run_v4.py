@@ -12,7 +12,7 @@ from trading_bot.strategies.grid_strategy import KalmanGridStrategy
 class TestRunV4(unittest.TestCase):
     def setUp(self):
         self.bot = SymbolTrader(symbol="GOLD")
-        self.grid = KalmanGridStrategy(symbol="GOLD")
+        self.grid = KalmanGridStrategy(symbol="GOLD", magic_number=123456)
         
     @patch('trading_bot.main.mt5')
     def test_calculate_smart_basket_tp_with_smc(self, mock_mt5):
