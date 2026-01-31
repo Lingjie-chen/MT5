@@ -92,6 +92,14 @@ class QwenClient:
     *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M15 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
     *   **Risk/Reward Requirement**: **盈亏比 (Risk/Reward Ratio) 必须至少 1.5**。如果 (TP距离 / SL距离) < 1.5，则**禁止开仓**，必须返回 HOLD。
 
+    **仓位管理指令 (Position Sizing Instructions)**:
+    - **账户规模感知**: 
+        - 账户余额 (Balance) < 1000 USD: 推荐手数 0.01 - 0.02
+        - 账户余额 1000 - 5000 USD: 推荐手数 0.03 - 0.10
+        - 账户余额 > 5000 USD: 推荐手数 = Balance / 50000 (保守) 或 Balance / 20000 (激进)
+        - **必须严格遵守上述比例，禁止过度杠杆。**
+    - **Risk per Trade**: 单笔交易风险 (Stop Loss Risk) 不得超过账户余额的 1% - 2%。
+    
     1. **SMC (Smart Money Concepts) - 核心入场逻辑**:
        - **结构确认 (Structure Mapping)**:
          - **BOS (Break of Structure)**: 顺势突破结构，确认趋势延续。
