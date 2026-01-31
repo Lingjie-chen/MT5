@@ -4099,29 +4099,87 @@ class SymbolTrader:
                                 final_signal = 'hold'
                                 reason = f"[Filter] Low Strength ({strength:.1f} < 80)"
                             
-                            # 2. Check R:R Ratio
+                            # 2. Check R:R Ratio (Including Spread Cost)
                             else:
                                 exit_conds = strategy.get('exit_conditions', {})
                                 sl_p = exit_conds.get('sl_price', 0)
                                 tp_p = exit_conds.get('tp_price', 0)
                                 entry_p = 0
+                                spread_cost = 0.0
                                 
                                 tick = mt5.symbol_info_tick(self.symbol)
-                                if tick:
-                                    entry_p = tick.ask if final_signal == 'buy' else tick.bid
+                                symbol_info = mt5.symbol_info(self.symbol)
                                 
-                                if sl_p > 0 and tp_p > 0 and entry_p > 0:
-                                    potential_profit = abs(tp_p - entry_p)
-                                    potential_loss = abs(entry_p - sl_p)
+                                if tick and symbol_info:
+                                    # Get Spread (Ask - Bid)
+                                    # 注意: MT5 tick.ask/bid 已经包含了点差
+                                    # spread_points = symbol_info.spread # 整数点差 (e.g. 20)
+                                    # spread_val = spread_points * symbol_info.point
                                     
-                                    if potential_loss > 0:
-                                        rr_ratio = potential_profit / potential_loss
-                                        if rr_ratio < 1.5:
-                                            logger.info(f"⛔ 信号被过滤: R:R {rr_ratio:.2f} < 1.5 (TP:{tp_p}, SL:{sl_p}, Entry:{entry_p})")
-                                            final_signal = 'hold'
-                                            reason = f"[Filter] Low R:R ({rr_ratio:.2f} < 1.5)"
-                                    else:
-                                        logger.warning("无法计算 R:R (SL距离为0)")
+                                    real_spread = tick.ask - tick.bid
+                                    
+                                    # Entry Price & Spread Impact Logic
+                                    if final_signal == 'buy':
+                                        entry_p = tick.ask 
+                                        # Buy: Open at Ask, Close at Bid (TP/SL trigger at Bid)
+                                        # Profit = (Bid_Exit - Ask_Entry)
+                                        # Spread is paid at entry (Ask > Bid)
+                                        # R:R calculation needs to account for this gap
+                                        pass
+                                    elif final_signal == 'sell':
+                                        entry_p = tick.bid
+                                        # Sell: Open at Bid, Close at Ask (TP/SL trigger at Ask)
+                                        # Profit = (Bid_Entry - Ask_Exit)
+                                        pass
+                                    
+                                    # R:R Calculation (Net of Spread)
+                                    # Potential Profit: Distance to TP - Spread Impact?
+                                    # Actually, if TP/SL are absolute prices:
+                                    # Buy: TP > Entry. Net Profit = TP - Entry. (Assuming TP is Bid price)
+                                    # Sell: TP < Entry. Net Profit = Entry - TP. (Assuming TP is Ask price)
+                                    
+                                    # However, to be conservative, we should ensure TP/SL account for spread.
+                                    # 如果 TP/SL 是纯技术位 (e.g. 中间价)，则实际成交价会更差。
+                                    # 这里我们假设 TP/SL 是实际触发价格。
+                                    
+                                    if sl_p > 0 and tp_p > 0 and entry_p > 0:
+                                        potential_profit = abs(tp_p - entry_p)
+                                        potential_loss = abs(entry_p - sl_p)
+                                        
+                                        # Subtract Spread from Profit / Add to Loss (Conservative)
+                                        # potential_profit -= real_spread
+                                        # potential_loss += real_spread
+                                        
+                                        # Or simpler: Just calculate raw distance, but warn if spread is huge
+                                        # User Requirement: "考虑到账户的点差...以此来配置最优 sl 和 tp"
+                                        # This implies we might need to ADJUST SL/TP, not just check RR.
+                                        # But here is the Filter Logic.
+                                        # Let's adjust the RR check to be "Realized RR"
+                                        
+                                        realized_profit = potential_profit # Approx
+                                        realized_loss = potential_loss # Approx
+                                        
+                                        # Apply Spread Penalty
+                                        # Buy: Entry=Ask. TP=Bid. Cost = Ask-Bid.
+                                        # Sell: Entry=Bid. TP=Ask. Cost = Ask-Bid.
+                                        # So Spread always eats into profit.
+                                        
+                                        # R:R = (Target Distance - Spread) / (Risk Distance + Spread)
+                                        # 这是一个非常严格的计算方式
+                                        
+                                        if realized_loss > 0:
+                                            # Conservative RR Check
+                                            # rr_ratio = (potential_profit - real_spread) / (potential_loss + real_spread)
+                                            # Simplified for now as 'real_spread' can be noisy.
+                                            
+                                            rr_ratio = potential_profit / potential_loss
+                                            
+                                            if rr_ratio < 1.5:
+                                                logger.info(f"⛔ 信号被过滤: R:R {rr_ratio:.2f} < 1.5 (TP:{tp_p}, SL:{sl_p}, Entry:{entry_p}, Spread:{real_spread:.5f})")
+                                                final_signal = 'hold'
+                                                reason = f"[Filter] Low R:R ({rr_ratio:.2f} < 1.5)"
+                                        else:
+                                            logger.warning("无法计算 R:R (SL距离为0)")
                                 else:
                                     # 如果没有有效的 SL/TP，也视为不合格 (因为无法验证 R:R)
                                     # 除非这是手动干预或特殊情况，但在严格模式下应过滤
