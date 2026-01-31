@@ -4063,6 +4063,20 @@ class SymbolTrader:
                         # 计算置信度 (使用 Qwen 返回的 confidence，如果未提供则使用基于技术指标的估算)
                         strength = float(strategy.get('confidence', 0))
                         
+                        # [Restored] Calculate Tech Consistency for fallback
+                        matching_count = 0
+                        valid_tech_count = 0
+                        tech_signals_list = [
+                            crt_result['signal'], adv_signal, smc_result['signal'],
+                            mtf_result['signal'], ifvg_result['signal'], rvgi_cci_result['signal']
+                        ]
+                        
+                        for sig in tech_signals_list:
+                            if sig != 'neutral':
+                                valid_tech_count += 1
+                                if sig == final_signal:
+                                    matching_count += 1
+
                         # 如果 Qwen 没有返回 confidence，回退到旧逻辑
                         if strength <= 0:
                             strength = 70 # Base for Qwen
