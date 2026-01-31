@@ -4144,7 +4144,7 @@ class SymbolTrader:
             mt5.shutdown()
 
 class MultiSymbolBot:
-    def __init__(self, symbols, timeframe=mt5.TIMEFRAME_M6):
+    def __init__(self, symbols, timeframe=mt5.TIMEFRAME_M15):
         self.symbols = symbols
         self.timeframe = timeframe
         self.traders = []
@@ -4363,6 +4363,6 @@ if __name__ == "__main__":
     
     logger.info(f"Starting Bot with Account {args.account} for symbols: {symbols}")
             
-    # User Requirement: Change Timeframe back to 6 Minutes
-    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M6)
+    # User Requirement: 全部改成 15 分钟周期
+    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M15)
     bot.start(account_index=args.account)
