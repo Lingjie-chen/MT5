@@ -3070,16 +3070,25 @@ class SymbolTrader:
         """
         结合 LLM 建议、市场波动率 (ATR)、市场结构 (SMC) 和风险状态计算最终的 Dynamic Basket TP
         """
-        # [FIX] If LLM explicitly returns 0.0 (or None), we should respect it or handle it carefully.
+        # [FIX] Robust parsing of llm_tp
+        try:
+            if llm_tp is not None:
+                llm_tp_val = float(llm_tp)
+            else:
+                llm_tp_val = None
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid llm_tp value: {llm_tp}, defaulting to None")
+            llm_tp_val = None
+
         # If llm_tp is explicitly provided as 0, return 0.0 (Disable Basket TP).
-        if llm_tp is not None and float(llm_tp) == 0.0:
+        if llm_tp_val is not None and llm_tp_val == 0.0:
             return 0.0
 
         if not current_positions:
-            return float(llm_tp) if llm_tp else 100.0
+            return llm_tp_val if llm_tp_val is not None and llm_tp_val > 0 else 100.0
             
         # 1. 基础值: LLM 建议 (权重最高，因为包含了宏观和综合判断)
-        base_tp = float(llm_tp) if llm_tp and float(llm_tp) > 0 else 100.0
+        base_tp = llm_tp_val if llm_tp_val is not None and llm_tp_val > 0 else 100.0
 
         # [NEW] 1.b Check Support/Resistance from SMC for TP Adjustment
         # 逻辑：如果有明确的阻力位（多单）或支撑位（空单），尝试将 TP 设定在这些位置之前
