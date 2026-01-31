@@ -37,13 +37,13 @@ class TestTimeframeAndRR(unittest.TestCase):
             self.bot._normalize_price = lambda p: round(p, 2)
             
             # Case 1: Good RR (2.0) -> Should proceed
-            # Buy at 2000, SL 1990 (Risk 10), TP 2020 (Reward 20) -> RR 2.0
+            # Market Buy at 2000, SL 1990 (Risk 10), TP 2020 (Reward 20) -> RR 2.0
             mock_mt5.order_send.return_value = MagicMock(retcode=mt5.TRADE_RETCODE_DONE)
-            result = self.bot.execute_trade(
-                action="buy",
+            result = self.bot._send_order(
+                type_str="buy",
+                price=2000.0,
                 sl=1990.0,
                 tp=2020.0,
-                price=2000.0, # Market price override for test
                 comment="Test Good RR"
             )
             # If rejected, it returns None. If sent, it returns the order result
@@ -51,22 +51,22 @@ class TestTimeframeAndRR(unittest.TestCase):
             
             # Case 2: Bad RR (1.0) -> Should be rejected
             # Buy at 2000, SL 1990 (Risk 10), TP 2010 (Reward 10) -> RR 1.0
-            result = self.bot.execute_trade(
-                action="buy",
+            result = self.bot._send_order(
+                type_str="buy",
+                price=2000.0,
                 sl=1990.0,
                 tp=2010.0,
-                price=2000.0,
                 comment="Test Bad RR"
             )
             self.assertIsNone(result, "Trade with RR 1.0 should be rejected")
             
             # Case 3: Bad RR (1.4) -> Should be rejected
             # Buy at 2000, SL 1990 (Risk 10), TP 2014 (Reward 14) -> RR 1.4
-            result = self.bot.execute_trade(
-                action="buy",
+            result = self.bot._send_order(
+                type_str="buy",
+                price=2000.0,
                 sl=1990.0,
                 tp=2014.0,
-                price=2000.0,
                 comment="Test Bad RR 1.4"
             )
             self.assertIsNone(result, "Trade with RR 1.4 should be rejected")
