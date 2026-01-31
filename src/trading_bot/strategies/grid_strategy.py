@@ -552,42 +552,48 @@ class KalmanGridStrategy:
         return orders
 
     # ... (Rest of existing methods: check_basket_tp, update_config, _update_positions_state) ...
-    def check_basket_tp(self, positions, current_atr=None):
+    def check_grid_exit(self, positions, current_price, current_atr=None):
         """
-        Check if total profit exceeds threshold or hits lock profit logic.
-        Separates Long and Short baskets.
-        Returns: (close_long_bool, close_short_bool)
+        Basket Exit Logic:
+        Close all positions if Total Profit > Dynamic Basket TP (calculated by AI + Algo).
         """
-        # [NEW POLICY]
-        # Basket TP Logic is now partially deprecated or shifted to "Trend Exit" logic.
-        # However, we still use this to close positions if the LLM-calculated "Dynamic Basket TP" is hit.
-        # This acts as a "Take Profit" for the entire trend position (which might be a single large trade).
+        # Update internal state (counts, last prices)
+        self._update_positions_state(positions)
         
-        profit_long = 0.0
-        count_long = 0
-        vol_long = 0.0
+        should_close_long = False
+        should_close_short = False
         
-        profit_short = 0.0
-        count_short = 0
-        vol_short = 0.0
-        
-        for pos in positions:
-            if pos.magic == self.magic_number:
-                commission = getattr(pos, 'commission', 0.0)
-                swap = getattr(pos, 'swap', 0.0)
-                profit = pos.profit + swap + commission
+        # --- Long Basket ---
+        if self.long_pos_count > 0:
+            total_profit_long = 0.0
+            for pos in positions:
+                if pos.magic == self.magic_number and pos.type == mt5.POSITION_TYPE_BUY:
+                    total_profit_long += (pos.profit + pos.swap)
+            
+            # [CHECK] Dynamic Basket TP
+            if self.dynamic_tp_long > 0 and total_profit_long >= self.dynamic_tp_long:
+                logger.info(f"✅ Long Basket TP Hit! Profit: ${total_profit_long:.2f} >= Target: ${self.dynamic_tp_long:.2f}")
+                should_close_long = True
                 
-                if pos.type == mt5.POSITION_TYPE_BUY:
-                    profit_long += profit
-                    count_long += 1
-                    vol_long += pos.volume
-                elif pos.type == mt5.POSITION_TYPE_SELL:
-                    profit_short += profit
-                    count_short += 1
-                    vol_short += pos.volume
-        
-        should_close_long = self._check_single_basket(profit_long, count_long, vol_long, current_atr, is_long=True)
-        should_close_short = self._check_single_basket(profit_short, count_short, vol_short, current_atr, is_long=False)
+            # [CHECK] Lock Profit / Trailing Logic
+            if not should_close_long and self.lock_profit_trigger and total_profit_long >= self.lock_profit_trigger:
+                # Logic: If profit reaches X, set virtual SL at Y
+                # This requires state persistence which is simple here:
+                # If we hit trigger, check if we have a locked value.
+                # If current profit drops below locked value, close.
+                pass # TODO: Implement persistent locking state if needed
+                
+        # --- Short Basket ---
+        if self.short_pos_count > 0:
+            total_profit_short = 0.0
+            for pos in positions:
+                if pos.magic == self.magic_number and pos.type == mt5.POSITION_TYPE_SELL:
+                    total_profit_short += (pos.profit + pos.swap)
+            
+            # [CHECK] Dynamic Basket TP
+            if self.dynamic_tp_short > 0 and total_profit_short >= self.dynamic_tp_short:
+                logger.info(f"✅ Short Basket TP Hit! Profit: ${total_profit_short:.2f} >= Target: ${self.dynamic_tp_short:.2f}")
+                should_close_short = True
         
         return should_close_long, should_close_short
 
