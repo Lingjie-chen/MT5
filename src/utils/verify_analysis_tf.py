@@ -5,13 +5,12 @@ import os
 # Add src to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
 
-from trading_bot.analysis.advanced_analysis import AdvancedMarketAnalysis
+from trading_bot.analysis.advanced_analysis import TimeframeVisualAnalyzer
 from trading_bot.main import mt5
 
 class TestAnalysisTimeframes(unittest.TestCase):
     def test_only_h1_m15(self):
-        ama = AdvancedMarketAnalysis()
-        tfs = ama.timeframes
+        tfs = TimeframeVisualAnalyzer().timeframes
         self.assertIn("M15", tfs, "M15 should be present")
         self.assertIn("H1", tfs, "H1 should be present")
         self.assertNotIn("M6", tfs, "M6 should be removed")
