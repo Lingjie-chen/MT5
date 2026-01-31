@@ -3392,23 +3392,28 @@ class SymbolTrader:
             # Optimization: Check visibility first to avoid unnecessary select calls
             s_info = mt5.symbol_info(self.symbol)
             
-            # If symbol info is missing, force selection immediately
-            if s_info is None:
+            # If symbol info is missing or not visible, force selection immediately
+            if s_info is None or not s_info.visible:
                 if not mt5.symbol_select(self.symbol, True):
                     err = mt5.last_error()
-                    logger.warning(f"Failed to force select symbol {self.symbol} in process_tick (Error={err})")
-                    return
+                    if err[0] == -10004: # IPC Connection lost
+                        logger.warning(f"IPC Connection lost (-10004). Attempting to reconnect...")
+                        if mt5.initialize():
+                            logger.info("Reconnected to MT5 successfully.")
+                            if not mt5.symbol_select(self.symbol, True):
+                                logger.warning(f"Failed to select symbol {self.symbol} after reconnect")
+                                return
+                        else:
+                            logger.error(f"Failed to reconnect to MT5: {mt5.last_error()}")
+                            return
+                    else:
+                        logger.warning(f"Failed to force select symbol {self.symbol} in process_tick (Error={err})")
+                        return
                 
                 # Check again after selection
                 s_info = mt5.symbol_info(self.symbol)
                 if s_info is None:
                     logger.warning(f"Symbol info still not found for {self.symbol} after selection")
-                    return
-
-            if not s_info.visible:
-                if not mt5.symbol_select(self.symbol, True):
-                    err = mt5.last_error()
-                    logger.warning(f"Failed to select symbol {self.symbol} in process_tick (Error={err})")
                     return
 
             rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 500)
