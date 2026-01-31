@@ -3628,8 +3628,25 @@ class SymbolTrader:
                         except Exception as e:
                             logger.error(f"Error fetching account info: {e}")
 
+                        # [NEW] Fetch Symbol Info for AI
+                        symbol_details = {}
+                        try:
+                            s_info = mt5.symbol_info(self.symbol)
+                            if s_info:
+                                symbol_details = {
+                                    "trade_contract_size": float(s_info.trade_contract_size),
+                                    "volume_min": float(s_info.volume_min),
+                                    "volume_max": float(s_info.volume_max),
+                                    "volume_step": float(s_info.volume_step),
+                                    "point": float(s_info.point),
+                                    "digits": int(s_info.digits)
+                                }
+                        except Exception as e:
+                            logger.error(f"Error fetching symbol info for AI: {e}")
+
                         market_snapshot = {
                             "symbol": self.symbol,
+                            "symbol_details": symbol_details, # [NEW] Inject Symbol Details
                             "account_info": account_info_dict,
                             "timeframe": self.tf_name,
                             "prices": {
