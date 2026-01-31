@@ -145,6 +145,9 @@ class RemoteStorage:
             headers = {"X-API-Key": self.api_key}
             
             params = {}
+            if self.chat_id:
+                params['chat_id'] = self.chat_id # [FIX] Include chat_id for retrieval
+                
             if limit is not None:
                 params['limit'] = limit
             else:

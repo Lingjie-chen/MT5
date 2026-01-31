@@ -709,20 +709,35 @@ class KalmanGridStrategy:
 
     def update_dynamic_params(self, basket_tp=None, basket_tp_long=None, basket_tp_short=None, lock_trigger=None, trailing_config=None):
         """Update dynamic parameters from AI analysis"""
-        if basket_tp is not None and basket_tp > 0:
-            self.dynamic_global_tp = float(basket_tp)
-            # If specific ones are not provided, apply global to both to ensure consistency if switched later
-            if basket_tp_long is None: self.dynamic_tp_long = float(basket_tp)
-            if basket_tp_short is None: self.dynamic_tp_short = float(basket_tp)
-            logger.info(f"Updated Dynamic Basket TP (Global): {self.dynamic_global_tp}")
+        try:
+            if basket_tp is not None:
+                val = float(basket_tp)
+                if val > 0:
+                    self.dynamic_global_tp = val
+                    # If specific ones are not provided, apply global to both
+                    if basket_tp_long is None: self.dynamic_tp_long = val
+                    if basket_tp_short is None: self.dynamic_tp_short = val
+                    logger.info(f"Updated Dynamic Basket TP (Global): {self.dynamic_global_tp}")
+        except (ValueError, TypeError):
+             logger.warning(f"Invalid basket_tp value: {basket_tp}")
             
-        if basket_tp_long is not None and basket_tp_long > 0:
-            self.dynamic_tp_long = float(basket_tp_long)
-            logger.info(f"Updated Dynamic Basket TP (Long): {self.dynamic_tp_long}")
+        try:
+            if basket_tp_long is not None:
+                val = float(basket_tp_long)
+                if val > 0:
+                    self.dynamic_tp_long = val
+                    logger.info(f"Updated Dynamic Basket TP (Long): {self.dynamic_tp_long}")
+        except (ValueError, TypeError):
+             logger.warning(f"Invalid basket_tp_long value: {basket_tp_long}")
             
-        if basket_tp_short is not None and basket_tp_short > 0:
-            self.dynamic_tp_short = float(basket_tp_short)
-            logger.info(f"Updated Dynamic Basket TP (Short): {self.dynamic_tp_short}")
+        try:
+            if basket_tp_short is not None:
+                val = float(basket_tp_short)
+                if val > 0:
+                    self.dynamic_tp_short = val
+                    logger.info(f"Updated Dynamic Basket TP (Short): {self.dynamic_tp_short}")
+        except (ValueError, TypeError):
+             logger.warning(f"Invalid basket_tp_short value: {basket_tp_short}")
             
         if lock_trigger is not None:
             if lock_trigger > 0:
