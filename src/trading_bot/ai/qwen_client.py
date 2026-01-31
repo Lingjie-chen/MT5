@@ -1355,10 +1355,14 @@ class QwenClient:
         - "market_state": string
 
         **Action Definitions**:
-        - "wait": No positions exist, and it is NOT a good time to enter. (Display: 不开仓)
-        - "hold": Positions exist, and trend is still valid. Keep holding. (Display: 保持仓位)
+        - "wait": **CRITICAL**: Use this ONLY when there are NO open positions and you are just observing. (Display: ⏳ 观望中)
+        - "hold": **CRITICAL**: Use this ONLY when there are EXISTING open positions that you want to keep open. (Display: 💎 持仓中)
         - "buy"/"sell": Strong signal to enter market.
         - "close": Close existing positions.
+
+        **Action Logic Constraint**:
+        - IF `current_positions` is EMPTY: You CANNOT return "hold". You must return "wait" (if no signal) or "buy"/"sell".
+        - IF `current_positions` is NOT EMPTY: You CANNOT return "wait". You must return "hold" (to keep) or "close" (to exit) or "buy"/"sell" (to add/reverse).
 
         ** CRITICAL INSTRUCTION **
         You MUST include the "position_size" field in your JSON response.
