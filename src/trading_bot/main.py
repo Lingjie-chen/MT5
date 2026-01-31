@@ -4096,7 +4096,7 @@ class SymbolTrader:
                             # 1. Check Strength
                             if strength < 80:
                                 logger.info(f"⛔ 信号被过滤: Strength {strength:.1f} < 80")
-                                final_signal = 'hold'
+                                final_signal = 'hold' if current_positions_list else 'wait'
                                 reason = f"[Filter] Low Strength ({strength:.1f} < 80)"
                             
                             # 2. Check R:R Ratio (Including Spread Cost)
@@ -4176,7 +4176,7 @@ class SymbolTrader:
                                             
                                             if rr_ratio < 1.5:
                                                 logger.info(f"⛔ 信号被过滤: R:R {rr_ratio:.2f} < 1.5 (TP:{tp_p}, SL:{sl_p}, Entry:{entry_p}, Spread:{real_spread:.5f})")
-                                                final_signal = 'hold'
+                                                final_signal = 'hold' if current_positions_list else 'wait'
                                                 reason = f"[Filter] Low R:R ({rr_ratio:.2f} < 1.5)"
                                         else:
                                             logger.warning("无法计算 R:R (SL距离为0)")
