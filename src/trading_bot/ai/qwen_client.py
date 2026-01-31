@@ -1354,6 +1354,12 @@ class QwenClient:
         - "exit_conditions": {{"tp_price": float, "sl_price": float}}
         - "market_state": string
 
+        ** CRITICAL INSTRUCTION **
+        You MUST include the "position_size" field in your JSON response.
+        Calculation: (Account Balance * Risk %) / (Stop Loss Distance * Contract Size)
+        If uncertain, output 0.01 but DO NOT OMIT the field.
+
+
         ## 核心指令更新：动态仓位计算 (Dynamic Position Sizing)
         你必须根据以下因素，精确计算本次交易的 **position_size (Lots)**：
         1. **实时账户资金**: {current_market_data.get('account_info', {}).get('available_balance', 10000)} USD
@@ -1463,10 +1469,11 @@ class QwenClient:
                     logger.info(f"收到模型响应 (Length: {len(message_content)})")
                     
                     # 使用 robust_json_parser 进行稳健解析
-                    required_fields = ['action', 'entry_conditions', 'exit_conditions', 'strategy_rationale', 'telegram_report', 'grid_config']
+                    required_fields = ['action', 'entry_conditions', 'exit_conditions', 'strategy_rationale', 'telegram_report', 'grid_config', 'position_size']
                     defaults = {field: self._get_default_value(field) for field in required_fields}
                     # Ensure position_management default is available for compatibility
                     defaults['position_management'] = self._get_default_value('position_management')
+                    defaults['position_size'] = 0.01
                     
                     # 准备 fallback
                     fallback_decision = self._get_default_decision("解析失败或空响应，使用默认参数")
