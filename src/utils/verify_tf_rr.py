@@ -29,6 +29,8 @@ class TestTimeframeAndRR(unittest.TestCase):
             mock_info.bid = 2000.0
             mock_mt5.symbol_info.return_value = mock_info
             mock_mt5.symbol_info_tick.return_value = mock_info
+            # Define success retcode constant
+            mock_mt5.TRADE_RETCODE_DONE = 0
             
             # Setup bot internal state
             self.bot.lot_size = 0.01
@@ -38,7 +40,10 @@ class TestTimeframeAndRR(unittest.TestCase):
             
             # Case 1: Good RR (2.0) -> Should proceed
             # Market Buy at 2000, SL 1990 (Risk 10), TP 2020 (Reward 20) -> RR 2.0
-            mock_mt5.order_send.return_value = MagicMock(retcode=mt5.TRADE_RETCODE_DONE)
+            class Result:
+                retcode = 0
+                comment = "OK"
+            mock_mt5.order_send.return_value = Result()
             result = self.bot._send_order(
                 type_str="buy",
                 price=2000.0,
