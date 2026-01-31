@@ -27,7 +27,7 @@ class TestRunV4(unittest.TestCase):
         
         # Setup Positions (Net Long)
         positions = [
-            {'volume': 1.0, 'type': mt5.POSITION_TYPE_BUY, 'profit': 100.0, 'swap': 0.0}
+            {'volume': 1.0, 'type': mt5.POSITION_TYPE_BUY, 'profit': 100.0, 'swap': 0.0, 'open_price': 1995.0}
         ]
         
         # Setup Market Info
@@ -71,10 +71,13 @@ class TestRunV4(unittest.TestCase):
         
         # Mock Position
         mock_pos = MagicMock()
-        mock_pos.magic = 123
+        mock_pos.magic = 123456
         mock_pos.type = mt5.POSITION_TYPE_BUY
         mock_pos.profit = 600.0 # > 500
         mock_pos.swap = 0.0
+        mock_pos.volume = 0.1
+        mock_pos.price_open = 1990.0
+        mock_pos.time_msc = 100000 # Mock timestamp
         
         close_long, close_short = self.grid.check_grid_exit([mock_pos], current_price=2000.0)
         
