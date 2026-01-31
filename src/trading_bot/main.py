@@ -3979,7 +3979,12 @@ class SymbolTrader:
                                     # Update grid strategy lot size too for consistency
                                     if hasattr(self, 'grid_strategy'):
                                         self.grid_strategy.lot = qwen_lot
-                                    logger.info(f"Updated lot size from Qwen: {self.lot_size}")
+                                    
+                                    # Suppress log for non-trade actions as per user request
+                                    # We check strategy['action'] here because qw_action is defined later
+                                    temp_action = strategy.get('action', 'neutral').lower()
+                                    if temp_action not in ['hold', 'wait', 'close', 'neutral']:
+                                        logger.info(f"Updated lot size from Qwen: {self.lot_size}")
                             except Exception as e:
                                 logger.error(f"Failed to update lot size: {e}")
                         
@@ -4139,8 +4144,15 @@ class SymbolTrader:
                         
                         # Combine Signals (Using HybridOptimizer just for weighting record)
                         _, _, weights = self.optimizer.combine_signals(all_signals)
+                        
+                        # Customize display
+                        display_signal = final_signal.upper()
+                        if final_signal == 'wait':
+                            display_signal = "WAIT (不开仓)"
+                        elif final_signal == 'hold':
+                            display_signal = "HOLD (保持仓位)"
 
-                        logger.info(f"AI 最终决定 (Qwen): {final_signal.upper()} (强度: {strength:.1f})")
+                        logger.info(f"AI 最终决定 (Qwen): {display_signal} (强度: {strength:.1f})")
                         logger.info(f"Reason: {reason}")
                         
                         # 保存分析结果到DB
