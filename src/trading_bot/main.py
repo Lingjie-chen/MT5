@@ -4060,25 +4060,56 @@ class SymbolTrader:
 
                         qw_signal = final_signal if final_signal not in ['hold', 'close'] else 'neutral'
                         
-                        # 计算置信度 (简化版，仅参考 Qwen 和 Tech 一致性)
-                        matching_count = 0
-                        valid_tech_count = 0
-                        tech_signals_list = [
-                            crt_result['signal'], adv_signal, smc_result['signal'],
-                            mtf_result['signal'], ifvg_result['signal'], rvgi_cci_result['signal']
-                        ]
+                        # 计算置信度 (使用 Qwen 返回的 confidence，如果未提供则使用基于技术指标的估算)
+                        strength = float(strategy.get('confidence', 0))
                         
-                        for sig in tech_signals_list:
-                            if sig != 'neutral':
-                                valid_tech_count += 1
-                                if sig == final_signal:
-                                    matching_count += 1
+                        # 如果 Qwen 没有返回 confidence，回退到旧逻辑
+                        if strength <= 0:
+                            strength = 70 # Base for Qwen
+                            if valid_tech_count > 0:
+                                strength += (matching_count / valid_tech_count) * 30
                         
-                        strength = 70 # Base for Qwen
-                        if valid_tech_count > 0:
-                            strength += (matching_count / valid_tech_count) * 30
+                        # [NEW] Enforce Minimum Strength & R:R Ratio (User Requirement)
+                        # "要求 strength 至少 80% 以上，盈亏比至少 1.5 以上"
+                        if final_signal in ['buy', 'sell']:
+                            # 1. Check Strength
+                            if strength < 80:
+                                logger.info(f"⛔ 信号被过滤: Strength {strength:.1f} < 80")
+                                final_signal = 'hold'
+                                reason = f"[Filter] Low Strength ({strength:.1f} < 80)"
                             
+                            # 2. Check R:R Ratio
+                            else:
+                                exit_conds = strategy.get('exit_conditions', {})
+                                sl_p = exit_conds.get('sl_price', 0)
+                                tp_p = exit_conds.get('tp_price', 0)
+                                entry_p = 0
+                                
+                                tick = mt5.symbol_info_tick(self.symbol)
+                                if tick:
+                                    entry_p = tick.ask if final_signal == 'buy' else tick.bid
+                                
+                                if sl_p > 0 and tp_p > 0 and entry_p > 0:
+                                    potential_profit = abs(tp_p - entry_p)
+                                    potential_loss = abs(entry_p - sl_p)
+                                    
+                                    if potential_loss > 0:
+                                        rr_ratio = potential_profit / potential_loss
+                                        if rr_ratio < 1.5:
+                                            logger.info(f"⛔ 信号被过滤: R:R {rr_ratio:.2f} < 1.5 (TP:{tp_p}, SL:{sl_p}, Entry:{entry_p})")
+                                            final_signal = 'hold'
+                                            reason = f"[Filter] Low R:R ({rr_ratio:.2f} < 1.5)"
+                                    else:
+                                        logger.warning("无法计算 R:R (SL距离为0)")
+                                else:
+                                    # 如果没有有效的 SL/TP，也视为不合格 (因为无法验证 R:R)
+                                    # 除非这是手动干预或特殊情况，但在严格模式下应过滤
+                                    logger.info("⛔ 信号被过滤: 缺失有效的 SL/TP 价格，无法验证 R:R")
+                                    final_signal = 'hold'
+                                    reason = f"[Filter] Missing SL/TP for R:R Check"
+
                         # 构建所有信号字典
+
                         all_signals = {
                             "qwen": qw_signal,
                             "crt": crt_result['signal'],
