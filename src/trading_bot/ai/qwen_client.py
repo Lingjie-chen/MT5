@@ -1397,6 +1397,7 @@ class QwenClient:
         1. **Confidence Score**: 必须 >= 80 (Out of 100). 如果信心不足，请不要强行交易。
         2. **Risk:Reward Ratio**: 必须 >= 1.5. (潜在盈利空间 / 止损风险).
            - 计算公式: Abs(TP - Entry) / Abs(Entry - SL) >= 1.5
+           - **Spread Impact**: 请注意点差 (Spread) 成本。你的 SL 和 TP 必须足够宽，以覆盖点差成本。
         
         如果你的分析结果显示信心只有 70 或盈亏比只有 1.2，**请直接返回 HOLD**，并在 `reason` 中说明原因 (例如 "Confidence 70 < 80" 或 "RR 1.2 < 1.5").
 
@@ -1405,6 +1406,12 @@ class QwenClient:
         - **TP (止盈)**: 基于下一个流动性池 (Liquidity Pool) 或 MFE 统计。
         - **SL (止损)**: 必须设置在关键结构位之外 (SMC Invalid Point) 或基于 ATR 保护。
         - **严禁** 返回 0.0 或 null！即使是 HOLD 状态，也请给出"如果现在进场，合理的SL/TP在哪里"的建议。
+        
+        **点差适配 (Spread Awareness)**:
+        - 不同的交易商 (Exness/Ava) 和品种 (XAUUSD/ETHUSD) 点差差异巨大。
+        - 必须在 TP 和 SL 中预留点差缓冲。
+        - 当前预估点差 (Points): {current_market_data.get('spread', 20)}
+        - 建议缓冲: 至少 2 * Spread。
 
 
         ## 当前交易上下文
