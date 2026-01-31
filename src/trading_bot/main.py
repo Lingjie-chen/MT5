@@ -3077,7 +3077,87 @@ class SymbolTrader:
             
         # 1. 基础值: LLM 建议 (权重最高，因为包含了宏观和综合判断)
         base_tp = float(llm_tp) if llm_tp and float(llm_tp) > 0 else 100.0
-        
+
+        # [NEW] 1.b Check Support/Resistance from SMC for TP Adjustment
+        # 逻辑：如果有明确的阻力位（多单）或支撑位（空单），尝试将 TP 设定在这些位置之前
+        if smc_data and current_positions:
+            # 计算净持仓方向
+            net_lots = 0.0
+            for p in current_positions:
+                # current_positions 是 list of dict, key 'volume'/'type'
+                vol = p.get('volume', 0.0)
+                ptype = p.get('type')
+                if ptype == mt5.POSITION_TYPE_BUY:
+                    net_lots += vol
+                elif ptype == mt5.POSITION_TYPE_SELL:
+                    net_lots -= vol
+            
+            # 获取当前价格
+            tick = mt5.symbol_info_tick(self.symbol)
+            if tick and abs(net_lots) > 0.001:
+                current_price = tick.bid if net_lots > 0 else tick.ask
+                
+                target_price = 0.0
+                found_structural_target = False
+                
+                key_levels = smc_data.get('key_levels', {})
+                
+                if net_lots > 0: # Net Long
+                    # 寻找上方最近的阻力位
+                    resistances = key_levels.get('resistance', [])
+                    # 过滤掉低于当前价格的（已突破）
+                    valid_res = [r for r in resistances if r > current_price]
+                    if valid_res:
+                        # 取最近的一个阻力位作为目标，并预留一点缓冲 (Buffer)
+                        nearest_res = min(valid_res)
+                        target_price = nearest_res - (50 * point) # Buffer 50 points
+                        found_structural_target = True
+                        logger.info(f"🎯 SMC Target (Long): Found Resistance at {nearest_res:.2f}, setting Target Price to {target_price:.2f}")
+
+                elif net_lots < 0: # Net Short
+                    # 寻找下方最近的支撑位
+                    supports = key_levels.get('support', [])
+                    valid_sup = [s for s in supports if s < current_price]
+                    if valid_sup:
+                        nearest_sup = max(valid_sup)
+                        target_price = nearest_sup + (50 * point) # Buffer 50 points
+                        found_structural_target = True
+                        logger.info(f"🎯 SMC Target (Short): Found Support at {nearest_sup:.2f}, setting Target Price to {target_price:.2f}")
+
+                # Convert Price Target to Basket TP USD
+                if found_structural_target and target_price > 0:
+                    # Basket TP (USD) = (TargetPrice - AvgPrice) * NetVolume * ContractSize
+                    # 由于我们只知道当前浮动盈亏，不知道准确的 AvgPrice，
+                    # 我们可以用: Expected_Profit = Current_Profit + (Distance_Remaining * Volume_Value)
+                    
+                    # 1. 计算当前剩余距离产生的潜在利润
+                    distance_remaining = abs(target_price - current_price)
+                    
+                    # 2. 估算每点价值 (TickValue per point)
+                    # TickValue usually for 1 lot per tick_size
+                    tick_size = symbol_info.trade_tick_size
+                    tick_val = symbol_info.trade_tick_value
+                    
+                    if tick_size > 0 and point > 0:
+                        value_per_point_per_lot = tick_val * (point / tick_size)
+                        
+                        potential_additional_profit = distance_remaining * abs(net_lots) * value_per_point_per_lot
+                        
+                        # 3. 获取当前浮动盈亏 (sum of current positions profit)
+                        current_floating_profit = sum([p.get('profit', 0.0) + p.get('swap', 0.0) for p in current_positions])
+                        
+                        # 4. Final Structural TP
+                        structural_tp_usd = current_floating_profit + potential_additional_profit
+                        
+                        # 仅当计算出的 Structural TP 合理且大于基础 TP 时才采用？
+                        # 或者我们应该优先尊重结构？
+                        # 策略：如果 Structural TP > 0，我们将其作为参考，与 Base TP 混合
+                        
+                        if structural_tp_usd > 10.0: # 至少大于 $10
+                            logger.info(f"🎯 Structural TP Calc: CurrProfit=${current_floating_profit:.2f} + Potential=${potential_additional_profit:.2f} = ${structural_tp_usd:.2f}")
+                            # 调整 Base TP 向 Structural TP 靠拢 (例如 50% 权重)
+                            base_tp = (base_tp * 0.5) + (structural_tp_usd * 0.5)
+
         # 2. 波动率约束 (ATR Constraint)
         # 最小 TP 应该至少覆盖 3 倍 ATR 的波动，否则容易被噪音止盈
         # 假设 1 Lot, ATR=2.0 (200 points) -> Value = $200 approx for Gold? No.
