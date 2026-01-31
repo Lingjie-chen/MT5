@@ -1351,7 +1351,7 @@ class QwenClient:
         - "position_size": float (例如 0.15) - **即使是 Hold 也要填一个建议值或 0**
         - "reason": "你的分析逻辑"
         - "confidence": 0-100
-        - "exit_conditions": {"tp_price": float, "sl_price": float}
+        - "exit_conditions": {{"tp_price": float, "sl_price": float}}
         - "market_state": string
 
         ## 核心指令更新：动态仓位计算 (Dynamic Position Sizing)
