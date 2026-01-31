@@ -1578,6 +1578,20 @@ class QwenClient:
                             
                         trading_decision['position_management'] = pm
 
+                    # Post-processing: Enforce HOLD/WAIT logic based on positions
+                    action_raw = trading_decision.get('action', 'wait').lower()
+                    has_positions = len(current_positions) > 0 if current_positions else False
+                    
+                    if action_raw == 'hold' and not has_positions:
+                        trading_decision['action'] = 'wait'
+                        if 'telegram_report' in trading_decision:
+                            trading_decision['telegram_report'] = trading_decision['telegram_report'].replace("持仓", "观望").replace("Holding", "Waiting")
+
+                    if action_raw == 'wait' and has_positions:
+                        trading_decision['action'] = 'hold'
+                        if 'telegram_report' in trading_decision:
+                            trading_decision['telegram_report'] = trading_decision['telegram_report'].replace("观望", "持仓").replace("Waiting", "Holding")
+
                     # 再次校验模型返回的 position_size，确保其存在且合法
                     if "position_size" not in trading_decision:
                         logger.warning("⚠️ 模型响应中缺失 'position_size' 字段，使用默认值 0.01")
