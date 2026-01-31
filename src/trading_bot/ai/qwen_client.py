@@ -1559,7 +1559,7 @@ class QwenClient:
                         try:
                             raw_size = trading_decision["position_size"]
                             size = float(raw_size)
-                            logger.info(f"✅ 模型返回原始仓位: {raw_size}")
+                            logger.info(f"✅ 模型返回动态仓位: {raw_size} (已根据资金动态计算)")
                             
                             # 0.01 到 10.0 手之间 (根据资金规模调整，放宽上限以适应大资金)
                             trading_decision["position_size"] = max(0.01, min(10.0, size))
