@@ -109,6 +109,7 @@ class RemoteStorage:
                     v = float(row['volume'])
                     
                     record = {
+                        "chat_id": self.chat_id,  # [FIX] Inject chat_id for multi-tenancy support
                         "timestamp": index.isoformat() if isinstance(index, datetime) else str(index),
                         "symbol": symbol,
                         "timeframe": timeframe,
@@ -126,7 +127,8 @@ class RemoteStorage:
                     chunk = records[i:i + chunk_size]
                     response = requests.post(url, json=chunk, headers=headers, timeout=20)
                     if response.status_code not in [200, 201]:
-                         logger.warning(f"Failed to send market data batch: {response.status_code} - {response.text[:100]}")
+                         # [FIX] Log more details for 500 errors
+                         logger.warning(f"Failed to send market data batch: {response.status_code} - {response.text[:500]}")
             except Exception as e:
                 logger.error(f"Error sending market data batch: {e}")
 
