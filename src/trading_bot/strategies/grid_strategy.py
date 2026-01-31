@@ -571,7 +571,7 @@ class KalmanGridStrategy:
                     total_profit_long += (pos.profit + pos.swap)
             
             # [CHECK] Dynamic Basket TP
-            if self.dynamic_tp_long > 0 and total_profit_long >= self.dynamic_tp_long:
+            if self.dynamic_tp_long is not None and self.dynamic_tp_long > 0 and total_profit_long >= self.dynamic_tp_long:
                 logger.info(f"✅ Long Basket TP Hit! Profit: ${total_profit_long:.2f} >= Target: ${self.dynamic_tp_long:.2f}")
                 should_close_long = True
                 
@@ -591,7 +591,7 @@ class KalmanGridStrategy:
                     total_profit_short += (pos.profit + pos.swap)
             
             # [CHECK] Dynamic Basket TP
-            if self.dynamic_tp_short > 0 and total_profit_short >= self.dynamic_tp_short:
+            if self.dynamic_tp_short is not None and self.dynamic_tp_short > 0 and total_profit_short >= self.dynamic_tp_short:
                 logger.info(f"✅ Short Basket TP Hit! Profit: ${total_profit_short:.2f} >= Target: ${self.dynamic_tp_short:.2f}")
                 should_close_short = True
         
