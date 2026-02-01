@@ -4316,6 +4316,7 @@ class SymbolTrader:
                         f"• Action: *{strategy.get('action', final_signal).upper()}*\n"
                         f"• Lots: `{self.lot_size if self.lot_size else strategy.get('position_size', 0.01)}`\n"
                         f"• Strength: {strength:.0f}%\n"
+                        f"• Basket TP: `${self.grid_strategy.dynamic_global_tp:.1f}`\n"
                         f"• Sentiment: {qwen_sent_label.upper()} ({qwen_sent_score:.2f})\n\n"
                         f"💼 *Positions*\n"
                                 f"{self.escape_markdown(pos_summary)}"
