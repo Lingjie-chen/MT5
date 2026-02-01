@@ -4091,13 +4091,13 @@ class SymbolTrader:
                                 strength += (matching_count / valid_tech_count) * 30
                         
                         # [NEW] Enforce Minimum Strength & R:R Ratio (User Requirement)
-                        # "要求 strength 至少 80% 以上，盈亏比至少 1.5 以上"
+                        # "要求 strength 至少 70% 以上，盈亏比至少 1.5 以上"
                         if final_signal in ['buy', 'sell']:
                             # 1. Check Strength
-                            if strength < 80:
-                                logger.info(f"⛔ 信号被过滤: Strength {strength:.1f} < 80")
+                            if strength < 70:
+                                logger.info(f"⛔ 信号被过滤: Strength {strength:.1f} < 70")
                                 final_signal = 'hold' if current_positions_list else 'wait'
-                                reason = f"[Filter] Low Strength ({strength:.1f} < 80)"
+                                reason = f"[Filter] Low Strength ({strength:.1f} < 70)"
                             
                             # 2. Check R:R Ratio (Including Spread Cost)
                             else:
