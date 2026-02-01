@@ -1398,12 +1398,12 @@ class QwenClient:
 
         ## 强制要求：高质量交易过滤器 (High Quality Filter)
         只有满足以下 **所有** 条件时，才允许返回 `action: buy` 或 `action: sell`，否则请返回 `action: hold`：
-        1. **Confidence Score**: 必须 >= 80 (Out of 100). 如果信心不足，请不要强行交易。
+        1. **Confidence Score**: 必须 >= 70 (Out of 100). 如果信心不足，请不要强行交易。
         2. **Risk:Reward Ratio**: 必须 >= 1.5. (潜在盈利空间 / 止损风险).
            - 计算公式: Abs(TP - Entry) / Abs(Entry - SL) >= 1.5
            - **Spread Impact**: 请注意点差 (Spread) 成本。你的 SL 和 TP 必须足够宽，以覆盖点差成本。
         
-        如果你的分析结果显示信心只有 70 或盈亏比只有 1.2，**请直接返回 HOLD**，并在 `reason` 中说明原因 (例如 "Confidence 70 < 80" 或 "RR 1.2 < 1.5").
+        如果你的分析结果显示信心只有 60 或盈亏比只有 1.2，**请直接返回 HOLD**，并在 `reason` 中说明原因 (例如 "Confidence 60 < 70" 或 "RR 1.2 < 1.5").
 
         ## 强制要求：明确的最优 SL 和 TP (Optimal Stop Loss & Take Profit)
         无论 Action 是什么 (BUY/SELL/HOLD/WAIT)，你 **必须** 在 `exit_conditions` 中返回明确的、最优的 `sl_price` 和 `tp_price`。
