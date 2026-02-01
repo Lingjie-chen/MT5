@@ -4373,6 +4373,11 @@ class SymbolTrader:
                 current_tick = mt5.symbol_info_tick(self.symbol)
                 current_price = current_tick.bid if current_tick else 0.0
                 
+                # Log current Basket Status for visibility
+                if positions:
+                    total_pnl = sum([p.profit + p.swap for p in positions])
+                    logger.info(f"📊 Basket Status: PnL=${total_pnl:.2f} / Target=${self.grid_strategy.dynamic_global_tp:.2f}")
+
                 should_close_long, should_close_short = self.grid_strategy.check_grid_exit(positions, current_price=current_price, current_atr=current_atr)
                 
                 if should_close_long or should_close_short:
