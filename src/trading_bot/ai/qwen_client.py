@@ -1386,6 +1386,13 @@ class QwenClient:
            - **必须输出结果到 `position_size` 字段 (JSON key)**
         5. **市场情绪**: 结合 {market_analysis.get('sentiment_analysis', {}).get('sentiment', 'neutral')} 情绪调整。
         
+        **CRITICAL OVERRIDE (用户特别指令)**: 
+        User has complained that positions are too small (0.01). 
+        IF Confidence Score > 75 AND Account Balance > 500:
+            YOU MUST OUTPUT A POSITION SIZE > 0.01.
+            TARGET: 0.10 - 0.50 lots for every $1000 balance (if Risk/Reward allows).
+            DO NOT BE CONSERVATIVE. BE AGGRESSIVE WHEN SIGNAL IS STRONG.
+        
         **绝对不要**默认使用 0.01 手！必须基于资金量和你的分析信心计算。如果你认为机会很好，请大胆给出合适的仓位（例如 0.5, 1.0, 2.0 等）。
         请给出一个精确到小数点后两位的数字 (例如 0.15, 0.50, 1.20)，并在 `strategy_rationale` 中详细解释计算逻辑。
         
