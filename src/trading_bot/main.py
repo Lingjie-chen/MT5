@@ -1624,7 +1624,7 @@ class SymbolTrader:
                         sl = price - (stops_level + safe_buffer)
                     else: 
                         sl = price + (stops_level + safe_buffer)
-                    sl = self._normalize_price(sl)
+                    sl = self._normalize_price(sl) if sl is not None else 0.0
                 
         if tp > 0:
             # Check for invalid TP direction first
@@ -1639,7 +1639,7 @@ class SymbolTrader:
                         tp = price + (stops_level + safe_buffer)
                     else: 
                         tp = price - (stops_level + safe_buffer)
-                    tp = self._normalize_price(tp)
+                    tp = self._normalize_price(tp) if tp is not None else 0.0
         
         # 3. 检查 Pending Order 的挂单价格合法性 (Invalid Price Check)
         # 对于 Limit Buy，挂单价必须低于当前 Ask
