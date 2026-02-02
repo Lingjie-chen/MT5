@@ -827,7 +827,7 @@ class SymbolTrader:
         :param suggested_lot: 预计算的建议手数 (可选)
         """
         # 允许所有相关指令进入
-        valid_actions = ['buy', 'sell', 'limit_buy', 'limit_sell', 'close', 'add_buy', 'add_sell', 'hold', 'close_buy_open_sell', 'close_sell_open_buy']
+        valid_actions = ['buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'close', 'add_buy', 'add_sell', 'hold', 'close_buy_open_sell', 'close_sell_open_buy']
         # 注意: signal 参数这里传入的是 final_signal，已经被归一化为 buy/sell/close/hold
         # 但我们更关心 entry_params 中的具体 action
         
@@ -1052,7 +1052,7 @@ class SymbolTrader:
         
         # [NEW] Pre-Trade Safety Check (Risk Management)
         # Check before opening any NEW position (Market, Limit, Grid)
-        is_opening_action = llm_action in ['buy', 'sell', 'add_buy', 'add_sell', 'limit_buy', 'limit_sell', 'buy_limit', 'sell_limit', 'grid_start', 'close_buy_open_sell', 'close_sell_open_buy']
+        is_opening_action = llm_action in ['buy', 'sell', 'add_buy', 'add_sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'buy_limit', 'sell_limit', 'buy_stop', 'sell_stop', 'grid_start', 'close_buy_open_sell', 'close_sell_open_buy']
         
         if is_opening_action:
             is_safe, reason = self.check_account_safety(close_if_critical=False)
