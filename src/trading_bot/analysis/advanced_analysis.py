@@ -635,11 +635,20 @@ class SMCAnalyzer:
         ob_signal = self.detect_order_blocks(df)
         fvg_signal = self.detect_fvg(df)
         bos_signal = self.detect_bos(df)
+        smart_structure = self.detect_smart_structure(df, sentiment_score) # [NEW] Integrated Smart Structure (BOS/CHoCH)
         pd_info = self.detect_premium_discount(df)
         final_signal = "neutral"; reason = f"Sentiment: {sentiment_text} ({active_strategy})"; strength = 0
         in_premium = pd_info['zone'] == 'premium'; in_discount = pd_info['zone'] == 'discount'
         
-        if (active_strategy == "ALL" or active_strategy == "BOS") and self.allow_bos:
+        # Integrate Smart Structure Signal
+        if smart_structure['signal'] != 'neutral':
+             # Smart Structure (BOS/CHoCH) has high priority
+             if active_strategy == "ALL" or active_strategy == "BOS":
+                 final_signal = smart_structure['signal']
+                 reason = f"SMC {smart_structure.get('type', 'Structure')}: {smart_structure['reason']}"
+                 strength = 85
+        
+        if (active_strategy == "ALL" or active_strategy == "BOS") and self.allow_bos and final_signal == "neutral":
             if bos_signal['signal'] != "neutral":
                 aligned = False
                 # BOS typically means continuation, so it must align with trend
