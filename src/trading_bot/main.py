@@ -1196,16 +1196,20 @@ class SymbolTrader:
         direction = 'bullish' # Default
         
         if llm_action in ['grid_start', 'grid_start_long', 'grid_start_short']:
-            is_grid_action = True
-            if llm_action == 'grid_start_long': direction = 'bullish'
-            elif llm_action == 'grid_start_short': direction = 'bearish'
-            else:
-                # Legacy grid_start inference
-                if self.latest_strategy:
-                    market_state = str(self.latest_strategy.get('market_state', '')).lower()
-                    pred = str(self.latest_strategy.get('short_term_prediction', '')).lower()
-                    if 'down' in market_state or 'bear' in pred or 'sell' in str(self.latest_strategy.get('action', '')).lower():
-                        direction = 'bearish'
+            # [NEW POLICY] Permanently disable grid start actions
+            logger.info(f"Ignoring '{llm_action}' action as per Strict No-Grid policy.")
+            return
+            
+            # is_grid_action = True
+            # if llm_action == 'grid_start_long': direction = 'bullish'
+            # elif llm_action == 'grid_start_short': direction = 'bearish'
+            # else:
+            #     # Legacy grid_start inference
+            #     if self.latest_strategy:
+            #         market_state = str(self.latest_strategy.get('market_state', '')).lower()
+            #         pred = str(self.latest_strategy.get('short_term_prediction', '')).lower()
+            #         if 'down' in market_state or 'bear' in pred or 'sell' in str(self.latest_strategy.get('action', '')).lower():
+            #             direction = 'bearish'
                         
         elif llm_action in ['buy', 'add_buy', 'limit_buy', 'buy_limit']:
              # [NEW] Enforce Trend Mode (High/Low Swing) - No Grid
