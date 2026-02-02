@@ -1127,8 +1127,8 @@ class MTFAnalyzer:
         except: return 0
     def update_zones(self, symbol):
         try:
-            # Changed from M6 to M15 for zone update as per user request
-            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M15, 0, 500)
+            # Use htf2 (M15) for zone update as per user request
+            rates = mt5.copy_rates_from_pos(symbol, self.htf2, 0, 500)
             if rates is None or len(rates) < 50: return
             self.demand_zones = []; self.supply_zones = []
             tr_sum = 0
