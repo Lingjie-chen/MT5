@@ -2794,6 +2794,77 @@ class SymbolTrader:
         else:
             logger.info("Short-Term Optimization found no improvement.")
 
+    def analyze_closed_trades(self):
+        """
+        Analyze recently closed trades to identify loss reasons and update strategy.
+        Executed periodically.
+        """
+        try:
+            # Get closed deals from history (Last 24 hours)
+            now = datetime.now()
+            from_time = now - timedelta(hours=24)
+            deals = mt5.history_deals_get(from_time, now)
+            
+            if deals is None:
+                return
+
+            # Filter for my deals
+            my_deals = [d for d in deals if d.magic == self.magic_number and d.entry == mt5.DEAL_ENTRY_OUT]
+            
+            if not my_deals:
+                return
+                
+            loss_deals = [d for d in my_deals if d.profit < 0]
+            
+            if loss_deals:
+                logger.info(f"Analyzing {len(loss_deals)} loss deals for strategy improvement...")
+                
+                reasons = []
+                for deal in loss_deals:
+                    # Retrieve the original signal/reason from DB for this trade
+                    # We need to map deal -> order -> position -> signal
+                    # This is complex without a robust order tracking DB.
+                    # Simplified: Check market condition at deal time
+                    
+                    deal_time = datetime.fromtimestamp(deal.time)
+                    
+                    # Heuristic Analysis
+                    # 1. Check if it was against the trend (HTF)
+                    # 2. Check if volatility was too high (News?)
+                    
+                    # Fetch H1 data at deal time
+                    rates_h1 = mt5.copy_rates_from(self.symbol, mt5.TIMEFRAME_H1, deal_time, 1)
+                    trend_h1 = "neutral"
+                    if rates_h1 is not None and len(rates_h1) > 0:
+                        close = rates_h1[0]['close']
+                        open_p = rates_h1[0]['open']
+                        trend_h1 = "bullish" if close > open_p else "bearish"
+                    
+                    deal_type = "buy" if deal.type == mt5.DEAL_TYPE_SELL else "sell" # Closing a SELL is a BUY deal? No.
+                    # Deal type: BUY(0), SELL(1).
+                    # Entry OUT:
+                    # If position was BUY, closing deal is SELL.
+                    # If position was SELL, closing deal is BUY.
+                    
+                    # If deal.type is SELL (1), it closed a BUY position.
+                    pos_direction = "buy" if deal.type == mt5.DEAL_TYPE_SELL else "sell"
+                    
+                    if pos_direction != trend_h1 and trend_h1 != "neutral":
+                        reasons.append("Counter-Trend Trade")
+                    
+                    # Send to LLM for detailed analysis (Batch)
+                    
+                if reasons:
+                    # Update prompt context for next analysis
+                    summary = f"Recent Losses Reasons: {', '.join(set(reasons))}"
+                    logger.info(summary)
+                    
+                    # Store this in a temporary feedback buffer for Qwen
+                    self.latest_strategy['feedback'] = summary
+                    
+        except Exception as e:
+            logger.error(f"Closed Trade Analysis Failed: {e}")
+
     def sync_account_history(self):
         """
         Sync historical account trades to local DB to enable immediate self-learning.
