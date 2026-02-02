@@ -1320,13 +1320,30 @@ class QwenClient:
         {system_prompt}
         
         ## 强制输出格式要求 (Format Enforcement)
-        你必须返回一个严格符合 JSON 格式的响应，包含以下顶层字段：
-        - "action": "buy" | "sell" | "wait" | "hold" | "close"
-        - "position_size": float (例如 0.15) - **即使是 Hold 也要填一个建议值或 0**
-        - "reason": "你的分析逻辑"
-        - "confidence": 0-100
-        - "exit_conditions": {{"tp_price": float, "sl_price": float}}
-        - "market_state": string
+        你必须返回一个严格符合 JSON 格式的响应，并确保包含以下所有顶层字段（严禁遗漏）：
+        
+        ```json
+        {
+            "action": "buy/sell/wait/hold/close",
+            "position_size": 0.15, // 即使是 Wait/Hold 也要填一个建议值或 0.0，严禁省略
+            "entry_conditions": { // 严禁省略，如果 Hold 则填 null
+                "price": 2350.50,
+                "action": "buy" 
+            },
+            "exit_conditions": { // 严禁省略，必须包含 SL 和 TP
+                "sl_price": 2345.00,
+                "tp_price": 2360.00
+            },
+            "strategy_rationale": "你的详细分析逻辑 (中文)", // 严禁省略
+            "confidence": 85,
+            "market_state": "Bullish Trend",
+            "telegram_report": "🚀 信号触发...", // 严禁省略
+            "grid_config": { // 严禁省略，填默认值即可
+                "initial_lot": 0.01,
+                "basket_tp_usd": 50.0
+            }
+        }
+        ```
 
         **Action Definitions**:
         - "wait": **CRITICAL**: Use this ONLY when there are NO open positions and you are just observing. (Display: ⏳ 观望中)
