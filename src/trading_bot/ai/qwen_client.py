@@ -1226,7 +1226,7 @@ class QwenClient:
 
     def optimize_strategy_logic(self, market_structure_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        黄金(XAUUSD)交易决策系统 - 基于SMC+Martingale策略
+        黄金(XAUUSD)交易决策系统 - 基于SMC+趋势策略
         整合完整的交易决策框架，完全自主进行市场分析和交易决策
         
         Args:
@@ -1603,8 +1603,9 @@ class QwenClient:
                             if action_val not in ['hold', 'wait', 'close', 'neutral']:
                                 logger.info(f"✅ 模型返回动态仓位: {raw_size} (已根据资金动态计算)")
                             
-                            # 0.01 到 10.0 手之间 (根据资金规模调整，放宽上限以适应大资金)
-                            trading_decision["position_size"] = max(0.01, min(10.0, size))
+                            # 0.01 到 50.0 手之间 (根据资金规模调整，放宽上限以适应大资金)
+                            # 用户明确要求完全按照大模型来配置，因此放宽上限
+                            trading_decision["position_size"] = max(0.01, min(50.0, size))
                         except (ValueError, TypeError):
                             logger.warning(f"⚠️ 模型返回的 'position_size' 无效 ({trading_decision['position_size']})，重置为 0.01")
                             trading_decision["position_size"] = 0.01
