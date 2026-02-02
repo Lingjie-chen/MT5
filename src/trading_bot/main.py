@@ -4388,7 +4388,12 @@ class SymbolTrader:
                 # Log current Basket Status for visibility
                 if positions:
                     total_pnl = sum([p.profit + p.swap for p in positions])
-                    target_val = self.grid_strategy.dynamic_global_tp if self.grid_strategy.dynamic_global_tp is not None else 0.0
+                    
+                    # [FIX] Ensure target_val is never None to avoid formatting errors
+                    target_val = self.grid_strategy.dynamic_global_tp
+                    if target_val is None:
+                        target_val = 0.0
+                        
                     logger.info(f"📊 Basket Status: PnL=${total_pnl:.2f} / Target=${target_val:.2f}")
 
                 should_close_long, should_close_short = self.grid_strategy.check_grid_exit(positions, current_price=current_price, current_atr=current_atr)
