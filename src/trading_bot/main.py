@@ -1349,8 +1349,9 @@ class SymbolTrader:
 
              logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid. Price={price}, SL={explicit_sl}, TP={explicit_tp}, Lot={suggested_lot}")
              
-             pass
-        
+             # [FIX] Execute the trade for Trend Mode
+             self._send_order(trade_type, price, sl=explicit_sl if explicit_sl else 0.0, tp=explicit_tp if explicit_tp else 0.0, volume=suggested_lot, comment=f"AI-Trend-{llm_action}")
+             
         if is_grid_action:
             # [NEW POLICY] 
             # Grid Deployment is PERMANENTLY DISABLED based on User Request.
@@ -1408,11 +1409,14 @@ class SymbolTrader:
 
             # 5. 执行首单 (Initial Entry)
             # User Requirement: 不要立即执行市价首单，改为挂单 (Limit Order)
-            # 原因: 很多次 Initial Entry 市价进场即亏损
-            # 策略: 将首单也作为 Limit 单挂在当前价格下方一点点 (做多) 或 上方一点点 (做空)
             
-            initial_lot = 0.02 # [User Requirement] Fixed Initial Lot 0.02
+            # [FIX] Do NOT hardcode initial_lot. Use suggested_lot if available, else fallback.
+            # initial_lot = 0.02 # [User Requirement] Fixed Initial Lot 0.02 (REMOVED)
             
+            initial_lot = suggested_lot
+            if not initial_lot or initial_lot <= 0:
+                initial_lot = grid_config.get('initial_lot', 0.01)
+                
             # Update class lot_size for consistency
             self.lot_size = initial_lot
             self.grid_strategy.lot = initial_lot
