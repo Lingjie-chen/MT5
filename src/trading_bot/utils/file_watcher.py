@@ -74,3 +74,6 @@ class FileWatcher:
     def start(self):
         thread = threading.Thread(target=self.watch, daemon=True)
         thread.start()
+
+    def stop(self):
+        self.running = False
