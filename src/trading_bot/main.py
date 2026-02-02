@@ -1726,14 +1726,15 @@ class SymbolTrader:
         else:
             return round(price, symbol_info.digits)
 
-    def _send_order(self, type_str, price, sl, tp, comment=""):
+    def _send_order(self, type_str, price, sl, tp, volume=None, comment=""):
         """底层下单函数"""
         # Normalize prices
         price = self._normalize_price(price)
         sl = self._normalize_price(sl)
         tp = self._normalize_price(tp)
         
-        # --- 增强验证逻辑 (Fix Invalid Stops) ---
+        # Use provided volume or fallback to self.lot_size
+        order_volume = volume if volume is not None and volume > 0 else self.lot_size
         symbol_info = mt5.symbol_info(self.symbol)
         if not symbol_info:
             logger.error("无法获取品种信息")
@@ -1856,7 +1857,7 @@ class SymbolTrader:
         request = {
             "action": action,
             "symbol": self.symbol,
-            "volume": self.lot_size,
+            "volume": order_volume,
             "type": order_type,
             "price": price,
             "sl": sl,
