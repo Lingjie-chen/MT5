@@ -740,11 +740,11 @@ class QwenClient:
 
     - **action**: str ("HOLD", "CLOSE_ALL", "BUY", "SELL", "LIMIT_BUY", "LIMIT_SELL")
     - **strategy_mode**: str ("trend") -- 必须明确指定当前策略模式
-    - **sl**: float (趋势交易止损价格. 对于 BUY/SELL Action 必须提供)
-    - **tp**: float (趋势交易止盈价格. 对于 BUY/SELL Action 必须提供)
+    - **sl**: float (趋势交易止损价格. 对于 BUY/SELL/ADD Action 必须提供)
+    - **tp**: float (趋势交易止盈价格. 对于 BUY/SELL/ADD Action 必须提供)
     - **grid_config**: dict (保留字段，设为默认值)
         - "initial_lot": float (首单手数, e.g., 0.01)
-        - "allow_add": bool (设为 false)
+        - "allow_add": bool (设为 true if Pyramiding, else false)
         - "grid_step_mode": str ("fixed")
         - "grid_step_pips": float (基础网格间距, e.g., 20.0)
         - "martingale_mode": str ("multiply" 或 "add")
@@ -1360,7 +1360,8 @@ class QwenClient:
 
         **Action Logic Constraint**:
         - IF `current_positions` is EMPTY: You CANNOT return "hold". You must return "wait" (if no signal) or "buy"/"sell".
-        - IF `current_positions` is NOT EMPTY: You CANNOT return "wait". You must return "hold" (to keep) or "close" (to exit) or "buy"/"sell" (to add/reverse).
+        - IF `current_positions` is NOT EMPTY: You CANNOT return "wait". You must return "hold" (to keep) or "close" (to exit) or "add_buy"/"add_sell" (to pyramid).
+        - **Pyramiding (Adding)**: If trend is strong and current position is profitable, you can return "add_buy" or "add_sell" to scale in.
 
         ** CRITICAL INSTRUCTION **
         You MUST include the "position_size" field in your JSON response.
