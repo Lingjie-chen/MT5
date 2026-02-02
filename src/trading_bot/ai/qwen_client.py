@@ -1457,7 +1457,7 @@ class QwenClient:
         1. 基于市场结构分析结果进行方向判断
         2. 结合SMC信号寻找最佳入场点
         3. 参考MFE数据优化止盈
-        4. 制定Martingale网格加仓计划
+        4. 制定交易计划
         5. 严格遵循风险管理规则
         6. 生成Telegram简报 (Telegram Report):
            - **Content Alignment**: Report MUST match Action.
@@ -1471,7 +1471,7 @@ class QwenClient:
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": f"你是一名专注于{symbol}交易的职业交易员，采用SMC(Smart Money Concepts)结合Martingale网格策略的复合交易系统。你完全自主进行市场分析和交易决策。IMPORTANT: You must output strictly valid JSON format only."},
+                {"role": "system", "content": f"你是一名专注于{symbol}交易的职业交易员，采用SMC(Smart Money Concepts)结合趋势跟随的复合交易系统。你完全自主进行市场分析和交易决策。IMPORTANT: You must output strictly valid JSON format only."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.3,
