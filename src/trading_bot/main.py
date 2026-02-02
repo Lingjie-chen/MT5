@@ -1228,7 +1228,7 @@ class SymbolTrader:
             #         if 'down' in market_state or 'bear' in pred or 'sell' in str(self.latest_strategy.get('action', '')).lower():
             #             direction = 'bearish'
                         
-        elif llm_action in ['buy', 'add_buy', 'limit_buy', 'buy_limit']:
+        elif llm_action in ['buy', 'add_buy', 'limit_buy', 'buy_limit', 'stop_buy', 'buy_stop']:
              # [NEW] Enforce Trend Mode (High/Low Swing) - No Grid
              is_grid_action = False
              
@@ -1245,6 +1245,19 @@ class SymbolTrader:
                      si = mt5.symbol_info(self.symbol)
                      point = si.point if si else 0.01
                      price = tick.ask - (50 * point)
+             elif 'stop' in llm_action:
+                 trade_type = "stop_buy"
+                 # Try to extract price from entry_params
+                 if entry_params and 'price' in entry_params:
+                     try:
+                         price = float(entry_params['price'])
+                     except: pass
+                 
+                 # If price missing, default to Ask + 50 points (Buy Stop)
+                 if price <= 0:
+                     si = mt5.symbol_info(self.symbol)
+                     point = si.point if si else 0.01
+                     price = tick.ask + (50 * point)
              else:
                  trade_type = "buy" # Market Buy
                  price = tick.ask
@@ -1300,7 +1313,7 @@ class SymbolTrader:
              # to ensure R:R checks and Margin checks are applied consistently.
              pass
              
-        elif llm_action in ['sell', 'add_sell', 'limit_sell', 'sell_limit']:
+        elif llm_action in ['sell', 'add_sell', 'limit_sell', 'sell_limit', 'stop_sell', 'sell_stop']:
              # [NEW] Enforce Trend Mode (High/Low Swing) - No Grid
              is_grid_action = False
              
@@ -1317,6 +1330,19 @@ class SymbolTrader:
                      si = mt5.symbol_info(self.symbol)
                      point = si.point if si else 0.01
                      price = tick.bid + (50 * point)
+             elif 'stop' in llm_action:
+                 trade_type = "stop_sell"
+                 # Try to extract price from entry_params
+                 if entry_params and 'price' in entry_params:
+                     try:
+                         price = float(entry_params['price'])
+                     except: pass
+                 
+                 # If price missing, default to Bid - 50 points (Sell Stop)
+                 if price <= 0:
+                     si = mt5.symbol_info(self.symbol)
+                     point = si.point if si else 0.01
+                     price = tick.bid - (50 * point)
              else:
                  trade_type = "sell" # Market Sell
                  price = tick.bid
