@@ -57,7 +57,7 @@ class QwenClient:
     def _get_system_prompt(self, symbol: str) -> str:
         """
         根据交易品种生成特定的系统提示词 (System Prompt)
-        支持针对不同品种(如 XAUUSD, ETHUSD) 定制 Martingale 网格策略和市场特性
+        支持针对不同品种(如 XAUUSD, ETHUSD) 定制趋势跟随策略和市场特性
         """
         symbol = symbol.upper()
         
