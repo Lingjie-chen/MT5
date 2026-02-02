@@ -316,8 +316,8 @@ class QwenClient:
     - **策略**: 若 DXY 遇阻回落且 EURUSD 完成流动性扫荡后出现 CHOCH，决定买入。
     - **细节**: 基于 SMC 提出建仓价格和止盈 (SMC TP)。
     - **输出**: 交易提案（Action, Entry, SMC TP）。
-      - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'grid_start', 'hold', 'close'。
-      - **注意**: 欧美时段重叠期波动最大，适合趋势交易；亚盘适合震荡网格。
+      - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'hold', 'close'。
+      - **注意**: 欧美时段重叠期波动最大，适合趋势交易。
 
     **4. 风控与执行团队 (Risk & Execution)**
     - **审核提案**: 确认非农/CPI 等重大数据发布前后的风险敞口。
