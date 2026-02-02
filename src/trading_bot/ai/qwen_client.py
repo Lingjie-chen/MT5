@@ -810,7 +810,7 @@ class QwenClient:
         """
 
         # Assemble
-        full_prompt = f"{role_definition}\n{analysis_framework}\n{martingale_config}\n{market_spec}\n{common_rules}\n{reflection_skills}"
+        full_prompt = f"{role_definition}\n{analysis_framework}\n{strategy_config}\n{market_spec}\n{common_rules}\n{reflection_skills}"
         return full_prompt
 
     
@@ -1427,7 +1427,7 @@ class QwenClient:
         市场结构分析结果：
         {market_context}
         
-        持仓状态 (Martingale 核心关注):
+        持仓状态 (Risk Management 核心关注):
         {pos_context}
         
         挂单状态:
@@ -1635,22 +1635,11 @@ class QwenClient:
             "entry_conditions": {"trigger_type": "market"},
             "exit_conditions": {"sl_atr_multiplier": 1.5, "tp_atr_multiplier": 2.5},
             "position_management": {
-                "martingale_multiplier": 1.0, 
-                "grid_step_logic": "ATR_based",
-                "recommended_grid_step_pips": 20,
-                "grid_level_tp_pips": [30, 25, 20, 15, 10],
                 "dynamic_basket_tp": 50.0
             },
             "grid_config": {
                 "initial_lot": 0.01,
                 "allow_add": False,
-                "grid_step_mode": "atr",
-                "grid_step_pips": 20.0,
-                "martingale_mode": "multiply",
-                "martingale_multiplier": 1.0,
-                "max_grid_levels": 0,
-                "basket_tp_usd": 50.0,
-                "basket_sl_usd": -50.0,
                 "max_drawdown_usd": 100.0
             },
             "position_size": 0.01,
