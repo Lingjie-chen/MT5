@@ -4268,7 +4268,7 @@ class SymbolTrader:
                         to_close.extend([p for p in positions if p.type == mt5.POSITION_TYPE_SELL])
                     
                     if to_close:
-                        self.close_all_positions(to_close, reason="Grid Basket TP/Lock")
+                        self.close_all_positions(to_close, reason="Global Basket TP/Lock")
                     return
 
         except KeyboardInterrupt:
