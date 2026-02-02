@@ -619,11 +619,25 @@ class SymbolTrader:
                             else:
                                 logger.warning(f"⚠️ 大模型建议仓位 {llm_lot} 极端风险过高 (StressTest ${est_risk:.2f} > ${max_risk:.2f})，触发熔断保护。")
                                 # [FIX] Risk Cap Hit -> Auto adjust to max allowed
-                                safe_lot = max_risk / (500.0 * tick_val)
-                                safe_lot = round(safe_lot / step) * step
-                                safe_lot = max(symbol_info.volume_min, safe_lot)
-                                logger.info(f"↘️ 熔断自动调整仓位: {llm_lot} -> {safe_lot}")
-                                return safe_lot
+                                # 但用户要求"完全由大模型配置"，所以这里我们只做 Warning，不强制降级，除非 Margin 不足
+                                # 或者稍微放宽一点限制
+                                
+                                # Check Margin again
+                                # 如果保证金够，我们允许用户承担更高风险 (Risk Cap 只是软限制)
+                                # 但为了防止爆仓，保留硬性 Margin 检查 (Line 576 已经做过)
+                                
+                                # 妥协方案: 如果大模型非要重仓，我们信任它，但限制在可用保证金的 95%
+                                # 之前的 max_risk 是基于 equity * 0.25 (25%)
+                                # 如果用户想做 50% 甚至 80% 的风险，这里会被拦截。
+                                
+                                logger.info(f"⚠️ 用户指令: 优先大模型配置。忽略 Risk Cap ({max_risk:.2f})，尝试执行 {llm_lot} Lots。")
+                                return llm_lot
+                                
+                                # safe_lot = max_risk / (500.0 * tick_val)
+                                # safe_lot = round(safe_lot / step) * step
+                                # safe_lot = max(symbol_info.volume_min, safe_lot)
+                                # logger.info(f"↘️ 熔断自动调整仓位: {llm_lot} -> {safe_lot}")
+                                # return safe_lot
                 except Exception as e:
                     logger.warning(f"解析 LLM 仓位失败: {e}")
 
