@@ -1506,22 +1506,15 @@ class QwenClient:
                     
                     logger.info(f"收到模型响应 (Length: {len(message_content)})")
                     
-                    # 使用 robust_json_parser 进行稳健解析
+                # 使用 robust_json_parser 进行稳健解析
                     required_fields = ['action', 'entry_conditions', 'exit_conditions', 'strategy_rationale', 'telegram_report', 'grid_config', 'position_size']
-                    defaults = {field: self._get_default_value(field) for field in required_fields}
-                    # Ensure position_management default is available for compatibility
-                    defaults['position_management'] = self._get_default_value('position_management')
-                    defaults['position_size'] = 0.01
-                    
-                    # 准备 fallback
-                    fallback_decision = self._get_default_decision("解析失败或空响应，使用默认参数")
                     
                     # 调用解析
                     trading_decision = safe_parse_or_default(
                         message_content,
                         required_keys=required_fields,
-                        defaults=defaults,
-                        fallback=fallback_decision
+                        defaults=None,
+                        fallback=None
                     )
                     
                     if not isinstance(trading_decision, dict):
@@ -1548,18 +1541,12 @@ class QwenClient:
                                 except:
                                     pass
 
-                            if found_dict and isinstance(trading_decision, dict):
-                                # 补全默认值 (因为 robust_json_parser 对列表不应用 defaults)
-                                if defaults:
-                                    for key, value in defaults.items():
-                                        if key not in trading_decision:
-                                            trading_decision[key] = value
-                            else:
-                                logger.warning(f"解析结果为列表但未找到有效字典 (Len: {len(trading_decision)}, FirstType: {type(trading_decision[0]) if trading_decision else 'Empty'})，使用 fallback。")
-                                trading_decision = fallback_decision
+                            if not found_dict or not isinstance(trading_decision, dict):
+                                logger.error(f"解析结果无效 (Type: {type(trading_decision)}) 且无法修复。")
+                                return None
                         else:
-                            logger.warning(f"解析结果非字典且无法修复 (Type: {type(trading_decision)})，使用 fallback。")
-                            trading_decision = fallback_decision
+                            logger.error(f"解析结果非字典 (Type: {type(trading_decision)})。")
+                            return None
                     
                     # 兼容性适配: 将 grid_config 映射回 position_management
                     if isinstance(trading_decision, dict) and 'grid_config' in trading_decision and isinstance(trading_decision['grid_config'], dict):
@@ -1594,8 +1581,8 @@ class QwenClient:
 
                     # 再次校验模型返回的 position_size，确保其存在且合法
                     if "position_size" not in trading_decision:
-                        logger.warning("⚠️ 模型响应中缺失 'position_size' 字段，使用默认值 0.01")
-                        trading_decision["position_size"] = 0.01 # 默认值作为保底
+                        logger.error("⚠️ 模型响应中缺失 'position_size' 字段，分析失败")
+                        return None
                     else:
                         # 限制范围，防止模型给出极端值
                         try:
@@ -1608,12 +1595,11 @@ class QwenClient:
                             if action_val not in ['hold', 'wait', 'close', 'neutral']:
                                 logger.info(f"✅ 模型返回动态仓位: {raw_size} (已根据资金动态计算)")
                             
-                            # 0.01 到 50.0 手之间 (根据资金规模调整，放宽上限以适应大资金)
-                            # 用户明确要求完全按照大模型来配置，因此放宽上限
+                            # 0.01 到 10.0 手之间
                             trading_decision["position_size"] = max(0.01, min(10.0, size))
                         except (ValueError, TypeError):
-                            logger.warning(f"⚠️ 模型返回的 'position_size' 无效 ({trading_decision['position_size']})，重置为 0.01")
-                            trading_decision["position_size"] = 0.01
+                            logger.error(f"⚠️ 模型返回的 'position_size' 无效 ({trading_decision.get('position_size')})")
+                            return None
 
                     # 添加市场分析结果到决策中
                     trading_decision['market_analysis'] = market_analysis
@@ -1623,14 +1609,13 @@ class QwenClient:
                 except json.JSONDecodeError as e:
                     logger.error(f"解析Qwen响应失败: {e}")
                     logger.error(f"原始响应: {response}")
-                    # 如果是 JSON 格式错误，也可以选择重试，这里暂不重试
-                    return self._get_default_decision("解析失败，使用默认参数")
+                    return None
             
             # 如果 response 为空或结构不对，也重试
             logger.warning(f"API返回无效响应 (Attempt {attempt+1}/{max_app_retries})，尝试重试...")
             time.sleep(2)
         
-        return self._get_default_decision("API调用失败（多次重试无效），使用默认参数")
+        return None
     
     def _get_default_decision(self, reason: str = "系统错误") -> Dict[str, Any]:
         """获取默认决策"""
