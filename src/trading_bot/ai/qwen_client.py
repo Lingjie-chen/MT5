@@ -1122,39 +1122,8 @@ class QwenClient:
             
             time.sleep(1)
 
-        logger.error("市场结构分析失败，返回默认值")
-        return {
-            "market_structure": {
-                "trend": "neutral",
-                "phase": "unknown",
-                "timeframe_analysis": {
-                    "monthly": "unknown",
-                    "weekly": "unknown",
-                    "daily": "unknown",
-                    "h4": "unknown"
-                },
-                "key_levels": {"support": [], "resistance": []},
-                "bos_points": [],
-                "choch_points": []
-            },
-            "smc_signals": {
-                "order_blocks": [],
-                "fvgs": [],
-                "liquidity_pools": {"above": None, "below": None}
-            },
-            "sentiment_analysis": {
-                "sentiment": "neutral",
-                "sentiment_score": 0.0,
-                "confidence": 0.0,
-                "market_context": "分析失败"
-            },
-            "symbol_specific_analysis": {
-                "trading_session": "unknown",
-                "macro_influence": "neutral",
-                "risk_status": "unknown"
-            },
-            "key_observations": "分析失败"
-        }
+        logger.error("市场结构分析失败，返回None")
+        return None
 
     def analyze_market_sentiment(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -1226,7 +1195,7 @@ class QwenClient:
         except Exception as e:
             logger.error(f"Sentiment analysis failed: {e}")
         
-        return {"sentiment": "neutral", "sentiment_score": 0.0, "reason": "Error", "trend_assessment": {"direction": "unknown", "strength": "weak"}}
+        return None
 
     def optimize_strategy_logic(self, market_structure_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -1616,70 +1585,6 @@ class QwenClient:
             time.sleep(2)
         
         return None
-    
-    def _get_default_decision(self, reason: str = "系统错误") -> Dict[str, Any]:
-        """获取默认决策"""
-        return {
-            "action": "hold",
-            "strategy_mode": "trend",
-            "entry_conditions": {"trigger_type": "market"},
-            "exit_conditions": {"sl_atr_multiplier": 1.5, "tp_atr_multiplier": 2.5},
-            "position_management": {
-                "dynamic_basket_tp": 50.0
-            },
-            "grid_config": {
-                "initial_lot": 0.01,
-                "allow_add": False,
-                "max_drawdown_usd": 100.0
-            },
-            "position_size": 0.01,
-            "leverage": 1,
-            "signal_strength": 50,
-            "parameter_updates": {},
-            "strategy_rationale": reason,
-            "market_structure_analysis": {"trend": "neutral", "phase": "waiting"},
-            "smc_signals_identified": [],
-            "risk_metrics": {"max_risk": 0.01, "current_risk": 0},
-            "next_observations": ["等待明确信号"],
-            "telegram_report": f"⚠️ *System Error (Trend Mode)*\n{reason}",
-            "market_analysis": {
-                "market_structure": {"trend": "neutral", "phase": "unknown"},
-                "sentiment_analysis": {"sentiment": "neutral", "sentiment_score": 0.0}
-            }
-        }
-    
-    def _get_default_value(self, field: str) -> Any:
-        """获取字段默认值"""
-        defaults = {
-            'action': 'hold',
-            'strategy_mode': 'trend',
-            'entry_conditions': {"trigger_type": "market"},
-            'exit_conditions': {"sl_atr_multiplier": 1.5, "tp_atr_multiplier": 2.5},
-            'position_management': {
-                "dynamic_basket_tp": 50.0,
-                "trailing_stop_config": {"type": "atr_distance", "value": 2.0}
-            },
-            'grid_config': {
-                "initial_lot": 0.01,
-                "allow_add": False,
-                "max_drawdown_usd": 500.0
-            },
-            'position_size': 0.01,
-            'leverage': 1,
-            'signal_strength': 50,
-            'parameter_updates': {},
-            'strategy_rationale': "默认决策",
-            'market_structure_analysis': {"trend": "neutral", "phase": "waiting"},
-            'smc_signals_identified': [],
-            'risk_metrics': {"max_risk": 0.02, "current_risk": 0},
-            'next_observations': ["等待明确信号"],
-            'telegram_report': "⚠️ *Default Decision*",
-            'market_analysis': {
-                "market_structure": {"trend": "neutral", "phase": "unknown"},
-                "sentiment_analysis": {"sentiment": "neutral", "sentiment_score": 0.0}
-            }
-        }
-        return defaults.get(field, None)
     
     def judge_signal_strength(self, market_data: Dict[str, Any], technical_indicators: Dict[str, Any]) -> int:
         """
