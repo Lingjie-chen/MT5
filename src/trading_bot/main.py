@@ -1356,12 +1356,70 @@ class SymbolTrader:
             
             logger.warning(f"Grid Deployment Blocked (User Policy: Single Trend Only). Action '{llm_action}' ignored or needs manual conversion.")
             return
+
+        if trade_type and price > 0:
+            # [MODIFIED] User Requirement: Enforce SL/TP for Trend Mode
+            # explicit_sl = 0.0 # REMOVED: Do not force SL to 0
+            
+            # Initialize atr to avoid UnboundLocalError
+            atr = 0.0
+            
+            # 再次确认 TP 是否存在
+            if explicit_tp is None:
+                # User Requirement: Disable Individual TP
+                # explicit_tp = 0.0 # REMOVED: Do not force TP to 0
+                pass
+
+            # User Requirement: 只有盈利比亏损的风险大于 1.2 的情况下交易
+            # Enforce R:R check for ALL trade types (Limit/Stop AND Market Buy/Sell)
+            # Need ATR for risk estimation if SL is 0
+            if atr <= 0:
+                 rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+                 if rates is not None and len(rates) > 14:
+                     df_temp = pd.DataFrame(rates)
+                     high_low = df_temp['high'] - df_temp['low']
+                     atr = high_low.rolling(14).mean().iloc[-1]
+            
+            # [MODIFIED] Re-enable Hard R:R Check >= 1.2
+            if explicit_sl and explicit_sl > 0 and explicit_tp and explicit_tp > 0:
+                potential_profit = abs(explicit_tp - price)
+                potential_loss = abs(price - explicit_sl)
+                
+                if potential_loss > 0:
+                    rr_ratio = potential_profit / potential_loss
+                    if rr_ratio < 1.2:
+                        logger.warning(f"R:R check failed: {rr_ratio:.2f} < 1.2 (Profit: {potential_profit:.2f}, Loss: {potential_loss:.2f}). Cancel trade.")
+                        return
+                    else:
+                        logger.info(f"R:R check passed: {rr_ratio:.2f} >= 1.2")
+            else:
+                logger.info("Skipping Hard R:R Check (SL/TP not fully defined)")
+
+            # FIX: Ensure 'action' is defined for the comment
+            # action variable was used in _send_order's comment but was coming from llm_action
+            action_str = llm_action.upper() if llm_action else "UNKNOWN"
+            comment = f"AI-{action_str}"
+            
+            # --- 动态仓位计算 ---
+            if suggested_lot and suggested_lot > 0:
+                # [NEW] Margin Check for Suggested Lot
+                try:
+                    account_info = mt5.account_info()
+                    if account_info:
+                         o_type_check = mt5.ORDER_TYPE_BUY if "buy" in action_str.lower() else mt5.ORDER_TYPE_SELL
+                         margin_needed = mt5.order_calc_margin(o_type_check, self.symbol, suggested_lot, price)
+                         
+                         if margin_needed and margin_needed > (account_info.margin_free * 0.9): # 90% buffer
+                             max_lot = (account_info.margin_free * 0.9) / (margin_needed / suggested_lot)
+                             # Round down to 2 decimal places
+                             max_lot = int(max_lot * 100) / 100.0
+                             if max_lot < 0.01: max_lot = 0.01
                              
                              logger.warning(f"⚠️ 建议仓位 {suggested_lot} 超过保证金限制 ({margin_needed:.2f} > {account_info.margin_free * 0.9:.2f}). 调整为: {max_lot}")
                              suggested_lot = max_lot
                 except Exception as e:
                     logger.error(f"Margin check failed: {e}")
-
+                    
                 optimized_lot = suggested_lot
                 logger.info(f"使用建议手数 (经过风控检查): {optimized_lot}")
             else:
