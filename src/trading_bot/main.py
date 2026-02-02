@@ -4328,7 +4328,7 @@ class SymbolTrader:
                         f"• Action: *{strategy.get('action', final_signal).upper()}*\n"
                         f"• Lots: `{self.lot_size if self.lot_size else strategy.get('position_size', 0.01)}`\n"
                         f"• Strength: {strength:.0f}%\n"
-                        f"• Basket TP: `${self.grid_strategy.dynamic_global_tp:.1f}`\n"
+                        f"• Basket TP: `${self.grid_strategy.dynamic_global_tp if self.grid_strategy.dynamic_global_tp is not None else 'N/A'}`\n"
                         f"• Sentiment: {qwen_sent_label.upper()} ({qwen_sent_score:.2f})\n\n"
                         f"💼 *Positions*\n"
                                 f"{self.escape_markdown(pos_summary)}"
@@ -4388,7 +4388,8 @@ class SymbolTrader:
                 # Log current Basket Status for visibility
                 if positions:
                     total_pnl = sum([p.profit + p.swap for p in positions])
-                    logger.info(f"📊 Basket Status: PnL=${total_pnl:.2f} / Target=${self.grid_strategy.dynamic_global_tp:.2f}")
+                    target_val = self.grid_strategy.dynamic_global_tp if self.grid_strategy.dynamic_global_tp is not None else 0.0
+                    logger.info(f"📊 Basket Status: PnL=${total_pnl:.2f} / Target=${target_val:.2f}")
 
                 should_close_long, should_close_short = self.grid_strategy.check_grid_exit(positions, current_price=current_price, current_atr=current_atr)
                 
