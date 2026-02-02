@@ -1663,7 +1663,8 @@ class SymbolTrader:
             
             self.lot_size = optimized_lot # 临时覆盖 self.lot_size 供 _send_order 使用
             
-            result = self._send_order(trade_type, price, explicit_sl, explicit_tp, comment=comment)
+            # [User Req] Execute with TP only (SL handled by Basket/Manual)
+            result = self._send_order(trade_type, price, None, explicit_tp, comment=comment) # explicit_sl -> None
             
             # [NEW] Save Trade to Master DB (Redundant check if _send_order handles it)
             # Actually _send_order calls save_trade, so we need to modify _send_order instead or rely on duplicate calls in _send_order?
