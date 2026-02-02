@@ -225,12 +225,22 @@ def parse_llm_json(
             
             if 'action' in data:
                 action = str(data['action']).lower()
-                if action in ['hold', 'wait', 'close', 'neutral']:
+                # Enhanced check: also consider 'grid_start' variants if they don't need entry conditions?
+                # Actually, 'grid_start' usually implies entry.
+                # But 'wait', 'close', 'neutral', 'hold' definitely don't.
+                
+                # Also check for 'grid_start_long' etc. if they are missing specific keys but have others.
+                # But here we focus on the crash: action is likely 'hold' or 'wait'.
+                
+                if action in ['hold', 'wait', 'close', 'neutral', 'close_buy', 'close_sell']:
                     # For non-entry actions, entry/exit conditions are optional
                     # Remove them from missing_keys if present
                     if 'entry_conditions' in missing_keys: missing_keys.remove('entry_conditions')
                     if 'exit_conditions' in missing_keys: missing_keys.remove('exit_conditions')
                     if 'position_size' in missing_keys: missing_keys.remove('position_size')
+            
+            # Re-evaluate missing_keys after potential removal
+            missing_keys = [k for k in missing_keys if k not in data] # Double check logic? No, missing_keys is list of strings.
             
             if missing_keys:
                 # Last resort: Check if missing keys are just empty/null but keys exist? No, k not in data means keys missing.
