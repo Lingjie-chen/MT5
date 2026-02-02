@@ -4121,6 +4121,31 @@ class SymbolTrader:
                             if not opt_sl: opt_sl = calc_sl
                             if not opt_tp: opt_tp = calc_tp
 
+                        # 4. 预计算建议仓位 (Pre-calculate Lot Size for Telegram Display)
+                        # Priority 1: Use LLM suggested position_size or grid_config.initial_lot if valid
+                        llm_lot = strategy.get('position_size')
+                        
+                        # Check grid_config fallback
+                        if not llm_lot:
+                            grid_conf = strategy.get('grid_config')
+                            if grid_conf and isinstance(grid_conf, dict):
+                                llm_lot = grid_conf.get('initial_lot')
+
+                        suggested_lot = 0.01 # Default fallback
+                        if llm_lot and isinstance(llm_lot, (int, float)) and llm_lot > 0:
+                            suggested_lot = float(llm_lot)
+                            logger.info(f"Using LLM Suggested Lot Size (Pre-calc): {suggested_lot}")
+                        else:
+                            # Priority 2: Dynamic Calculation
+                            suggested_lot = self.calculate_dynamic_lot(
+                                strength, 
+                                market_context={'smc': smc_result}, 
+                                ai_signals=all_signals
+                            )
+                        
+                        # Update self.lot_size temporarily for display logic
+                        self.lot_size = suggested_lot
+
                         # 构建消息
                         telegram_report = strategy.get('telegram_report', '')
                         
@@ -4149,7 +4174,7 @@ class SymbolTrader:
                                 f"{telegram_report}\n\n"
                                 f"📊 *Live Status*\n"
                         f"• Action: *{strategy.get('action', final_signal).upper()}*\n"
-                        f"• Lots: `{self.lot_size if self.lot_size else strategy.get('position_size', 0.01)}`\n"
+                        f"• Lots: `{suggested_lot}`\n"
                         f"• Strength: {strength:.0f}%\n"
                         f"• Basket TP: `${self.grid_strategy.dynamic_global_tp if self.grid_strategy.dynamic_global_tp is not None else 'N/A'}`\n"
                         f"• Sentiment: {qwen_sent_label.upper()} ({qwen_sent_score:.2f})\n\n"
@@ -4165,7 +4190,7 @@ class SymbolTrader:
                                 
                                 f"🧙‍♂️ *Qwen Analysis*\n"
                         f"• Action: *{qw_action.upper()}*\n"
-                        f"• Lots: `{self.lot_size if self.lot_size else strategy.get('position_size', 0.01)}` (Dynamic)\n"
+                        f"• Lots: `{suggested_lot}` (Dynamic)\n"
                         f"• Sentiment: {qwen_sent_label.upper()} ({qwen_sent_score})\n"
                         f"• Logic: _{self.escape_markdown(reason)}_\n\n"
                                 
@@ -4186,26 +4211,7 @@ class SymbolTrader:
                             entry_params = strategy.get('entry_conditions')
                             exit_params = strategy.get('exit_conditions')
                             
-                            # Calculate Lot
-                            # Priority 1: Use LLM suggested position_size or grid_config.initial_lot if valid
-                            llm_lot = strategy.get('position_size')
-                            
-                            # Check grid_config fallback
-                            if not llm_lot:
-                                grid_conf = strategy.get('grid_config')
-                                if grid_conf and isinstance(grid_conf, dict):
-                                    llm_lot = grid_conf.get('initial_lot')
-
-                            if llm_lot and isinstance(llm_lot, (int, float)) and llm_lot > 0:
-                                suggested_lot = float(llm_lot)
-                                logger.info(f"Using LLM Suggested Lot Size: {suggested_lot}")
-                            else:
-                                # Priority 2: Dynamic Calculation
-                                suggested_lot = self.calculate_dynamic_lot(
-                                    strength, 
-                                    market_context={'smc': smc_result}, 
-                                    ai_signals=all_signals
-                                )
+                            # Note: suggested_lot is already calculated above
                             
                             self.execute_trade(
                                 final_signal, 
