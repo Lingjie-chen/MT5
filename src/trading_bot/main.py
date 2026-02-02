@@ -1278,7 +1278,10 @@ class SymbolTrader:
              logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid. Price={price}, SL={explicit_sl}, TP={explicit_tp}, Lot={suggested_lot}")
              
              # [FIX] Execute the trade for Trend Mode (Buy Side)
-             self._send_order(trade_type, price, sl=explicit_sl if explicit_sl else 0.0, tp=explicit_tp if explicit_tp else 0.0, volume=suggested_lot, comment=f"AI-Trend-{llm_action}")
+             # self._send_order(trade_type, price, sl=explicit_sl if explicit_sl else 0.0, tp=explicit_tp if explicit_tp else 0.0, volume=suggested_lot, comment=f"AI-Trend-{llm_action}")
+             # [CORRECTION] Do not execute here. Fall through to the unified execution block below 
+             # to ensure R:R checks and Margin checks are applied consistently.
+             pass
              
         elif llm_action in ['sell', 'add_sell', 'limit_sell', 'sell_limit']:
              # [NEW] Enforce Trend Mode (High/Low Swing) - No Grid
@@ -1347,7 +1350,9 @@ class SymbolTrader:
              logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid. Price={price}, SL={explicit_sl}, TP={explicit_tp}, Lot={suggested_lot}")
              
              # [FIX] Execute the trade for Trend Mode
-             self._send_order(trade_type, price, sl=explicit_sl if explicit_sl else 0.0, tp=explicit_tp if explicit_tp else 0.0, volume=suggested_lot, comment=f"AI-Trend-{llm_action}")
+             # self._send_order(trade_type, price, sl=explicit_sl if explicit_sl else 0.0, tp=explicit_tp if explicit_tp else 0.0, volume=suggested_lot, comment=f"AI-Trend-{llm_action}")
+             # [CORRECTION] Fall through to unified block
+             pass
              
         if is_grid_action:
             # [NEW POLICY] 
