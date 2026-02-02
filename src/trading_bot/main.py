@@ -1472,10 +1472,22 @@ class SymbolTrader:
         
         # Use provided volume or fallback to self.lot_size
         order_volume = volume if volume is not None and volume > 0 else self.lot_size
+        
+        # Double check against minimum lot size
         symbol_info = mt5.symbol_info(self.symbol)
         if not symbol_info:
             logger.error("无法获取品种信息")
             return
+            
+        if order_volume < symbol_info.volume_min:
+             logger.warning(f"Order volume {order_volume} < Min volume {symbol_info.volume_min}. Adjusted to min.")
+             order_volume = symbol_info.volume_min
+             
+        # Normalize volume to step
+        if symbol_info.volume_step > 0:
+            order_volume = round(round(order_volume / symbol_info.volume_step) * symbol_info.volume_step, 2)
+
+        # --- 增强验证逻辑 (Fix Invalid Stops) ---
 
         point = symbol_info.point
         stops_level = (symbol_info.trade_stops_level + 10) * point # 额外加 10 points 缓冲
