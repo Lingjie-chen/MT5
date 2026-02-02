@@ -1611,25 +1611,35 @@ class SymbolTrader:
         safe_buffer = (stops_level * 0.5) + (point * 50)
         
         if sl > 0:
-            dist = abs(price - sl)
-            # Check against stops_level + small margin
-            if dist < (stops_level + point * 10):
-                logger.warning(f"SL too close (Dist {dist:.5f} < Level {stops_level:.5f}). Adjusting.")
-                if is_buy: 
-                    sl = price - (stops_level + safe_buffer)
-                else: 
-                    sl = price + (stops_level + safe_buffer)
-                sl = self._normalize_price(sl)
+            # Check for invalid SL direction first
+            if is_buy and sl >= price: sl = 0.0
+            elif is_sell and sl <= price: sl = 0.0
+            
+            if sl > 0:
+                dist = abs(price - sl)
+                # Check against stops_level + small margin
+                if dist < (stops_level + point * 10):
+                    logger.warning(f"SL too close (Dist {dist:.5f} < Level {stops_level:.5f}). Adjusting.")
+                    if is_buy: 
+                        sl = price - (stops_level + safe_buffer)
+                    else: 
+                        sl = price + (stops_level + safe_buffer)
+                    sl = self._normalize_price(sl)
                 
         if tp > 0:
-            dist = abs(price - tp)
-            if dist < (stops_level + point * 10):
-                logger.warning(f"TP too close (Dist {dist:.5f} < Level {stops_level:.5f}). Adjusting.")
-                if is_buy: 
-                    tp = price + (stops_level + safe_buffer)
-                else: 
-                    tp = price - (stops_level + safe_buffer)
-                tp = self._normalize_price(tp)
+            # Check for invalid TP direction first
+            if is_buy and tp <= price: tp = 0.0
+            elif is_sell and tp >= price: tp = 0.0
+            
+            if tp > 0:
+                dist = abs(price - tp)
+                if dist < (stops_level + point * 10):
+                    logger.warning(f"TP too close (Dist {dist:.5f} < Level {stops_level:.5f}). Adjusting.")
+                    if is_buy: 
+                        tp = price + (stops_level + safe_buffer)
+                    else: 
+                        tp = price - (stops_level + safe_buffer)
+                    tp = self._normalize_price(tp)
         
         # 3. 检查 Pending Order 的挂单价格合法性 (Invalid Price Check)
         # 对于 Limit Buy，挂单价必须低于当前 Ask
