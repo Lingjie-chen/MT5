@@ -3789,8 +3789,7 @@ class SymbolTrader:
                                 atr_current,
                                 regime_current,
                                 smc_result,
-                                current_positions_list,
-                                performance_stats=trade_stats
+                                current_positions_list
                             )
                             
                             if smart_basket_tp or lock_trigger or trailing_config:
