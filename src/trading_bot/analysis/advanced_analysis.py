@@ -901,7 +901,7 @@ class CRTAnalyzer:
     Candle Range Theory (CRT) Analyzer
     Based on identifying manipulation of previous ranges using HTF data
     """
-    def __init__(self, timeframe_htf=mt5.TIMEFRAME_H1, min_manipulation_percent=5.0):
+    def __init__(self, timeframe_htf=mt5.TIMEFRAME_M15, min_manipulation_percent=5.0):
         self.timeframe_htf = timeframe_htf
         self.min_manipulation_percent = min_manipulation_percent 
         
@@ -1048,8 +1048,8 @@ class TimeframeVisualAnalyzer:
     Uses Moving Averages alignment to simulate visual trend confirmation
     """
     def __init__(self):
-        # M6 removed, only H1 and M15 kept as per user request
-        self.timeframes = {"M15": mt5.TIMEFRAME_M15, "H1": mt5.TIMEFRAME_H1}
+        # M6 removed, only M5 and M15 kept as per user request
+        self.timeframes = {"M5": mt5.TIMEFRAME_M5, "M15": mt5.TIMEFRAME_M15}
         
     def analyze(self, symbol, current_time):
         trends = {}; alignment_score = 0
@@ -1088,7 +1088,7 @@ class TimeframeVisualAnalyzer:
         return {"signal": signal, "strength": strength, "reason": reason, "details": trends}
 
 class MTFAnalyzer:
-    def __init__(self, htf1=mt5.TIMEFRAME_M15, htf2=mt5.TIMEFRAME_H1, swing_length=20):
+    def __init__(self, htf1=mt5.TIMEFRAME_M5, htf2=mt5.TIMEFRAME_M15, swing_length=20):
         self.htf1 = htf1; self.htf2 = htf2; self.swing_length = swing_length
         self.demand_zones = []; self.supply_zones = []; self.last_zone_update = 0
     def analyze(self, symbol, current_price, current_time):
