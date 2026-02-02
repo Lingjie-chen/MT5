@@ -99,7 +99,7 @@ class QwenClient:
     - **账户规模感知**: 
         - 账户余额 (Balance) < 100 USD: 推荐手数 0.01 - 0.02
         - 账户余额 100 - 500 USD: 推荐手数 0.03 - 0.10
-        - 账户余额 > 500 USD: 根据账户余额的 10% 比例推荐手数。
+        - 账户余额 > 500 USD: 根据账户余额的 10% 比例推荐手数。例如，账户余额为 1000 USD 时，推荐手数为 0.10。
         - **必须严格遵守上述比例，禁止过度杠杆。**
     - **Risk per Trade**: 单笔交易风险 (Stop Loss Risk) 不得超过账户余额的 1% - 2%。
     
@@ -246,7 +246,7 @@ class QwenClient:
     - **策略**: 若ETH突破关键阻力位，决定买入。
     - **细节**: 基于 SMC 结构提出 **初步** 的建仓价格和目标价 (SMC TP)。
     - **输出**: 交易提案（Action, Entry, SMC TP）。
-      - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'hold', 'close'。
+        - **Action**: 'buy', 'sell', 'add_buy', 'add_sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'hold', 'close'。
       - **注意**: Grid Start 已禁用。
 
     **4. 风控与执行团队 (Risk & Execution)**
@@ -319,7 +319,7 @@ class QwenClient:
     - **策略**: 若 DXY 遇阻回落且 EURUSD 完成流动性扫荡后出现 CHOCH，决定买入。
     - **细节**: 基于 SMC 提出建仓价格和止盈 (SMC TP)。
     - **输出**: 交易提案（Action, Entry, SMC TP）。
-      - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'hold', 'close'。
+      - **Action**: 'buy', 'sell', 'add_buy', 'add_sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'hold', 'close'。
       - **注意**: 欧美时段重叠期波动最大，适合趋势交易。
 
     **4. 风控与执行团队 (Risk & Execution)**
