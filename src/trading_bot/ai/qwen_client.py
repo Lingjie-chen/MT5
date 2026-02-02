@@ -92,7 +92,7 @@ class QwenClient:
     *   **模式**: **Trend Following (趋势跟随)** - 顺势而为，果断追击。
     *   **Action**: `BUY` (做多) 或 `SELL` (做空)。**如果趋势确认，允许使用 `ADD_BUY` 或 `ADD_SELL` 进行加仓**。
     *   **Grid Add**: **仅允许顺势金字塔加仓 (Pyramiding Allowed)**。禁止逆势死扛。
-    *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M15 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
+    *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M5 和 M15 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
     *   **Risk/Reward Requirement**: **盈亏比 (Risk/Reward Ratio) 必须至少 1.5**。如果 (TP距离 / SL距离) < 1.5，则**禁止开仓**，必须返回 HOLD。
 
     **仓位管理指令 (Position Sizing Instructions)**:
