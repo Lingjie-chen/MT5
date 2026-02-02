@@ -389,7 +389,7 @@ class QwenClient:
          - **Order Block (OB)**: 机构留下的未成交订单区域。
          - **FVG (Fair Value Gap)**: 快速移动留下的失衡区，价格倾向于回补。
          - **Supply & Demand Zones**: 严格的供需区。
-       - **CRT (Candle Range Theory)**: 确认关键位置的 M15 K线反应(如Pinbar, Engulfing)。
+       - **CRT (Candle Range Theory)**: 确认关键位置的 M5/M15 K线反应(如Pinbar, Engulfing)。
        - **CCI/RVGI**: 辅助确认超买超卖和动量背离。
 
     2. **出场与风控 (Exit & Risk)**:
@@ -710,11 +710,11 @@ class QwenClient:
     请做出最终决策 (Action):
     1. **BUY**:
        - 含义: 启动做多策略 (Market Buy)。
-       - 适用场景: SMC 确认看涨趋势 (BOS/CHOCH)，价格位于 H4/H1 关键支撑位 (OB/FVG)。
+       - 适用场景: SMC 确认看涨趋势 (BOS/CHOCH)，价格位于 M15/M5 关键支撑位 (OB/FVG)。
        - **执行逻辑**: 系统将立即开启首单 BUY。
     2. **SELL**:
        - 含义: 启动做空策略 (Market Sell)。
-       - 适用场景: SMC 确认看跌趋势 (BOS/CHOCH)，价格位于 H4/H1 关键阻力位 (OB/FVG)。
+       - 适用场景: SMC 确认看跌趋势 (BOS/CHOCH)，价格位于 M15/M5 关键阻力位 (OB/FVG)。
        - **执行逻辑**: 系统将立即开启首单 SELL。
     3. **HOLD**:
        - 含义: 暂时观望。
@@ -731,8 +731,8 @@ class QwenClient:
         2. **连败保护**: 如果 `recent_trades` 显示连续亏损，请在 `rationale` 中建议暂停开新仓或降低 `initial_lot`。
 
     **一致性检查 (Consistency Check)**:
-    - **SMC 验证**: 你的决策必须得到 SMC 结构的支持 (如 H1 Order Block 支撑)。严禁在毫无依据的半空中开仓。
-    - **趋势顺势**: 尽量顺应 H4 大趋势。逆势必须有更严格的过滤条件。
+    - **SMC 验证**: 你的决策必须得到 SMC 结构的支持 (如 M15 Order Block 支撑)。严禁在毫无依据的半空中开仓。
+    - **趋势顺势**: 尽量顺应 M15 大趋势。逆势必须有更严格的过滤条件。
 
     ## 市场分析要求 - 严格 JSON 输出
 
