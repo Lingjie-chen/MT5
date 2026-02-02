@@ -684,7 +684,7 @@ class SMCAnalyzer:
                 if (ob_signal['signal'] == 'sell' and sentiment_score <= 0 and in_premium): aligned = True
                 if aligned: final_signal = ob_signal['signal']; reason = f"SMC OB: {ob_signal['reason']}"; strength = 75
 
-        return {"signal": final_signal, "structure": sentiment_text, "reason": reason, "sentiment_score": sentiment_score, "active_strategy": active_strategy, "details": {"ob": ob_signal, "fvg": fvg_signal, "bos": bos_signal, "premium_discount": pd_info}}
+        return {"signal": final_signal, "structure": sentiment_text, "reason": reason, "sentiment_score": sentiment_score, "active_strategy": active_strategy, "details": {"ob": ob_signal, "fvg": fvg_signal, "bos": bos_signal, "smart_structure": smart_structure, "premium_discount": pd_info}}
 
     def detect_premium_discount(self, df):
         highs = df['high'].values; lows = df['low'].values

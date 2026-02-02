@@ -717,15 +717,17 @@ class SymbolTrader:
                 
                 # [NEW] Order Block / FVG / Supply & Demand Confluence
                 # 如果存在有效的机构订单块或失衡区，说明入场位置质量高，可适当增加仓位
-                has_ob = len(smc.get('order_blocks', [])) > 0
-                has_fvg = len(smc.get('fvgs', [])) > 0
-                has_sd = len(smc.get('supply_demand_zones', [])) > 0
-                has_bos = len(smc.get('bos', [])) > 0
-                has_choch = len(smc.get('choch', [])) > 0
+                has_ob = len(smc.get('details', {}).get('ob', {}).get('active_obs', [])) > 0
+                has_fvg = len(smc.get('details', {}).get('fvg', {}).get('active_fvgs', [])) > 0
                 
-                if has_ob or has_fvg or has_sd or has_bos or has_choch:
+                # Check for Smart Structure (BOS/CHoCH)
+                smart_struct = smc.get('details', {}).get('smart_structure', {})
+                has_bos = smart_struct.get('type') == 'BOS'
+                has_choch = smart_struct.get('type') == 'CHoCH'
+                
+                if has_ob or has_fvg or has_bos or has_choch:
                     structure_multiplier += 0.15
-                    logger.info(f"SMC 结构共振 (OB/FVG/SD/BOS/CHOCH), 仓位系数增加 0.15")
+                    logger.info(f"SMC 结构共振 (OB/FVG/BOS/CHOCH), 仓位系数增加 0.15")
             
             # Volatility Regime (Matrix ML / Advanced Tech)
             # 如果是极高波动率，应该减仓以防滑点和剧烈扫损
