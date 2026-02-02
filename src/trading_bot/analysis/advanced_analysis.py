@@ -582,14 +582,15 @@ class SMCAnalyzer:
         except: return None
 
     def get_market_sentiment(self, df_current, symbol):
-        df_h1 = self.get_mtf_data(symbol, mt5.TIMEFRAME_H1, 300)
-        if df_h1 is None: return 0, "Neutral"
-        ema_long = self.calculate_ema(df_h1['close'], self.ma_period).iloc[-1]
-        current_price_h1 = df_h1['close'].iloc[-1]
-        deviation = abs(current_price_h1 - ema_long) / ema_long
+        # User Request: Analysis H1 -> M15 as HTF
+        df_htf = self.get_mtf_data(symbol, mt5.TIMEFRAME_M15, 300)
+        if df_htf is None: return 0, "Neutral"
+        ema_long = self.calculate_ema(df_htf['close'], self.ma_period).iloc[-1]
+        current_price_htf = df_htf['close'].iloc[-1]
+        deviation = abs(current_price_htf - ema_long) / ema_long
         higher_tf_bias = 0
-        if current_price_h1 > ema_long and deviation > self.atr_threshold: higher_tf_bias = 1
-        elif current_price_h1 < ema_long and deviation > self.atr_threshold: higher_tf_bias = -1
+        if current_price_htf > ema_long and deviation > self.atr_threshold: higher_tf_bias = 1
+        elif current_price_htf < ema_long and deviation > self.atr_threshold: higher_tf_bias = -1
         
         def check_structure(df):
             highs = df['high'].values; lows = df['low'].values; n = len(df)
@@ -611,7 +612,7 @@ class SMCAnalyzer:
             elif higher_tf_bias == -1 and curr_close < rec_low: has_break = True
             return is_bull, is_bear, has_break
 
-        tf1_bull, tf1_bear, tf1_break = check_structure(df_h1)
+        tf1_bull, tf1_bear, tf1_break = check_structure(df_htf)
         tf2_bull, tf2_bear, tf2_break = check_structure(df_current)
         sentiment = 0; text = "Neutral"
         if higher_tf_bias == 1 and tf1_bull and tf2_bull: sentiment = 1; text = "Bullish"
