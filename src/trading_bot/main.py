@@ -720,10 +720,12 @@ class SymbolTrader:
                 has_ob = len(smc.get('order_blocks', [])) > 0
                 has_fvg = len(smc.get('fvgs', [])) > 0
                 has_sd = len(smc.get('supply_demand_zones', [])) > 0
+                has_bos = len(smc.get('bos', [])) > 0
+                has_choch = len(smc.get('choch', [])) > 0
                 
-                if has_ob or has_fvg or has_sd:
+                if has_ob or has_fvg or has_sd or has_bos or has_choch:
                     structure_multiplier += 0.15
-                    logger.info(f"SMC 结构共振 (OB/FVG/SD), 仓位系数增加 0.15")
+                    logger.info(f"SMC 结构共振 (OB/FVG/SD/BOS/CHOCH), 仓位系数增加 0.15")
             
             # Volatility Regime (Matrix ML / Advanced Tech)
             # 如果是极高波动率，应该减仓以防滑点和剧烈扫损
