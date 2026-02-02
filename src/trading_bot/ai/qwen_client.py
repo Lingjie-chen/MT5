@@ -112,7 +112,7 @@ class QwenClient:
          - **Order Block (OB)**: 机构留下的未成交订单区域。
          - **FVG (Fair Value Gap)**: 快速移动留下的失衡区，价格倾向于回补。
          - **Supply & Demand Zones**: 严格的供需区。
-       - **CRT (Candle Range Theory)**: 确认关键位置的 M15 K线反应(如Pinbar, Engulfing)。
+       - **CRT (Candle Range Theory)**: 确认关键位置的 M5/M15 K线反应(如Pinbar, Engulfing)。
        - **CCI/RVGI**: 辅助确认超买超卖和动量背离。
        - **斐波那契结构 (Fibonacci Structure)**: 
          - **M5/M15 结构分析**: 当你生成分析时，必须基于 5分钟 (M5) 和 15分钟 (M15) 的微观结构来绘制斐波那契回撤位。
@@ -300,7 +300,7 @@ class QwenClient:
     - **技术分析师**:
         - **角色**: 运用 SMC 和经典图表形态分析 EURUSD 走势。
         - **指令**:
-            1. **SMC 结构分析**: 识别 M6/M15 的 BOS (结构破坏) 和 CHOCH (特性改变)。
+            1. **SMC 结构分析**: 识别 M5/M15 的 BOS (结构破坏) 和 CHOCH (特性改变)。
             2. **流动性识别**: 标注亚洲盘高低点 (Asian Range High/Low) 及午夜开盘价 (Midnight Open) 的流动性掠夺。
             3. **关键时段**: 重点关注伦敦开盘 (London Open) 和纽约开盘 (NY Open) 的 Judas Swing (诱多/诱空)。
             4. **输出**: 包含 SMC 结构、FVG、OB 及关键时段行为的技术分析报告。
