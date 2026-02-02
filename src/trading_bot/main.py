@@ -2860,6 +2860,8 @@ class SymbolTrader:
                     logger.info(summary)
                     
                     # Store this in a temporary feedback buffer for Qwen
+                    if self.latest_strategy is None:
+                        self.latest_strategy = {}
                     self.latest_strategy['feedback'] = summary
                     
         except Exception as e:
