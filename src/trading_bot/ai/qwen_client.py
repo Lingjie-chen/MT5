@@ -1232,7 +1232,13 @@ class QwenClient:
         if previous_analysis:
             prev_action = previous_analysis.get('action', 'unknown')
             prev_rationale = previous_analysis.get('strategy_rationale', 'none')
-            prev_context = f"\n上一次分析结果 (Previous Analysis):\n- Action: {prev_action}\n- Rationale: {prev_rationale[:200]}...\n"
+            prev_feedback = previous_analysis.get('feedback', '')
+            
+            feedback_str = ""
+            if prev_feedback:
+                feedback_str = f"\n!!! 亏损反思与改进 (Critical Feedback) !!!:\n{prev_feedback}\n"
+                
+            prev_context = f"\n上一次分析结果 (Previous Analysis):\n- Action: {prev_action}\n- Rationale: {prev_rationale[:200]}...\n{feedback_str}"
         else:
             prev_context = "\n上一次分析结果: 无 (首次运行)\n"
         
