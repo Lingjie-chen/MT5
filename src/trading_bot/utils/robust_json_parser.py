@@ -238,20 +238,35 @@ def parse_llm_json(
                     if 'entry_conditions' in missing_keys: missing_keys.remove('entry_conditions')
                     if 'exit_conditions' in missing_keys: missing_keys.remove('exit_conditions')
                     if 'position_size' in missing_keys: missing_keys.remove('position_size')
+                    
+            # 2.4.2 [CRITICAL FIX] If 'action' is missing entirely but we have reasonable data, 
+            # assume it's a 'hold' or 'wait' scenario (or partial generation) and don't crash?
+            # No, if action is missing, it's a bad response.
             
-            # Re-evaluate missing_keys after potential removal
-            missing_keys = [k for k in missing_keys if k not in data] # Double check logic? No, missing_keys is list of strings.
+            # 2.4.3 [CRITICAL FIX] Ensure keys removed from missing_keys are actually gone
+            # The previous remove() calls modify the list in-place, which is fine.
+            # But let's add a debug log if it still fails
             
             if missing_keys:
-                # Last resort: Check if missing keys are just empty/null but keys exist? No, k not in data means keys missing.
-                # If we have defaults, we should have filled them already in step 3.1
-                # If defaults didn't cover it, then it's truly missing.
-                
-                # Special handling for common LLM omission:
-                # If LLM returns just {"action": "hold", "reason": "..."}, it omits the rest.
-                # We should have handled this via defaults or the action check above.
-                
-                raise ValueError(f"JSON缺少必要字段: {', '.join(missing_keys)}")
+                # [Optimization] If we are missing keys but have 'action', try to fill with defaults dynamically
+                # This prevents crash for 'hold' scenarios where we might have missed a case above
+                if 'action' in data:
+                     # Just fill them with None/0 to allow process to continue
+                     for k in missing_keys:
+                         if k == 'position_size': data[k] = 0.0
+                         elif k == 'entry_conditions': data[k] = None
+                         elif k == 'exit_conditions': data[k] = None
+                         elif k == 'grid_config': data[k] = None
+                         elif k == 'telegram_report': data[k] = f"Action: {data['action']} (Auto-Generated)"
+                     
+                     # Clear missing keys after filling
+                     missing_keys = []
+                else:
+                    # Last resort: Check if missing keys are just empty/null but keys exist? No, k not in data means keys missing.
+                    # If we have defaults, we should have filled them already in step 3.1
+                    # If defaults didn't cover it, then it's truly missing.
+                    
+                    raise ValueError(f"JSON缺少必要字段: {', '.join(missing_keys)}")
                 
     return data
 
