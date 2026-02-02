@@ -3376,9 +3376,10 @@ class SymbolTrader:
                 else:
                     self.manage_positions() # 降级为默认
                 
-                # 0.5 分析已平仓交易 (每 60 次循环 / 约 1 分钟执行一次)
-                if int(time.time()) % 60 == 0:
+                # 0.5 分析已平仓交易 (每 60 秒执行一次)
+                if time.time() - self.last_analysis_time > 60:
                     self.analyze_closed_trades()
+                    self.last_analysis_time = time.time()
                     
                 # 0.6 执行策略参数优化 (每 4 小时一次)
                 if time.time() - self.last_optimization_time > 14400:
