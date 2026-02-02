@@ -4364,8 +4364,15 @@ class SymbolTrader:
                             exit_params = strategy.get('exit_conditions')
                             
                             # Calculate Lot
-                            # Priority 1: Use LLM suggested position_size if valid
+                            # Priority 1: Use LLM suggested position_size or grid_config.initial_lot if valid
                             llm_lot = strategy.get('position_size')
+                            
+                            # Check grid_config fallback
+                            if not llm_lot:
+                                grid_conf = strategy.get('grid_config')
+                                if grid_conf and isinstance(grid_conf, dict):
+                                    llm_lot = grid_conf.get('initial_lot')
+
                             if llm_lot and isinstance(llm_lot, (int, float)) and llm_lot > 0:
                                 suggested_lot = float(llm_lot)
                                 logger.info(f"Using LLM Suggested Lot Size: {suggested_lot}")
