@@ -401,7 +401,7 @@ class QwenClient:
        - 必须明确指出最近的 **BOS** 和 **CHoCH** 位置。
         """
 
-        martingale_configs = {
+        strategy_configs = {
             "DEFAULT": """
     **交易员与风控团队必须严格遵守的【单边趋势交易技术规范 (Trend Only)】**:
     1. **仓位管理 (Position Sizing)**: 
@@ -415,7 +415,7 @@ class QwenClient:
             """
         }
         
-        tech_specs = martingale_configs.get(symbol, martingale_configs["DEFAULT"])
+        tech_specs = strategy_configs.get(symbol, strategy_configs["DEFAULT"])
         
         # --- 4. 共同执行规则 ---
         common_rules = """
@@ -759,7 +759,7 @@ class QwenClient:
         """
         
         # Select Configs
-        martingale_config = martingale_configs.get(symbol, martingale_configs["DEFAULT"])
+        strategy_config = strategy_configs.get(symbol, strategy_configs["DEFAULT"])
         market_spec = market_specs.get(symbol, market_specs["DEFAULT"])
         
         # Reflection Skills (Synced from CLAUDE.local.md)
