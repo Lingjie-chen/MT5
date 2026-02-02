@@ -980,15 +980,18 @@ class SymbolTrader:
                     if not can_add:
                         continue
                     # -------------------
-
+                    
                     logger.info(f"执行加仓 #{pos.ticket} 方向 (Action: {llm_action})")
                     # 加仓逻辑复用开仓逻辑，但可能调整手数
-                    # [User Req] Execute with TP only (SL handled by Basket/Manual)
+                    # [User Req] Execute with FULL SL/TP
+                    final_sl = explicit_sl if explicit_sl and explicit_sl > 0 else None
+                    final_tp = explicit_tp if explicit_tp and explicit_tp > 0 else None
+                    
                     self._send_order(
                         "buy" if is_buy_pos else "sell", 
                         tick.ask if is_buy_pos else tick.bid,
-                        None, # explicit_sl -> None
-                        explicit_tp,
+                        final_sl, 
+                        final_tp,
                         comment="AI: Add Position"
                     )
                     added_this_cycle = True # 标记本轮已加仓
