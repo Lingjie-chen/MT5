@@ -4122,14 +4122,14 @@ class SymbolTrader:
                             if not opt_tp: opt_tp = calc_tp
 
                         # 4. 预计算建议仓位 (Pre-calculate Lot Size for Telegram Display)
-                        # Priority 1: Use LLM suggested position_size or grid_config.initial_lot if valid
+                        # Priority 1: Use LLM suggested position_size
                         llm_lot = strategy.get('position_size')
                         
-                        # Check grid_config fallback
-                        if not llm_lot:
-                            grid_conf = strategy.get('grid_config')
-                            if grid_conf and isinstance(grid_conf, dict):
-                                llm_lot = grid_conf.get('initial_lot')
+                        # [GRID REMOVAL] Removed fallback to grid_config.initial_lot
+                        # if not llm_lot:
+                        #     grid_conf = strategy.get('grid_config')
+                        #     if grid_conf and isinstance(grid_conf, dict):
+                        #         llm_lot = grid_conf.get('initial_lot')
 
                         suggested_lot = 0.01 # Default fallback
                         if llm_lot and isinstance(llm_lot, (int, float)) and llm_lot > 0:
