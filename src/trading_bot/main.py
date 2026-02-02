@@ -4208,7 +4208,7 @@ class SymbolTrader:
                 current_tick = mt5.symbol_info_tick(self.symbol)
                 current_price = current_tick.bid if current_tick else 0.0
                 
-                # Log current Basket Status for visibility
+                # Log current Basket Status for visibility (Rate limited)
                 if positions:
                     total_pnl = sum([p.profit + p.swap for p in positions])
                     
@@ -4221,8 +4221,20 @@ class SymbolTrader:
                         
                     if target_val is None:
                         target_val = 10.0 # Ultimate fallback
+                    
+                    # [Optimization] Log only if status changed significantly or once per minute
+                    # Here we implement a simple counter or time check
+                    current_time = time.time()
+                    if not hasattr(self, '_last_basket_log_time') or (current_time - self._last_basket_log_time) > 60:
+                        logger.info(f"📊 Basket Status: PnL=${total_pnl:.2f} / Target=${target_val:.2f}")
+                        self._last_basket_log_time = current_time
                         
-                    logger.info(f"📊 Basket Status: PnL=${total_pnl:.2f} / Target=${target_val:.2f}")
+                        # [AI Optimization] If Target < SL Risk (Implicit), trigger AI adjustment
+                        # Note: We don't have explicit basket SL here, but we can check if Target is too small
+                        if target_val < 5.0 and total_pnl > target_val: 
+                             # Too small target?
+                             pass
+
 
                 should_close_long, should_close_short = self.grid_strategy.check_grid_exit(positions, current_price=current_price, current_atr=current_atr)
                 
