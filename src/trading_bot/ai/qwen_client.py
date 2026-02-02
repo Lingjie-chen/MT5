@@ -791,7 +791,7 @@ class QwenClient:
         *   是否存在“知行不一”的情况？(例如：计划说做多，实际却在高位开了空)
 
     3.  **自我提升行动 (Actionable Improvements)**:
-        *   **Keep (保持)**: 本次交易中做对的一件事 (例如：耐心等待了 H1 回调)。
+        *   **Keep (保持)**: 本次交易中做对的一件事 (例如：耐心等待了 M15 回调)。
         *   **Fix (改进)**: 下次必须修正的一个弱点 (例如：在 ATR 高波动时，将网格间距扩大 1.5 倍)。
         *   **Optimization (优化)**: 针对参数的微调建议 (例如：建议将 `initial_lot` 从 0.01 降至 0.005，或将 `basket_tp` 提高 $10)。
 
@@ -1054,8 +1054,8 @@ class QwenClient:
                     "monthly": str,
                     "weekly": str,
                     "daily": str,
-                    "h1": str,
-                    "m15": str
+                    "m15": str,
+                    "m5": str
                 }},
                 "key_levels": {{
                     "support": [list of support levels],
