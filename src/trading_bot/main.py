@@ -993,10 +993,11 @@ class SymbolTrader:
 
                     logger.info(f"执行加仓 #{pos.ticket} 方向 (Action: {llm_action})")
                     # 加仓逻辑复用开仓逻辑，但可能调整手数
+                    # [User Req] Execute with TP only (SL handled by Basket/Manual)
                     self._send_order(
                         "buy" if is_buy_pos else "sell", 
                         tick.ask if is_buy_pos else tick.bid,
-                        explicit_sl,
+                        None, # explicit_sl -> None
                         explicit_tp,
                         comment="AI: Add Position"
                     )
