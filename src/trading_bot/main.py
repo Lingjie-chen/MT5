@@ -4404,8 +4404,13 @@ class SymbolTrader:
                     
                     # [FIX] Ensure target_val is never None to avoid formatting errors
                     target_val = self.grid_strategy.dynamic_global_tp
+                    
+                    # [Logic Update] If dynamic_global_tp is None or 0.0, fallback to default fixed config
+                    if not target_val or target_val == 0.0:
+                        target_val = self.grid_strategy.global_tp # Use default config value (e.g. 10.0 or 8.0)
+                        
                     if target_val is None:
-                        target_val = 0.0
+                        target_val = 10.0 # Ultimate fallback
                         
                     logger.info(f"📊 Basket Status: PnL=${total_pnl:.2f} / Target=${target_val:.2f}")
 
