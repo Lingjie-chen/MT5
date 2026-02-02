@@ -3933,9 +3933,9 @@ class SymbolTrader:
                             time.sleep(10)
                         
                         except Exception as e:
-                        logger.error(f"Error in main loop: {e}", exc_info=True)
-                        time.sleep(10)
-                        return
+                            logger.error(f"Error in main loop: {e}", exc_info=True)
+                            time.sleep(10)
+                            return
         except KeyboardInterrupt:
             logger.info("Bot stopped by user")
         except Exception as e:
