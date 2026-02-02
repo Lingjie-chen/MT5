@@ -696,11 +696,21 @@ class SymbolTrader:
             elif mfe_mae_ratio and mfe_mae_ratio < 0.8:
                 structure_multiplier -= 0.2
                 
-            # SMC Strong Trend
+            # SMC Strong Trend & Structure Confluence
             if market_context and 'smc' in market_context:
                 smc = market_context['smc']
                 if smc.get('structure') in ['Strong Bullish', 'Strong Bearish']:
                     structure_multiplier += 0.2
+                
+                # [NEW] Order Block / FVG / Supply & Demand Confluence
+                # 如果存在有效的机构订单块或失衡区，说明入场位置质量高，可适当增加仓位
+                has_ob = len(smc.get('order_blocks', [])) > 0
+                has_fvg = len(smc.get('fvgs', [])) > 0
+                has_sd = len(smc.get('supply_demand_zones', [])) > 0
+                
+                if has_ob or has_fvg or has_sd:
+                    structure_multiplier += 0.15
+                    logger.info(f"SMC 结构共振 (OB/FVG/SD), 仓位系数增加 0.15")
             
             # Volatility Regime (Matrix ML / Advanced Tech)
             # 如果是极高波动率，应该减仓以防滑点和剧烈扫损
