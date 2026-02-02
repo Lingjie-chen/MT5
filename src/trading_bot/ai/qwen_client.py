@@ -50,7 +50,7 @@ class CustomJSONEncoder(json.JSONEncoder):
 class QwenClient:
     """
     Qwen3 API客户端，用于黄金(XAUUSD)交易决策系统
-    基于SMC(Smart Money Concepts)+Martingale(马丁格尔)策略
+    基于SMC(Smart Money Concepts)+Trend Following(趋势跟随)策略
     使用硅基流动API服务，遵循ValueCell的API调用模式
     """
     
