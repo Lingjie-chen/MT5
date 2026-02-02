@@ -434,10 +434,10 @@ class QwenClient:
          - **MFE 驱动**: 
              - **TP**: 根据实时 MFE 预测，如果动能衰竭，提前移动 TP 锁定利润。
        - **Basket TP 动态实时配置 (Real-time Dynamic Basket TP)**:
-         - **核心要求**: 对于每个品种的网格 Basket TP (整体止盈)，必须根据以下所有维度进行综合分析和自我学习，给出一个**最优的美元数值**：
-           1. **市场情绪 (Sentiment)**: 如果情绪极度乐观(Bullish)且方向做多，大幅上调 Basket TP；反之则保守。
+         - **核心要求**: 对于每个品种的趋势交易，必须根据以下所有维度进行综合分析和自我学习，给出一个**最优的美元数值**：
+           1. **市场情绪 (Sentiment)**: 如果情绪极度乐观(Bullish)且方向做多，大幅上调 TP；反之则保守。
            2. **结构趋势 (Structure)**: 
-              - **强趋势 (Trend Surfing)**: 若市场处于单边强趋势 (如 H1/H4 结构破坏且 MA 发散)，**必须大幅上调 Basket TP** (例如正常值的 2-3 倍)，防止只吃了一小部分利润就过早离场。
+              - **强趋势 (Trend Surfing)**: 若市场处于单边强趋势 (如 H1/H4 结构破坏且 MA 发散)，**必须大幅上调 TP** (例如正常值的 2-3 倍)，防止只吃了一小部分利润就过早离场。
               - **震荡/逆势**: 目标应保守，快速落袋为安。
            3. **高级算法 (Algo Metrics)**: 
               - 参考 `technical_signals` 中的 **EMA/HA** 数据。
@@ -445,20 +445,20 @@ class QwenClient:
               - 如果 EMA 50 强劲倾斜且 HA 连续同色，TP 应激进。
            4. **历史绩效 (Self-Learning)**: 
               - **必须参考** `performance_stats` 中的 `avg_mfe` (平均最大有利偏移)。
-              - **Basket TP 上限** = (Position Size * Contract Size * Avg_MFE_Points * 0.8)。不要设定超过历史平均表现太多的不切实际目标。
-              - **Basket TP 下限** = 能够覆盖交易成本 (Spread + Swap + Commission) 的最小利润。
+              - **TP 上限** = (Position Size * Contract Size * Avg_MFE_Points * 0.8)。不要设定超过历史平均表现太多的不切实际目标。
+              - **TP 下限** = 能够覆盖交易成本 (Spread + Swap + Commission) 的最小利润。
            5. **量化书籍优化**: 
               - 引入 Kelly Criterion (凯利公式) 思想，在胜率高时允许更大的 TP 以最大化几何增长。
               - 参考《交易系统的胜算》中的 "Expectancy" (期望值) 概念，确保 (WinRate * AvgWin) > (LossRate * AvgLoss)。
            6. **长期历史优化种子 (Long-term Optimization Seeds)**:
               - **必须参考** `historical_seeds` 中的最佳参数组合。
-              - 如果历史数据显示某组参数 (如特定的 SMC ATR 阈值或 Grid Step) 长期表现优异，应在策略制定中给予更高权重。
+              - 如果历史数据显示某组参数 (如特定的 SMC ATR 阈值) 长期表现优异，应在策略制定中给予更高权重。
               - 将历史最优参数作为决策的 "Anchor" (锚点)，在此基础上进行微调，而不是凭空猜测。
          - **计算公式参考**:
            - `Base_Target` = (ATR * Position_Size * Contract_Size)
            - `Sentiment_Multiplier`: 0.5 (Weak) to 3.0 (Strong Trend)
            - `Structure_Multiplier`: 0.8 (Range) to 2.0 (Trend Surfing)
-           - `Dynamic_Basket_TP` = `Base_Target` * `Sentiment_Multiplier` * `Structure_Multiplier` (并用 Avg_MFE 做校验)
+           - `Dynamic_TP` = `Base_Target` * `Sentiment_Multiplier` * `Structure_Multiplier` (并用 Avg_MFE 做校验)
          - **拒绝固定值**: 严禁使用固定的数值 (如 50.0)！必须是经过上述逻辑计算后的结果。
          - **更新指令**: 在 `position_management` -> `dynamic_basket_tp` 中返回计算后的数值。
        - **Lock Profit Trigger (Profit Locking)**:
@@ -647,20 +647,20 @@ class QwenClient:
        - **拒绝交易**: 如果 (TP距离 / 结构失效距离) < 1.5，请直接返回 **HOLD**，不要开仓。
        - 明确的上方/下方流动性目标
     
-    ### 六、退出策略 (Grid Exit Logic)
+    ### 六、退出策略 (Exit Logic)
     
     **整体止盈 (Basket TP)**:
-    1. **目标设定**: 网格策略的核心在于整体浮盈出场。请基于 ATR 和 SMC 阻力位计算 `basket_tp_usd`。
+    1. **目标设定**: 核心在于整体浮盈出场。请基于 ATR 和 SMC 阻力位计算 `basket_tp_usd`。
     2. **动态调整**: 当市场动能衰竭或遇到强阻力时，应在下一次分析中降低 `basket_tp_usd` 以确保落袋为安。
     
     **平仓 (CLOSE_ALL) 标准**:
-    - **仅用于紧急情况**: 正常情况下，让网格自动止盈。只有在以下情况手动 CLOSE_ALL：
+    - **仅用于紧急情况**: 正常情况下，让策略自动止盈。只有在以下情况手动 CLOSE_ALL：
         1. **结构彻底破坏**: H4/H1 趋势完全反转。
         2. **重大风险事件**: 即将发布超预期利空数据。
         3. **风控触发**: 浮亏超过账户净值的 20% (或预设阈值)。
     
     **止损退出**:
-    - 网格策略不设单单止损，而是依赖 `basket_sl_usd` (整体止损)。请在 `grid_config` 中合理设置此值。
+    - 依赖 `basket_sl_usd` (整体止损)。请在 `grid_config` 中合理设置此值。
     
     ## 输出格式要求
     
