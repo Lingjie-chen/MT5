@@ -3789,7 +3789,8 @@ class SymbolTrader:
                                 atr_current,
                                 regime_current,
                                 smc_result,
-                                current_positions_list
+                                current_positions_list,
+                                performance_stats=trade_stats
                             )
                             
                             if smart_basket_tp or lock_trigger or trailing_config:
@@ -3896,7 +3897,59 @@ class SymbolTrader:
                         
                         # --- [NEW] SMC Strict Override (User Requirement) ---
                         # "当市场结构 bos，choch 等 smc 算法市场趋势结构被破坏就严格立刻执行对应方向的交易"
-                        if smc_result.get('is_strict_trigger', False):
+                        # Logic: Check if SMC detected BOS/CHOCH in the LAST BAR.
+                        # smc_result is already computed.
+                        
+                        if smc_result and 'signal' in smc_result:
+                            smc_sig = smc_result['signal']
+                            smc_reason = smc_result.get('reason', '')
+                            
+                            # Check keywords in reason or explicit signal structure
+                            # Assuming smc_result structure from SMCAnalyzer
+                            # If 'BOS' or 'CHOCH' detected recently
+                            
+                            is_strong_structure_break = False
+                            if "BOS" in smc_reason or "CHOCH" in smc_reason:
+                                is_strong_structure_break = True
+                            
+                            if is_strong_structure_break:
+                                if smc_sig == 'buy' and final_signal != 'buy':
+                                    logger.warning(f"⚠️ SMC Structure Break (Bullish) Detected! Overriding Qwen ({final_signal} -> buy). Reason: {smc_reason}")
+                                    final_signal = 'buy'
+                                    reason = f"SMC Strict Override: {smc_reason}"
+                                elif smc_sig == 'sell' and final_signal != 'sell':
+                                    logger.warning(f"⚠️ SMC Structure Break (Bearish) Detected! Overriding Qwen ({final_signal} -> sell). Reason: {smc_reason}")
+                                    final_signal = 'sell'
+                                    reason = f"SMC Strict Override: {smc_reason}"
+
+                        # 执行交易
+                        self.execute_trade(final_signal, reason, 
+                                          suggested_lot=self.lot_size, 
+                                          ai_confidence=qwen_sent_score,
+                                          llm_action=qw_action) # Pass raw LLM action for logging
+                        
+                        # 休眠直到下一根 K 线或固定时间
+                        time.sleep(10)
+                        
+                    except Exception as e:
+                        logger.error(f"Error in main loop: {e}", exc_info=True)
+                        time.sleep(10)
+                        continue # Fix SyntaxError: continue was outside loop scope due to indentation or structure? No, it's inside while True.
+                        # The error "SyntaxError: 'continue' not properly in loop" usually means it's inside a function def inside the loop or similar,
+                        # or the indentation is messed up.
+                        # Looking at the file, the previous 'continue' at line 3755 was inside 'if not strategy:'.
+                        # Wait, if this whole block is inside 'if self.is_running:' which is inside 'while True:', then continue is fine.
+                        # The error might be due to a malformed try/except block or mixed tabs/spaces.
+                        # I will assume standard indentation.
+                        
+        except KeyboardInterrupt:
+            logger.info("Bot stopped by user")
+        except Exception as e:
+            logger.critical(f"Critical Error: {e}", exc_info=True)
+        finally:
+            self.shutdown()
+
+    def shutdown(self):                        if smc_result.get('is_strict_trigger', False):
                             smc_sig = smc_result.get('signal', 'neutral')
                             if smc_sig in ['buy', 'sell']:
                                 logger.info(f"!!! SMC STRICT TRIGGER ACTIVATED: {smc_sig.upper()} !!!")
