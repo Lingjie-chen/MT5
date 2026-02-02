@@ -243,8 +243,8 @@ class QwenClient:
     - **策略**: 若ETH突破关键阻力位，决定买入。
     - **细节**: 基于 SMC 结构提出 **初步** 的建仓价格和目标价 (SMC TP)。
     - **输出**: 交易提案（Action, Entry, SMC TP）。
-      - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'grid_start' (网格部署), 'hold', 'close'。
-      - **注意**: 若判断为震荡行情或需部署SMC马丁格尔网格，请务必使用 'grid_start'。
+      - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'hold', 'close'。
+      - **注意**: Grid Start 已禁用。
 
     **4. 风控与执行团队 (Risk & Execution)**
     - **审核提案**: 评估加密市场波动性（VIX高），流动性风险。
