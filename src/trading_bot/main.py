@@ -537,8 +537,8 @@ class SymbolTrader:
                 min_margin_buffer = 50 # Lower buffer for high leverage accounts
             
             # 安全检查：如果可用保证金不足，直接返回最小手数或0
-            if margin_free < min_margin_buffer: 
-                logger.warning(f"可用保证金不足 ({margin_free:.2f})，强制最小手数")
+            if margin_free < 20: # 降低 buffer 限制，允许小资金尝试
+                logger.warning(f"可用保证金极低 ({margin_free:.2f})，强制最小手数")
                 return mt5.symbol_info(self.symbol).volume_min
 
             # --- 0. 优先使用 LLM 建议的仓位 (LLM Suggestion) ---
@@ -572,15 +572,15 @@ class SymbolTrader:
                                     margin_required = mt5.order_calc_margin(calc_type, self.symbol, llm_lot, calc_price)
                                     
                                     if margin_required is not None:
-                                        # 检查资金是否足够 (保留 5% 缓冲)
-                                        if margin_required > (margin_free * 0.95):
+                                        # 检查资金是否足够 (保留 2% 缓冲)
+                                        if margin_required > (margin_free * 0.98):
                                             logger.warning(f"⚠️ 资金不足 (Need ${margin_required:.2f}, Free ${margin_free:.2f}) for {llm_lot} lots. Exness/Ava info differs.")
                                             
                                             # 动态降级仓位
                                             # Margin = Volume * ContractSize * Price / Leverage (Roughly)
                                             # So Volume ~ Margin
                                             margin_per_lot = margin_required / llm_lot
-                                            safe_margin = margin_free * 0.95
+                                            safe_margin = margin_free * 0.98
                                             
                                             if margin_per_lot > 0:
                                                 new_lot = safe_margin / margin_per_lot
@@ -589,7 +589,6 @@ class SymbolTrader:
                                                 new_lot = max(symbol_info.volume_min, new_lot)
                                                 
                                                 # 如果修正后仍然无法满足 (例如最小手数也买不起)，则只能由后续逻辑处理或保持最小
-                                                # 这里我们更新 llm_lot
                                                 if new_lot < llm_lot:
                                                     logger.info(f"↘️ 根据账户资金自动调整仓位: {llm_lot} -> {new_lot}")
                                                     llm_lot = new_lot
@@ -599,45 +598,9 @@ class SymbolTrader:
                                 logger.error(f"保证金检查异常: {e}")
 
                             # 风险验证 (Risk Guardrail) - 放宽限制以支持 AI 全权风控
-                            # 估算: 1 Lot * 500 points * TickValue (压力测试)
-                            tick_val = symbol_info.trade_tick_value
-                            if not tick_val: tick_val = 1.0
-                            
-                            est_risk = llm_lot * 500.0 * tick_val
-                            
-                            # Risk Cap Logic
-                            risk_cap_pct = 0.25
-                            if allow_aggressive:
-                                risk_cap_pct = 0.50 # Allow up to 50% equity risk exposure for high leverage specialized accounts
-                                logger.info("High Leverage Exness Mode: Relaxing Risk Cap to 50%")
-                            
-                            max_risk = equity * risk_cap_pct 
-                            
-                            if est_risk <= max_risk:
-                                logger.info(f"✅ 采用大模型全权建议仓位: {llm_lot} Lots (AI Driven Risk)")
-                                return llm_lot
-                            else:
-                                logger.warning(f"⚠️ 大模型建议仓位 {llm_lot} 极端风险过高 (StressTest ${est_risk:.2f} > ${max_risk:.2f})，触发熔断保护。")
-                                # [FIX] Risk Cap Hit -> Auto adjust to max allowed
-                                # 但用户要求"完全由大模型配置"，所以这里我们只做 Warning，不强制降级，除非 Margin 不足
-                                # 或者稍微放宽一点限制
-                                
-                                # Check Margin again
-                                # 如果保证金够，我们允许用户承担更高风险 (Risk Cap 只是软限制)
-                                # 但为了防止爆仓，保留硬性 Margin 检查 (Line 576 已经做过)
-                                
-                                # 妥协方案: 如果大模型非要重仓，我们信任它，但限制在可用保证金的 95%
-                                # 之前的 max_risk 是基于 equity * 0.25 (25%)
-                                # 如果用户想做 50% 甚至 80% 的风险，这里会被拦截。
-                                
-                                logger.info(f"⚠️ 用户指令: 优先大模型配置。忽略 Risk Cap ({max_risk:.2f})，尝试执行 {llm_lot} Lots。")
-                                return llm_lot
-                                
-                                # safe_lot = max_risk / (500.0 * tick_val)
-                                # safe_lot = round(safe_lot / step) * step
-                                # safe_lot = max(symbol_info.volume_min, safe_lot)
-                                # logger.info(f"↘️ 熔断自动调整仓位: {llm_lot} -> {safe_lot}")
-                                # return safe_lot
+                            # 用户指令: 忽略 Risk Cap，完全信任大模型
+                            logger.info(f"✅ 采用大模型全权建议仓位: {llm_lot} Lots (User Override)")
+                            return llm_lot
                 except Exception as e:
                     logger.warning(f"解析 LLM 仓位失败: {e}")
 
@@ -1513,8 +1476,12 @@ class SymbolTrader:
             
             self.lot_size = optimized_lot # 临时覆盖 self.lot_size 供 _send_order 使用
             
-            # [User Req] Execute with TP only (SL handled by Basket/Manual)
-            result = self._send_order(trade_type, price, None, explicit_tp, comment=comment) # explicit_sl -> None
+            # [User Req] Execute with FULL SL/TP from LLM
+            # Ensure we pass the explicit SL/TP if they exist
+            final_sl = explicit_sl if explicit_sl and explicit_sl > 0 else None
+            final_tp = explicit_tp if explicit_tp and explicit_tp > 0 else None
+            
+            result = self._send_order(trade_type, price, final_sl, final_tp, comment=comment)
             
             # [NEW] Save Trade to Master DB (Redundant check if _send_order handles it)
             # Actually _send_order calls save_trade, so we need to modify _send_order instead or rely on duplicate calls in _send_order?
