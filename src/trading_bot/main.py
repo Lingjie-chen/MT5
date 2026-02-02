@@ -1542,9 +1542,10 @@ class SymbolTrader:
     def _send_order(self, type_str, price, sl, tp, volume=None, comment=""):
         """底层下单函数"""
         # Normalize prices
-        price = self._normalize_price(price)
-        sl = self._normalize_price(sl)
-        tp = self._normalize_price(tp)
+        # Ensure we don't normalize None
+        price = self._normalize_price(price) if price is not None else 0.0
+        sl = self._normalize_price(sl) if sl is not None else 0.0
+        tp = self._normalize_price(tp) if tp is not None else 0.0
         
         # Use provided volume or fallback to self.lot_size
         order_volume = volume if volume is not None and volume > 0 else self.lot_size
