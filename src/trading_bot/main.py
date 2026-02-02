@@ -1273,15 +1273,8 @@ class SymbolTrader:
 
              logger.info(f"Trend Mode: Executing decisive '{llm_action}' without grid. Price={price}, SL={explicit_sl}, TP={explicit_tp}, Lot={suggested_lot}")
              
-             # Fall through to common execution logic (DO NOT RETURN)
-             # self.execute_trade calls _send_order at the end.
-             # If we return here, we skip the rest of execute_trade logic (R:R check, dynamic lot calc, etc.)
-             # Wait, the previous code had 'logger.info...' then fell through to 'if is_grid_action'.
-             # It did NOT return.
-             # BUT, if is_grid_action is False, it goes to... where?
-             # It goes to line 1300+ where R:R check and _send_order are.
-             # So we must update the local variables 'explicit_sl', 'explicit_tp', 'suggested_lot' and let it flow.
-             pass
+             # [FIX] Execute the trade for Trend Mode (Buy Side)
+             self._send_order(trade_type, price, sl=explicit_sl if explicit_sl else 0.0, tp=explicit_tp if explicit_tp else 0.0, volume=suggested_lot, comment=f"AI-Trend-{llm_action}")
              
         elif llm_action in ['sell', 'add_sell', 'limit_sell', 'sell_limit']:
              # [NEW] Enforce Trend Mode (High/Low Swing) - No Grid
