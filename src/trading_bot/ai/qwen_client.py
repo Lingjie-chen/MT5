@@ -1635,11 +1635,11 @@ class QwenClient:
         """获取默认决策"""
         return {
             "action": "hold",
-            "strategy_mode": "grid",
+            "strategy_mode": "trend",
             "entry_conditions": {"trigger_type": "market"},
             "exit_conditions": {"sl_atr_multiplier": 1.5, "tp_atr_multiplier": 2.5},
             "position_management": {
-                "martingale_multiplier": 1.5, 
+                "martingale_multiplier": 1.0, 
                 "grid_step_logic": "ATR_based",
                 "recommended_grid_step_pips": 20,
                 "grid_level_tp_pips": [30, 25, 20, 15, 10],
@@ -1647,15 +1647,15 @@ class QwenClient:
             },
             "grid_config": {
                 "initial_lot": 0.01,
-                "allow_add": True,
+                "allow_add": False,
                 "grid_step_mode": "atr",
                 "grid_step_pips": 20.0,
                 "martingale_mode": "multiply",
-                "martingale_multiplier": 1.5,
-                "max_grid_levels": 5,
+                "martingale_multiplier": 1.0,
+                "max_grid_levels": 0,
                 "basket_tp_usd": 50.0,
-                "basket_sl_usd": -200.0,
-                "max_drawdown_usd": 500.0
+                "basket_sl_usd": -50.0,
+                "max_drawdown_usd": 100.0
             },
             "position_size": 0.01,
             "leverage": 1,
@@ -1664,9 +1664,9 @@ class QwenClient:
             "strategy_rationale": reason,
             "market_structure_analysis": {"trend": "neutral", "phase": "waiting"},
             "smc_signals_identified": [],
-            "risk_metrics": {"max_risk": 0.02, "current_risk": 0},
+            "risk_metrics": {"max_risk": 0.01, "current_risk": 0},
             "next_observations": ["等待明确信号"],
-            "telegram_report": f"⚠️ *System Error*\n{reason}",
+            "telegram_report": f"⚠️ *System Error (Trend Mode)*\n{reason}",
             "market_analysis": {
                 "market_structure": {"trend": "neutral", "phase": "unknown"},
                 "sentiment_analysis": {"sentiment": "neutral", "sentiment_score": 0.0}
