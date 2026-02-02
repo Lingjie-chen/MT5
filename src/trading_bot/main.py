@@ -3934,14 +3934,7 @@ class SymbolTrader:
                     except Exception as e:
                         logger.error(f"Error in main loop: {e}", exc_info=True)
                         time.sleep(10)
-                        continue # Fix SyntaxError: continue was outside loop scope due to indentation or structure? No, it's inside while True.
-                        # The error "SyntaxError: 'continue' not properly in loop" usually means it's inside a function def inside the loop or similar,
-                        # or the indentation is messed up.
-                        # Looking at the file, the previous 'continue' at line 3755 was inside 'if not strategy:'.
-                        # Wait, if this whole block is inside 'if self.is_running:' which is inside 'while True:', then continue is fine.
-                        # The error might be due to a malformed try/except block or mixed tabs/spaces.
-                        # I will assume standard indentation.
-                        
+                        continue 
         except KeyboardInterrupt:
             logger.info("Bot stopped by user")
         except Exception as e:
@@ -3949,54 +3942,18 @@ class SymbolTrader:
         finally:
             self.shutdown()
 
-    def shutdown(self):                        if smc_result.get('is_strict_trigger', False):
-                            smc_sig = smc_result.get('signal', 'neutral')
-                            if smc_sig in ['buy', 'sell']:
-                                logger.info(f"!!! SMC STRICT TRIGGER ACTIVATED: {smc_sig.upper()} !!!")
-                                logger.info(f"Overriding Qwen Action ({qw_action}) with SMC Signal")
-                                
-                                final_signal = smc_sig
-                                reason = f"[SMC STRICT] {smc_result.get('reason', 'Structure Break')}"
-                                
-                                # Force Strength to max to ensure execution
-                                strength = 95 
-                                
-                                # Update Strategy Context to reflect this override for logging
-                                strategy['action'] = final_signal
-                                strategy['reason'] = reason
-                        
-                        # 3. 智能平仓信号处理
-                        if qw_action == 'close' and final_signal != 'close' and not smc_result.get('is_strict_trigger', False):
-                            final_signal = 'close'
-                            reason = f"[Smart Exit] Qwen Profit Taking: {reason}"
-
-                        qw_signal = final_signal if final_signal not in ['hold', 'close'] else 'neutral'
-                        
-                        # 计算置信度 (使用 Qwen 返回的 confidence，如果未提供则使用基于技术指标的估算)
-                        strength = float(strategy.get('confidence', 0))
-                        
-                        # [Restored] Calculate Tech Consistency for fallback
-                        matching_count = 0
-                        valid_tech_count = 0
-                        tech_signals_list = [
-                            crt_result['signal'], adv_signal, smc_result['signal'],
-                            mtf_result['signal'], ifvg_result['signal'], rvgi_cci_result['signal']
-                        ]
-                        
-                        for sig in tech_signals_list:
-                            if sig != 'neutral':
-                                valid_tech_count += 1
-                                if sig == final_signal:
-                                    matching_count += 1
-
-                        # 如果 Qwen 没有返回 confidence，回退到旧逻辑
-                        if strength <= 0:
-                            strength = 70 # Base for Qwen
-                            if valid_tech_count > 0:
-                                strength += (matching_count / valid_tech_count) * 30
-                        
-                        # [NEW] Enforce Minimum Strength & R:R Ratio (User Requirement)
-                        # "要求 strength 至少 70% 以上，盈亏比至少 1.5 以上"
+    def shutdown(self):
+        """Shutdown the trading bot safely"""
+        self.is_running = False
+        if self.db_manager:
+            try:
+                # self.db_manager.conn.close() # Connection is persistent
+                pass
+            except: pass
+        if self.file_watcher:
+            self.file_watcher.stop()
+        logger.info("Bot Shutdown Complete.")
+        mt5.shutdown()
                         if final_signal in ['buy', 'sell']:
                             # 1. Check Strength
                             if strength < 70:
