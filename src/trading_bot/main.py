@@ -3748,6 +3748,12 @@ class SymbolTrader:
                             performance_stats=trade_stats,
                             previous_analysis=self.latest_strategy
                         )
+                        
+                        if not strategy:
+                            logger.error("❌ LLM Analysis Failed (No Strategy Returned). Skipping cycle.")
+                            time.sleep(5)
+                            continue
+
                         self.latest_strategy = strategy
                         self.last_llm_time = time.time()
                         
