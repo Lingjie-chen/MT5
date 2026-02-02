@@ -67,7 +67,7 @@ class QwenClient:
     
     你的核心策略架构：**SMC + Trend Following (趋势跟随)**
     
-    **关键规则：你的交易周期为 15分钟 (M15)。你必须结合 1小时 (H1) 和 15分钟 (M15) 的周期趋势来制定入场决策。**
+    **关键规则：你的交易周期为 5分钟 (M5)。你必须结合 15分钟 (M15) 和 5分钟 (M5) 的周期趋势来制定入场决策。**
     
     **重要指令: 用户已明确取消网格交易 (Grid Trading Cancelled)，但允许顺势金字塔加仓 (Pyramiding)。**
     - **禁止**使用传统网格策略 (Blind Grid Strategy) 和逆势加仓 (Martingale)。
@@ -378,7 +378,7 @@ class QwenClient:
     *   **模式**: **Trend Following (趋势跟随)** - 顺势而为，果断追击。
     *   **Action**: `BUY` (做多) 或 `SELL` (做空) - **市价单或挂单入场**。
     *   **Grid Add**: **永久禁止 (Disabled)**。
-    *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M6/M15 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
+    *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M5/M15 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
 
     1. **SMC (Smart Money Concepts) - 核心入场逻辑**:
        - **结构确认 (Structure Mapping)**:
@@ -409,7 +409,7 @@ class QwenClient:
             "DEFAULT": """
     **交易员与风控团队必须严格遵守的【单边趋势交易技术规范 (Trend Only)】**:
     1. **仓位管理 (Position Sizing)**: 
-       - **完全由大模型决定**: 必须基于 M15/H1 的市场情绪 (Sentiment) 和 SMC 结构置信度，计算出精确的首单手数 (Initial Lot)。
+       - **完全由大模型决定**: 必须基于 M15/M5 的市场情绪 (Sentiment) 和 SMC 结构置信度，计算出精确的首单手数 (Initial Lot)。
        - **禁止固定手数**: 严禁无脑使用 0.01。如果机会好，应该重仓 (e.g., 0.5, 1.0, etc.)；如果风险大，轻仓或空仓。
     2. **加仓 (Adding)**: 
        - **允许顺势金字塔加仓 (Pyramiding)**: 仅当价格向有利方向移动至少 1N (ATR) 且出现新的 SMC 结构突破时，才允许加仓。
@@ -441,7 +441,7 @@ class QwenClient:
          - **核心要求**: 对于每个品种的趋势交易，必须根据以下所有维度进行综合分析和自我学习，给出一个**最优的美元数值**：
            1. **市场情绪 (Sentiment)**: 如果情绪极度乐观(Bullish)且方向做多，大幅上调 TP；反之则保守。
            2. **结构趋势 (Structure)**: 
-              - **强趋势 (Trend Surfing)**: 若市场处于单边强趋势 (如 H1/H4 结构破坏且 MA 发散)，**必须大幅上调 TP** (例如正常值的 2-3 倍)，防止只吃了一小部分利润就过早离场。
+              - **强趋势 (Trend Surfing)**: 若市场处于单边强趋势 (如 M5 结构破坏且 MA 发散)，**必须大幅上调 TP** (例如正常值的 2-3 倍)，防止只吃了一小部分利润就过早离场。
               - **震荡/逆势**: 目标应保守，快速落袋为安。
            3. **高级算法 (Algo Metrics)**: 
               - 参考 `technical_signals` 中的 **EMA/HA** 数据。
