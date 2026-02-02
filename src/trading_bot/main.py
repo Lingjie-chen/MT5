@@ -1229,12 +1229,21 @@ class SymbolTrader:
                  trade_type = "buy" # Market Buy
                  price = tick.ask
              
+             # [FIX] Extract Position Size from Top-Level Strategy
+             suggested_lot = 0.0
+             if self.latest_strategy and 'position_size' in self.latest_strategy:
+                 try:
+                     suggested_lot = float(self.latest_strategy['position_size'])
+                     logger.info(f"Extracted Position Size from LLM: {suggested_lot}")
+                 except:
+                     suggested_lot = 0.0
+
              # If explicit_sl/tp not set by now (from strategy), try to extract from entry_params if present
              if entry_params:
                  if not explicit_sl and 'sl' in entry_params: explicit_sl = float(entry_params['sl'])
                  if not explicit_tp and 'tp' in entry_params: explicit_tp = float(entry_params['tp'])
                  
-                 # Extract suggested lot from entry_params if available
+                 # Extract suggested lot from entry_params if available (Override if present)
                  if 'lots' in entry_params:
                      try: suggested_lot = float(entry_params['lots'])
                      except: pass
