@@ -3433,508 +3433,509 @@ class SymbolTrader:
                     df = self.get_market_data(600) 
                     
                     if df is not None:
-                        # Fetch Multi-Timeframe Data (H1, M15)
-                        rates_h1 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_H1, 0, 200)
-                        rates_m15 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_M15, 0, 100)
-                        
-                        df_h1 = pd.DataFrame(rates_h1) if rates_h1 is not None else pd.DataFrame()
-                        df_m15 = pd.DataFrame(rates_m15) if rates_m15 is not None else pd.DataFrame()
-
-                        if not df_h1.empty: 
-                            df_h1['time'] = pd.to_datetime(df_h1['time'], unit='s')
-                            if 'tick_volume' in df_h1: df_h1.rename(columns={'tick_volume': 'volume'}, inplace=True)
-                        if not df_m15.empty: 
-                            df_m15['time'] = pd.to_datetime(df_m15['time'], unit='s')
-                            if 'tick_volume' in df_m15: df_m15.rename(columns={'tick_volume': 'volume'}, inplace=True)
-
-                        # 保存市场数据到DB
-                        self.db_manager.save_market_data(df, self.symbol, self.tf_name)
-                        
-                        # 更新 Grid Strategy 数据
-                        self.grid_strategy.update_market_data(df)
-                        
-                        # 使用 data_processor 计算指标
-                        processor = MT5DataProcessor()
-                        df_features = processor.generate_features(df)
-                        
-                        # Calculate features for H1/M15
-                        df_features_h1 = processor.generate_features(df_h1) if not df_h1.empty else pd.DataFrame()
-                        df_features_m15 = processor.generate_features(df_m15) if not df_m15.empty else pd.DataFrame()
-                        
-                        # Helper to safely get latest dict
-                        def get_latest_safe(dframe):
-                            if dframe.empty: return {}
-                            return dframe.iloc[-1].to_dict()
-
-                        feat_h1 = get_latest_safe(df_features_h1)
-                        feat_m15 = get_latest_safe(df_features_m15)
-
-                        # 3. 调用 AI 与高级分析
-                        # 构建市场快照
-                        current_price = df.iloc[-1]
-                        latest_features = df_features.iloc[-1].to_dict()
-                        
-                        # 获取账户资金信息
-                        account_info_dict = {}
                         try:
-                            acc = mt5.account_info()
-                            if acc:
-                                account_info_dict = {
-                                    "balance": float(acc.balance),
-                                    "equity": float(acc.equity),
-                                    "margin": float(acc.margin),
-                                    "margin_free": float(acc.margin_free),
-                                    "leverage": int(acc.leverage), # [NEW] Pass leverage to AI
-                                    "available_balance": float(acc.balance) 
-                                }
-                        except Exception as e:
-                            logger.error(f"Error fetching account info: {e}")
+                            # Fetch Multi-Timeframe Data (H1, M15)
+                            rates_h1 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_H1, 0, 200)
+                            rates_m15 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_M15, 0, 100)
+                        
+                            df_h1 = pd.DataFrame(rates_h1) if rates_h1 is not None else pd.DataFrame()
+                            df_m15 = pd.DataFrame(rates_m15) if rates_m15 is not None else pd.DataFrame()
 
-                        # [NEW] Fetch Symbol Info for AI
-                        symbol_details = {}
-                        try:
-                            s_info = mt5.symbol_info(self.symbol)
-                            if s_info:
-                                symbol_details = {
-                                    "trade_contract_size": float(s_info.trade_contract_size),
-                                    "volume_min": float(s_info.volume_min),
-                                    "volume_max": float(s_info.volume_max),
-                                    "volume_step": float(s_info.volume_step),
-                                    "point": float(s_info.point),
-                                    "digits": int(s_info.digits)
-                                }
-                        except Exception as e:
-                            logger.error(f"Error fetching symbol info for AI: {e}")
+                            if not df_h1.empty: 
+                                df_h1['time'] = pd.to_datetime(df_h1['time'], unit='s')
+                                if 'tick_volume' in df_h1: df_h1.rename(columns={'tick_volume': 'volume'}, inplace=True)
+                            if not df_m15.empty: 
+                                df_m15['time'] = pd.to_datetime(df_m15['time'], unit='s')
+                                if 'tick_volume' in df_m15: df_m15.rename(columns={'tick_volume': 'volume'}, inplace=True)
 
-                        market_snapshot = {
-                            "symbol": self.symbol,
-                            "symbol_details": symbol_details, # [NEW] Inject Symbol Details
-                            "account_info": account_info_dict,
-                            "timeframe": self.tf_name,
-                            "prices": {
-                                "open": float(current_price['open']),
-                                "high": float(current_price['high']),
-                                "low": float(current_price['low']),
-                                "close": float(current_price['close']),
-                                "volume": int(current_price['volume'])
-                            },
-                            "indicators": {
-                                "rsi": float(latest_features.get('rsi', 50)),
-                                "atr": float(latest_features.get('atr', 0)),
-                                "ema_fast": float(latest_features.get('ema_fast', 0)),
-                                "ema_slow": float(latest_features.get('ema_slow', 0)),
-                                "volatility": float(latest_features.get('volatility', 0))
-                            },
-                            "multi_tf_data": {
-                                "H1": {
-                                    "close": float(feat_h1.get('close', 0)),
-                                    "rsi": float(feat_h1.get('rsi', 50)),
-                                    "ema_fast": float(feat_h1.get('ema_fast', 0)),
-                                    "ema_slow": float(feat_h1.get('ema_slow', 0)),
-                                    "trend": "bullish" if feat_h1.get('ema_fast', 0) > feat_h1.get('ema_slow', 0) else "bearish"
+                            # 保存市场数据到DB
+                            self.db_manager.save_market_data(df, self.symbol, self.tf_name)
+                        
+                            # 更新 Grid Strategy 数据
+                            self.grid_strategy.update_market_data(df)
+                        
+                            # 使用 data_processor 计算指标
+                            processor = MT5DataProcessor()
+                            df_features = processor.generate_features(df)
+                        
+                            # Calculate features for H1/M15
+                            df_features_h1 = processor.generate_features(df_h1) if not df_h1.empty else pd.DataFrame()
+                            df_features_m15 = processor.generate_features(df_m15) if not df_m15.empty else pd.DataFrame()
+                        
+                            # Helper to safely get latest dict
+                            def get_latest_safe(dframe):
+                                if dframe.empty: return {}
+                                return dframe.iloc[-1].to_dict()
+
+                            feat_h1 = get_latest_safe(df_features_h1)
+                            feat_m15 = get_latest_safe(df_features_m15)
+
+                            # 3. 调用 AI 与高级分析
+                            # 构建市场快照
+                            current_price = df.iloc[-1]
+                            latest_features = df_features.iloc[-1].to_dict()
+                        
+                            # 获取账户资金信息
+                            account_info_dict = {}
+                            try:
+                                acc = mt5.account_info()
+                                if acc:
+                                    account_info_dict = {
+                                        "balance": float(acc.balance),
+                                        "equity": float(acc.equity),
+                                        "margin": float(acc.margin),
+                                        "margin_free": float(acc.margin_free),
+                                        "leverage": int(acc.leverage), # [NEW] Pass leverage to AI
+                                        "available_balance": float(acc.balance) 
+                                    }
+                            except Exception as e:
+                                logger.error(f"Error fetching account info: {e}")
+
+                            # [NEW] Fetch Symbol Info for AI
+                            symbol_details = {}
+                            try:
+                                s_info = mt5.symbol_info(self.symbol)
+                                if s_info:
+                                    symbol_details = {
+                                        "trade_contract_size": float(s_info.trade_contract_size),
+                                        "volume_min": float(s_info.volume_min),
+                                        "volume_max": float(s_info.volume_max),
+                                        "volume_step": float(s_info.volume_step),
+                                        "point": float(s_info.point),
+                                        "digits": int(s_info.digits)
+                                    }
+                            except Exception as e:
+                                logger.error(f"Error fetching symbol info for AI: {e}")
+
+                            market_snapshot = {
+                                "symbol": self.symbol,
+                                "symbol_details": symbol_details, # [NEW] Inject Symbol Details
+                                "account_info": account_info_dict,
+                                "timeframe": self.tf_name,
+                                "prices": {
+                                    "open": float(current_price['open']),
+                                    "high": float(current_price['high']),
+                                    "low": float(current_price['low']),
+                                    "close": float(current_price['close']),
+                                    "volume": int(current_price['volume'])
                                 },
-                                "M15": {
-                                    "close": float(feat_m15.get('close', 0)),
-                                    "rsi": float(feat_m15.get('rsi', 50)),
-                                    "ema_fast": float(feat_m15.get('ema_fast', 0)),
-                                    "ema_slow": float(feat_m15.get('ema_slow', 0)),
-                                    "trend": "bullish" if feat_m15.get('ema_fast', 0) > feat_m15.get('ema_slow', 0) else "bearish"
+                                "indicators": {
+                                    "rsi": float(latest_features.get('rsi', 50)),
+                                    "atr": float(latest_features.get('atr', 0)),
+                                    "ema_fast": float(latest_features.get('ema_fast', 0)),
+                                    "ema_slow": float(latest_features.get('ema_slow', 0)),
+                                    "volatility": float(latest_features.get('volatility', 0))
+                                },
+                                "multi_tf_data": {
+                                    "H1": {
+                                        "close": float(feat_h1.get('close', 0)),
+                                        "rsi": float(feat_h1.get('rsi', 50)),
+                                        "ema_fast": float(feat_h1.get('ema_fast', 0)),
+                                        "ema_slow": float(feat_h1.get('ema_slow', 0)),
+                                        "trend": "bullish" if feat_h1.get('ema_fast', 0) > feat_h1.get('ema_slow', 0) else "bearish"
+                                    },
+                                    "M15": {
+                                        "close": float(feat_m15.get('close', 0)),
+                                        "rsi": float(feat_m15.get('rsi', 50)),
+                                        "ema_fast": float(feat_m15.get('ema_fast', 0)),
+                                        "ema_slow": float(feat_m15.get('ema_slow', 0)),
+                                        "trend": "bullish" if feat_m15.get('ema_fast', 0) > feat_m15.get('ema_slow', 0) else "bearish"
+                                    }
                                 }
                             }
-                        }
                         
-                        # --- 3.1 & 3.2 Advanced Analysis (Cached after first run) ---
-                        # [Optimization] Skip heavy analysis after first run, use cached context
-                        if not self.first_analysis_done:
-                            logger.info("⚡ Executing Full Advanced Analysis (First Run)...")
+                            # --- 3.1 & 3.2 Advanced Analysis (Cached after first run) ---
+                            # [Optimization] Skip heavy analysis after first run, use cached context
+                            if not self.first_analysis_done:
+                                logger.info("⚡ Executing Full Advanced Analysis (First Run)...")
                             
-                            # --- 3.1 CRT 分析 ---
-                            crt_result = self.crt_analyzer.analyze(self.symbol, current_price, current_bar_time)
-                            logger.info(f"CRT 分析: {crt_result['signal']} ({crt_result['reason']})")
+                                # --- 3.1 CRT 分析 ---
+                                crt_result = self.crt_analyzer.analyze(self.symbol, current_price, current_bar_time)
+                                logger.info(f"CRT 分析: {crt_result['signal']} ({crt_result['reason']})")
                             
-                            # --- 3.2.1 多时间周期分析 (MTF) ---
-                            mtf_result = self.mtf_analyzer.analyze(self.symbol, current_price, current_bar_time)
-                            logger.info(f"MTF 分析: {mtf_result['signal']} ({mtf_result['reason']})")
+                                # --- 3.2.1 多时间周期分析 (MTF) ---
+                                mtf_result = self.mtf_analyzer.analyze(self.symbol, current_price, current_bar_time)
+                                logger.info(f"MTF 分析: {mtf_result['signal']} ({mtf_result['reason']})")
                             
-                            # --- 3.2.2 高级技术分析 (CCI/RVGI/IFVG) ---
-                            st_params = getattr(self, 'short_term_params', {})
-                            adv_result = self.advanced_adapter.analyze_full(df, params=st_params)
-                            adv_signal = "neutral"
-                            if adv_result:
-                                adv_signal = adv_result['signal_info']['signal']
-                                logger.info(f"高级技术分析: {adv_signal} (强度: {adv_result['signal_info']['strength']})")
+                                # --- 3.2.2 高级技术分析 (CCI/RVGI/IFVG) ---
+                                st_params = getattr(self, 'short_term_params', {})
+                                adv_result = self.advanced_adapter.analyze_full(df, params=st_params)
+                                adv_signal = "neutral"
+                                if adv_result:
+                                    adv_signal = adv_result['signal_info']['signal']
+                                    logger.info(f"高级技术分析: {adv_signal} (强度: {adv_result['signal_info']['strength']})")
                                 
-                            # --- 3.2.3 SMC 分析 ---
-                            smc_result = self.smc_analyzer.analyze(df, self.symbol)
-                            logger.info(f"SMC 结构: {smc_result['structure']} (信号: {smc_result['signal']})")
+                                # --- 3.2.3 SMC 分析 ---
+                                smc_result = self.smc_analyzer.analyze(df, self.symbol)
+                                logger.info(f"SMC 结构: {smc_result['structure']} (信号: {smc_result['signal']})")
                             
-                            # --- 3.2.4 IFVG 分析 ---
-                            if adv_result and 'ifvg' in adv_result:
-                                ifvg_result = adv_result['ifvg']
+                                # --- 3.2.4 IFVG 分析 ---
+                                if adv_result and 'ifvg' in adv_result:
+                                    ifvg_result = adv_result['ifvg']
+                                else:
+                                    ifvg_result = {"signal": "hold", "strength": 0, "reasons": [], "active_zones": []}
+                                logger.info(f"IFVG 分析: {ifvg_result['signal']} (Strength: {ifvg_result['strength']})")
+
+                                # --- 3.2.5 RVGI+CCI 分析 ---
+                                if adv_result and 'rvgi_cci' in adv_result:
+                                    rvgi_cci_result = adv_result['rvgi_cci']
+                                else:
+                                    rvgi_cci_result = {"signal": "hold", "strength": 0, "reasons": []}
+                                logger.info(f"RVGI+CCI 分析: {rvgi_cci_result['signal']} (Strength: {rvgi_cci_result['strength']})")
+                            
+                                # --- 3.2.5.b CandleSmoothing EMA Strategy ---
+                                ema_ha_result = self.analyze_ema_ha_strategy(df)
+                                logger.info(f"EMA-HA 策略: {ema_ha_result['signal']}")
+
+                                # --- 3.2.6 Grid Strategy Analysis ---
+                                # Extract SMC and IFVG levels for Grid
+                                smc_grid_data = {'ob': [], 'fvg': []}
+                            
+                                # From IFVG
+                                if 'active_zones' in ifvg_result:
+                                    for z in ifvg_result['active_zones']:
+                                        z_type = 'bearish' if z['type'] == 'supply' else 'bullish'
+                                        smc_grid_data['ob'].append({'top': z['top'], 'bottom': z['bottom'], 'type': z_type})
+                            
+                                # From SMC Analyzer
+                                if 'details' in smc_result:
+                                    if 'ob' in smc_result['details'] and 'active_obs' in smc_result['details']['ob']:
+                                        for ob in smc_result['details']['ob']['active_obs']:
+                                            smc_grid_data['ob'].append({'top': ob['top'], 'bottom': ob['bottom'], 'type': ob['type']})
+                                    if 'fvg' in smc_result['details'] and 'active_fvgs' in smc_result['details']['fvg']:
+                                        for fvg in smc_result['details']['fvg']['active_fvgs']:
+                                            smc_grid_data['fvg'].append({'top': fvg['top'], 'bottom': fvg['bottom'], 'type': fvg['type']})
+
+                                self.grid_strategy.update_smc_levels(smc_grid_data)
+                            
+                                grid_signal = self.grid_strategy.get_entry_signal(float(current_price['close']))
+                                logger.info(f"Grid Kalman Signal: {grid_signal}")
+                            
+                                # Cache Results
+                                self.cached_analysis = {
+                                    'crt': crt_result,
+                                    'mtf': mtf_result,
+                                    'adv': adv_result,
+                                    'smc': smc_result,
+                                    'ifvg': ifvg_result,
+                                    'rvgi_cci': rvgi_cci_result,
+                                    'ema_ha': ema_ha_result,
+                                    'grid_signal': grid_signal
+                                }
+                                self.first_analysis_done = True
+                            
                             else:
-                                ifvg_result = {"signal": "hold", "strength": 0, "reasons": [], "active_zones": []}
-                            logger.info(f"IFVG 分析: {ifvg_result['signal']} (Strength: {ifvg_result['strength']})")
-
-                            # --- 3.2.5 RVGI+CCI 分析 ---
-                            if adv_result and 'rvgi_cci' in adv_result:
-                                rvgi_cci_result = adv_result['rvgi_cci']
-                            else:
-                                rvgi_cci_result = {"signal": "hold", "strength": 0, "reasons": []}
-                            logger.info(f"RVGI+CCI 分析: {rvgi_cci_result['signal']} (Strength: {rvgi_cci_result['strength']})")
+                                # Load from Cache
+                                logger.info("⚡ Using Cached Advanced Analysis (Skipping heavy computation)")
+                                crt_result = self.cached_analysis.get('crt')
+                                mtf_result = self.cached_analysis.get('mtf')
+                                adv_result = self.cached_analysis.get('adv')
+                                smc_result = self.cached_analysis.get('smc')
+                                ifvg_result = self.cached_analysis.get('ifvg')
+                                rvgi_cci_result = self.cached_analysis.get('rvgi_cci')
+                                ema_ha_result = self.cached_analysis.get('ema_ha')
+                                grid_signal = self.cached_analysis.get('grid_signal')
                             
-                            # --- 3.2.5.b CandleSmoothing EMA Strategy ---
-                            ema_ha_result = self.analyze_ema_ha_strategy(df)
-                            logger.info(f"EMA-HA 策略: {ema_ha_result['signal']}")
-
-                            # --- 3.2.6 Grid Strategy Analysis ---
-                            # Extract SMC and IFVG levels for Grid
-                            smc_grid_data = {'ob': [], 'fvg': []}
+                                # Restore adv_signal
+                                adv_signal = "neutral"
+                                if adv_result:
+                                    adv_signal = adv_result['signal_info']['signal']
                             
-                            # From IFVG
-                            if 'active_zones' in ifvg_result:
-                                for z in ifvg_result['active_zones']:
-                                    z_type = 'bearish' if z['type'] == 'supply' else 'bullish'
-                                    smc_grid_data['ob'].append({'top': z['top'], 'bottom': z['bottom'], 'type': z_type})
-                            
-                            # From SMC Analyzer
-                            if 'details' in smc_result:
-                                if 'ob' in smc_result['details'] and 'active_obs' in smc_result['details']['ob']:
-                                    for ob in smc_result['details']['ob']['active_obs']:
-                                        smc_grid_data['ob'].append({'top': ob['top'], 'bottom': ob['bottom'], 'type': ob['type']})
-                                if 'fvg' in smc_result['details'] and 'active_fvgs' in smc_result['details']['fvg']:
-                                    for fvg in smc_result['details']['fvg']['active_fvgs']:
-                                        smc_grid_data['fvg'].append({'top': fvg['top'], 'bottom': fvg['bottom'], 'type': fvg['type']})
-
-                            self.grid_strategy.update_smc_levels(smc_grid_data)
-                            
-                            grid_signal = self.grid_strategy.get_entry_signal(float(current_price['close']))
-                            logger.info(f"Grid Kalman Signal: {grid_signal}")
-                            
-                            # Cache Results
-                            self.cached_analysis = {
-                                'crt': crt_result,
-                                'mtf': mtf_result,
-                                'adv': adv_result,
-                                'smc': smc_result,
-                                'ifvg': ifvg_result,
-                                'rvgi_cci': rvgi_cci_result,
-                                'ema_ha': ema_ha_result,
-                                'grid_signal': grid_signal
+                                # Ensure SMC levels are still present in grid strategy (they persist in the object)
+                                # Update Grid Signal with CURRENT price even if levels are old?
+                                # User said "Directly call Large Model", implies skip everything.
+                                # So we keep the old grid signal too.
+                        
+                            grid_status = {
+                                "active": self.grid_strategy.long_pos_count > 0 or self.grid_strategy.short_pos_count > 0,
+                                "longs": self.grid_strategy.long_pos_count,
+                                "shorts": self.grid_strategy.short_pos_count,
+                                "kalman_price": self.grid_strategy.kalman_value
                             }
-                            self.first_analysis_done = True
-                            
-                        else:
-                            # Load from Cache
-                            logger.info("⚡ Using Cached Advanced Analysis (Skipping heavy computation)")
-                            crt_result = self.cached_analysis.get('crt')
-                            mtf_result = self.cached_analysis.get('mtf')
-                            adv_result = self.cached_analysis.get('adv')
-                            smc_result = self.cached_analysis.get('smc')
-                            ifvg_result = self.cached_analysis.get('ifvg')
-                            rvgi_cci_result = self.cached_analysis.get('rvgi_cci')
-                            ema_ha_result = self.cached_analysis.get('ema_ha')
-                            grid_signal = self.cached_analysis.get('grid_signal')
-                            
-                            # Restore adv_signal
-                            adv_signal = "neutral"
-                            if adv_result:
-                                adv_signal = adv_result['signal_info']['signal']
-                            
-                            # Ensure SMC levels are still present in grid strategy (they persist in the object)
-                            # Update Grid Signal with CURRENT price even if levels are old?
-                            # User said "Directly call Large Model", implies skip everything.
-                            # So we keep the old grid signal too.
-                        
-                        grid_status = {
-                            "active": self.grid_strategy.long_pos_count > 0 or self.grid_strategy.short_pos_count > 0,
-                            "longs": self.grid_strategy.long_pos_count,
-                            "shorts": self.grid_strategy.short_pos_count,
-                            "kalman_price": self.grid_strategy.kalman_value
-                        }
 
-                        # 准备优化器池信息
-                        optimizer_info = {
-                            "available_optimizers": list(self.optimizers.keys()),
-                            "active_optimizer": self.active_optimizer_name,
-                            "last_optimization_score": self.optimizers[self.active_optimizer_name].best_score if self.optimizers[self.active_optimizer_name].best_score > -90000 else None,
-                            "descriptions": {
-                                "WOAm": "Whale Optimization Algorithm (Modified)",
-                                "TETA": "Time Evolution Travel Algorithm"
+                            # 准备优化器池信息
+                            optimizer_info = {
+                                "available_optimizers": list(self.optimizers.keys()),
+                                "active_optimizer": self.active_optimizer_name,
+                                "last_optimization_score": self.optimizers[self.active_optimizer_name].best_score if self.optimizers[self.active_optimizer_name].best_score > -90000 else None,
+                                "descriptions": {
+                                    "WOAm": "Whale Optimization Algorithm (Modified)",
+                                    "TETA": "Time Evolution Travel Algorithm"
+                                }
                             }
-                        }
 
-                        # --- 3.3 Qwen 策略分析 (Sole Decision Maker) ---
-                        logger.info("正在调用 Qwen 生成策略...")
+                            # --- 3.3 Qwen 策略分析 (Sole Decision Maker) ---
+                            logger.info("正在调用 Qwen 生成策略...")
                         
-                        # 获取历史交易绩效 (MFE/MAE) - 优先尝试远程 PostgreSQL 数据库 (Self-Learning)
-                        trade_stats = []
-                        try:
-                            # 尝试从远程获取 (Remote Storage is initialized in DatabaseManager)
-                            if self.db_manager.remote_storage.enabled:
-                                logger.info("Fetching trade history from Remote PostgreSQL for Self-Learning...")
-                                remote_trades = self.db_manager.remote_storage.get_trades(limit=None)
-                                if remote_trades:
-                                    trade_stats = remote_trades
-                                    logger.info(f"Successfully loaded {len(trade_stats)} trades from Remote DB.")
-                        except Exception as e:
-                            logger.error(f"Failed to fetch remote trades: {e}")
+                            # 获取历史交易绩效 (MFE/MAE) - 优先尝试远程 PostgreSQL 数据库 (Self-Learning)
+                            trade_stats = []
+                            try:
+                                # 尝试从远程获取 (Remote Storage is initialized in DatabaseManager)
+                                if self.db_manager.remote_storage.enabled:
+                                    logger.info("Fetching trade history from Remote PostgreSQL for Self-Learning...")
+                                    remote_trades = self.db_manager.remote_storage.get_trades(limit=None)
+                                    if remote_trades:
+                                        trade_stats = remote_trades
+                                        logger.info(f"Successfully loaded {len(trade_stats)} trades from Remote DB.")
+                            except Exception as e:
+                                logger.error(f"Failed to fetch remote trades: {e}")
 
-                        if not trade_stats:
-                            # Fallback to local Master DB
-                            trade_stats = self.master_db_manager.get_trade_performance_stats(limit=100)
+                            if not trade_stats:
+                                # Fallback to local Master DB
+                                trade_stats = self.master_db_manager.get_trade_performance_stats(limit=100)
                         
-                        if not trade_stats:
-                             # Fallback to local Symbol DB
-                             trade_stats = self.db_manager.get_trade_performance_stats(symbol=self.symbol, limit=50)
+                            if not trade_stats:
+                                 # Fallback to local Symbol DB
+                                 trade_stats = self.db_manager.get_trade_performance_stats(symbol=self.symbol, limit=50)
                         
-                        # 获取当前持仓状态
-                        positions = mt5.positions_get(symbol=self.symbol)
-                        current_positions_list = []
-                        if positions:
-                            for pos in positions:
-                                cur_mfe, cur_mae = self.get_position_stats(pos)
-                                r_multiple = 0.0
-                                if pos.sl > 0:
-                                    risk_dist = abs(pos.price_open - pos.sl)
-                                    if risk_dist > 0:
-                                        profit_dist = (pos.price_current - pos.price_open) if pos.type == mt5.POSITION_TYPE_BUY else (pos.price_open - pos.price_current)
-                                        r_multiple = profit_dist / risk_dist
+                            # 获取当前持仓状态
+                            positions = mt5.positions_get(symbol=self.symbol)
+                            current_positions_list = []
+                            if positions:
+                                for pos in positions:
+                                    cur_mfe, cur_mae = self.get_position_stats(pos)
+                                    r_multiple = 0.0
+                                    if pos.sl > 0:
+                                        risk_dist = abs(pos.price_open - pos.sl)
+                                        if risk_dist > 0:
+                                            profit_dist = (pos.price_current - pos.price_open) if pos.type == mt5.POSITION_TYPE_BUY else (pos.price_open - pos.price_current)
+                                            r_multiple = profit_dist / risk_dist
                                 
-                                current_positions_list.append({
-                                    "ticket": pos.ticket,
-                                    "type": "buy" if pos.type == mt5.POSITION_TYPE_BUY else "sell",
-                                    "volume": pos.volume,
-                                    "open_price": pos.price_open,
-                                    "current_price": pos.price_current,
-                                    "profit": pos.profit,
-                                    "sl": pos.sl,
-                                    "tp": pos.tp,
-                                    "mfe_pct": cur_mfe,
-                                    "mae_pct": cur_mae,
-                                    "r_multiple": r_multiple
-                                })
+                                    current_positions_list.append({
+                                        "ticket": pos.ticket,
+                                        "type": "buy" if pos.type == mt5.POSITION_TYPE_BUY else "sell",
+                                        "volume": pos.volume,
+                                        "open_price": pos.price_open,
+                                        "current_price": pos.price_current,
+                                        "profit": pos.profit,
+                                        "sl": pos.sl,
+                                        "tp": pos.tp,
+                                        "mfe_pct": cur_mfe,
+                                        "mae_pct": cur_mae,
+                                        "r_multiple": r_multiple
+                                    })
                         
-                        # 准备技术信号摘要
-                        technical_signals = {
-                            "crt": crt_result,
-                            "smc": smc_result['signal'],
-                            "grid_strategy": {
-                                "signal": grid_signal,
-                                "status": grid_status,
-                                "config": self.grid_strategy.get_config()
-                            },
-                            "mtf": mtf_result['signal'], 
-                            "ifvg": ifvg_result['signal'],
-                            "rvgi_cci": rvgi_cci_result['signal'],
-                            "ema_ha": ema_ha_result, # Pass full result including values
-                            "performance_stats": trade_stats
-                        }
+                            # 准备技术信号摘要
+                            technical_signals = {
+                                "crt": crt_result,
+                                "smc": smc_result['signal'],
+                                "grid_strategy": {
+                                    "signal": grid_signal,
+                                    "status": grid_status,
+                                    "config": self.grid_strategy.get_config()
+                                },
+                                "mtf": mtf_result['signal'], 
+                                "ifvg": ifvg_result['signal'],
+                                "rvgi_cci": rvgi_cci_result['signal'],
+                                "ema_ha": ema_ha_result, # Pass full result including values
+                                "performance_stats": trade_stats
+                            }
                         
-                        # Qwen Sentiment Analysis
-                        # [OPTIMIZED] Sentiment is now derived directly from Strategy Logic to ensure consistency
-                        qwen_sent_score = 0
-                        qwen_sent_label = 'neutral'
-                        # Separate call removed to avoid inconsistency with Strategy Content
+                            # Qwen Sentiment Analysis
+                            # [OPTIMIZED] Sentiment is now derived directly from Strategy Logic to ensure consistency
+                            qwen_sent_score = 0
+                            qwen_sent_label = 'neutral'
+                            # Separate call removed to avoid inconsistency with Strategy Content
                         
-                        # Call Qwen
-                        # Removed DeepSeek structure, pass simplified structure
-                        dummy_structure = {"market_state": "Analyzed by Qwen", "preliminary_signal": "neutral"}
+                            # Call Qwen
+                            # Removed DeepSeek structure, pass simplified structure
+                            dummy_structure = {"market_state": "Analyzed by Qwen", "preliminary_signal": "neutral"}
                         
-                        strategy = self.qwen_client.optimize_strategy_logic(
-                            dummy_structure, # Qwen will ignore this or treat as base
-                            market_snapshot, 
-                            technical_signals=technical_signals, 
-                            current_positions=current_positions_list,
-                            performance_stats=trade_stats,
-                            previous_analysis=self.latest_strategy
-                        )
-                        
-                        if not strategy:
-                            logger.error("❌ LLM Analysis Failed (No Strategy Returned). Skipping cycle.")
-                            time.sleep(5)
-                            continue
-
-                        self.latest_strategy = strategy
-                        self.last_llm_time = time.time()
-                        
-                        # [NEW] Extract Sentiment from Strategy for Consistency
-                        if 'market_analysis' in strategy:
-                            ma = strategy['market_analysis']
-                            if 'sentiment_analysis' in ma:
-                                sa = ma['sentiment_analysis']
-                                qwen_sent_label = sa.get('sentiment', 'neutral')
-                                qwen_sent_score = sa.get('sentiment_score', 0)
-                        
-                        # --- [NEW] Update Grid Strategy Dynamic Params (Basket TP & Lock Trigger) ---
-                        # Ensure AI Dynamic TP is applied
-                        pos_mgmt = strategy.get('position_management', {})
-                        if pos_mgmt:
-                            raw_basket_tp = pos_mgmt.get('dynamic_basket_tp')
-                            
-                            # User Requirement: Disable trigger locked entirely
-                            lock_trigger = 0.0 
-                            # lock_trigger = pos_mgmt.get('lock_profit_trigger')
-                            
-                            trailing_config = {} # Disable trailing config as well
-                            # trailing_config = pos_mgmt.get('trailing_stop_config')
-                            
-                            # [RESTORED] Smart Basket TP Calculation
-                            # Get ATR
-                            atr_current = float(latest_features.get('atr', 0))
-                            # Get Regime
-                            regime_current = adv_result['regime']['regime'] if adv_result and 'regime' in adv_result else 'ranging'
-                            
-                            smart_basket_tp = self.calculate_smart_basket_tp(
-                                raw_basket_tp,
-                                atr_current,
-                                regime_current,
-                                smc_result,
-                                current_positions_list,
-                                performance_stats=trade_stats
+                            strategy = self.qwen_client.optimize_strategy_logic(
+                                dummy_structure, # Qwen will ignore this or treat as base
+                                market_snapshot, 
+                                technical_signals=technical_signals, 
+                                current_positions=current_positions_list,
+                                performance_stats=trade_stats,
+                                previous_analysis=self.latest_strategy
                             )
+                        
+                            if not strategy:
+                                logger.error("❌ LLM Analysis Failed (No Strategy Returned). Skipping cycle.")
+                                time.sleep(5)
+                                continue
+
+                            self.latest_strategy = strategy
+                            self.last_llm_time = time.time()
+                        
+                            # [NEW] Extract Sentiment from Strategy for Consistency
+                            if 'market_analysis' in strategy:
+                                ma = strategy['market_analysis']
+                                if 'sentiment_analysis' in ma:
+                                    sa = ma['sentiment_analysis']
+                                    qwen_sent_label = sa.get('sentiment', 'neutral')
+                                    qwen_sent_score = sa.get('sentiment_score', 0)
+                        
+                            # --- [NEW] Update Grid Strategy Dynamic Params (Basket TP & Lock Trigger) ---
+                            # Ensure AI Dynamic TP is applied
+                            pos_mgmt = strategy.get('position_management', {})
+                            if pos_mgmt:
+                                raw_basket_tp = pos_mgmt.get('dynamic_basket_tp')
                             
-                            if smart_basket_tp or lock_trigger or trailing_config:
+                                # User Requirement: Disable trigger locked entirely
+                                lock_trigger = 0.0 
+                                # lock_trigger = pos_mgmt.get('lock_profit_trigger')
+                            
+                                trailing_config = {} # Disable trailing config as well
+                                # trailing_config = pos_mgmt.get('trailing_stop_config')
+                            
+                                # [RESTORED] Smart Basket TP Calculation
+                                # Get ATR
+                                atr_current = float(latest_features.get('atr', 0))
+                                # Get Regime
+                                regime_current = adv_result['regime']['regime'] if adv_result and 'regime' in adv_result else 'ranging'
+                            
+                                smart_basket_tp = self.calculate_smart_basket_tp(
+                                    raw_basket_tp,
+                                    atr_current,
+                                    regime_current,
+                                    smc_result,
+                                    current_positions_list,
+                                    performance_stats=trade_stats
+                                )
+                            
+                                if smart_basket_tp or lock_trigger or trailing_config:
+                                    try:
+                                        self.grid_strategy.update_dynamic_params(
+                                            basket_tp=smart_basket_tp, 
+                                            lock_trigger=lock_trigger,
+                                            trailing_config=trailing_config
+                                        )
+                                        logger.info(f"Applied AI Dynamic Params: BasketTP={smart_basket_tp:.2f} (LLM:{raw_basket_tp}), LockTrigger={lock_trigger}, Trailing={trailing_config}")
+                                    except Exception as e:
+                                        logger.error(f"Failed to update dynamic params: {e}")
+
+                            # Update lot_size from Qwen Strategy
+                            if 'position_size' in strategy:
                                 try:
-                                    self.grid_strategy.update_dynamic_params(
-                                        basket_tp=smart_basket_tp, 
-                                        lock_trigger=lock_trigger,
-                                        trailing_config=trailing_config
-                                    )
-                                    logger.info(f"Applied AI Dynamic Params: BasketTP={smart_basket_tp:.2f} (LLM:{raw_basket_tp}), LockTrigger={lock_trigger}, Trailing={trailing_config}")
+                                    qwen_lot = float(strategy['position_size'])
+                                    if qwen_lot > 0:
+                                        # [FIX] Validate against Symbol Info (Min/Max/Step)
+                                        symbol_info = mt5.symbol_info(self.symbol)
+                                        if symbol_info:
+                                            step = symbol_info.volume_step
+                                            min_vol = symbol_info.volume_min
+                                            max_vol = symbol_info.volume_max
+                                        
+                                            # 1. Normalize to step
+                                            if step > 0:
+                                                qwen_lot = round(qwen_lot / step) * step
+                                                qwen_lot = round(qwen_lot, 2) # Safety round
+                                        
+                                            # 2. Clamp to limits
+                                            if qwen_lot < min_vol:
+                                                logger.warning(f"Qwen Lot {qwen_lot} < Min {min_vol}. Adjusting to Min.")
+                                                qwen_lot = min_vol
+                                            elif qwen_lot > max_vol:
+                                                qwen_lot = max_vol
+                                    
+                                        self.lot_size = qwen_lot
+                                        # Update grid strategy lot size too for consistency
+                                        if hasattr(self, 'grid_strategy'):
+                                            self.grid_strategy.lot = qwen_lot
+                                    
+                                        # Suppress log for non-trade actions as per user request
+                                        # We check strategy['action'] here because qw_action is defined later
+                                        temp_action = strategy.get('action', 'neutral').lower()
+                                        if temp_action not in ['hold', 'wait', 'close', 'neutral']:
+                                            logger.info(f"Updated lot size from Qwen: {self.lot_size}")
                                 except Exception as e:
-                                    logger.error(f"Failed to update dynamic params: {e}")
-
-                        # Update lot_size from Qwen Strategy
-                        if 'position_size' in strategy:
-                            try:
-                                qwen_lot = float(strategy['position_size'])
-                                if qwen_lot > 0:
-                                    # [FIX] Validate against Symbol Info (Min/Max/Step)
-                                    symbol_info = mt5.symbol_info(self.symbol)
-                                    if symbol_info:
-                                        step = symbol_info.volume_step
-                                        min_vol = symbol_info.volume_min
-                                        max_vol = symbol_info.volume_max
-                                        
-                                        # 1. Normalize to step
-                                        if step > 0:
-                                            qwen_lot = round(qwen_lot / step) * step
-                                            qwen_lot = round(qwen_lot, 2) # Safety round
-                                        
-                                        # 2. Clamp to limits
-                                        if qwen_lot < min_vol:
-                                            logger.warning(f"Qwen Lot {qwen_lot} < Min {min_vol}. Adjusting to Min.")
-                                            qwen_lot = min_vol
-                                        elif qwen_lot > max_vol:
-                                            qwen_lot = max_vol
-                                    
-                                    self.lot_size = qwen_lot
-                                    # Update grid strategy lot size too for consistency
-                                    if hasattr(self, 'grid_strategy'):
-                                        self.grid_strategy.lot = qwen_lot
-                                    
-                                    # Suppress log for non-trade actions as per user request
-                                    # We check strategy['action'] here because qw_action is defined later
-                                    temp_action = strategy.get('action', 'neutral').lower()
-                                    if temp_action not in ['hold', 'wait', 'close', 'neutral']:
-                                        logger.info(f"Updated lot size from Qwen: {self.lot_size}")
-                            except Exception as e:
-                                logger.error(f"Failed to update lot size: {e}")
+                                    logger.error(f"Failed to update lot size: {e}")
                         
-                        # --- [NEW] Requirement: Update Stop Loss for New Positions immediately ---
-                        # "对于一开始开仓设置的止损点夜市要这样" (Initial Stop Loss must also follow this logic)
-                        # We extract sl_price from Qwen's decision and apply it if we are opening a trade.
-                        # But wait, Qwen returns specific SL price. 
-                        # If user wants "Step Stop" logic applied to initial SL?
-                        # Step Stop is for PROFIT locking. Initial SL is for loss protection.
-                        # Maybe user means: The initial SL should also be "Fixed" and not moved closer unless step logic triggers?
-                        # Or user means: The initial SL calculation should be rigorous?
-                        # Qwen already provides 'sl_price'. We just ensure it's used.
+                            # --- [NEW] Requirement: Update Stop Loss for New Positions immediately ---
+                            # "对于一开始开仓设置的止损点夜市要这样" (Initial Stop Loss must also follow this logic)
+                            # We extract sl_price from Qwen's decision and apply it if we are opening a trade.
+                            # But wait, Qwen returns specific SL price. 
+                            # If user wants "Step Stop" logic applied to initial SL?
+                            # Step Stop is for PROFIT locking. Initial SL is for loss protection.
+                            # Maybe user means: The initial SL should also be "Fixed" and not moved closer unless step logic triggers?
+                            # Or user means: The initial SL calculation should be rigorous?
+                            # Qwen already provides 'sl_price'. We just ensure it's used.
                         
-                        # Logic: When executing BUY/SELL, we use the SL provided by Qwen.
-                        # This is handled in `execute_trade`.
-                        # However, we must ensure `execute_trade` respects the `exit_conditions` from Qwen.
+                            # Logic: When executing BUY/SELL, we use the SL provided by Qwen.
+                            # This is handled in `execute_trade`.
+                            # However, we must ensure `execute_trade` respects the `exit_conditions` from Qwen.
                         
-                        # Let's verify execute_trade uses these.
+                            # Let's verify execute_trade uses these.
                         
-                        # --- 参数自适应优化 (Feedback Loop) ---
-                        param_updates = strategy.get('parameter_updates', {})
-                        if param_updates:
-                            try:
-                                update_reason = param_updates.get('reason', 'AI Optimized')
-                                logger.info(f"应用参数优化 ({update_reason}): {param_updates}")
+                            # --- 参数自适应优化 (Feedback Loop) ---
+                            param_updates = strategy.get('parameter_updates', {})
+                            if param_updates:
+                                try:
+                                    update_reason = param_updates.get('reason', 'AI Optimized')
+                                    logger.info(f"应用参数优化 ({update_reason}): {param_updates}")
                                 
-                                # 1. SMC 参数
-                                if 'smc_atr_threshold' in param_updates:
-                                    self.smc_analyzer.atr_threshold = float(param_updates['smc_atr_threshold'])
+                                    # 1. SMC 参数
+                                    if 'smc_atr_threshold' in param_updates:
+                                        self.smc_analyzer.atr_threshold = float(param_updates['smc_atr_threshold'])
                                     
-                                # 2. Grid Strategy 参数
-                                if 'grid_settings' in param_updates:
-                                    self.grid_strategy.update_config(param_updates['grid_settings'])
+                                    # 2. Grid Strategy 参数
+                                    if 'grid_settings' in param_updates:
+                                        self.grid_strategy.update_config(param_updates['grid_settings'])
                                      
-                            except Exception as e:
-                                logger.error(f"参数动态更新失败: {e}")
+                                except Exception as e:
+                                    logger.error(f"参数动态更新失败: {e}")
                         
-                        # Qwen 信号转换
-                        qw_action = strategy.get('action', 'neutral').lower()
+                            # Qwen 信号转换
+                            qw_action = strategy.get('action', 'neutral').lower()
                         
-                        final_signal = "neutral"
-                        if qw_action in ['buy', 'add_buy']:
-                            final_signal = "buy"
-                        elif qw_action in ['sell', 'add_sell']:
-                            final_signal = "sell"
-                        elif qw_action in ['close_buy', 'close_sell', 'close']:
-                            final_signal = "close"
-                        elif qw_action == 'hold':
-                            final_signal = "hold"
-                        elif qw_action == 'wait':
-                            final_signal = "wait"
-                        elif qw_action in ['grid_start', 'grid_start_long', 'grid_start_short']:
-                            final_signal = qw_action
+                            final_signal = "neutral"
+                            if qw_action in ['buy', 'add_buy']:
+                                final_signal = "buy"
+                            elif qw_action in ['sell', 'add_sell']:
+                                final_signal = "sell"
+                            elif qw_action in ['close_buy', 'close_sell', 'close']:
+                                final_signal = "close"
+                            elif qw_action == 'hold':
+                                final_signal = "hold"
+                            elif qw_action == 'wait':
+                                final_signal = "wait"
+                            elif qw_action in ['grid_start', 'grid_start_long', 'grid_start_short']:
+                                final_signal = qw_action
                             
-                        # Reason
-                        reason = strategy.get('reason', 'Qwen Decision')
+                            # Reason
+                            reason = strategy.get('reason', 'Qwen Decision')
                         
-                        # --- [NEW] SMC Strict Override (User Requirement) ---
-                        # "当市场结构 bos，choch 等 smc 算法市场趋势结构被破坏就严格立刻执行对应方向的交易"
-                        # Logic: Check if SMC detected BOS/CHOCH in the LAST BAR.
-                        # smc_result is already computed.
+                            # --- [NEW] SMC Strict Override (User Requirement) ---
+                            # "当市场结构 bos，choch 等 smc 算法市场趋势结构被破坏就严格立刻执行对应方向的交易"
+                            # Logic: Check if SMC detected BOS/CHOCH in the LAST BAR.
+                            # smc_result is already computed.
                         
-                        if smc_result and 'signal' in smc_result:
-                            smc_sig = smc_result['signal']
-                            smc_reason = smc_result.get('reason', '')
+                            if smc_result and 'signal' in smc_result:
+                                smc_sig = smc_result['signal']
+                                smc_reason = smc_result.get('reason', '')
                             
-                            # Check keywords in reason or explicit signal structure
-                            # Assuming smc_result structure from SMCAnalyzer
-                            # If 'BOS' or 'CHOCH' detected recently
+                                # Check keywords in reason or explicit signal structure
+                                # Assuming smc_result structure from SMCAnalyzer
+                                # If 'BOS' or 'CHOCH' detected recently
                             
-                            is_strong_structure_break = False
-                            if "BOS" in smc_reason or "CHOCH" in smc_reason:
-                                is_strong_structure_break = True
+                                is_strong_structure_break = False
+                                if "BOS" in smc_reason or "CHOCH" in smc_reason:
+                                    is_strong_structure_break = True
                             
-                            if is_strong_structure_break:
-                                if smc_sig == 'buy' and final_signal != 'buy':
-                                    logger.warning(f"⚠️ SMC Structure Break (Bullish) Detected! Overriding Qwen ({final_signal} -> buy). Reason: {smc_reason}")
-                                    final_signal = 'buy'
-                                    reason = f"SMC Strict Override: {smc_reason}"
-                                elif smc_sig == 'sell' and final_signal != 'sell':
-                                    logger.warning(f"⚠️ SMC Structure Break (Bearish) Detected! Overriding Qwen ({final_signal} -> sell). Reason: {smc_reason}")
-                                    final_signal = 'sell'
-                                    reason = f"SMC Strict Override: {smc_reason}"
+                                if is_strong_structure_break:
+                                    if smc_sig == 'buy' and final_signal != 'buy':
+                                        logger.warning(f"⚠️ SMC Structure Break (Bullish) Detected! Overriding Qwen ({final_signal} -> buy). Reason: {smc_reason}")
+                                        final_signal = 'buy'
+                                        reason = f"SMC Strict Override: {smc_reason}"
+                                    elif smc_sig == 'sell' and final_signal != 'sell':
+                                        logger.warning(f"⚠️ SMC Structure Break (Bearish) Detected! Overriding Qwen ({final_signal} -> sell). Reason: {smc_reason}")
+                                        final_signal = 'sell'
+                                        reason = f"SMC Strict Override: {smc_reason}"
 
-                        # 执行交易
-                        self.execute_trade(final_signal, reason, 
-                                          suggested_lot=self.lot_size, 
-                                          ai_confidence=qwen_sent_score,
-                                          llm_action=qw_action) # Pass raw LLM action for logging
+                            # 执行交易
+                            self.execute_trade(final_signal, reason, 
+                                              suggested_lot=self.lot_size, 
+                                              ai_confidence=qwen_sent_score,
+                                              llm_action=qw_action) # Pass raw LLM action for logging
                         
-                        # 休眠直到下一根 K 线或固定时间
-                        time.sleep(10)
+                            # 休眠直到下一根 K 线或固定时间
+                            time.sleep(10)
                         
-                    except Exception as e:
-                        logger.error(f"Error in main loop: {e}", exc_info=True)
-                        time.sleep(10)
-                        continue
+                        except Exception as e:
+                            logger.error(f"Error in main loop: {e}", exc_info=True)
+                            time.sleep(10)
+                            continue
         except KeyboardInterrupt:
             logger.info("Bot stopped by user")
         except Exception as e:
