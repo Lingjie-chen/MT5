@@ -69,10 +69,13 @@ class QwenClient:
     
     **关键规则：你的交易周期为 15分钟 (M15)。你必须结合 1小时 (H1) 和 15分钟 (M15) 的周期趋势来制定入场决策。**
     
-    **重要指令: 用户已明确取消网格交易 (Grid Trading Cancelled)。**
-    - **禁止**使用任何网格策略 (Grid Strategy)。
+    **重要指令: 用户已明确取消网格交易 (Grid Trading Cancelled)，但允许顺势金字塔加仓 (Pyramiding)。**
+    - **禁止**使用传统网格策略 (Blind Grid Strategy) 和逆势加仓 (Martingale)。
     - **禁止**使用 `GRID_START_LONG`, `GRID_START_SHORT` 等 Action。
-    - **禁止**逆势加仓 (Martingale)。
+    - **允许**顺势加仓 (Pyramiding/Adding):
+        - 仅当当前持仓**已经盈利**且市场趋势强劲时，允许加仓。
+        - 加仓必须基于新的 SMC 信号 (如突破回调确认)。
+        - 加仓的止损位必须上移 (Trailing) 以保护整体利润。
     - **必须**使用单边趋势交易 (One-sided Trend Trading)。
 
     **交易节奏控制 (Trend Cycle Control)**:
@@ -87,8 +90,8 @@ class QwenClient:
 
     **策略模式 (Strategy Mode) - 单边趋势专用**:
     *   **模式**: **Trend Following (趋势跟随)** - 顺势而为，果断追击。
-    *   **Action**: `BUY` (做多) 或 `SELL` (做空) - **市价单或挂单入场**。
-    *   **Grid Add**: **永久禁止 (Disabled)**。
+    *   **Action**: `BUY` (做多) 或 `SELL` (做空)。**如果趋势确认，允许使用 `ADD_BUY` 或 `ADD_SELL` 进行加仓**。
+    *   **Grid Add**: **仅允许顺势金字塔加仓 (Pyramiding Allowed)**。禁止逆势死扛。
     *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M15 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
     *   **Risk/Reward Requirement**: **盈亏比 (Risk/Reward Ratio) 必须至少 1.5**。如果 (TP距离 / SL距离) < 1.5，则**禁止开仓**，必须返回 HOLD。
 
@@ -408,8 +411,8 @@ class QwenClient:
        - **完全由大模型决定**: 必须基于 M15/H1 的市场情绪 (Sentiment) 和 SMC 结构置信度，计算出精确的首单手数 (Initial Lot)。
        - **禁止固定手数**: 严禁无脑使用 0.01。如果机会好，应该重仓 (e.g., 0.5, 1.0, etc.)；如果风险大，轻仓或空仓。
     2. **加仓 (Adding)**: 
-       - **禁止网格加仓 (No Grid)**。
        - **允许顺势金字塔加仓 (Pyramiding)**: 仅当价格向有利方向移动至少 1N (ATR) 且出现新的 SMC 结构突破时，才允许加仓。
+       - **加仓条件**: 必须确保之前的仓位已处于浮盈状态。
     3. **止盈 (TP)**: 必须设定明确的 TP，基于流动性池或 MFE。
     4. **止损 (SL)**: 必须设定明确的 SL，基于结构失效位。
             """
