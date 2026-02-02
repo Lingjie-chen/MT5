@@ -1605,7 +1605,7 @@ class QwenClient:
                             
                             # 0.01 到 50.0 手之间 (根据资金规模调整，放宽上限以适应大资金)
                             # 用户明确要求完全按照大模型来配置，因此放宽上限
-                            trading_decision["position_size"] = max(0.01, min(50.0, size))
+                            trading_decision["position_size"] = max(0.01, min(10.0, size))
                         except (ValueError, TypeError):
                             logger.warning(f"⚠️ 模型返回的 'position_size' 无效 ({trading_decision['position_size']})，重置为 0.01")
                             trading_decision["position_size"] = 0.01
