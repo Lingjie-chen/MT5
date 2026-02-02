@@ -707,18 +707,18 @@ class QwenClient:
     ## 最终决策输出
 
     请做出最终决策 (Action):
-    1. **GRID_START_LONG**:
-       - 含义: 启动多头网格策略 (Initial Entry + Grid Setup)。
+    1. **BUY**:
+       - 含义: 启动做多策略 (Market Buy)。
        - 适用场景: SMC 确认看涨趋势 (BOS/CHOCH)，价格位于 H4/H1 关键支撑位 (OB/FVG)。
-       - **执行逻辑**: 系统将立即开启首单 BUY，并自动挂出后续的 LIMIT_BUY 网格单。
-    2. **GRID_START_SHORT**:
-       - 含义: 启动空头网格策略 (Initial Entry + Grid Setup)。
+       - **执行逻辑**: 系统将立即开启首单 BUY。
+    2. **SELL**:
+       - 含义: 启动做空策略 (Market Sell)。
        - 适用场景: SMC 确认看跌趋势 (BOS/CHOCH)，价格位于 H4/H1 关键阻力位 (OB/FVG)。
-       - **执行逻辑**: 系统将立即开启首单 SELL，并自动挂出后续的 LIMIT_SELL 网格单。
+       - **执行逻辑**: 系统将立即开启首单 SELL。
     3. **HOLD**:
-       - 含义: 暂时观望，不开启新网格。
-       - 适用场景: 市场方向不明、处于震荡区间中间、或已有网格在运行中。
-       - **注意**: 如果已有持仓，HOLD 意味着维持当前网格策略不变。
+       - 含义: 暂时观望。
+       - 适用场景: 市场方向不明、处于震荡区间中间、或已有持仓。
+       - **注意**: 如果已有持仓，HOLD 意味着维持当前策略不变。
     4. **CLOSE_ALL**:
        - 含义: 紧急平仓所有头寸 (Panic Button)。
        - 适用场景: 发生重大基本面利空、SMC 结构完全失效 (失效位被强力击穿)、或达到总账户风控阈值。
@@ -726,27 +726,26 @@ class QwenClient:
     **自我学习与适应 (Self-Learning & Adaptation)**:
     - **数据源**: 你现在接收来自远程数据库 (Remote DB) 的实时历史交易数据 (`performance_stats`)。
     - **动态修正**:
-        1. **胜率低**: 如果 `win_rate` < 40%，请在 `grid_config` 中增大 `grid_step_pips` (拉大网格间距) 以降低风险。
-        2. **波动率高**: 如果当前 ATR 显著高于 `avg_atr`，请在 `grid_config` 中使用 `atr_based` 间距。
-        3. **连败保护**: 如果 `recent_trades` 显示连续亏损，请在 `rationale` 中建议暂停开新仓或降低 `initial_lot`。
+        1. **胜率低**: 如果 `win_rate` < 40%，请更严格的过滤入场信号。
+        2. **连败保护**: 如果 `recent_trades` 显示连续亏损，请在 `rationale` 中建议暂停开新仓或降低 `initial_lot`。
 
     **一致性检查 (Consistency Check)**:
-    - **SMC 验证**: 你的 GRID_START 决策必须得到 SMC 结构的支持 (如 H1 Order Block 支撑)。严禁在毫无依据的半空中开网格。
-    - **趋势顺势**: 尽量顺应 H4 大趋势开启网格。逆势网格必须有更严格的过滤条件。
+    - **SMC 验证**: 你的决策必须得到 SMC 结构的支持 (如 H1 Order Block 支撑)。严禁在毫无依据的半空中开仓。
+    - **趋势顺势**: 尽量顺应 H4 大趋势。逆势必须有更严格的过滤条件。
 
     ## 市场分析要求 - 严格 JSON 输出
 
     请以 **JSON 格式** 返回结果，严禁包含 markdown 代码块标记 (如 ```json ... ```)，只返回纯 JSON 字符串。
     JSON 必须包含以下字段：
 
-    - **action**: str ("GRID_START_LONG", "GRID_START_SHORT", "HOLD", "CLOSE_ALL", "BUY", "SELL")
-    - **strategy_mode**: str ("grid" 或 "trend") -- 必须明确指定当前策略模式
+    - **action**: str ("HOLD", "CLOSE_ALL", "BUY", "SELL", "LIMIT_BUY", "LIMIT_SELL")
+    - **strategy_mode**: str ("trend") -- 必须明确指定当前策略模式
     - **sl**: float (趋势交易止损价格. 对于 BUY/SELL Action 必须提供)
     - **tp**: float (趋势交易止盈价格. 对于 BUY/SELL Action 必须提供)
-    - **grid_config**: dict (网格策略核心参数)
+    - **grid_config**: dict (保留字段，设为默认值)
         - "initial_lot": float (首单手数, e.g., 0.01)
-        - "allow_add": bool (是否允许网格加仓. Grid模式=true, Trend模式=false)
-        - "grid_step_mode": str ("fixed" 或 "atr")
+        - "allow_add": bool (设为 false)
+        - "grid_step_mode": str ("fixed")
         - "grid_step_pips": float (基础网格间距, e.g., 20.0)
         - "martingale_mode": str ("multiply" 或 "add")
         - "martingale_multiplier": float (马丁倍数, e.g., 1.5)
@@ -1346,7 +1345,7 @@ class QwenClient:
         
         ## 强制输出格式要求 (Format Enforcement)
         你必须返回一个严格符合 JSON 格式的响应，包含以下顶层字段：
-        - "action": "buy" | "sell" | "wait" | "hold" | "close" | "grid_start"
+        - "action": "buy" | "sell" | "wait" | "hold" | "close"
         - "position_size": float (例如 0.15) - **即使是 Hold 也要填一个建议值或 0**
         - "reason": "你的分析逻辑"
         - "confidence": 0-100
