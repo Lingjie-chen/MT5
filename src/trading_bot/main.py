@@ -1484,7 +1484,7 @@ class SymbolTrader:
             final_sl = explicit_sl if explicit_sl and explicit_sl > 0 else None
             final_tp = explicit_tp if explicit_tp and explicit_tp > 0 else None
             
-            result = self._send_order(trade_type, price, final_sl, final_tp, comment=comment)
+            result = self._send_order(trade_type, price, final_sl, final_tp, volume=optimized_lot, comment=comment)
             
             # [NEW] Save Trade to Master DB (Redundant check if _send_order handles it)
             # Actually _send_order calls save_trade, so we need to modify _send_order instead or rely on duplicate calls in _send_order?

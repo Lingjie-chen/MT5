@@ -87,6 +87,9 @@ class LogicTester(SymbolTrader):
         # Mock Logger to avoid clutter
         # self.logger = MagicMock() 
 
+    def check_account_safety(self, close_if_critical=True):
+        return True, "Safe"
+
     def send_telegram_message(self, msg):
         print(f"   [Telegram] {msg.replace(chr(10), ' ')}")
 
