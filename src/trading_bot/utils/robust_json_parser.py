@@ -214,8 +214,33 @@ def parse_llm_json(
                     data[key] = value
         
         if required_keys:
+            # Flexible Key Check: Allow variations or nested structures
+            # For "position_size", "entry_conditions", "exit_conditions", "action"
+            
+            # Check 1: Direct keys
             missing_keys = [k for k in required_keys if k not in data]
+            
+            # Check 2: If 'action' is present, we might be lenient on others depending on action
+            # E.g. if action is 'hold', we don't strictly need 'entry_conditions'
+            
+            if 'action' in data:
+                action = str(data['action']).lower()
+                if action in ['hold', 'wait', 'close', 'neutral']:
+                    # For non-entry actions, entry/exit conditions are optional
+                    # Remove them from missing_keys if present
+                    if 'entry_conditions' in missing_keys: missing_keys.remove('entry_conditions')
+                    if 'exit_conditions' in missing_keys: missing_keys.remove('exit_conditions')
+                    if 'position_size' in missing_keys: missing_keys.remove('position_size')
+            
             if missing_keys:
+                # Last resort: Check if missing keys are just empty/null but keys exist? No, k not in data means keys missing.
+                # If we have defaults, we should have filled them already in step 3.1
+                # If defaults didn't cover it, then it's truly missing.
+                
+                # Special handling for common LLM omission:
+                # If LLM returns just {"action": "hold", "reason": "..."}, it omits the rest.
+                # We should have handled this via defaults or the action check above.
+                
                 raise ValueError(f"JSON缺少必要字段: {', '.join(missing_keys)}")
                 
     return data
