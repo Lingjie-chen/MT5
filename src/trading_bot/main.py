@@ -654,7 +654,6 @@ class SymbolTrader:
             # 学习逻辑:
             # 如果近期表现好 (WinRate > 55% & PF > 1.5)，基础风险上调至 2.5% - 3.0%
             # 如果近期表现差 (WinRate < 40% 或 连败 > 2)，基础风险下调至 1.0%
-            
             if win_rate > 0.55 and profit_factor > 1.5:
                 base_risk_pct = 0.03
                 logger.info(f"资金管理学习: 近期表现优异 (WR={win_rate:.2%}, PF={profit_factor:.2f}), 基础风险上调至 3%")
