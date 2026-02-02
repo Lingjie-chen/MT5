@@ -4363,13 +4363,19 @@ class SymbolTrader:
                             entry_params = strategy.get('entry_conditions')
                             exit_params = strategy.get('exit_conditions')
                             
-                            # Calculate Lot (Martingale aware if needed, or handled in execute_trade)
-                            # Here we use calculate_dynamic_lot for initial lot
-                            suggested_lot = self.calculate_dynamic_lot(
-                                strength, 
-                                market_context={'smc': smc_result}, 
-                                ai_signals=all_signals
-                            )
+                            # Calculate Lot
+                            # Priority 1: Use LLM suggested position_size if valid
+                            llm_lot = strategy.get('position_size')
+                            if llm_lot and isinstance(llm_lot, (int, float)) and llm_lot > 0:
+                                suggested_lot = float(llm_lot)
+                                logger.info(f"Using LLM Suggested Lot Size: {suggested_lot}")
+                            else:
+                                # Priority 2: Dynamic Calculation
+                                suggested_lot = self.calculate_dynamic_lot(
+                                    strength, 
+                                    market_context={'smc': smc_result}, 
+                                    ai_signals=all_signals
+                                )
                             
                             self.execute_trade(
                                 final_signal, 
