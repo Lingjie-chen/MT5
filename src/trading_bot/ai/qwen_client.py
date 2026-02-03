@@ -1573,8 +1573,20 @@ class QwenClient:
 
                     # 再次校验模型返回的 position_size，确保其存在且合法
                     if "position_size" not in trading_decision:
-                        logger.error("⚠️ 模型响应中缺失 'position_size' 字段，分析失败")
-                        return None
+                        # [RECOVERY] If missing, try to infer from grid_config or default
+                        logger.warning("⚠️ 模型响应中缺失 'position_size' 字段，尝试自动修复...")
+                        
+                        inferred_size = 0.01 # Default safe
+                        
+                        # Try to get from grid_config
+                        if 'grid_config' in trading_decision and 'initial_lot' in trading_decision['grid_config']:
+                             try:
+                                 inferred_size = float(trading_decision['grid_config']['initial_lot'])
+                             except: pass
+                        
+                        trading_decision['position_size'] = inferred_size
+                        logger.info(f"✅ 自动修复 'position_size' 为: {inferred_size}")
+
                     else:
                         # 限制范围，防止模型给出极端值
                         try:
