@@ -3642,9 +3642,8 @@ class SymbolTrader:
                         
                             # --- 3.1 & 3.2 Advanced Analysis (Cached after first run) ---
                             # [Optimization] Skip heavy analysis after first run, use cached context
-                            # [USER REQ] FORCE Full Analysis Every Time (Disable Caching)
-                            if True: # Always execute full analysis
-                                # logger.info("⚡ Executing Full Advanced Analysis (Cycle)...")
+                            if not self.first_analysis_done:
+                                logger.info("⚡ Executing Full Advanced Analysis (First Run)...")
                             
                                 # --- 3.1 CRT 分析 ---
                                 crt_result = self.crt_analyzer.analyze(self.symbol, current_price, current_bar_time)
