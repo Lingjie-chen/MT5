@@ -3642,6 +3642,18 @@ class SymbolTrader:
                         
                             # --- 3.1 & 3.2 Advanced Analysis (Cached after first run) ---
                             # [Optimization] Skip heavy analysis after first run, use cached context
+                            
+                            crt_result = None
+                            mtf_result = None
+                            adv_result = None
+                            smc_result = None
+                            ifvg_result = None
+                            rvgi_cci_result = None
+                            ema_ha_result = None
+                            grid_signal = "neutral"
+                            
+                            # User Requirement: 除了第一次完整分析，后续直接跳过繁琐步骤，直接调用大模型
+                            # Only run full analysis on the very first run
                             if not self.first_analysis_done:
                                 logger.info("⚡ Executing Full Advanced Analysis (First Run)...")
                             
@@ -3721,8 +3733,10 @@ class SymbolTrader:
                                 self.first_analysis_done = True
                             
                             else:
-                                # Load from Cache
-                                logger.info("⚡ Using Cached Advanced Analysis (Skipping heavy computation)")
+                                # [OPTIMIZED FLOW] Skip heavy computation, load cache
+                                # User Requirement: Directly call Large Model
+                                # We load cached technicals to provide context, but skip recalculation
+                                
                                 crt_result = self.cached_analysis.get('crt')
                                 mtf_result = self.cached_analysis.get('mtf')
                                 adv_result = self.cached_analysis.get('adv')
@@ -3731,16 +3745,19 @@ class SymbolTrader:
                                 rvgi_cci_result = self.cached_analysis.get('rvgi_cci')
                                 ema_ha_result = self.cached_analysis.get('ema_ha')
                                 grid_signal = self.cached_analysis.get('grid_signal')
-                            
+                                
                                 # Restore adv_signal
                                 adv_signal = "neutral"
                                 if adv_result:
                                     adv_signal = adv_result['signal_info']['signal']
-                            
-                                # Ensure SMC levels are still present in grid strategy (they persist in the object)
-                                # Update Grid Signal with CURRENT price even if levels are old?
-                                # User said "Directly call Large Model", implies skip everything.
-                                # So we keep the old grid signal too.
+                                
+                                # Only lightweight Grid Signal update (Kalman Price Check)
+                                # We update Kalman filter with new price, but don't re-scan SMC levels
+                                self.grid_strategy.update_kalman(float(current_price['close']))
+                                grid_signal = self.grid_strategy.get_entry_signal(float(current_price['close']))
+                                
+                                # Update cache for grid signal
+                                self.cached_analysis['grid_signal'] = grid_signal
                         
                             grid_status = {
                                 "active": self.grid_strategy.long_pos_count > 0 or self.grid_strategy.short_pos_count > 0,
