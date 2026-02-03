@@ -1426,68 +1426,46 @@ class SymbolTrader:
             action_str = llm_action.upper() if llm_action else "UNKNOWN"
             comment = f"AI-{action_str}"
             
-            # --- 动态仓位计算 ---
-            if suggested_lot and suggested_lot > 0:
-                # [NEW] Margin Check for Suggested Lot
-                try:
-                    account_info = mt5.account_info()
-                    if account_info:
-                         o_type_check = mt5.ORDER_TYPE_BUY if "buy" in action_str.lower() else mt5.ORDER_TYPE_SELL
-                         margin_needed = mt5.order_calc_margin(o_type_check, self.symbol, suggested_lot, price)
-                         
-                         if margin_needed and margin_needed > (account_info.margin_free * 0.9): # 90% buffer
-                             max_lot = (account_info.margin_free * 0.9) / (margin_needed / suggested_lot)
-                             # Round down to 2 decimal places
-                             max_lot = int(max_lot * 100) / 100.0
-                             if max_lot < 0.01: max_lot = 0.01
-                             
-                             logger.warning(f"⚠️ 建议仓位 {suggested_lot} 超过保证金限制 ({margin_needed:.2f} > {account_info.margin_free * 0.9:.2f}). 调整为: {max_lot}")
-                             suggested_lot = max_lot
-                except Exception as e:
-                    logger.error(f"Margin check failed: {e}")
-                    
-                optimized_lot = suggested_lot
-                logger.info(f"使用建议手数 (经过风控检查): {optimized_lot}")
-            else:
-                # 准备上下文 (Fallback)
-                # 获取历史 MFE/MAE 统计 (如果有缓存，从 db_manager 获取)
-                trade_stats = self.db_manager.get_trade_performance_stats(limit=50)
-                mfe_mae_ratio = 1.0
-                if trade_stats and 'avg_mfe' in trade_stats and 'avg_mae' in trade_stats:
-                    if abs(trade_stats['avg_mae']) > 0:
-                        mfe_mae_ratio = trade_stats['avg_mfe'] / abs(trade_stats['avg_mae'])
-                
-                # 准备 SMC 上下文 (如果 self.smc_analyzer 最近分析过)
-                # 我们从 latest_strategy 的 details 中尝试获取
-                market_ctx = {}
-                if self.latest_strategy and 'details' in self.latest_strategy:
-                     market_ctx['smc'] = {'structure': self.latest_strategy['details'].get('smc_structure')}
-                
-                # 获取 ATR (复用上面的计算)
-                rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
-                if rates is not None:
-                    df_temp = pd.DataFrame(rates)
-                    high_low = df_temp['high'] - df_temp['low']
-                    atr = high_low.rolling(14).mean().iloc[-1]
-                    market_ctx['atr'] = atr
-                
-                # 从 strategy details 中提取所有 AI 信号
-                ai_signals_data = None
-                if self.latest_strategy and 'details' in self.latest_strategy:
-                    ai_signals_data = self.latest_strategy['details'].get('signals', {})
-                    # 尝试获取 Volatility Regime
-                    if 'adv_summary' in self.latest_strategy['details']:
-                        adv_sum = self.latest_strategy['details']['adv_summary']
-                        if isinstance(adv_sum, dict) and 'regime_analysis' in adv_sum:
-                            market_ctx['volatility_regime'] = adv_sum.get('risk', {}).get('level', 'Normal')
+            # --- 动态仓位计算 (Dynamic Position Sizing) ---
+            # [MODIFIED] User Request: Do not strictly follow LLM suggested lot. Use internal Dynamic Risk Model.
+            
+            # 1. Prepare Context for Internal Calculation
+            trade_stats = self.db_manager.get_trade_performance_stats(limit=50)
+            mfe_mae_ratio = 1.0
+            if trade_stats and 'avg_mfe' in trade_stats and 'avg_mae' in trade_stats:
+                if abs(trade_stats['avg_mae']) > 0:
+                    mfe_mae_ratio = trade_stats['avg_mfe'] / abs(trade_stats['avg_mae'])
+            
+            market_ctx = {}
+            if self.latest_strategy and 'details' in self.latest_strategy:
+                 market_ctx['smc'] = {'structure': self.latest_strategy['details'].get('smc_structure')}
+            
+            # Use ATR calculated above
+            market_ctx['atr'] = atr 
+            
+            ai_signals_data = None
+            if self.latest_strategy and 'details' in self.latest_strategy:
+                ai_signals_data = self.latest_strategy['details'].get('signals', {})
+                if 'adv_summary' in self.latest_strategy['details']:
+                    adv_sum = self.latest_strategy['details']['adv_summary']
+                    if isinstance(adv_sum, dict) and 'regime_analysis' in adv_sum:
+                        market_ctx['volatility_regime'] = adv_sum.get('risk', {}).get('level', 'Normal')
 
-                # 计算最终仓位
-                optimized_lot = self.calculate_dynamic_lot(
-                    strength, 
-                    market_context=market_ctx, 
-                    mfe_mae_ratio=mfe_mae_ratio,
-                    ai_signals=ai_signals_data
-                )
+            # 2. Calculate Internal Lot
+            internal_lot = self.calculate_dynamic_lot(
+                strength, 
+                market_context=market_ctx, 
+                mfe_mae_ratio=mfe_mae_ratio,
+                ai_signals=ai_signals_data
+            )
+            
+            # 3. Decision: Use Internal Lot (Override LLM if present)
+            if suggested_lot and suggested_lot > 0:
+                 logger.info(f"LLM 建议仓位: {suggested_lot}, 但根据用户指令使用内部动态仓位: {internal_lot}")
+            else:
+                 logger.info(f"使用内部动态仓位: {internal_lot}")
+                 
+            optimized_lot = internal_lot
             
             self.lot_size = optimized_lot # 临时覆盖 self.lot_size 供 _send_order 使用
             
