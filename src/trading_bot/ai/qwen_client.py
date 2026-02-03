@@ -67,7 +67,7 @@ class QwenClient:
     
     你的核心策略架构：**SMC + Trend Following (趋势跟随)**
     
-    **关键规则：你的交易周期为 5分钟 (M5)。你必须结合 15分钟 (M15) 和 5分钟 (M5) 的周期趋势来制定入场决策。**
+    **关键规则：你的交易周期为 15分钟 (M15)。你必须结合 15分钟 (M15) 和 5分钟 (M5) 的周期趋势来制定入场决策。**
     
     **重要指令: 用户已明确取消网格交易 (Grid Trading Cancelled)，但允许顺势金字塔加仓 (Pyramiding)。**
     - **禁止**使用传统网格策略 (Blind Grid Strategy) 和逆势加仓 (Martingale)。
