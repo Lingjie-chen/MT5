@@ -2941,13 +2941,19 @@ class SymbolTrader:
                         # Ensure AI Dynamic TP is applied
                         pos_mgmt = strategy.get('position_management', {})
                         if pos_mgmt:
-                            basket_tp = pos_mgmt.get('dynamic_basket_tp')
-                            if basket_tp:
-                                try:
-                                    self.grid_strategy.update_dynamic_params(basket_tp)
-                                    logger.info(f"Applied AI Dynamic Basket TP: {basket_tp}")
-                                except Exception as e:
-                                    logger.error(f"Failed to update dynamic basket TP: {e}")
+                            try:
+                                basket_tp = pos_mgmt.get('dynamic_basket_tp')
+                                lock_trigger = pos_mgmt.get('lock_profit_trigger')
+                                trailing_config = pos_mgmt.get('trailing_stop_config')
+                                
+                                self.grid_strategy.update_dynamic_params(
+                                    basket_tp=basket_tp,
+                                    lock_trigger=lock_trigger,
+                                    trailing_config=trailing_config
+                                )
+                                logger.info(f"Applied AI Dynamic Params: TP={basket_tp}, Lock={lock_trigger}, Trail={trailing_config}")
+                            except Exception as e:
+                                logger.error(f"Failed to update dynamic basket params: {e}")
 
                         # Update lot_size from Qwen Strategy
                         if 'position_size' in strategy:
