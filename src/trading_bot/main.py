@@ -149,6 +149,7 @@ class SymbolTrader:
         self.signal_history = []
         self.last_optimization_time = 0
         self.last_realtime_save = 0
+        self.last_checkpoint_time = 0
         
         self.latest_strategy = None
         self.latest_signal = "neutral"
@@ -2353,16 +2354,31 @@ class SymbolTrader:
             sell_signal = (ha_c_1 < ema_20_l_1) and (not ha_bull_1) and (ha_c_1 < ema_50_1) and \
                           trend_bear and (ha_c_2 > ema_50_2)
             
-            if buy_signal:
-                return {"signal": "buy", "reason": "EMA-HA Crossover Bullish"}
-            elif sell_signal:
-                return {"signal": "sell", "reason": "EMA-HA Crossover Bearish"}
+            result = {
+                "signal": "neutral",
+                "reason": "No Crossover",
+                "values": {
+                    "ema_50": ema_50_1,
+                    "ema_20_high": ema_20_h_1,
+                    "ema_20_low": ema_20_l_1,
+                    "ha_close": ha_c_1,
+                    "ha_open": ha_o_1,
+                    "trend": "bullish" if trend_bull else "bearish"
+                }
+            }
             
-            return {"signal": "neutral", "reason": "No Crossover"}
+            if buy_signal:
+                result["signal"] = "buy"
+                result["reason"] = "EMA-HA Crossover Bullish"
+            elif sell_signal:
+                result["signal"] = "sell"
+                result["reason"] = "EMA-HA Crossover Bearish"
+                
+            return result
             
         except Exception as e:
             logger.error(f"EMA-HA Analysis Failed: {e}")
-            return {"signal": "neutral", "reason": "Error"}
+            return {"signal": "neutral", "reason": "Error", "values": {}}
 
     def optimize_short_term_params(self):
         """
@@ -2589,10 +2605,16 @@ class SymbolTrader:
                 current_bar_time = rates[0]['time']
                 
                 # --- Real-time Data Update (Added for Dashboard) ---
-                # 每隔 3 秒保存一次当前正在形成的 K 线数据到数据库
+                # 每隔 10 秒保存一次当前正在形成的 K 线数据到数据库
                 # 这样 Dashboard 就可以看到实时价格跳动
-                if time.time() - self.last_realtime_save > 3:
+                if time.time() - self.last_realtime_save > 10:
                     try:
+                        # [Checkpoint] 每隔 5 分钟 (300秒) 执行一次 WAL Checkpoint
+                        if time.time() - self.last_checkpoint_time > 300:
+                            self.db_manager.perform_checkpoint()
+                            self.master_db_manager.perform_checkpoint()
+                            self.last_checkpoint_time = time.time()
+                            
                         df_current = pd.DataFrame(rates)
                         df_current['time'] = pd.to_datetime(df_current['time'], unit='s')
                         df_current.set_index('time', inplace=True)
@@ -2857,10 +2879,25 @@ class SymbolTrader:
                         # --- 3.3 Qwen 策略分析 (Sole Decision Maker) ---
                         logger.info("正在调用 Qwen 生成策略...")
                         
-                        # 获取历史交易绩效 (MFE/MAE) - 使用 Master DB 获取跨品种数据进行集体学习
-                        trade_stats = self.master_db_manager.get_trade_performance_stats(limit=100)
+                        # 获取历史交易绩效 (MFE/MAE) - 优先尝试远程 PostgreSQL 数据库 (Self-Learning)
+                        trade_stats = []
+                        try:
+                            # 尝试从远程获取 (Remote Storage is initialized in DatabaseManager)
+                            if self.db_manager.remote_storage.enabled:
+                                logger.info("Fetching trade history from Remote PostgreSQL for Self-Learning...")
+                                remote_trades = self.db_manager.remote_storage.get_trades(limit=100)
+                                if remote_trades:
+                                    trade_stats = remote_trades
+                                    logger.info(f"Successfully loaded {len(trade_stats)} trades from Remote DB.")
+                        except Exception as e:
+                            logger.error(f"Failed to fetch remote trades: {e}")
+
                         if not trade_stats:
-                             # Fallback to local
+                            # Fallback to local Master DB
+                            trade_stats = self.master_db_manager.get_trade_performance_stats(limit=100)
+                        
+                        if not trade_stats:
+                             # Fallback to local Symbol DB
                              trade_stats = self.db_manager.get_trade_performance_stats(symbol=self.symbol, limit=50)
                         
                         # 获取当前持仓状态
@@ -2902,7 +2939,7 @@ class SymbolTrader:
                             "mtf": mtf_result['signal'], 
                             "ifvg": ifvg_result['signal'],
                             "rvgi_cci": rvgi_cci_result['signal'],
-                            "ema_ha": ema_ha_result['signal'],
+                            "ema_ha": ema_ha_result, # Pass full result including values
                             "performance_stats": trade_stats
                         }
                         
@@ -2937,6 +2974,18 @@ class SymbolTrader:
                         self.latest_strategy = strategy
                         self.last_llm_time = time.time()
                         
+                        # --- [NEW] Update Grid Strategy Dynamic Params (Basket TP) ---
+                        # Ensure AI Dynamic TP is applied
+                        pos_mgmt = strategy.get('position_management', {})
+                        if pos_mgmt:
+                            basket_tp = pos_mgmt.get('dynamic_basket_tp')
+                            if basket_tp:
+                                try:
+                                    self.grid_strategy.update_dynamic_params(basket_tp)
+                                    logger.info(f"Applied AI Dynamic Basket TP: {basket_tp}")
+                                except Exception as e:
+                                    logger.error(f"Failed to update dynamic basket TP: {e}")
+
                         # Update lot_size from Qwen Strategy
                         if 'position_size' in strategy:
                             try:
