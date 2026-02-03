@@ -3979,7 +3979,11 @@ class SymbolTrader:
                                 final_signal = qw_action
                             
                             # Reason
-                            reason = strategy.get('reason', 'Qwen Decision')
+                            reason = strategy.get('strategy_rationale', 'Qwen Decision')
+                            
+                            # [FIX] Extract sl_tp_params correctly for execute_trade
+                            sl_tp_params = strategy.get('exit_conditions', {})
+                            if not sl_tp_params: sl_tp_params = {} # Ensure it's a dict
                         
                             # --- [NEW] SMC Strict Override (User Requirement) ---
                             # "当市场结构 bos，choch 等 smc 算法市场趋势结构被破坏就严格立刻执行对应方向的交易"
