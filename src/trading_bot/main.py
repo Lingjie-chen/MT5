@@ -4010,6 +4010,7 @@ class SymbolTrader:
 
                             # 执行交易
                             self.execute_trade(final_signal, reason, 
+                                              sl_tp_params=sl_tp_params,
                                               suggested_lot=self.lot_size, 
                                               ai_confidence=qwen_sent_score,
                                               llm_action=qw_action) # Pass raw LLM action for logging
