@@ -2825,6 +2825,10 @@ class SymbolTrader:
         Executed periodically.
         """
         try:
+            # Check if analysis was performed recently (avoid loop spam)
+            # 60s is handled by caller, but we can double check or just rely on caller.
+            # Caller does: if time.time() - self.last_analysis_time > 60:
+            
             # Get closed deals from history (Last 24 hours)
             now = datetime.now()
             from_time = now - timedelta(hours=24)
@@ -2842,10 +2846,26 @@ class SymbolTrader:
             loss_deals = [d for d in my_deals if d.profit < 0]
             
             if loss_deals:
-                logger.info(f"Analyzing {len(loss_deals)} loss deals for strategy improvement...")
+                # [OPTIMIZATION] Only log if new losses are found or periodically?
+                # The user says "Don't loop continuously".
+                # We can check if we have already analyzed these deals.
+                # Since we don't have a persistent 'analyzed_deals' set easily available here without DB,
+                # we can just log DEBUG instead of INFO to reduce noise, or check against a local cache.
+                
+                # Let's use a simple memory cache for the session
+                if not hasattr(self, '_analyzed_loss_tickets'):
+                    self._analyzed_loss_tickets = set()
+                
+                new_losses = [d for d in loss_deals if d.ticket not in self._analyzed_loss_tickets]
+                
+                if not new_losses:
+                    return # Nothing new to analyze
+                
+                logger.info(f"Analyzing {len(new_losses)} new loss deals for strategy improvement...")
                 
                 reasons = []
-                for deal in loss_deals:
+                for deal in new_losses:
+                    self._analyzed_loss_tickets.add(deal.ticket) # Mark as analyzed
                     # Retrieve the original signal/reason from DB for this trade
                     # We need to map deal -> order -> position -> signal
                     # This is complex without a robust order tracking DB.
