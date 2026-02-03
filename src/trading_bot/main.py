@@ -785,10 +785,12 @@ class SymbolTrader:
             logger.error(f"动态仓位计算失败: {e}")
             return self.lot_size
 
-    def execute_trade(self, signal, strength, sl_tp_params, entry_params=None, suggested_lot=None):
+    def execute_trade(self, signal, strength, sl_tp_params, entry_params=None, suggested_lot=None, ai_confidence=None, llm_action=None):
         """
         执行交易指令，完全由大模型驱动
         :param suggested_lot: 预计算的建议手数 (可选)
+        :param ai_confidence: AI分析的置信度 (可选)
+        :param llm_action: AI原始动作指令 (可选)
         """
         # 允许所有相关指令进入
         valid_actions = ['buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'close', 'add_buy', 'add_sell', 'hold', 'close_buy_open_sell', 'close_sell_open_buy']
