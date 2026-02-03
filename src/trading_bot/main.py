@@ -36,11 +36,6 @@ logger = logging.getLogger("WindowsBot")
 # Load Environment Variables
 load_dotenv()
 
-# Add current directory to sys.path to ensure local imports work
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
-
 # Import Local Modules
 try:
     from ai.ai_client_factory import AIClientFactory
