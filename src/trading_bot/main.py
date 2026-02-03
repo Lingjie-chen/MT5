@@ -838,8 +838,15 @@ class SymbolTrader:
         explicit_tp = None
         
         if self.latest_strategy:
-            explicit_sl = self.latest_strategy.get('sl')
-            explicit_tp = self.latest_strategy.get('tp')
+            # 优先从 exit_conditions 获取
+            exit_cond = self.latest_strategy.get('exit_conditions', {})
+            if exit_cond:
+                explicit_sl = exit_cond.get('sl_price')
+                explicit_tp = exit_cond.get('tp_price')
+            
+            # 如果 exit_conditions 为空，尝试直接从顶层获取 (兼容旧格式)
+            if explicit_sl is None: explicit_sl = self.latest_strategy.get('sl')
+            if explicit_tp is None: explicit_tp = self.latest_strategy.get('tp')
             
             # [Fix] Ensure explicit_sl/tp are floats and valid
             try:
