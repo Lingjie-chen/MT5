@@ -412,9 +412,8 @@ class SymbolTrader:
             logger.error(f"Error canceling orders: {e}")
 
     def check_risk_reward_ratio(self, entry_price, sl_price, tp_price, atr=None):
-        """检查盈亏比是否达标"""
-        # User Requirement: Profit must be > 1.5 * Lose Risk.
-        # Since SL is removed (sl_price <= 0), we use a Structural Risk Estimate based on ATR.
+        """风险/收益评估（不做强制限制，仅返回比值）"""
+        # 不再强制要求最低盈亏比，仅计算并返回当前 Reward:Risk 比值
         
         # Estimate Risk (Distance to Invalidation)
         risk = 0.0
@@ -422,27 +421,17 @@ class SymbolTrader:
         if sl_price > 0:
              risk = abs(entry_price - sl_price)
         else:
-             # If no Hard SL, assume Structural Risk is ~1.5 ATR (Standard Swing Stop)
+             # If no Hard SL, estimate Structural Risk using ATR if available
              if atr and atr > 0:
-                 risk = 1.5 * atr
+                 risk = atr
              else:
-                 # Fallback if ATR is missing (should be rare)
-                 # Assume 0.2% price move as risk? No, safer to default to True or calculate locally?
-                 # Let's try to calculate ATR on the fly if missing? No, too complex here.
-                 # Return True if we really can't estimate, but log warning.
-                 return True, 999.0
+                 return True, 0.0
         
         if tp_price <= 0 or risk <= 0:
-             return False, 0.0
+             return True, 0.0
              
         reward = abs(entry_price - tp_price)
         ratio = reward / risk
-        
-        # Enforce Minimum RRR of 1.5
-        if ratio < 1.5:
-            logger.warning(f"Risk:Reward Check Failed. Ratio: {ratio:.2f} < 1.5 (Risk={risk:.2f}, Reward={reward:.2f})")
-            return False, ratio
-            
         return True, ratio
 
     def check_daily_loss_limit(self):

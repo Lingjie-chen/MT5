@@ -93,7 +93,7 @@ class QwenClient:
     *   **Action**: `BUY` (做多) 或 `SELL` (做空)。**如果趋势确认，允许使用 `ADD_BUY` 或 `ADD_SELL` 进行加仓**。
     *   **Grid Add**: **仅允许顺势金字塔加仓 (Pyramiding Allowed)**。禁止逆势死扛。
     *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M5 和 M15 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
-    *   **Risk/Reward Requirement**: **盈亏比 (Risk/Reward Ratio) 必须至少 1.5**。如果 (TP距离 / SL距离) < 1.5，则**禁止开仓**，必须返回 HOLD。
+    *   注意点差与结构风险评估：在制定 SL/TP 时必须考虑点差成本与结构失效位距离。
 
     **仓位管理指令 (Position Sizing Instructions)**:
     - **账户规模感知**: 
@@ -395,7 +395,7 @@ class QwenClient:
     2. **出场与风控 (Exit & Risk)**:
        - **止损 (SL)**: 必须设置在结构保护点之外 (Recent Swing Low/High)。
        - **止盈 (TP)**: 分批止盈。
-         - TP1: 1:1.5 RR (风险回报比)。
+         - TP1: 结构目标位或最近流动性池 (Liquidity Pool)。
          - TP2: 下一个关键流动性池 (Liquidity Pool) 或 OB。
          - Trailing Stop: 价格突破关键结构后，将 SL 移动至保本或盈利位。
 
@@ -646,9 +646,7 @@ class QwenClient:
        - **高级算法**: 参考 EMA20/50 均线排列和 Heiken Ashi 颜色一致性。
     
     4. **流动性目标明确**
-       - **盈亏比要求**: 预期盈利(Reward) 必须至少是 潜在风险(Risk) 的 1.5倍。
        - **风险定义**: 即便我们不设硬止损，你也必须基于 **最近的结构失效点 (Structural Invalidation)** 来估算潜在风险距离。
-       - **拒绝交易**: 如果 (TP距离 / 结构失效距离) < 1.5，请直接返回 **HOLD**，不要开仓。
        - 明确的上方/下方流动性目标
     
     ### 六、退出策略 (Exit Logic)
@@ -1398,13 +1396,10 @@ class QwenClient:
         ** 重要提示 **: 如果你的 JSON 中缺少 `position_size` 字段，将被视为分析失败！
 
         ## 强制要求：高质量交易过滤器 (High Quality Filter)
-        只有满足以下 **所有** 条件时，才允许返回 `action: buy` 或 `action: sell`，否则请返回 `action: hold`：
-        1. **Confidence Score**: 必须 >= 70 (Out of 100). 如果信心不足，请不要强行交易。
-        2. **Risk:Reward Ratio**: 必须 >= 1.5. (潜在盈利空间 / 止损风险).
-           - 计算公式: Abs(TP - Entry) / Abs(Entry - SL) >= 1.5
-           - **Spread Impact**: 请注意点差 (Spread) 成本。你的 SL 和 TP 必须足够宽，以覆盖点差成本。
+        只有在 **Confidence Score >= 70** 时，才允许返回 `action: buy` 或 `action: sell`；否则请返回 `action: hold`。
+        - **Spread Impact**: 请注意点差 (Spread) 成本。你的 SL 和 TP 必须预留足够的缓冲以覆盖点差成本。
         
-        如果你的分析结果显示信心只有 60 或盈亏比只有 1.2，**请直接返回 HOLD**，并在 `reason` 中说明原因 (例如 "Confidence 60 < 70" 或 "RR 1.2 < 1.5").
+        如果你的分析结果显示信心只有 60，**请直接返回 HOLD**，并在 `reason` 中说明原因 (例如 "Confidence 60 < 70")。
 
         ## 强制要求：明确的最优 SL 和 TP (Optimal Stop Loss & Take Profit)
         无论 Action 是什么 (BUY/SELL/HOLD/WAIT)，你 **必须** 在 `exit_conditions` 中返回明确的、最优的 `sl_price` 和 `tp_price`。
