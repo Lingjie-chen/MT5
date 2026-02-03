@@ -8,11 +8,10 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, date
 try:
-    from robust_json_parser import safe_parse_or_default
+    from ai.robust_json_parser import safe_parse_or_default
 except ImportError:
-    # 尝试包内导入
     try:
-        from .robust_json_parser import safe_parse_or_default
+        from robust_json_parser import safe_parse_or_default
     except ImportError:
         import logging
         logging.getLogger(__name__).warning("Warning: robust_json_parser not found, please ensure it is in the same directory.")
