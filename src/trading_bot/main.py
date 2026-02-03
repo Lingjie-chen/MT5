@@ -7,13 +7,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
-
-# Add current directory to sys.path to ensure local imports work
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.insert(0, current_dir)
-
-from utils.file_watcher import FileWatcher
+from file_watcher import FileWatcher
 
 # Try importing MetaTrader5
 try:
@@ -36,29 +30,34 @@ logger = logging.getLogger("WindowsBot")
 # Load Environment Variables
 load_dotenv()
 
+# Add current directory to sys.path to ensure local imports work
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+
 # Import Local Modules
 try:
-    from .ai.ai_client_factory import AIClientFactory
-    from .data.mt5_data_processor import MT5DataProcessor
-    from .data.database_manager import DatabaseManager
-    from .analysis.optimization import WOAm, TETA
-    from .analysis.advanced_analysis import (
+    from .ai_client_factory import AIClientFactory
+    from .mt5_data_processor import MT5DataProcessor
+    from .database_manager import DatabaseManager
+    from .optimization import WOAm, TETA
+    from .advanced_analysis import (
         AdvancedMarketAnalysis, AdvancedMarketAnalysisAdapter, SMCAnalyzer, 
         CRTAnalyzer, MTFAnalyzer
     )
-    from .strategies.grid_strategy import KalmanGridStrategy
+    from .grid_strategy import KalmanGridStrategy
 except ImportError:
     # Fallback for direct script execution
     try:
-        from ai.ai_client_factory import AIClientFactory
-        from data.mt5_data_processor import MT5DataProcessor
-        from data.database_manager import DatabaseManager
-        from analysis.optimization import WOAm, TETA
-        from analysis.advanced_analysis import (
+        from ai_client_factory import AIClientFactory
+        from mt5_data_processor import MT5DataProcessor
+        from database_manager import DatabaseManager
+        from optimization import WOAm, TETA
+        from advanced_analysis import (
             AdvancedMarketAnalysis, AdvancedMarketAnalysisAdapter, SMCAnalyzer, 
             CRTAnalyzer, MTFAnalyzer
         )
-        from strategies.grid_strategy import KalmanGridStrategy
+        from grid_strategy import KalmanGridStrategy
     except ImportError as e:
         logger.error(f"Failed to import modules: {e}")
         sys.exit(1)
@@ -2938,24 +2937,6 @@ class SymbolTrader:
                         self.latest_strategy = strategy
                         self.last_llm_time = time.time()
                         
-                        # --- [NEW] Update Grid Strategy Dynamic Params (Basket TP) ---
-                        # Ensure AI Dynamic TP is applied
-                        pos_mgmt = strategy.get('position_management', {})
-                        if pos_mgmt:
-                            try:
-                                basket_tp = pos_mgmt.get('dynamic_basket_tp')
-                                lock_trigger = pos_mgmt.get('lock_profit_trigger')
-                                trailing_config = pos_mgmt.get('trailing_stop_config')
-                                
-                                self.grid_strategy.update_dynamic_params(
-                                    basket_tp=basket_tp,
-                                    lock_trigger=lock_trigger,
-                                    trailing_config=trailing_config
-                                )
-                                logger.info(f"Applied AI Dynamic Params: TP={basket_tp}, Lock={lock_trigger}, Trail={trailing_config}")
-                            except Exception as e:
-                                logger.error(f"Failed to update dynamic basket params: {e}")
-
                         # Update lot_size from Qwen Strategy
                         if 'position_size' in strategy:
                             try:
