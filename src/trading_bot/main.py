@@ -3504,11 +3504,14 @@ class SymbolTrader:
                 should_trade_analyze = is_new_bar or (self.last_analysis_time == 0)
                 
                 if should_trade_analyze:
-                    # Run Optimization if needed (Every 4 hours)
-                    if time.time() - self.last_optimization_time > 3600 * 4: # 4 hours
+                    # Run Comprehensive Analysis Update (Every 4 hours)
+                    # Includes strategy parameter optimization and weight optimization
+                    if time.time() - self.last_optimization_time > 14400: 
+                         logger.info("🕒 Starting Comprehensive Analysis Update (4-hour cycle)...")
                          self.optimize_strategy_parameters()
                          self.optimize_weights()
                          self.last_optimization_time = time.time()
+                         logger.info("✅ Comprehensive Analysis Update Complete.")
 
                     if self.last_analysis_time == 0:
                         logger.info("首次运行，立即执行分析...")
