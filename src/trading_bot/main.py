@@ -3382,13 +3382,20 @@ class SymbolTrader:
                     return
 
             rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 500)
+            
+            # [FIX] M5/M15 Data Loading
+            # If current timeframe is M15, we might also need M5 data for structure analysis
+            # But the main loop runs on self.timeframe (M15).
+            # If we need M5 data specifically, we should fetch it separately when needed (in analyze_market).
+            
             if rates is None:
                  err = mt5.last_error()
                  logger.warning(f"Failed to get rates for {self.symbol} (Error={err})")
                  return
                  
             if len(rates) < 100:
-                logger.warning(f"Insufficient rates for {self.symbol} (Got {len(rates)}, Need 100)")
+                logger.warning(f"Insufficient rates for {self.symbol} (Got {len(rates)}, Need 100). Waiting for data...")
+                time.sleep(1) # Wait a bit
                 return
 
             df = pd.DataFrame(rates)
@@ -3548,12 +3555,14 @@ class SymbolTrader:
                     
                     if df is not None:
                         try:
-                            # Fetch Multi-Timeframe Data (H1, M15)
+                            # Fetch Multi-Timeframe Data (H1, M15, M5)
                             rates_h1 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_H1, 0, 200)
                             rates_m15 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_M15, 0, 100)
+                            rates_m5 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_M5, 0, 100) # Added M5 explicitly
                         
                             df_h1 = pd.DataFrame(rates_h1) if rates_h1 is not None else pd.DataFrame()
                             df_m15 = pd.DataFrame(rates_m15) if rates_m15 is not None else pd.DataFrame()
+                            df_m5 = pd.DataFrame(rates_m5) if rates_m5 is not None else pd.DataFrame()
 
                             if not df_h1.empty: 
                                 df_h1['time'] = pd.to_datetime(df_h1['time'], unit='s')
@@ -3561,6 +3570,9 @@ class SymbolTrader:
                             if not df_m15.empty: 
                                 df_m15['time'] = pd.to_datetime(df_m15['time'], unit='s')
                                 if 'tick_volume' in df_m15: df_m15.rename(columns={'tick_volume': 'volume'}, inplace=True)
+                            if not df_m5.empty: 
+                                df_m5['time'] = pd.to_datetime(df_m5['time'], unit='s')
+                                if 'tick_volume' in df_m5: df_m5.rename(columns={'tick_volume': 'volume'}, inplace=True)
 
                             # 保存市场数据到DB
                             self.db_manager.save_market_data(df, self.symbol, self.tf_name)
@@ -3572,9 +3584,10 @@ class SymbolTrader:
                             processor = MT5DataProcessor()
                             df_features = processor.generate_features(df)
                         
-                            # Calculate features for H1/M15
+                            # Calculate features for H1/M15/M5
                             df_features_h1 = processor.generate_features(df_h1) if not df_h1.empty else pd.DataFrame()
                             df_features_m15 = processor.generate_features(df_m15) if not df_m15.empty else pd.DataFrame()
+                            df_features_m5 = processor.generate_features(df_m5) if not df_m5.empty else pd.DataFrame()
                         
                             # Helper to safely get latest dict
                             def get_latest_safe(dframe):
@@ -3583,6 +3596,7 @@ class SymbolTrader:
 
                             feat_h1 = get_latest_safe(df_features_h1)
                             feat_m15 = get_latest_safe(df_features_m15)
+                            feat_m5 = get_latest_safe(df_features_m5)
 
                             # 3. 调用 AI 与高级分析
                             # 构建市场快照
