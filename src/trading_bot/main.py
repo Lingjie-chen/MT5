@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
-from file_watcher import FileWatcher
+from utils.file_watcher import FileWatcher
 
 # Try importing MetaTrader5
 try:
