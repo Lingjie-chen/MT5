@@ -4083,7 +4083,9 @@ class SymbolTrader:
                         except Exception as e:
                             logger.error(f"Error in main loop: {e}", exc_info=True)
                             time.sleep(10)
-                            # continue # Do not return, just continue (implied)
+                            return
+        except KeyboardInterrupt:
+            logger.info("Bot stopped by user")
         except Exception as e:
             logger.critical(f"Critical Error in process_tick: {e}", exc_info=True)
             # Do not shutdown here, let the worker loop handle it
