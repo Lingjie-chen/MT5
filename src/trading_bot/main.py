@@ -3405,9 +3405,6 @@ class SymbolTrader:
                     self.analyze_closed_trades()
                     self.last_analysis_time = time.time()
                     
-                # 0.7 执行短线参数优化 (每 1 小时一次)
-                if int(time.time()) % 3600 == 0:
-                    self.optimize_short_term_params()
                 
                 # 0.8 执行数据库 Checkpoint (每 1 分钟一次，以满足高实时性整合需求)
                 # 虽然 WAL 模式下读取已是实时，但定期 Checkpoint 可确保 .db 文件物理更新
