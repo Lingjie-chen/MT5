@@ -1341,11 +1341,11 @@ class QwenClient:
             "strategy_rationale": "你的详细分析逻辑 (中文)", // 严禁省略
             "confidence": 85,
             "market_state": "Bullish Trend",
-            "analysis_breakdown": {
+            "analysis_breakdown": {{
                 "market_status": "M15看涨，M5回调到位",
                 "observation_points": "关注 2350 支撑有效性",
                 "position_analysis": "资金充足，结构良好，使用 0.15 手"
-            },
+            }},
             "telegram_report": "🚀 信号触发...\n\n📊 市场状态: ...\n🔭 观察点: ...\n⚖️ 仓位: ...", // 严禁省略
             "grid_config": {{ // 严禁省略，填默认值即可
                 "initial_lot": 0.01,
