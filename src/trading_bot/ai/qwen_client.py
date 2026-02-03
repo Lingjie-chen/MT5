@@ -759,7 +759,11 @@ class QwenClient:
         - "trend_m15": str (M15 趋势分析)
         - "trend_m5": str (M5 趋势分析)
         - "key_level": str (关键位分析)
-    - **telegram_report**: str (Markdown 格式的简报，用于发送通知。包含 emoji，简洁明了)
+    - "analysis_breakdown": dict (详细分析内容，用于Telegram报告)
+        - "market_status": str (市场状态分析)
+        - "observation_points": str (观察点分析)
+        - "position_analysis": str (仓位分析)
+    - "telegram_report": str (Markdown 格式的简报。必须包含三个核心板块: 1.📊市场状态, 2.🔭观察点, 3.⚖️仓位分析)
         """
         
         # Select Configs
@@ -1337,7 +1341,12 @@ class QwenClient:
             "strategy_rationale": "你的详细分析逻辑 (中文)", // 严禁省略
             "confidence": 85,
             "market_state": "Bullish Trend",
-            "telegram_report": "🚀 信号触发...", // 严禁省略
+            "analysis_breakdown": {
+                "market_status": "M15看涨，M5回调到位",
+                "observation_points": "关注 2350 支撑有效性",
+                "position_analysis": "资金充足，结构良好，使用 0.15 手"
+            },
+            "telegram_report": "🚀 信号触发...\n\n📊 市场状态: ...\n🔭 观察点: ...\n⚖️ 仓位: ...", // 严禁省略
             "grid_config": {{ // 严禁省略，填默认值即可
                 "initial_lot": 0.01,
                 "basket_tp_usd": 50.0

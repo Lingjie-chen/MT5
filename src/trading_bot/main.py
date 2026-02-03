@@ -3915,13 +3915,23 @@ class SymbolTrader:
                                 tg_rationale = strategy.get('strategy_rationale', 'No rationale provided.')
                                 
                                 # Extract SL/TP
-                                tg_exit = strategy.get('exit_conditions', {}) # Corrected key
+                                tg_exit = strategy.get('exit_conditions', {}) 
                                 tg_sl = tg_exit.get('sl_price', 0.0)
                                 tg_tp = tg_exit.get('tp_price', 0.0)
                                 if tg_sl is None: tg_sl = 0.0
                                 if tg_tp is None: tg_tp = 0.0
 
-                                # Extract Sentiment & Market Structure
+                                # Extract Breakdown
+                                tg_breakdown_status = ""
+                                tg_breakdown_obs = ""
+                                tg_breakdown_pos = ""
+                                if 'analysis_breakdown' in strategy:
+                                    ab = strategy['analysis_breakdown']
+                                    tg_breakdown_status = ab.get('market_status', '')
+                                    tg_breakdown_obs = ab.get('observation_points', '')
+                                    tg_breakdown_pos = ab.get('position_analysis', '')
+
+                                # Fallback Extraction
                                 tg_sentiment = "neutral"
                                 tg_score = 0
                                 tg_market_struct = ""
@@ -3929,27 +3939,20 @@ class SymbolTrader:
                                 
                                 if 'market_analysis' in strategy:
                                     ma = strategy['market_analysis']
-                                    # Sentiment
                                     if 'sentiment_analysis' in ma:
                                         sa = ma['sentiment_analysis']
                                         tg_sentiment = sa.get('sentiment', 'neutral')
                                         tg_score = sa.get('sentiment_score', 0)
-                                    
-                                    # Market Structure
                                     if 'market_structure' in ma:
                                         ms = ma['market_structure']
                                         trend_m15 = ms.get('timeframe_analysis', {}).get('m15', 'N/A')
                                         trend_m5 = ms.get('timeframe_analysis', {}).get('m5', 'N/A')
-                                        phase = ms.get('phase', 'N/A')
-                                        tg_market_struct = f"M15: {trend_m15} | M5: {trend_m5} | Phase: {phase}"
-                                        
-                                        # Key Levels
+                                        tg_market_struct = f"M15: {trend_m15} | M5: {trend_m5}"
                                         kl = ms.get('key_levels', {})
                                         supp = kl.get('support', [])[:2]
                                         res = kl.get('resistance', [])[:2]
-                                        tg_key_levels = f"Supp: {supp} | Res: {res}"
+                                        tg_key_levels = f"S:{supp} R:{res}"
 
-                                # Extract Position Sizing
                                 tg_pos_size = strategy.get('position_size', 0.0)
 
                                 tg_msg = (
@@ -3958,16 +3961,19 @@ class SymbolTrader:
                                     f"Action: `{tg_action}` (Size: {tg_pos_size} Lots)\n\n"
                                     
                                     f"📊 *Market Status*:\n"
-                                    f"Sentiment: {tg_sentiment} (Score: {tg_score})\n"
-                                    f"Structure: {tg_market_struct}\n"
-                                    f"Key Levels: {tg_key_levels}\n\n"
+                                    f"{tg_breakdown_status if tg_breakdown_status else f'Sentiment: {tg_sentiment} ({tg_score}) | Structure: {tg_market_struct}'}\n\n"
+                                    
+                                    f"🔭 *Observation Points*:\n"
+                                    f"{tg_breakdown_obs if tg_breakdown_obs else tg_key_levels}\n\n"
+                                    
+                                    f"⚖️ *Position Analysis*:\n"
+                                    f"{tg_breakdown_pos if tg_breakdown_pos else tg_rationale[:100]}...\n\n"
                                     
                                     f"💡 *Rationale*:\n"
-                                    f"{tg_rationale[:500]}...\n\n"
+                                    f"{tg_rationale[:300]}...\n\n"
                                     
                                     f"🎯 *Plan*:\n"
-                                    f"Suggested SL: `{tg_sl}`\n"
-                                    f"Suggested TP: `{tg_tp}`"
+                                    f"SL: `{tg_sl}` | TP: `{tg_tp}`"
                                 )
                                 self.send_telegram_message(tg_msg)
                             except Exception as e:
