@@ -3405,11 +3405,6 @@ class SymbolTrader:
                     self.analyze_closed_trades()
                     self.last_analysis_time = time.time()
                     
-                # 0.6 执行策略参数优化 (每 4 小时一次)
-                if time.time() - self.last_optimization_time > 14400:
-                    self.optimize_strategy_parameters()
-                    self.last_optimization_time = time.time()
-                
                 # 0.7 执行短线参数优化 (每 1 小时一次)
                 if int(time.time()) % 3600 == 0:
                     self.optimize_short_term_params()
