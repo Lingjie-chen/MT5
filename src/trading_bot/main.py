@@ -3868,6 +3868,38 @@ class SymbolTrader:
 
                             self.latest_strategy = strategy
                             self.last_llm_time = time.time()
+
+                            # [NEW] Send Strategy to Telegram (User Request)
+                            try:
+                                tg_action = strategy.get('action', 'neutral').upper()
+                                tg_rationale = strategy.get('rationale', 'No rationale provided.')
+                                
+                                # Extract SL/TP
+                                tg_exit = strategy.get('position_management', {}).get('exit_conditions', {})
+                                tg_sl = tg_exit.get('sl_price', 0.0)
+                                tg_tp = tg_exit.get('tp_price', 0.0)
+                                if tg_sl is None: tg_sl = 0.0
+                                if tg_tp is None: tg_tp = 0.0
+
+                                # Extract Sentiment
+                                tg_sentiment = "neutral"
+                                tg_score = 0
+                                if 'market_analysis' in strategy:
+                                    tg_sa = strategy['market_analysis'].get('sentiment_analysis', {})
+                                    tg_sentiment = tg_sa.get('sentiment', 'neutral')
+                                    tg_score = tg_sa.get('sentiment_score', 0)
+                                
+                                tg_msg = (
+                                    f"🤖 *AI Strategy Update*\n"
+                                    f"Symbol: `{self.symbol}`\n"
+                                    f"Action: `{tg_action}`\n"
+                                    f"Sentiment: {tg_sentiment} (Score: {tg_score})\n"
+                                    f"Rationale: {tg_rationale[:300]}...\n"
+                                    f"Suggested SL: `{tg_sl}` | TP: `{tg_tp}`"
+                                )
+                                self.send_telegram_message(tg_msg)
+                            except Exception as e:
+                                logger.error(f"Failed to send strategy to Telegram: {e}")
                         
                             # [NEW] Extract Sentiment from Strategy for Consistency
                             if 'market_analysis' in strategy:
@@ -4292,5 +4324,5 @@ if __name__ == "__main__":
     logger.info(f"Starting Bot with Account {args.account} for symbols: {symbols}")
             
     # User Requirement: 全部改成 5 分钟周期 (Analysis on M5, M15)
-    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M5)
+    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M15)
     bot.start(account_index=args.account)
