@@ -111,27 +111,50 @@ class AIBacktester:
         df_tail = df_with_features.tail(20)
         df_tail_reset = df_tail.reset_index()
         df_tail_reset['time'] = df_tail_reset['time'].astype(str)
-        model_input = df_tail_reset.to_dict(orient='records')
+        
+        # 构造符合AI客户端要求的输入格式
+        market_data_input = {
+            "symbol": "GOLD", # 默认为GOLD，后续可以从外部传入
+            "period": "M5",   # 假设为M5
+            "data": df_tail_reset.to_dict(orient='records'),
+            "current_price": df_tail['close'].iloc[-1] if not df_tail.empty else 0.0,
+            "account_info": {
+                "available_balance": self.current_capital
+            }
+        }
         
         try:
             # 使用DeepSeek分析市场结构
-            deepseek_analysis = self.deepseek_client.analyze_market_structure(model_input)
+            deepseek_analysis = self.deepseek_client.analyze_market_structure(market_data_input)
             
             # 使用Qwen3优化策略
-            optimized_strategy = self.qwen_client.optimize_strategy_logic(deepseek_analysis, model_input)
+            optimized_strategy = self.qwen_client.optimize_strategy_logic(deepseek_analysis, market_data_input)
             
-            # 生成信号
+            # 解析AI信号
+            action = optimized_strategy.get("action", "hold").lower()
+            signal_strength = optimized_strategy.get("signal_strength", 50)
+            
             signal = "none"
-            if optimized_strategy["signal_strength"] > 70:
-                if df_with_features['ema_fast'].iloc[-1] > df_with_features['ema_slow'].iloc[-1]:
-                    signal = "buy"
-                else:
-                    signal = "sell"
             
-            return signal, optimized_strategy["signal_strength"]
+            # 只有当信号强度足够时才执行
+            if signal_strength >= 60:
+                if "buy" in action and "close" not in action:
+                    signal = "buy"
+                elif "sell" in action and "close" not in action:
+                    signal = "sell"
+                elif "close" in action:
+                    # 如果是平仓信号，且当前有反向持仓，则视为平仓
+                    # 这里简化处理，返回 'close' 信号
+                    signal = "close"
+            
+            # 获取AI建议的仓位大小 (如果有)
+            ai_position_size = optimized_strategy.get("position_size", 0.0)
+            
+            return signal, signal_strength, ai_position_size
+            
         except Exception as e:
             logger.error(f"AI信号生成失败: {e}")
-            return "none", 50
+            return "none", 50, 0.0
     
     def calculate_position_size(self, atr):
         """
@@ -192,10 +215,13 @@ class AIBacktester:
             
             # 获取AI信号
             window_df = df.iloc[i-20:i+1]
-            signal, signal_strength = self.get_ai_signal(window_df)
+            signal, signal_strength, ai_pos_size = self.get_ai_signal(window_df)
             
             # 处理交易信号
-            if signal == "buy" and self.position != 1:
+            if signal == "close" and self.position != 0:
+                 self.close_position(current_data['close'])
+            
+            elif signal == "buy" and self.position != 1:
                 # 平仓现有仓位
                 if self.position == -1:
                     self.close_position(current_data['close'])
@@ -203,7 +229,8 @@ class AIBacktester:
                 # 开多仓
                 self.position = 1
                 self.entry_price = current_data['close']
-                position_size = self.calculate_position_size(atr)
+                # 优先使用AI建议的仓位，如果为0则使用ATR计算
+                position_size = ai_pos_size if ai_pos_size > 0 else self.calculate_position_size(atr)
                 
                 self.trades.append({
                     'date': current_data.name,
@@ -224,7 +251,8 @@ class AIBacktester:
                 # 开空仓
                 self.position = -1
                 self.entry_price = current_data['close']
-                position_size = self.calculate_position_size(atr)
+                # 优先使用AI建议的仓位
+                position_size = ai_pos_size if ai_pos_size > 0 else self.calculate_position_size(atr)
                 
                 self.trades.append({
                     'date': current_data.name,
