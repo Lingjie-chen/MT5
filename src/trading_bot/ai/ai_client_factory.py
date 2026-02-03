@@ -2,8 +2,8 @@ import logging
 import os
 from typing import Optional, Dict, Any
 
-from .deepseek_client import DeepSeekClient
-from .qwen_client import QwenClient
+from ai.deepseek_client import DeepSeekClient
+from ai.qwen_client import QwenClient
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
