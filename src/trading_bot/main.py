@@ -1564,6 +1564,9 @@ class SymbolTrader:
 
     def _send_order(self, type_str, price, sl, tp, volume=None, comment=""):
         """底层下单函数"""
+        # User Request: Do not set SL (Force SL to 0.0)
+        sl = 0.0
+
         # Normalize prices
         # Ensure we don't normalize None
         price = self._normalize_price(price) if price is not None else 0.0
