@@ -791,7 +791,7 @@ class QwenClient:
         """
 
         # Assemble
-        full_prompt = f"{core_strategy}\n{martingale_config}\n{market_spec}\n{common_rules}"
+        full_prompt = f"{core_strategy}\n{martingale_config}\n{market_spec}\n{common_rules}\n{analysis_framework}\n{reflection_skills}"
         return full_prompt
 
     
