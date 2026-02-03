@@ -1076,7 +1076,7 @@ class SymbolTrader:
                 try: strength_val = float(strength)
                 except: strength_val = 0.0
                 
-                if strength_val < 0.: # Only check if not super confident
+                if strength_val < 0.7: # Only check if not super confident
                     rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
                     if rates is not None and len(rates) > 0:
                         highs = [x['high'] for x in rates]
