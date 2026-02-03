@@ -468,6 +468,8 @@ class QwenClient:
 
     
     ### 一、大趋势分析框架 (Multi-Timeframe)
+    analysis_framework = """
+    ### 一、大趋势分析框架 (Multi-Timeframe)
     你必须从多时间框架分析整体市场结构 (查看提供的 `multi_tf_data`)：
     
     1. **时间框架层级分析**
@@ -688,7 +690,7 @@ class QwenClient:
         market_spec = market_specs.get(symbol, market_specs["DEFAULT"])
         
         # Assemble
-        full_prompt = f"{core_strategy}\n{martingale_config}\n{market_spec}\n{common_rules}"
+        full_prompt = f"{core_strategy}\n{martingale_config}\n{market_spec}\n{common_rules}\n{analysis_framework}"
         return full_prompt
 
     
