@@ -37,27 +37,27 @@ if current_dir not in sys.path:
 
 # Import Local Modules
 try:
-    from .ai_client_factory import AIClientFactory
-    from .mt5_data_processor import MT5DataProcessor
-    from .database_manager import DatabaseManager
-    from .optimization import WOAm, TETA
-    from .advanced_analysis import (
+    from .ai.ai_client_factory import AIClientFactory
+    from .data.mt5_data_processor import MT5DataProcessor
+    from .data.database_manager import DatabaseManager
+    from .analysis.optimization import WOAm, TETA
+    from .analysis.advanced_analysis import (
         AdvancedMarketAnalysis, AdvancedMarketAnalysisAdapter, SMCAnalyzer, 
         CRTAnalyzer, MTFAnalyzer
     )
-    from .grid_strategy import KalmanGridStrategy
+    from .strategies.grid_strategy import KalmanGridStrategy
 except ImportError:
     # Fallback for direct script execution
     try:
-        from ai_client_factory import AIClientFactory
-        from mt5_data_processor import MT5DataProcessor
-        from database_manager import DatabaseManager
-        from optimization import WOAm, TETA
-        from advanced_analysis import (
+        from ai.ai_client_factory import AIClientFactory
+        from data.mt5_data_processor import MT5DataProcessor
+        from data.database_manager import DatabaseManager
+        from analysis.optimization import WOAm, TETA
+        from analysis.advanced_analysis import (
             AdvancedMarketAnalysis, AdvancedMarketAnalysisAdapter, SMCAnalyzer, 
             CRTAnalyzer, MTFAnalyzer
         )
-        from grid_strategy import KalmanGridStrategy
+        from strategies.grid_strategy import KalmanGridStrategy
     except ImportError as e:
         logger.error(f"Failed to import modules: {e}")
         sys.exit(1)
