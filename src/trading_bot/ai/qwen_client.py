@@ -181,11 +181,11 @@ class QwenClient:
 
     **4. 风控与执行团队 (Risk & Execution)**
     - **审核提案**: 评估仓位规模是否符合风险敞口。
-    - **MFE 深度优化 (Finalizing TP)**:
-        1. **MFE (Exit Strategy)**: 测量最大有利偏移 (Maximum Favorable Excursion)。若 MFE 显著高于实际获利，说明离场过早，需通过优化退出以捕捉 "Maximum Gains"。**必须基于此调整 SMC TP**。
-    - **风险评估**: 结合 MAE 数据预估潜在回撤，结合 VIX 评估市场波动。
-    - **评分**: 风险等级 (0-10)。
-    - **执行**: 批准交易，**输出经过集合分析后的最终最优 TP (Optimal TP)**。
+1    - **MFE 深度优化 (Finalizing TP)**:
+            1. **MFE (Exit Strategy)**: 测量最大有利偏移 (Maximum Favorable Excursion)。若 MFE 显著高于实际获利，说明离场过早，需通过优化退出以捕捉 "Maximum Gains"。**必须基于此调整 SMC TP**。
+        - **风险评估**: 结合 MAE 数据预估潜在回撤，结合 VIX 评估市场波动。
+        - **评分**: 风险等级 (0-10)。
+        - **执行**: 批准交易，**输出经过集合分析后的最终最优 TP (Optimal TP) 和 SL (Optimal SL)**。所有仓位的 SL 和 TP 必须统一管理，确保一致性。
 
     **5. 学习与自我修正团队 (Self-Learning Team)**
     - **反思机制**: 
@@ -253,10 +253,10 @@ class QwenClient:
     **4. 风控与执行团队 (Risk & Execution)**
     - **审核提案**: 评估加密市场波动性（VIX高），流动性风险。
     - **MFE 深度优化 (Finalizing TP)**:
-        1. **MFE 分析**: 鉴于 Crypto 的高爆发性，若 MFE 高企，必须激进使用追踪止损 (Trailing Stop) 锁定 "Moon-bag" 利润。**必须基于此调整 SMC TP**。
-    - **风险评估**: 仓位限制在总资金的X%，避免过度暴露。
-    - **评分**: 风险等级 (0-10)。
-    - **执行**: 批准交易，**输出经过集合分析后的最终最优 TP (Optimal TP)**。
+            1. **MFE 分析**: 鉴于 Crypto 的高爆发性，若 MFE 高企，必须激进使用追踪止损 (Trailing Stop) 锁定 "Moon-bag" 利润。**必须基于此调整 SMC TP**。
+        - **风险评估**: 仓位限制在总资金的X%，避免过度暴露。
+        - **评分**: 风险等级 (0-10)。
+        - **执行**: 批准交易，**输出经过集合分析后的最终最优 TP (Optimal TP) 和 SL (Optimal SL)**。所有仓位的 SL 和 TP 必须统一管理，确保一致性。
 
     **5. 学习与自我修正团队 (Self-Learning Team)**
     - **反思机制**: 
@@ -326,9 +326,9 @@ class QwenClient:
     **4. 风控与执行团队 (Risk & Execution)**
     - **审核提案**: 确认非农/CPI 等重大数据发布前后的风险敞口。
     - **MFE 深度优化 (Finalizing TP)**:
-        1. **MFE 分析**: 关注 1.0800, 1.1000 等整数关口的反应，适时止盈。
-    - **风险评估**: 单笔风险控制在 1-2%。
-    - **执行**: 批准交易，**输出经过集合分析后的最终最优 TP (Optimal TP)**。
+            1. **MFE 分析**: 关注 1.0800, 1.1000 等整数关口的反应，适时止盈。
+        - **风险评估**: 单笔风险控制在 1-2%。
+        - **执行**: 批准交易，**输出经过集合分析后的最终最优 TP (Optimal TP) 和 SL (Optimal SL)**。所有仓位的 SL 和 TP 必须统一管理，确保一致性。
 
     **5. 学习与自我修正团队 (Self-Learning Team)**
     - **反思机制**: 
