@@ -3891,30 +3891,62 @@ class SymbolTrader:
                             # [NEW] Send Strategy to Telegram (User Request)
                             try:
                                 tg_action = strategy.get('action', 'neutral').upper()
-                                tg_rationale = strategy.get('rationale', 'No rationale provided.')
+                                tg_rationale = strategy.get('strategy_rationale', 'No rationale provided.')
                                 
                                 # Extract SL/TP
-                                tg_exit = strategy.get('position_management', {}).get('exit_conditions', {})
+                                tg_exit = strategy.get('exit_conditions', {}) # Corrected key
                                 tg_sl = tg_exit.get('sl_price', 0.0)
                                 tg_tp = tg_exit.get('tp_price', 0.0)
                                 if tg_sl is None: tg_sl = 0.0
                                 if tg_tp is None: tg_tp = 0.0
 
-                                # Extract Sentiment
+                                # Extract Sentiment & Market Structure
                                 tg_sentiment = "neutral"
                                 tg_score = 0
-                                if 'market_analysis' in strategy:
-                                    tg_sa = strategy['market_analysis'].get('sentiment_analysis', {})
-                                    tg_sentiment = tg_sa.get('sentiment', 'neutral')
-                                    tg_score = tg_sa.get('sentiment_score', 0)
+                                tg_market_struct = ""
+                                tg_key_levels = ""
                                 
+                                if 'market_analysis' in strategy:
+                                    ma = strategy['market_analysis']
+                                    # Sentiment
+                                    if 'sentiment_analysis' in ma:
+                                        sa = ma['sentiment_analysis']
+                                        tg_sentiment = sa.get('sentiment', 'neutral')
+                                        tg_score = sa.get('sentiment_score', 0)
+                                    
+                                    # Market Structure
+                                    if 'market_structure' in ma:
+                                        ms = ma['market_structure']
+                                        trend_m15 = ms.get('timeframe_analysis', {}).get('m15', 'N/A')
+                                        trend_m5 = ms.get('timeframe_analysis', {}).get('m5', 'N/A')
+                                        phase = ms.get('phase', 'N/A')
+                                        tg_market_struct = f"M15: {trend_m15} | M5: {trend_m5} | Phase: {phase}"
+                                        
+                                        # Key Levels
+                                        kl = ms.get('key_levels', {})
+                                        supp = kl.get('support', [])[:2]
+                                        res = kl.get('resistance', [])[:2]
+                                        tg_key_levels = f"Supp: {supp} | Res: {res}"
+
+                                # Extract Position Sizing
+                                tg_pos_size = strategy.get('position_size', 0.0)
+
                                 tg_msg = (
-                                    f"🤖 *AI Strategy Update*\n"
+                                    f"🤖 *AI Strategy Update (M15)*\n"
                                     f"Symbol: `{self.symbol}`\n"
-                                    f"Action: `{tg_action}`\n"
+                                    f"Action: `{tg_action}` (Size: {tg_pos_size} Lots)\n\n"
+                                    
+                                    f"📊 *Market Status*:\n"
                                     f"Sentiment: {tg_sentiment} (Score: {tg_score})\n"
-                                    f"Rationale: {tg_rationale[:300]}...\n"
-                                    f"Suggested SL: `{tg_sl}` | TP: `{tg_tp}`"
+                                    f"Structure: {tg_market_struct}\n"
+                                    f"Key Levels: {tg_key_levels}\n\n"
+                                    
+                                    f"💡 *Rationale*:\n"
+                                    f"{tg_rationale[:500]}...\n\n"
+                                    
+                                    f"🎯 *Plan*:\n"
+                                    f"Suggested SL: `{tg_sl}`\n"
+                                    f"Suggested TP: `{tg_tp}`"
                                 )
                                 self.send_telegram_message(tg_msg)
                             except Exception as e:
