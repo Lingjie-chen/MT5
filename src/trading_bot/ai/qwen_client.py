@@ -359,7 +359,8 @@ class QwenClient:
         # --- 3. 策略技术规范 (SMC + Martingale) ---
         # 必须保留原有的马丁格尔参数，供"Trader Agent"和"Risk Team"参考
         
-        strategy_specs = """
+        martingale_configs = {
+            "strategy_specs": """
     ## 交易策略规范 (Trend Following - Strict Mode)
 
     **核心理念**: 宁可错过，绝不做错。严格等待高质量的回调确认。
@@ -403,9 +404,9 @@ class QwenClient:
        - 在 `analysis_summary` 中，必须明确指出当前的**市场结构 (Bullish/Bearish Structure)**。
        - 必须明确指出当前的**价格位置 (Premium vs Discount)**。
        - 必须明确指出最近的 **BOS** 和 **CHoCH** 位置。
-        """
-
-            "DEFAULT": """
+        """,
+        
+        "DEFAULT": """
     **交易员与风控团队必须严格遵守的【单边趋势交易技术规范 (Trend Only)】**:
     1. **仓位管理 (Position Sizing)**: 
        - **完全由大模型决定**: 必须基于 M15/M5 的市场情绪 (Sentiment) 和 SMC 结构置信度，计算出精确的首单手数 (Initial Lot)。
