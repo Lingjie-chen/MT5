@@ -691,7 +691,7 @@ class DeepSeekClient:
         market_spec = market_specs.get(symbol, market_specs["DEFAULT"])
         
         # Assemble
-        full_prompt = f"{core_strategy}\n{martingale_config}\n{market_spec}\n{common_rules}"
+        full_prompt = f"{core_strategy}\n{martingale_config}\n{market_spec}\n{common_rules}\n{analysis_framework}"
         return full_prompt
 
     def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "deepseek-ai/DeepSeek-V3.1-Terminus"):
