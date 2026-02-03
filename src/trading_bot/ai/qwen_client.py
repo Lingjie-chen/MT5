@@ -8,11 +8,11 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, date
 try:
-    from ..utils.robust_json_parser import safe_parse_or_default
+    from robust_json_parser import safe_parse_or_default
 except ImportError:
     # 尝试包内导入
     try:
-        from robust_json_parser import safe_parse_or_default
+        from .robust_json_parser import safe_parse_or_default
     except ImportError:
         import logging
         logging.getLogger(__name__).warning("Warning: robust_json_parser not found, please ensure it is in the same directory.")
@@ -50,22 +50,22 @@ class CustomJSONEncoder(json.JSONEncoder):
 class QwenClient:
     """
     Qwen3 API客户端，用于黄金(XAUUSD)交易决策系统
-    基于SMC(Smart Money Concepts)+Trend Following(趋势跟随)策略
+    基于SMC(Smart Money Concepts)+Martingale(马丁格尔)策略
     使用硅基流动API服务，遵循ValueCell的API调用模式
     """
     
     def _get_system_prompt(self, symbol: str) -> str:
         """
         根据交易品种生成特定的系统提示词 (System Prompt)
-        支持针对不同品种(如 XAUUSD, ETHUSD) 定制趋势跟随策略和市场特性
+        支持针对不同品种(如 XAUUSD, ETHUSD) 定制 Martingale 网格策略和市场特性
         """
         symbol = symbol.upper()
         
         # --- 1. 核心策略架构 (通用) ---
-        role_definition = f"""
-    作为{symbol}交易的唯一核心决策大脑，你全权负责基于SMC(Smart Money Concepts)和趋势跟随(Trend Following)策略的交易执行。
+        core_strategy = f"""
+    作为{symbol}交易的唯一核心决策大脑，你全权负责基于SMC(Smart Money Concepts)和Martingale(马丁格尔)策略的交易执行。
     
-    你的核心策略架构：**SMC + Trend Following (趋势跟随)**
+    你的核心策略架构：**SMC + Martingale Grid (马丁网格)**
     
     **关键规则：你的交易周期为 15分钟 (M15)。你必须结合 15分钟 (M15) 和 5分钟 (M5) 的周期趋势来制定入场决策。**
     
@@ -171,13 +171,13 @@ class QwenClient:
     **3. 交易员团队 (Trader Agent)**
     - **综合研判**: 权衡通胀数据、地缘政治风险、技术指标。
     - **策略**: 若通胀超预期+技术面突破阻力位，决定买入黄金。
-    - **细节**: 基于 SMC 结构提出 **初步** 的建仓价格和目标价 (SMC TP)。
-    - **输出**: 交易提案（Action, Entry, SMC TP）。
-      - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'hold', 'close'。
+    - **细节**: 基于 SMC 结构提出 **初步** 的建仓价格、止损位 (SMC SL) 和目标价 (SMC TP)。
+    - **输出**: 交易提案（Action, Entry, SMC SL, SMC TP）。
+      - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'grid_start', 'hold', 'close'。
       - **注意**: 
         - **Market Order (市价单)**: 当 Action 为 'buy' 或 'sell' 时，系统将直接以当前市场价格成交。适用于确认突破或急需入场的情况。
         - **Limit/Stop Order (挂单)**: 当 Action 为 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell' 时，系统将在指定价格挂单。适用于回调接多或突破确认。
-        - **Grid Start**: **已禁用 (Disabled)**。
+        - **Grid Start**: 若判断为震荡行情或需部署SMC马丁格尔网格，请务必使用 'grid_start'。
 
     **4. 风控与执行团队 (Risk & Execution)**
     - **审核提案**: 评估仓位规模是否符合风险敞口。
@@ -245,10 +245,10 @@ class QwenClient:
     **3. 交易员团队 (Trader Agent)**
     - **综合研判**: 技术突破+DeFi锁仓量上升+监管利好传闻。
     - **策略**: 若ETH突破关键阻力位，决定买入。
-    - **细节**: 基于 SMC 结构提出 **初步** 的建仓价格和目标价 (SMC TP)。
-    - **输出**: 交易提案（Action, Entry, SMC TP）。
-        - **Action**: 'buy', 'sell', 'add_buy', 'add_sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'hold', 'close'。
-      - **注意**: Grid Start 已禁用。
+    - **细节**: 基于 SMC 结构提出 **初步** 的建仓价格、止损位 (SMC SL) 和目标价 (SMC TP)。
+    - **输出**: 交易提案（Action, Entry, SMC SL, SMC TP）。
+      - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'grid_start' (网格部署), 'hold', 'close'。
+      - **注意**: 若判断为震荡行情或需部署SMC马丁格尔网格，请务必使用 'grid_start'。
 
     **4. 风控与执行团队 (Risk & Execution)**
     - **审核提案**: 评估加密市场波动性（VIX高），流动性风险。
@@ -318,10 +318,10 @@ class QwenClient:
     **3. 交易员团队 (Trader Agent)**
     - **综合研判**: 结合欧美利差、DXY 走势及 SMC 结构。
     - **策略**: 若 DXY 遇阻回落且 EURUSD 完成流动性扫荡后出现 CHOCH，决定买入。
-    - **细节**: 基于 SMC 提出建仓价格和止盈 (SMC TP)。
-    - **输出**: 交易提案（Action, Entry, SMC TP）。
-      - **Action**: 'buy', 'sell', 'add_buy', 'add_sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'hold', 'close'。
-      - **注意**: 欧美时段重叠期波动最大，适合趋势交易。
+    - **细节**: 基于 SMC 提出建仓价格、止损 (SMC SL) 和止盈 (SMC TP)。
+    - **输出**: 交易提案（Action, Entry, SMC SL, SMC TP）。
+      - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'grid_start', 'hold', 'close'。
+      - **注意**: 欧美时段重叠期波动最大，适合趋势交易；亚盘适合震荡网格。
 
     **4. 风控与执行团队 (Risk & Execution)**
     - **审核提案**: 确认非农/CPI 等重大数据发布前后的风险敞口。
@@ -356,8 +356,8 @@ class QwenClient:
     重点关注：SMC结构、市场情绪、基本面驱动和风险控制。
             """
 
-        # --- 3. 策略技术规范 (Trend Only) ---
-        # 必须保留原有的参数结构，但内容更新为单边趋势
+        # --- 3. 策略技术规范 (SMC + Martingale) ---
+        # 必须保留原有的马丁格尔参数，供"Trader Agent"和"Risk Team"参考
         
         strategy_specs = """
     ## 交易策略规范 (Trend Following - Strict Mode)
@@ -405,7 +405,6 @@ class QwenClient:
        - 必须明确指出最近的 **BOS** 和 **CHoCH** 位置。
         """
 
-        strategy_configs = {
             "DEFAULT": """
     **交易员与风控团队必须严格遵守的【单边趋势交易技术规范 (Trend Only)】**:
     1. **仓位管理 (Position Sizing)**: 
@@ -419,7 +418,7 @@ class QwenClient:
             """
         }
         
-        tech_specs = strategy_configs.get(symbol, strategy_configs["DEFAULT"])
+        tech_specs = martingale_configs.get(symbol, martingale_configs["DEFAULT"])
         
         # --- 4. 共同执行规则 ---
         common_rules = """
@@ -430,12 +429,14 @@ class QwenClient:
        - M5 为执行周期，必须服从 M15 趋势。
        - **量化书籍参考**: 遵循《量化交易策略》中的均值回归与趋势跟踪双重验证原则。
        - 只有在确认趋势反转或SMC结构破坏时才平仓。
-       - **单边策略**: 严禁使用 Grid Start。只能使用 BUY/SELL Action。
-    4. **动态风控 (MFE Optimization Protocol)**: 
-       - **智能配置 (Smart Configuration)**: 开仓时，TP 必须结合 **市场趋势情绪 (Sentiment)**、**MFE (最大有利偏移)** 以及所有高级算法进行自动优化配置。
+       - **网格策略**: 当市场处于震荡或需左侧挂单时，使用 'grid_start' Action，系统将自动生成基于 ATR 和 SMC 阻力位的网格挂单。
+    4. **动态风控 (MAE/MFE Optimization Protocol)**: 
+       - **智能配置 (Smart Configuration)**: 开仓时，SL 和 TP 必须结合 **市场趋势情绪 (Sentiment)**、**MAE (最大不利偏移)**、**MFE (最大有利偏移)** 以及所有高级算法进行自动优化配置。
        - **智能移动 (Smart Strategic Move)**: 
-         - **仅限结构性调整**: 只有当市场结构发生重大变化（如新的支撑/阻力形成、SMC 结构破坏）或情绪发生根本性逆转时，才允许移动 TP。
-         - **MFE 驱动**: 
+         - **拒绝动态移动 (No Dynamic/Mechanical Trailing)**: 严禁使用基于固定点数的机械式移动止损。
+         - **仅限结构性调整**: 只有当市场结构发生重大变化（如新的支撑/阻力形成、SMC 结构破坏）或情绪发生根本性逆转时，才允许移动 SL/TP。
+         - **MAE/MFE 驱动**: 
+             - **SL**: 如果历史 MAE 显示当前波动率增加，可适当调整 SL 以避免被噪音扫损（但在保本后只能向更有利方向移动）。
              - **TP**: 根据实时 MFE 预测，如果动能衰竭，提前移动 TP 锁定利润。
        - **Basket TP 动态实时配置 (Real-time Dynamic Basket TP)**:
          - **核心要求**: 对于每个品种的趋势交易，必须根据以下所有维度进行综合分析和自我学习，给出一个**最优的美元数值**：
@@ -449,56 +450,26 @@ class QwenClient:
               - 如果 EMA 50 强劲倾斜且 HA 连续同色，TP 应激进。
            4. **历史绩效 (Self-Learning)**: 
               - **必须参考** `performance_stats` 中的 `avg_mfe` (平均最大有利偏移)。
-              - **TP 上限** = (Position Size * Contract Size * Avg_MFE_Points * 0.8)。不要设定超过历史平均表现太多的不切实际目标。
-              - **TP 下限** = 能够覆盖交易成本 (Spread + Swap + Commission) 的最小利润。
-           5. **量化书籍优化**: 
-              - 引入 Kelly Criterion (凯利公式) 思想，在胜率高时允许更大的 TP 以最大化几何增长。
-              - 参考《交易系统的胜算》中的 "Expectancy" (期望值) 概念，确保 (WinRate * AvgWin) > (LossRate * AvgLoss)。
-           6. **长期历史优化种子 (Long-term Optimization Seeds)**:
-              - **必须参考** `historical_seeds` 中的最佳参数组合。
-              - 如果历史数据显示某组参数 (如特定的 SMC ATR 阈值) 长期表现优异，应在策略制定中给予更高权重。
-              - 将历史最优参数作为决策的 "Anchor" (锚点)，在此基础上进行微调，而不是凭空猜测。
+              - **Basket TP 上限** = (Position Size * Contract Size * Avg_MFE_Points * 0.8)。不要设定超过历史平均表现太多的不切实际目标。
+              - **Basket TP 下限** = 能够覆盖交易成本 (Spread + Swap + Commission) 的最小利润。
          - **计算公式参考**:
            - `Base_Target` = (ATR * Position_Size * Contract_Size)
-           - `Sentiment_Multiplier`: 0.5 (Weak) to 3.0 (Strong Trend)
-           - `Structure_Multiplier`: 0.8 (Range) to 2.0 (Trend Surfing)
-           - `Dynamic_TP` = `Base_Target` * `Sentiment_Multiplier` * `Structure_Multiplier` (并用 Avg_MFE 做校验)
+           - `Sentiment_Multiplier`: 0.5 (Weak) to 2.0 (Strong)
+           - `Structure_Multiplier`: 0.8 (Range) to 1.5 (Trend)
+           - `Dynamic_Basket_TP` = `Base_Target` * `Sentiment_Multiplier` * `Structure_Multiplier` (并用 Avg_MFE 做校验)
          - **拒绝固定值**: 严禁使用固定的数值 (如 50.0)！必须是经过上述逻辑计算后的结果。
          - **更新指令**: 在 `position_management` -> `dynamic_basket_tp` 中返回计算后的数值。
        - **Lock Profit Trigger (Profit Locking)**:
-         - **User Instruction**: **已被禁用**。请不要设置此值，或将其设置为 null / 0。我们不再使用利润锁定机制，完全依赖 Basket TP。
-         - **更新指令**: 在 `position_management` -> `lock_profit_trigger` 中返回 null 或 0。
-       - **Trailing Stop Config (移动止损配置)**:
-         - **User Instruction**: **已被禁用**。请不要设置此值。
-         - **更新指令**: 在 `position_management` -> `trailing_stop_config` 中返回 null。
+         - **定义**: 当 Basket 整体利润达到此数值时，启动强制利润锁定机制 (Trailing Stop for Basket)。
+         - **逻辑**: 如果利润达到此阈值，系统将锁定大部分利润 (如 60%)，防止利润回撤。
+         - **最小值**: 必须 >= 10.0 USD。
+         - **更新指令**: 在 `position_management` -> `lock_profit_trigger` 中返回计算后的数值。
 
     5. **CandleSmoothing EMA 策略 (Strategy B)**:
        - **核心逻辑**: 基于 EMA50 趋势过滤，结合 EMA20 High/Low 通道突破和 Heiken Ashi 蜡烛形态。
        - **做多信号 (Buy)**: HA收盘价 > EMA20 High AND HA阳线 AND HA收盘价 > EMA50 AND EMA50上升趋势 AND 前一HA收盘价 < EMA50 (金叉)。
        - **做空信号 (Sell)**: HA收盘价 < EMA20 Low AND HA阴线 AND HA收盘价 < EMA50 AND EMA50下降趋势 AND 前一HA收盘价 > EMA50 (死叉)。
        - **权重**: 当此策略发出信号且与 SMC 结构方向一致时，置信度应显著提高。
-
-    6. **LLM原生风控配置 (LLM-Native Risk Management)**:
-       - **核心思想**: 摒弃固定参数，所有风控指标必须由大模型实时分析得出。
-       - **Max Drawdown (最大回撤配置)**:
-         - 在 `grid_config` 中必须输出 `max_drawdown_usd`。
-         - **计算逻辑**: Account_Balance * Risk_Tolerance_Factor (e.g., 0.05 for conservative, 0.15 for aggressive).
-         - **动态调整 (Dynamic Adjustment)**: 
-           - **Volatility Based**: 参考 `risk_metrics.volatility` (ATR)。如果当前 ATR > Average ATR * 1.5，说明市场剧烈波动，必须 **降低** Max Drawdown (例如减半) 以防止被动止损。
-           - **Event Based**: 当 VIX > 20 或 市场处于重大新闻发布前，必须降低 Risk_Tolerance_Factor。
-         - **硬性限制**: 任何时候，`max_drawdown_usd` 不得超过账户总资金的 20%。
-
-    7. **Turtle Trading Protocol (海龟交易法则 - 趋势跟随)**:
-       - **唐奇安通道 (Donchian Channel)**: 
-         - **突破信号**: 关注 `donchian` 指标。当价格突破 Donchian Upper (20日高点) 时，为潜在做多信号；跌破 Donchian Lower (20日低点) 时，为潜在做空信号。
-         - **SMC 过滤**: 海龟信号必须得到 SMC 结构的验证 (即突破方向必须有 FVG 或 OB 支持)。
-         - **退出规则**: 使用 10日 Donchian 反向突破作为趋势结束的离场信号 (Trailing Stop)。
-       - **加仓 (Pyramiding)**: 趋势确认后，若价格继续向有利方向移动 1N (1 ATR)，可加仓。
-
-    8. **Strict Supply/Demand (严格供需)**:
-       - **优先权**: 在寻找入场位时，优先参考 `strict_supply_demand` 返回的区域，而非普通 OB。
-       - **特征**: 这些区域具备 "Strong Impulse" (强力脱离) 和 "Fresh Base" (新鲜基地)，胜率更高。
-       - **操作**: 在 Demand Zone 上沿挂 Limit Buy，在 Supply Zone 下沿挂 Limit Sell。
     """
 
         # --- 3. 市场特性 (品种特定) ---
@@ -567,9 +538,10 @@ class QwenClient:
             """
         }
 
-        analysis_framework = """
+
+    
     ### 一、大趋势分析框架 (Multi-Timeframe)
-    你必须从多时间框架分析整体市场结构 (查看提供的 `multi_tf_data`):
+    你必须从多时间框架分析整体市场结构 (查看提供的 `multi_tf_data`)：
     
     1. **时间框架层级分析**
        - **M15 (15分钟)**: 确定长期趋势方向 (Trend Bias) 和主要支撑阻力。
@@ -634,7 +606,6 @@ class QwenClient:
     1. **价格到达关键SMC区域**
        - 订单块或失衡区内
        - 距离失效位有合理的风险回报空间
-       - **量化优化**: 价格应处于 50%-61.8% Fibonacci 回撤位附近，或完成 Liquidity Sweep (流动性扫荡)。
     
     2. **CRT确认信号出现**
        - 明显的反转或延续形态
@@ -643,19 +614,17 @@ class QwenClient:
     3. **动量指标支持**
        - CCI显示背离或极端值回归
        - RVGI确认成交量配合
-       - **高级算法**: 参考 EMA20/50 均线排列和 Heiken Ashi 颜色一致性。
     
     4. **流动性目标明确**
-       - **盈亏比要求**: 预期盈利(Reward) 必须至少是 潜在风险(Risk) 的 1.5倍。
-       - **风险定义**: 即便我们不设硬止损，你也必须基于 **最近的结构失效点 (Structural Invalidation)** 来估算潜在风险距离。
-       - **拒绝交易**: 如果 (TP距离 / 结构失效距离) < 1.5，请直接返回 **HOLD**，不要开仓。
+       - 至少有1:1.5的风险回报比
        - 明确的上方/下方流动性目标
     
-    ### 六、退出策略 (Exit Logic)
+    ### 六、退出策略
     
-    **整体止盈 (Basket TP)**:
-    1. **目标设定**: 核心在于整体浮盈出场。请基于 结合 SMC、市场结构 (BOS/CHOCH)、供需区、FVG等技术分析计算 最优的`basket_tp_usd`。
-    2. **动态调整**: 当市场动能衰竭或遇到强阻力时，应在下一次分析中降低 `basket_tp_usd` 以确保落袋为安。
+    **盈利退出条件：**
+    1. **部分止盈**：价格到达第一目标（风险回报比1:1），平仓50%
+    2. **移动止损**：剩余仓位止损移至保本，追踪至第二目标
+    3. **整体止盈**：组合浮盈达到总风险的1.5倍，或到达主要流动性池
     
     **平仓 (CLOSE_ALL) 标准**:
     - **仅用于紧急情况**: 正常情况下，让策略自动止盈。只有在以下情况手动 CLOSE_ALL：
@@ -682,7 +651,7 @@ class QwenClient:
     ### 第三部分：交易决策
     1. 明确的方向判断
     2. 置信度评估
-    3. 具体入场计划（价格、仓位、止盈）
+    3. 具体入场计划（价格、仓位、止损、止盈）
     4. 加仓计划（条件、位置、仓位）
     
     ### 第四部分：风险管理
@@ -706,7 +675,7 @@ class QwenClient:
     
     
     ## 最终决策输出
-
+    
     请做出最终决策 (Action):
     1. **BUY**:
        - 含义: 启动做多策略 (Market Buy)。
@@ -725,10 +694,12 @@ class QwenClient:
        - 适用场景: 发生重大基本面利空、SMC 结构完全失效 (失效位被强力击穿)、或达到总账户风控阈值。
 
     **自我学习与适应 (Self-Learning & Adaptation)**:
-    - **数据源**: 你现在接收来自远程数据库 (Remote DB) 的实时历史交易数据 (`performance_stats`)。
+    - **数据源**: 你现在接收来自远程数据库 (Remote DB) 的实时历史交易数据 (`performance_stats`)。这是你过去的真实战绩。
     - **动态修正**:
-        1. **胜率低**: 如果 `win_rate` < 40%，请更严格的过滤入场信号。
-        2. **连败保护**: 如果 `recent_trades` 显示连续亏损，请在 `rationale` 中建议暂停开新仓或降低 `initial_lot`。
+        1. **胜率低 (Low Win Rate)**: 如果 `win_rate` < 40%，说明当前市场环境不适合你的默认策略。必须 **收紧入场条件** (只做 5-Star Setup) 并 **降低 Risk%**。
+        2. **盈亏比差 (Low Profit Factor)**: 如果 `profit_factor` < 1.0，说明止损太频繁或止盈太早。请参考 `avg_mae` 放宽 SL，或参考 `avg_mfe` 优化 TP。
+        3. **连败保护 (Loss Streak Protection)**: 如果最近5笔交易连续亏损，强制将本次 Risk% 减半，直到恢复盈利。
+    - **模式识别**: 检查 `recent_trades`。如果发现自己在类似的震荡行情中频繁止损，请在 `strategy_rationale` 中明确写出："识别到震荡洗盘模式，启动防御机制"。
 
     **一致性检查 (Consistency Check)**:
     - **SMC 验证**: 你的决策必须得到 SMC 结构的支持 (如 M15 Order Block 支撑)。严禁在毫无依据的半空中开仓。
@@ -767,7 +738,7 @@ class QwenClient:
         """
         
         # Select Configs
-        strategy_config = strategy_configs.get(symbol, strategy_configs["DEFAULT"])
+        martingale_config = martingale_configs.get(symbol, martingale_configs["DEFAULT"])
         market_spec = market_specs.get(symbol, market_specs["DEFAULT"])
         
         # Reflection Skills (Synced from CLAUDE.local.md)
@@ -818,7 +789,7 @@ class QwenClient:
         """
 
         # Assemble
-        full_prompt = f"{role_definition}\n{analysis_framework}\n{strategy_config}\n{market_spec}\n{common_rules}\n{reflection_skills}"
+        full_prompt = f"{core_strategy}\n{martingale_config}\n{market_spec}\n{common_rules}"
         return full_prompt
 
     
@@ -1033,13 +1004,11 @@ class QwenClient:
            - 找出关键的市场结构点（BOS/CHoch）
            - 评估市场当前处于哪个阶段（积累/扩张/分配）
         
-        3. **SMC信号识别 (详细)**
-           - 识别活跃的订单块(Order Blocks) 和 严格的供需区 (Supply/Demand Zones)
+        3. **SMC信号识别**
+           - 识别活跃的订单块(Order Blocks)
            - 识别重要的失衡区(FVGs)
-           - 评估流动性池位置 (Liquidity Pools)
-           - **结构确认**: 明确指出最近的 BOS (结构破坏) 和 CHoCH (特性改变) 位置
-           - **位置评估**: 当前价格是否处于 Premium (溢价区) 还是 Discount (折扣区)？
-
+           - 评估流动性池位置
+        
         4. **情绪分析**
            - 情绪得分 (Sentiment Score): -1.0 (极度看空) 到 1.0 (极度看多)
            - 市场情绪状态: bullish/bearish/neutral
@@ -1203,7 +1172,7 @@ class QwenClient:
 
     def optimize_strategy_logic(self, market_structure_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        黄金(XAUUSD)交易决策系统 - 基于SMC+趋势策略
+        黄金(XAUUSD)交易决策系统 - 基于SMC+Martingale策略
         整合完整的交易决策框架，完全自主进行市场分析和交易决策
         
         Args:
@@ -1377,52 +1346,27 @@ class QwenClient:
         2. **交易商特性与风险适配 (Broker Specifics)**:
            - **Exness (高杠杆/低点差)**: 允许更激进的网格加仓和稍大的首单风险 (Risk% 可上浮 20%)。但需注意滑点。
            - **AvaTrade (标准/监管严)**: 严格遵守标准风险模型，禁止过度激进。
-           - **合约规格**: 请优先参考 `symbol_details` 中的 `trade_contract_size`。通常 XAUUSD=100, ETHUSD=1, EURUSD=100000。
-        3. **风险管理 (AI Driven Risk) - 你的最高优先级**: 
-           - **完全授权**: 忽略任何固定的 0.01 手限制。你必须根据你的信心水平和账户资金动态调整仓位。
+           - **合约规格**: 请务必确认当前品种 {symbol} 的合约大小 (Contract Size)。通常 XAUUSD=100, ETHUSD=1, EURUSD=100000。
+        3. **风险管理 (AI Driven Risk)**: 
            - **单笔风险**: **完全由你分析决定，不设固定限制**。
            - **建议范围**: 
-             - 低置信度 / 逆势 / 震荡: 建议 0.5% - 1.0% 账户余额风险
-             - 中置信度 / 顺势 / 结构良好: 建议 1.0% - 3.0% 账户余额风险
+             - 低置信度 / 逆势 / 震荡: 建议 0.5% - 1.0%
+             - 中置信度 / 顺势 / 结构良好: 建议 1.0% - 3.0%
              - 高置信度 (Strong Buy/Sell) / 极佳SMC结构: 可提升至 3.0% - 5.0% 甚至更高（如果你认为机会极佳）。
            - **计算公式**: Position Size (Lots) = (Account Balance * Risk Percentage) / (Stop Loss Distance * Contract Size).
         4. **具体示例**:
            - 资金 $10,000, 风险 2% ($200). 止损距离 $4.
            - Lots = 200 / (4 * 100) = 0.50 Lots.
-           - **必须输出结果到 `position_size` 字段 (JSON key)**
         5. **市场情绪**: 结合 {market_analysis.get('sentiment_analysis', {}).get('sentiment', 'neutral')} 情绪调整。
         
-        **绝对不要**默认使用 0.01 手！必须基于资金量和你的分析信心计算。如果你认为机会很好，请大胆给出合适的仓位（例如 0.5, 1.0, 2.0 等）。
+        **绝对不要**默认使用 0.01 手！必须基于资金量和你的分析信心计算。
         请给出一个精确到小数点后两位的数字 (例如 0.15, 0.50, 1.20)，并在 `strategy_rationale` 中详细解释计算逻辑。
-        
-        ** 重要提示 **: 如果你的 JSON 中缺少 `position_size` 字段，将被视为分析失败！
 
-        ## 强制要求：高质量交易过滤器 (High Quality Filter)
-        只有满足以下 **所有** 条件时，才允许返回 `action: buy` 或 `action: sell`，否则请返回 `action: hold`：
-        1. **Confidence Score**: 必须 >= 70 (Out of 100). 如果信心不足，请不要强行交易。
-        2. **Risk:Reward Ratio**: 必须 >= 1.5. (潜在盈利空间 / 止损风险).
-           - 计算公式: Abs(TP - Entry) / Abs(Entry - SL) >= 1.5
-           - **Spread Impact**: 请注意点差 (Spread) 成本。你的 SL 和 TP 必须足够宽，以覆盖点差成本。
-        
-        如果你的分析结果显示信心只有 60 或盈亏比只有 1.2，**请直接返回 HOLD**，并在 `reason` 中说明原因 (例如 "Confidence 60 < 70" 或 "RR 1.2 < 1.5").
-
-        ## 强制要求：明确的最优 SL 和 TP (Optimal Stop Loss & Take Profit)
-        无论 Action 是什么 (BUY/SELL/HOLD/WAIT)，你 **必须** 在 `exit_conditions` 中返回明确的、最优的 `sl_price` 和 `tp_price`。
-        
-        **Directional Logic (Long vs Short)**:
-        - **Long (Buy)**: SL < Entry Price < TP. (SL must be BELOW price).
-        - **Short (Sell)**: TP < Entry Price < SL. (SL must be ABOVE price).
-        - **Validation**: Ensure `abs(Entry - SL)` > `2 * Spread` to cover costs.
-
-        - **TP (止盈)**: 基于下一个流动性池 (Liquidity Pool) 或 MFE 统计。
-        - **SL (止损)**: 必须设置在关键结构位之外 (SMC Invalid Point) 或基于 ATR 保护。
-        - **严禁** 返回 0.0 或 null！即使是 HOLD/WAIT 状态，也请给出"如果现在进场，合理的SL/TP在哪里"的建议。
-        
-        **点差适配 (Spread Awareness)**:
-        - 不同的交易商 (Exness/Ava) 和品种 (XAUUSD/ETHUSD) 点差差异巨大。
-        - 必须在 TP 和 SL 中预留点差缓冲。
-        - 当前预估点差 (Points): {current_market_data.get('spread', 20)}
-        - 建议缓冲: 至少 2 * Spread。
+        ## 强制要求：明确的最优 SL/TP
+        无论 Action 是什么 (BUY/SELL/HOLD)，你 **必须** 在 `exit_conditions` 中返回明确的、最优的 `sl_price` 和 `tp_price`。
+        - **SL**: 基于最近的 SMC 结构失效位 (Invalidation Level) 或 MAE 统计。
+        - **TP**: 基于下一个流动性池 (Liquidity Pool) 或 MFE 统计。
+        - **严禁** 返回 0.0 或 null！
 
 
         ## 当前交易上下文
@@ -1433,7 +1377,7 @@ class QwenClient:
         市场结构分析结果：
         {market_context}
         
-        持仓状态 (Risk Management 核心关注):
+        持仓状态 (Martingale 核心关注):
         {pos_context}
         
         挂单状态:
@@ -1459,22 +1403,17 @@ class QwenClient:
         决策要求：
         1. 基于市场结构分析结果进行方向判断
         2. 结合SMC信号寻找最佳入场点
-        3. 参考MFE数据优化止盈
-        4. 制定交易计划
+        3. 参考MAE/MFE数据优化止损止盈
+        4. 制定Martingale网格加仓计划
         5. 严格遵循风险管理规则
-        6. 生成Telegram简报 (Telegram Report):
-           - **Content Alignment**: Report MUST match Action.
-           - If "wait": Report "⏳ 观望中 (Waiting)" and brief reason.
-           - If "hold": Report "💎 持仓中 (Holding)" and PnL/Trend update.
-           - If "buy"/"sell": Report "🚀 信号触发 (Signal)" with Entry/SL/TP.
-           - **Consistency**: "hold" is ONLY for existing positions!
+        6. 生成Telegram简报（使用emoji图标增强可读性）
         """
         
         # 构建payload
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": f"你是一名专注于{symbol}交易的职业交易员，采用SMC(Smart Money Concepts)结合趋势跟随的复合交易系统。你完全自主进行市场分析和交易决策。IMPORTANT: You must output strictly valid JSON format only."},
+                {"role": "system", "content": f"你是一名专注于{symbol}交易的职业交易员，采用SMC(Smart Money Concepts)结合Martingale网格策略的复合交易系统。你完全自主进行市场分析和交易决策。IMPORTANT: You must output strictly valid JSON format only."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.3,
@@ -1549,37 +1488,6 @@ class QwenClient:
                             logger.error(f"解析结果非字典 (Type: {type(trading_decision)})。")
                             return None
                     
-                    # 兼容性适配: 将 grid_config 映射回 position_management
-                    if isinstance(trading_decision, dict) and 'grid_config' in trading_decision and isinstance(trading_decision['grid_config'], dict):
-                        gc = trading_decision['grid_config']
-                        pm = trading_decision.get('position_management', {})
-                        if not isinstance(pm, dict): pm = {}
-                        
-                        # 映射关键字段
-                        pm['dynamic_basket_tp'] = gc.get('basket_tp_usd', pm.get('dynamic_basket_tp', 50.0))
-                        pm['martingale_multiplier'] = gc.get('martingale_multiplier', pm.get('martingale_multiplier', 1.5))
-                        pm['recommended_grid_step_pips'] = gc.get('grid_step_pips', pm.get('recommended_grid_step_pips', 20.0))
-                        
-                        # 估算 Lock Trigger (70% of Basket TP)
-                        if 'basket_tp_usd' in gc:
-                            pm['lock_profit_trigger'] = gc['basket_tp_usd'] * 0.7
-                            
-                        trading_decision['position_management'] = pm
-
-                    # Post-processing: Enforce HOLD/WAIT logic based on positions
-                    action_raw = trading_decision.get('action', 'wait').lower()
-                    has_positions = len(current_positions) > 0 if current_positions else False
-                    
-                    if action_raw == 'hold' and not has_positions:
-                        trading_decision['action'] = 'wait'
-                        if 'telegram_report' in trading_decision:
-                            trading_decision['telegram_report'] = trading_decision['telegram_report'].replace("持仓", "观望").replace("Holding", "Waiting")
-
-                    if action_raw == 'wait' and has_positions:
-                        trading_decision['action'] = 'hold'
-                        if 'telegram_report' in trading_decision:
-                            trading_decision['telegram_report'] = trading_decision['telegram_report'].replace("观望", "持仓").replace("Waiting", "Holding")
-
                     # 再次校验模型返回的 position_size，确保其存在且合法
                     if "position_size" not in trading_decision:
                         # [RECOVERY] If missing, try to infer from grid_config or default
