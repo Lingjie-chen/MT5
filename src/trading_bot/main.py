@@ -3754,7 +3754,9 @@ class SymbolTrader:
                                 # Only lightweight Grid Signal update (Kalman Price Check)
                                 # We update Kalman filter with new price, but don't re-scan SMC levels
                                 self.grid_strategy.update_kalman(float(current_price['close']))
-                                grid_signal = self.grid_strategy.get_entry_signal(float(current_price['close']))
+                                # grid_signal = self.grid_strategy.get_entry_signal(float(current_price['close']))
+                                # User Request: 剔除 grid_signal (Set to neutral to ignore it in AI context)
+                                grid_signal = "neutral"
                                 
                                 # Update cache for grid signal
                                 self.cached_analysis['grid_signal'] = grid_signal
