@@ -3750,8 +3750,7 @@ class SymbolTrader:
                                     adv_signal = adv_result['signal_info']['signal']
                                 
                                 # Only lightweight Grid Signal update (Kalman Price Check)
-                                # We update Kalman filter with new price, but don't re-scan SMC levels
-                                self.grid_strategy.update_kalman(float(current_price['close']))
+                                # Kalman filter is already updated via update_market_data(df) above
                                 grid_signal = self.grid_strategy.get_entry_signal(float(current_price['close']))
                                 
                                 # Update cache for grid signal
