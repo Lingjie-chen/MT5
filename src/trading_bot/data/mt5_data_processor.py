@@ -37,7 +37,7 @@ class MT5DataProcessor:
         
         Args:
             symbol (str): 交易品种，如 'EURUSD'
-            timeframe (int): 时间周期，如 mt5.TIMEFRAME_H1
+            timeframe (int): 时间周期，如 mt5.TIMEFRAME_M15
             start_date (datetime): 开始日期
             end_date (datetime): 结束日期
         
@@ -47,6 +47,10 @@ class MT5DataProcessor:
         # Try to get real data if MT5 is available
         if self.initialized:
             try:
+                # Default to M15 if None provided
+                if timeframe is None:
+                    timeframe = mt5.TIMEFRAME_M15
+                    
                 rates = mt5.copy_rates_range(symbol, timeframe, start_date, end_date)
                 if rates is not None:
                     df = pd.DataFrame(rates)
