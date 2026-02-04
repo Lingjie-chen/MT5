@@ -115,7 +115,7 @@ class AIBacktester:
         # 构造符合AI客户端要求的输入格式
         market_data_input = {
             "symbol": "GOLD", # 默认为GOLD，后续可以从外部传入
-            "period": "M5",   # 假设为M5
+            "period": "M15",   # 策略执行周期 M15
             "data": df_tail_reset.to_dict(orient='records'),
             "current_price": df_tail['close'].iloc[-1] if not df_tail.empty else 0.0,
             "account_info": {
