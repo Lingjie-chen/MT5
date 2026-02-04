@@ -2857,13 +2857,6 @@ class SymbolTrader:
                                     "ema_fast": float(feat_h1.get('ema_fast', 0)),
                                     "ema_slow": float(feat_h1.get('ema_slow', 0)),
                                     "trend": "bullish" if feat_h1.get('ema_fast', 0) > feat_h1.get('ema_slow', 0) else "bearish"
-                                },
-                                "H4": {
-                                    "close": float(feat_h4.get('close', 0)),
-                                    "rsi": float(feat_h4.get('rsi', 50)),
-                                    "ema_fast": float(feat_h4.get('ema_fast', 0)),
-                                    "ema_slow": float(feat_h4.get('ema_slow', 0)),
-                                    "trend": "bullish" if feat_h4.get('ema_fast', 0) > feat_h4.get('ema_slow', 0) else "bearish"
                                 }
                             }
                         }
