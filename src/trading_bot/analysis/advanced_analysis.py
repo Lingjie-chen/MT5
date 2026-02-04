@@ -33,6 +33,9 @@ class AdvancedMarketAnalysis:
         # EMA
         indicators['ema_12'] = df['close'].ewm(span=12).mean().iloc[-1]
         indicators['ema_26'] = df['close'].ewm(span=26).mean().iloc[-1]
+        indicators['ema_20'] = df['close'].ewm(span=20).mean().iloc[-1]
+        indicators['ema_50'] = df['close'].ewm(span=50).mean().iloc[-1]
+        indicators['ema_200'] = df['close'].ewm(span=200).mean().iloc[-1]
         
         # MACD
         ema_12 = df['close'].ewm(span=12).mean()
