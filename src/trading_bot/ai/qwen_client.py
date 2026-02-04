@@ -110,7 +110,7 @@ class QwenClient:
          - **Order Block (OB)**: 机构留下的未成交订单区域。
          - **FVG (Fair Value Gap)**: 快速移动留下的失衡区，价格倾向于回补。
          - **Supply & Demand Zones**: 严格的供需区。
-       - **CRT (Candle Range Theory)**: 确认关键位置的 M5/M15 K线反应(如Pinbar, Engulfing)。
+       - **CRT (Candle Range Theory)**: 确认关键位置的 M15 K线反应(如Pinbar, Engulfing)。
        - **CCI/RVGI**: 辅助确认超买超卖和动量背离。
        - **斐波那契结构 (Fibonacci Structure)**: 
          - **M15 结构分析**: 当你生成分析时，必须基于 15分钟 (M15) 的微观结构来绘制斐波那契回撤位。
@@ -377,7 +377,7 @@ class QwenClient:
     *   **模式**: **Trend Following (趋势跟随)** - 顺势而为，果断追击。
     *   **Action**: `BUY` (做多) 或 `SELL` (做空) - **市价单或挂单入场**。
     *   **Grid Add**: **永久禁止 (Disabled)**。
-    *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M5/M15 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
+    *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M15 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
 
     1. **SMC (Smart Money Concepts) - 核心入场逻辑**:
        - **结构确认 (Structure Mapping)**:
@@ -388,7 +388,7 @@ class QwenClient:
          - **Order Block (OB)**: 机构留下的未成交订单区域。
          - **FVG (Fair Value Gap)**: 快速移动留下的失衡区，价格倾向于回补。
          - **Supply & Demand Zones**: 严格的供需区。
-       - **CRT (Candle Range Theory)**: 确认关键位置的 M5/M15 K线反应(如Pinbar, Engulfing)。
+       - **CRT (Candle Range Theory)**: 确认关键位置的 M15 K线反应(如Pinbar, Engulfing)。
        - **CCI/RVGI**: 辅助确认超买超卖和动量背离。
 
     2. **出场与风控 (Exit & Risk)**:
