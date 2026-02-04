@@ -742,8 +742,8 @@ class QwenClient:
 
     - **action**: str ("HOLD", "CLOSE_ALL", "BUY", "SELL", "LIMIT_BUY", "LIMIT_SELL")
     - **strategy_mode**: str ("trend") -- 必须明确指定当前策略模式
-    - **sl**: float (趋势交易止损价格. 对于 BUY/SELL/ADD Action 必须提供)
-    - **tp**: float (趋势交易止盈价格. 对于 BUY/SELL/ADD Action 必须提供)
+    - **sl**: float (设为 0。由 AI 实时监控平仓)
+    - **tp**: float (设为 0。由 AI 实时监控平仓)
     - **grid_config**: dict (保留字段，设为默认值)
         - "initial_lot": float (首单手数, e.g., 0.01)
         - "allow_add": bool (设为 true if Pyramiding, else false)
