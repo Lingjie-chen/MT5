@@ -545,8 +545,7 @@ class QwenClient:
     
     1. **时间框架层级分析 (High Frequency Structure)**
        - **H1 (1小时)**: **大趋势框架 (Macro Trend)**。确定主要市场方向 (Bullish/Bearish) 和关键 HTF 支撑阻力。
-       - **M15 (15分钟)**: **波段结构 (Swing Structure)**。确认中短期趋势延续或反转，寻找 BOS/CHOCH。
-       - **M5 (5分钟)**: **执行周期 (Execution)**。精准寻找入场触发信号 (Trigger)，如 Order Block 回调或 FVG 填充。
+       - **M15 (15分钟)**: **执行周期 (Execution)**。作为主要的交易执行周期，确认趋势延续或反转，寻找 BOS/CHOCH 以及精准入场触发信号 (Trigger)。
     
     2. **市场结构识别**
        - 明确标注当前更高级别时间框架的趋势方向（牛市、熊市、盘整）
