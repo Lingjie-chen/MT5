@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
-from file_watcher import FileWatcher
 
 # Add current directory to sys.path to ensure local imports work
 current_dir = os.path.dirname(os.path.abspath(__file__))
