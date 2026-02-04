@@ -1378,7 +1378,7 @@ class QwenClient:
                 "position_analysis": "资金充足，结构良好，使用 0.15 手"
             }},
             "telegram_report": "🚀 信号触发...\n\n📊 市场状态: ...\n\n📝 盘前8问:\n1.趋势: 多头\n2.起点: ...\n(列出所有8问)\n\n🔭 观察点: ...\n⚖️ 仓位: ...", // 严禁省略
-            "grid_config": { // 严禁省略，填默认值即可
+            "grid_config": {{ // 严禁省略，填默认值即可
                 "initial_lot": 0.01,
                 "basket_tp_usd": 50.0
             }}
