@@ -1867,9 +1867,12 @@ class SymbolTrader:
                                         if "global_analysis" in review_result:
                                             new_basket_tp = review_result["global_analysis"].get("basket_tp_recommendation")
                                             if new_basket_tp and isinstance(new_basket_tp, (int, float)) and new_basket_tp > 0:
-                                                logger.info(f"💡 AI Suggests New Basket TP: ${new_basket_tp} (Old: ${self.grid_strategy.basket_tp_usd})")
-                                                self.grid_strategy.basket_tp_usd = float(new_basket_tp)
-                                                logger.info(f"✅ Updated Basket TP to ${self.grid_strategy.basket_tp_usd}")
+                                                logger.info(f"💡 AI Suggests New Basket TP: ${new_basket_tp}")
+                                                try:
+                                                    self.grid_strategy.update_dynamic_params(basket_tp=float(new_basket_tp))
+                                                    logger.info(f"✅ Applied Dynamic Basket TP (Global): ${float(new_basket_tp)}")
+                                                except Exception as e_apply:
+                                                    logger.error(f"Failed to apply AI Basket TP recommendation: {e_apply}")
 
                                  except Exception as e:
                                     logger.error(f"AI Trade Review Failed: {e}")
