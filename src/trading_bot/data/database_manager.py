@@ -157,6 +157,22 @@ class DatabaseManager:
                 )
             ''')
             
+            # Table for trade reflections (Memory)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS trade_reflections (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp DATETIME,
+                    trade_id TEXT,
+                    symbol TEXT,
+                    outcome TEXT, -- 'WIN', 'LOSS'
+                    reasoning TEXT,
+                    shortcomings TEXT,
+                    improvements TEXT,
+                    rating REAL,
+                    full_json TEXT -- Complete JSON payload
+                )
+            ''')
+            
             conn.commit()
             # conn.close() # Persistent connection, do not close
             
@@ -1024,3 +1040,63 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to get trades: {e}")
             return pd.DataFrame()
+
+    def save_trade_reflection(self, reflection_data):
+        """Save trade reflection to database"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                INSERT INTO trade_reflections (timestamp, trade_id, symbol, outcome, reasoning, shortcomings, improvements, rating, full_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                datetime.now(),
+                reflection_data.get('trade_id', 'UNKNOWN'),
+                reflection_data.get('symbol', 'UNKNOWN'), # Assuming symbol is passed or inferable? reflection_data might not have it directly if not added
+                reflection_data.get('outcome', 'UNKNOWN'),
+                reflection_data.get('reasoning', ''),
+                reflection_data.get('shortcomings', ''),
+                reflection_data.get('improvements', ''),
+                reflection_data.get('self_rating', 0.0),
+                json.dumps(reflection_data)
+            ))
+            
+            conn.commit()
+            logger.info(f"Saved trade reflection for Trade #{reflection_data.get('trade_id')}")
+            
+        except Exception as e:
+            logger.error(f"Failed to save trade reflection: {e}")
+
+    def get_recent_trade_reflections(self, symbol=None, limit=5):
+        """Get recent trade reflections for context injection"""
+        try:
+            conn = self._get_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            query = "SELECT * FROM trade_reflections"
+            params = []
+            
+            if symbol:
+                query += " WHERE symbol = ?"
+                params.append(symbol)
+                
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+            
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+            
+            reflections = []
+            for row in rows:
+                try:
+                    reflections.append(json.loads(row['full_json']))
+                except:
+                    # Fallback if json parse fails
+                    reflections.append(dict(row))
+            return reflections
+            
+        except Exception as e:
+            logger.error(f"Failed to get recent reflections: {e}")
+            return []

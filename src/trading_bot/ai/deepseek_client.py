@@ -397,6 +397,11 @@ class DeepSeekClient:
        - **做多信号 (Buy)**: HA收盘价 > EMA20 High AND HA阳线 AND HA收盘价 > EMA50 AND EMA50上升趋势 AND 前一HA收盘价 < EMA50 (金叉)。
        - **做空信号 (Sell)**: HA收盘价 < EMA20 Low AND HA阴线 AND HA收盘价 < EMA50 AND EMA50下降趋势 AND 前一HA收盘价 > EMA50 (死叉)。
        - **权重**: 当此策略发出信号且与 SMC 结构方向一致时，置信度应显著提高。
+
+    6. **交易反思机制 (Trade Reflection Protocol)**:
+       - **必须查阅历史反思**: 在做出决策前，务必参考提供的 `historical_reflections` (如有)。
+       - **避免重蹈覆辙**: 如果当前的市场模式与之前的失败交易相似 (如 "逆势抄底失败" 或 "震荡中频繁止损")，必须触发 "Rule of 2" (暂停或减半仓位)。
+       - **持续优化**: 学习之前的成功经验 (如 "耐心等待 H1 回调")，并应用到本次决策中。
     """
 
         # --- 3. 市场特性 (品种特定) ---
@@ -467,7 +472,6 @@ class DeepSeekClient:
 
 
     
-        ### 一、大趋势分析框架 (Multi-Timeframe)
         analysis_framework = """
     ### 一、大趋势分析框架 (Multi-Timeframe)
     你必须从多时间框架分析整体市场结构 (查看提供的 `multi_tf_data`)：
@@ -491,7 +495,36 @@ class DeepSeekClient:
        - 列出3-5个最重要的支撑位（包括订单块、失衡区、心理关口）
        - 列出3-5个最重要的阻力位（包括订单块、失衡区、心理关口）
        - 特别关注多时间框架汇合的关键水平
+
+    ### 核心规则：盘前交易计划 8 问 (The 8 Pre-Market Questions)
+    **在做出任何入场决定 (Action != HOLD) 前，必须严格自我反思并回答以下 8 个问题。若任意一条不满足，强制 HOLD。**
     
+    1. **当前市场正在干什么?** (Trend Identification)
+       - 判据: EMA快中慢线排列。
+       - 多头: 快>中>慢; 空头: 慢>中>快; 震荡: 缠绕。
+    2. **趋势的起点在哪里?** (Trend Start)
+       - 范围: 仅关注最近 250 根 K 线。
+       - 锚点: 以极值点(最高/最低)为分割，只看右侧趋势。
+    3. **当前趋势是什么阶段?** (Trend Stage)
+       - 核心: **MACD 波峰** vs **价格波峰**。
+       - 非末期(可做): 价格新高/新低，MACD波峰也同步抬高/降低。
+       - 末期(禁做): 价格新高/新低，但 MACD 波峰回落 (背离)。**严禁在趋势末期开仓!**
+    4. **当前趋势的级别是什么?** (Trend Level)
+       - 依据: **MACD 回踩零轴** 的动作。
+       - 必须顺应 MACD 回踩零轴(或穿过零轴)形成的最大级别中枢方向。
+    5. **你的偏见是什么?** (Bias)
+       - 基于上述 1-4，明确你的主观倾向 (如: "逢低做多" 或 "逢高做空")。
+       - 严禁临时起意做反向操作。
+    6. **你是顺哪个大级别，逆哪个小级别周期?** (Cycle Alignment)
+       - **顺大**: 顺应 H1 级别趋势。
+       - **逆小**: 在 M5/M15 级别寻找反向回调(Pullback)结束的转折点入场。
+    7. **你的防守位在哪里?** (Defense)
+       - 必须在开仓前确定。
+       - 参考: 极值点、大级别中枢边缘、EMA 慢线。
+    8. **要不要到交易周期里去?** (Execution Decision)
+       - **Yes**: 前 7 问答案清晰一致，且小级别出现反转信号。
+       - **No**: 任意答案模糊或逻辑矛盾 -> **HOLD**。
+
     ### 二、SMC信号处理
     
     1. **订单块分析**
@@ -1080,7 +1113,7 @@ class DeepSeekClient:
         
         return {"sentiment": "neutral", "sentiment_score": 0.0, "reason": "Error", "trend_assessment": {"direction": "unknown", "strength": "weak"}}
 
-    def optimize_strategy_logic(self, market_structure_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def optimize_strategy_logic(self, market_structure_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None, historical_reflections: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         黄金(XAUUSD)交易决策系统 - 基于SMC+Martingale策略
         整合完整的交易决策框架，完全自主进行市场分析和交易决策
@@ -1096,8 +1129,14 @@ class DeepSeekClient:
         pos_context = ""
         prev_context = ""
         market_context = ""
+        reflect_context = ""
         
         market_context = f"\n市场结构分析结果:\n{json.dumps(market_analysis, indent=2, cls=CustomJSONEncoder)}\n"
+        
+        if historical_reflections:
+            reflect_context = f"\n历史交易反思 (Reflections):\n{json.dumps(historical_reflections, indent=2, cls=CustomJSONEncoder)}\n"
+        else:
+            reflect_context = "\n历史交易反思: 无记录\n"
         
         if previous_analysis:
             prev_action = previous_analysis.get('action', 'unknown')
@@ -1229,6 +1268,9 @@ class DeepSeekClient:
         
         上一次分析:
         {prev_context}
+        
+        交易反思 (Trade Reflections - MUST READ):
+        {reflect_context}
         
         ## {symbol} 特定注意事项
         - 当前交易时段: {market_analysis.get('symbol_specific_analysis', {}).get('trading_session', 'unknown')}
@@ -1450,6 +1492,73 @@ class DeepSeekClient:
                 logger.error("无法解析信号强度")
         return 50
     
+    def analyze_trade_reflection(self, trade_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        [Skill] Trade Reflection & Self-Improvement
+        对结束的交易进行深度反思，生成改进建议
+        """
+        symbol = trade_data.get("symbol", "DEFAULT")
+        prompt = f"""
+        作为专业的交易教练，请对这笔刚刚结束的交易进行深度复盘和反思。
+        
+        交易详情:
+        {json.dumps(trade_data, indent=2, cls=CustomJSONEncoder)}
+        
+        请根据以下框架进行分析：
+        1. **盈亏归因分析**:
+            - 核心驱动力是什么？(SMC结构准确 / 顺势交易 / 运气?)
+            - 失败原因是什么？(逆势 / 止损太紧 / 情绪化?)
+        2. **执行偏差检查**:
+            - 是否严格执行了之前的计划？
+        3. **自我提升行动**:
+            - Keep (保持): 做对的一件事。
+            - Fix (改进): 下次必须修正的一个弱点。
+            - Optimization (优化): 参数微调建议。
+        
+        请严格返回以下JSON格式:
+        {{
+          "reflection_type": "POST_TRADE_ANALYSIS",
+          "trade_id": "{trade_data.get('ticket', 'UNKNOWN')}",
+          "outcome": "WIN" | "LOSS",
+          "reasoning": "简述盈亏的核心逻辑 (中文)",
+          "shortcomings": "本次交易的不足之处",
+          "improvements": "下次交易的具体改进措施",
+          "self_rating": 8.5
+        }}
+        """
+        
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "你是一位严格的交易心理学导师和技术分析专家。IMPORTANT: You must output strictly valid JSON format only."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.3,
+            "max_tokens": 800,
+            "response_format": {"type": "json_object"}
+        }
+        
+        try:
+            response = self._call_api("chat/completions", payload, symbol=symbol)
+            if response and "choices" in response:
+                content = response["choices"][0]["message"]["content"]
+                result = safe_parse_or_default(content, fallback=None)
+                if result:
+                    logger.info(f"交易反思完成: {result.get('outcome')} - Rating: {result.get('self_rating')}")
+                    return result
+        except Exception as e:
+            logger.error(f"Trade reflection failed: {e}")
+            
+        return {
+            "reflection_type": "POST_TRADE_ANALYSIS",
+            "trade_id": str(trade_data.get('ticket', 'UNKNOWN')),
+            "outcome": "UNKNOWN",
+            "reasoning": "Analysis Failed",
+            "shortcomings": "System Error",
+            "improvements": "Check Logs",
+            "self_rating": 0.0
+        }
+
     def calculate_kelly_criterion(self, win_rate: float, risk_reward_ratio: float) -> float:
         """
         计算凯利准则

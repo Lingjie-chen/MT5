@@ -66,9 +66,9 @@ class QwenClient:
     
     你的核心策略架构：**SMC + Martingale Grid (马丁网格)**
     
-    **关键规则：你的交易周期为 15分钟 (M15)。你必须结合 15分钟 (M15) 和 5分钟 (M5) 的周期趋势来制定入场决策。**
+    **关键规则：你的交易周期为 5分钟 (M5) 和 15分钟 (M15)。你必须结合 1小时 (H1) 的大趋势框架来制定高频交易决策。**
     
-    **重要指令: 用户已明确取消网格交易 (Grid Trading Cancelled)，但允许顺势金字塔加仓 (Pyramiding)。**
+    **重要指令: 采用高频交易 (HFT) 风格，在 H1 顺势前提下，利用 M5/M15 波动进行快速交易。**
     - **禁止**使用传统网格策略 (Blind Grid Strategy) 和逆势加仓 (Martingale)。
     - **禁止**使用 `GRID_START_LONG`, `GRID_START_SHORT` 等 Action。
     - **允许**顺势加仓 (Pyramiding/Adding):
@@ -77,21 +77,20 @@ class QwenClient:
         - 加仓的止损位必须上移 (Trailing) 以保护整体利润。
     - **必须**使用单边趋势交易 (One-sided Trend Trading)。
 
-    **交易节奏控制 (Trend Cycle Control)**:
-    - **拒绝频繁交易**: 不需要每根K线都交易。
-    - **趋势跟随模式**: 当持有仓位时，你的核心任务是**持有 (HOLD)**，直到趋势结束。
-    - **趋势结束判定**: 只有当明确的市场结构被破坏 (Structure Break) 或达到主要盈利目标时，才结束当前趋势交易。
-    - **新一轮分析**: 只有在当前趋势明确结束（平仓）后，才开始寻找下一波大的趋势机会。
+    **交易节奏控制 (High Frequency Trend Control)**:
+    - **积极寻找机会**: 在 H1 趋势明确时，利用 M5/M15 的每一个有效回撤或突破进行交易。
+    - **趋势跟随模式**: 以 H1 为主趋势，M15 为波段，M5 为入场点。
+    - **趋势结束判定**: 当 M15 结构破坏或 H1 关键位受阻时，快速离场。
+    - **新一轮分析**: 保持敏锐，随时准备捕捉下一波 M5 级别的机会。
     - **拒绝追涨杀跌 (Anti-FOMO)**: 
-      - **严禁在局部高点追多 (No Buying at Tops)**: 如果价格处于近期高位 (Premium Zone)，必须等待回调 (Pullback/Callback) 至合理区域 (Discount Zone) 或关键支撑位 (Order Block/FVG) 后再考虑入场。
-      - **严禁在局部低点追空 (No Selling at Bottoms)**: 如果价格处于近期低位 (Discount Zone)，必须等待反弹至合理区域 (Premium Zone) 或关键阻力位后再考虑入场。
-    -3. **Trend Surfing (趋势冲浪)**: 如果识别到强劲的单边趋势（如价格持续在MA上方或突破关键阻力），不要等待深度回调，但仍需等待 M15 级别的结构确认 (Micro-Structure Confirmation)。
+      - 虽然是高频，但仍需等待 M5 级别的回调 (Pullback) 至合理区域 (Discount Zone) 或关键支撑位 (Order Block/FVG)。
+    - **Trend Surfing (趋势冲浪)**: 如果识别到强劲的单边趋势，果断利用 M5 信号频繁进出或金字塔加仓。
 
-    **策略模式 (Strategy Mode) - 单边趋势专用**:
-    *   **模式**: **Trend Following (趋势跟随)** - 顺势而为，果断追击。
+    **策略模式 (Strategy Mode) - 高频单边趋势专用**:
+    *   **模式**: **HFT Trend Following (高频趋势跟随)** - 顺势而为，快速出击。
     *   **Action**: `BUY` (做多) 或 `SELL` (做空)。**如果趋势确认，允许使用 `ADD_BUY` 或 `ADD_SELL` 进行加仓**。
     *   **Grid Add**: **仅允许顺势金字塔加仓 (Pyramiding Allowed)**。禁止逆势死扛。
-    *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M5 和 M15 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
+    *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M5/M15 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
     *   **Risk/Reward Requirement**: **盈亏比 (Risk/Reward Ratio) 必须至少 1.5**。如果 (TP距离 / SL距离) < 1.5，则**禁止开仓**，必须返回 HOLD。
 
     **仓位管理指令 (Position Sizing Instructions)**:
@@ -544,9 +543,10 @@ class QwenClient:
     ### 一、大趋势分析框架 (Multi-Timeframe)
     你必须从多时间框架分析整体市场结构 (查看提供的 `multi_tf_data`)：
     
-    1. **时间框架层级分析**
-       - **M15 (15分钟)**: 确定长期趋势方向 (Trend Bias) 和主要支撑阻力。
-       - **M5 (5分钟)**: **执行周期**。确定市场结构 (Structure)、关键流动性池，并寻找入场触发信号 (Trigger)。
+    1. **时间框架层级分析 (High Frequency Structure)**
+       - **H1 (1小时)**: **大趋势框架 (Macro Trend)**。确定主要市场方向 (Bullish/Bearish) 和关键 HTF 支撑阻力。
+       - **M15 (15分钟)**: **波段结构 (Swing Structure)**。确认中短期趋势延续或反转，寻找 BOS/CHOCH。
+       - **M5 (5分钟)**: **执行周期 (Execution)**。精准寻找入场触发信号 (Trigger)，如 Order Block 回调或 FVG 填充。
     
     2. **市场结构识别**
        - 明确标注当前更高级别时间框架的趋势方向（牛市、熊市、盘整）
@@ -562,6 +562,35 @@ class QwenClient:
        - 列出3-5个最重要的支撑位（包括订单块、失衡区、心理关口）
        - 列出3-5个最重要的阻力位（包括订单块、失衡区、心理关口）
        - 特别关注多时间框架汇合的关键水平
+
+    ### 核心规则：盘前交易计划 8 问 (The 8 Pre-Market Questions)
+    **在做出任何入场决定 (Action != HOLD) 前，必须严格自我反思并回答以下 8 个问题。若任意一条不满足，强制 HOLD。**
+    
+    1. **当前市场正在干什么?** (Trend Identification)
+       - 判据: EMA快中慢线排列。
+       - 多头: 快>中>慢; 空头: 慢>中>快; 震荡: 缠绕。
+    2. **趋势的起点在哪里?** (Trend Start)
+       - 范围: 仅关注最近 250 根 K 线。
+       - 锚点: 以极值点(最高/最低)为分割，只看右侧趋势。
+    3. **当前趋势是什么阶段?** (Trend Stage)
+       - 核心: **MACD 波峰** vs **价格波峰**。
+       - 非末期(可做): 价格新高/新低，MACD波峰也同步抬高/降低。
+       - 末期(禁做): 价格新高/新低，但 MACD 波峰回落 (背离)。**严禁在趋势末期开仓!**
+    4. **当前趋势的级别是什么?** (Trend Level)
+       - 依据: **MACD 回踩零轴** 的动作。
+       - 必须顺应 MACD 回踩零轴(或穿过零轴)形成的最大级别中枢方向。
+    5. **你的偏见是什么?** (Bias)
+       - 基于上述 1-4，明确你的主观倾向 (如: "逢低做多" 或 "逢高做空")。
+       - 严禁临时起意做反向操作。
+    6. **你是顺哪个大级别，逆哪个小级别周期?** (Cycle Alignment)
+       - **顺大**: 顺应 H1 级别趋势。
+       - **逆小**: 在 M5/M15 级别寻找反向回调(Pullback)结束的转折点入场。
+    7. **你的防守位在哪里?** (Defense)
+       - 必须在开仓前确定。
+       - 参考: 极值点、大级别中枢边缘、EMA 慢线。
+    8. **要不要到交易周期里去?** (Execution Decision)
+       - **Yes**: 前 7 问答案清晰一致，且小级别出现反转信号。
+       - **No**: 任意答案模糊或逻辑矛盾 -> **HOLD**。
     
     ### 二、SMC信号处理
     
@@ -1025,9 +1054,7 @@ class QwenClient:
                 "trend": "bullish/bearish/neutral",
                 "phase": "accumulation/expansion/distribution",
                 "timeframe_analysis": {{
-                    "monthly": str,
-                    "weekly": str,
-                    "daily": str,
+                    "h1": str,
                     "m15": str,
                     "m5": str
                 }},
@@ -1171,7 +1198,7 @@ class QwenClient:
         
         return None
 
-    def optimize_strategy_logic(self, market_structure_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def optimize_strategy_logic(self, market_structure_analysis: Dict[str, Any], current_market_data: Dict[str, Any], technical_signals: Optional[Dict[str, Any]] = None, current_positions: Optional[List[Dict[str, Any]]] = None, performance_stats: Optional[List[Dict[str, Any]]] = None, previous_analysis: Optional[Dict[str, Any]] = None, historical_reflections: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         黄金(XAUUSD)交易决策系统 - 基于SMC+Martingale策略
         整合完整的交易决策框架，完全自主进行市场分析和交易决策
@@ -1183,6 +1210,7 @@ class QwenClient:
             current_positions (Optional[List[Dict[str, Any]]]): 当前持仓信息
             performance_stats (Optional[List[Dict[str, Any]]]): 历史交易绩效统计
             previous_analysis (Optional[Dict[str, Any]]): 上一次的分析结果
+            historical_reflections (Optional[List[Dict[str, Any]]]): 历史反思记录
         
         Returns:
             Dict[str, Any]: 完整的交易决策
@@ -1198,11 +1226,18 @@ class QwenClient:
         pos_context = ""
         prev_context = ""
         market_context = ""
+        reflect_context = ""
         
         # 1. 市场分析结果上下文
         market_context = f"\n市场结构分析结果:\n{json.dumps(market_analysis, indent=2, cls=CustomJSONEncoder)}\n"
         
-        # 2. 上一次分析结果上下文
+        # 2. 交易反思上下文
+        if historical_reflections:
+            reflect_context = f"\n历史交易反思 (Reflections):\n{json.dumps(historical_reflections, indent=2, cls=CustomJSONEncoder)}\n"
+        else:
+            reflect_context = "\n历史交易反思: 无记录\n"
+        
+        # 3. 上一次分析结果上下文
         if previous_analysis:
             prev_action = previous_analysis.get('action', 'unknown')
             prev_rationale = previous_analysis.get('strategy_rationale', 'none')
@@ -1293,6 +1328,21 @@ class QwenClient:
         prompt = f"""
         {system_prompt}
         
+        **入场执行标准 (Entry Execution - Strict Validation)**:
+        **你必须仔细分析市场结构情绪以及 BOS, SMC, CHOCH, FVG 等专业技术指标。**
+        
+        **入场必须同时满足以下条件**:
+        1. **M15/M5 关键位确认**: 价格必须处于 M15 或 M5 级别的 **确认订单块 (Confirmed Order Block)** 或 **重要阻力支撑位**。
+        2. **SMC 信号**: 必须出现清晰的 BOS (结构突破) 或 CHOCH (特性改变) 信号。
+        3. **价格行为确认 (Price Action)**:
+           - **回踩确认 (Retest)**: 如果价格突破了关键位，必须等待**回踩不破** (Retest and Hold) 才可进场。
+           - **突破确认 (Breakout)**: 如果价格在关键位盘整，必须等待**有效突破且不跌破** (Breakout and Hold) 才可进场。
+        4. **立即进场 (Immediate Market Entry)**: 
+           - 一旦上述条件（回踩确认或突破确认）在 M5/M15 级别得到验证，**必须立即以市场价进场 (Market Order)**，不要等待限价单成交，以免踏空。
+           - 在 `action` 中返回 "buy" 或 "sell" (而非 limit_buy/limit_sell) 以触发市价单。
+
+        **拒绝模糊信号**: 如果价格只是接近关键位但没有明确的 K 线确认 (如 Pinbar, Engulfing)，或者回踩力度过弱，**坚决观望 (WAIT)**。
+
         ## 强制输出格式要求 (Format Enforcement)
         你必须返回一个严格符合 JSON 格式的响应，并确保包含以下所有顶层字段（严禁遗漏）：
         
@@ -1392,6 +1442,9 @@ class QwenClient:
         
         上一次分析:
         {prev_context}
+        
+        交易反思 (Trade Reflections - MUST READ):
+        {reflect_context}
         
         ## {symbol} 特定注意事项
         - 当前交易时段: {market_analysis.get('symbol_specific_analysis', {}).get('trading_session', 'unknown')}
@@ -1539,6 +1592,73 @@ class QwenClient:
         
         return None
     
+    def analyze_trade_reflection(self, trade_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        [Skill] Trade Reflection & Self-Improvement
+        对结束的交易进行深度反思，生成改进建议
+        """
+        symbol = trade_data.get("symbol", "DEFAULT")
+        prompt = f"""
+        作为专业的交易教练，请对这笔刚刚结束的交易进行深度复盘和反思。
+        
+        交易详情:
+        {json.dumps(trade_data, indent=2, cls=CustomJSONEncoder)}
+        
+        请根据以下框架进行分析：
+        1. **盈亏归因分析**:
+            - 核心驱动力是什么？(SMC结构准确 / 顺势交易 / 运气?)
+            - 失败原因是什么？(逆势 / 止损太紧 / 情绪化?)
+        2. **执行偏差检查**:
+            - 是否严格执行了之前的计划？
+        3. **自我提升行动**:
+            - Keep (保持): 做对的一件事。
+            - Fix (改进): 下次必须修正的一个弱点。
+            - Optimization (优化): 参数微调建议。
+        
+        请严格返回以下JSON格式:
+        {{
+          "reflection_type": "POST_TRADE_ANALYSIS",
+          "trade_id": "{trade_data.get('ticket', 'UNKNOWN')}",
+          "outcome": "WIN" | "LOSS",
+          "reasoning": "简述盈亏的核心逻辑 (中文)",
+          "shortcomings": "本次交易的不足之处",
+          "improvements": "下次交易的具体改进措施",
+          "self_rating": 8.5
+        }}
+        """
+        
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "你是一位严格的交易心理学导师和技术分析专家。IMPORTANT: You must output strictly valid JSON format only."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.3,
+            "max_tokens": 800,
+            "response_format": {"type": "json_object"}
+        }
+        
+        try:
+            response = self._call_api("chat/completions", payload, symbol=symbol)
+            if response and "choices" in response:
+                content = response["choices"][0]["message"]["content"]
+                result = safe_parse_or_default(content, fallback=None)
+                if result:
+                    logger.info(f"交易反思完成: {result.get('outcome')} - Rating: {result.get('self_rating')}")
+                    return result
+        except Exception as e:
+            logger.error(f"Trade reflection failed: {e}")
+            
+        return {
+            "reflection_type": "POST_TRADE_ANALYSIS",
+            "trade_id": str(trade_data.get('ticket', 'UNKNOWN')),
+            "outcome": "UNKNOWN",
+            "reasoning": "Analysis Failed",
+            "shortcomings": "System Error",
+            "improvements": "Check Logs",
+            "self_rating": 0.0
+        }
+
     def judge_signal_strength(self, market_data: Dict[str, Any], technical_indicators: Dict[str, Any]) -> int:
         """
         判断交易信号强度
@@ -1633,6 +1753,80 @@ class QwenClient:
         # 使用传统凯利公式计算默认值
         default_kelly = win_rate - ((1 - win_rate) / risk_reward_ratio)
         return max(0.0, min(1.0, default_kelly))
+
+    def analyze_trade_review(self, trades_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Review recent closed trades to analyze PnL reasons and optimize TP/SL settings.
+        """
+        if not trades_data:
+            return {}
+
+        symbol = trades_data[0].get('symbol', 'DEFAULT')
+        
+        prompt = f"""
+        作为一名专业的交易教练和风险管理专家，请深度复盘以下最近的交易记录。
+        你的目标是分析每一笔交易的盈亏原因，特别是针对 TP (止盈) 和 SL (止损) 的设置是否合理。
+
+        交易记录:
+        {json.dumps(trades_data, indent=2, cls=CustomJSONEncoder)}
+
+        请重点回答以下问题：
+        1. **盈亏归因**: 对于每一笔交易，分析为什么会盈利或亏损？是因为趋势判断正确，还是运气？是因为结构破坏止损，还是被噪音扫损？
+        2. **TP/SL 合理性**: 
+           - 盈利的交易中，TP 设置是否过早？是否因为 TP 太窄而错过了趋势的大部分利润 (Leaving money on the table)？
+           - 亏损的交易中，SL 是否设置在合理的结构位？是否因为 SL 太紧而被扫损？
+        3. **趋势与出局**: 为什么在某些趋势行情中，策略会提早出局？是由于过于激进的移动止损 (Trailing Stop) 还是固定的 TP 限制了利润？
+        4. **Basket TP 优化**: 如果是网格交易，当前的 `basket_tp_usd` 设置是否合理？基于历史波动率和 MFE，给出一个最优的 Basket TP 建议值。
+        5. **未来优化建议**: 针对后续交易，TP 应该如何设置才是最优的？(例如：建议使用 MFE 的 80% 作为动态 TP，或者建议分批止盈)。
+
+        请以 JSON 格式返回分析结果：
+        {{
+            "trade_reviews": [
+                {{
+                    "ticket": 12345,
+                    "outcome": "WIN/LOSS",
+                    "reason": "简述原因",
+                    "tp_sl_analysis": "TP设置过保守，错失了后续50点利润...",
+                    "improvement": "建议下次将 TP 设在下一个流动性池..."
+                }}
+            ],
+            "global_analysis": {{
+                "trend_exit_issue": "分析为何趋势中提早出局...",
+                "basket_tp_recommendation": 50.0, // 给出一个具体的建议值
+                "tp_optimization_plan": "未来的最优 TP 设置策略..."
+            }}
+        }}
+        """
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "你是一位拥有20年经验的交易复盘专家，擅长优化交易策略和风控参数。IMPORTANT: You must output strictly valid JSON format only."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.3,
+            "max_tokens": 2000,
+            "stream": False,
+            "response_format": {"type": "json_object"}
+        }
+
+        # Call API with retries
+        max_retries = 3
+        for attempt in range(max_retries):
+            response = self._call_api("chat/completions", payload, symbol=symbol)
+            if response and "choices" in response:
+                try:
+                    content = response["choices"][0]["message"]["content"]
+                    result = safe_parse_or_default(content)
+                    if result:
+                        logger.info("✅ 交易复盘分析完成")
+                        return result
+                except Exception as e:
+                    logger.error(f"解析交易复盘结果失败: {e}")
+            time.sleep(1)
+            
+        return {}
+
 
 
 def main():

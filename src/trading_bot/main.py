@@ -1,6 +1,7 @@
 import time
 import sys
 import os
+import json
 import logging
 import threading
 from datetime import datetime, timedelta
@@ -1414,13 +1415,31 @@ class SymbolTrader:
             return
 
         # --- Grid Strategy Logic ---
-        # 1. Check Basket TP
-        if self.grid_strategy.check_basket_tp(positions):
-            logger.info("Grid Strategy: Basket TP Reached. Closing ALL positions.")
-            for pos in positions:
-                if pos.magic == self.magic_number:
-                    self.close_position(pos, comment="Grid Basket TP")
-            return
+        # 1. Check Basket TP (Updated for Split Baskets)
+        current_atr = 0.0
+        rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
+        if rates is not None and len(rates) > 14:
+            df_temp = pd.DataFrame(rates)
+            high_low = df_temp['high'] - df_temp['low']
+            current_atr = high_low.rolling(14).mean().iloc[-1]
+
+        should_close_long, should_close_short = self.grid_strategy.check_grid_exit(positions, mt5.symbol_info_tick(self.symbol).bid, current_atr)
+
+        if should_close_long:
+            logger.info("Grid Strategy: Long Basket TP Reached. Closing ALL LONG positions.")
+            self.close_all_positions(direction='long')
+            self.grid_strategy._check_single_basket(0, 0, 0, 0, is_long=True)
+
+        if should_close_short:
+            logger.info("Grid Strategy: Short Basket TP Reached. Closing ALL SHORT positions.")
+            self.close_all_positions(direction='short')
+            self.grid_strategy._check_single_basket(0, 0, 0, 0, is_long=False)
+
+        if should_close_long or should_close_short:
+             # Refresh positions after closing
+             positions = mt5.positions_get(symbol=self.symbol)
+             if positions is None or len(positions) == 0:
+                 return
 
         # 2. Check Grid Add (Only if allowed by LLM)
         # 增加 LLM 权限控制: 默认允许，但如果 LLM 明确禁止 (allow_grid=False)，则暂停加仓
@@ -1671,6 +1690,8 @@ class SymbolTrader:
             if not open_trades:
                 return
 
+            recently_closed_trades = []
+            
             for trade in open_trades:
                 ticket = trade['ticket'] # 这是 Order Ticket
                 symbol = trade['symbol']
@@ -1785,6 +1806,54 @@ class SymbolTrader:
                         })
                         
                         logger.info(f"分析交易 #{ticket} 完成: MFE={mfe:.2f}%, MAE={mae:.2f}%, Profit={total_profit:.2f}")
+
+                        # Add to review list
+                        trade_review_data = {
+                            "ticket": ticket,
+                            "symbol": symbol,
+                            "action": action,
+                            "open_time": str(start_dt),
+                            "close_time": str(end_dt),
+                            "open_price": open_price,
+                            "close_price": close_price,
+                            "profit": total_profit,
+                            "mfe": mfe,
+                            "mae": mae
+                        }
+                        recently_closed_trades.append(trade_review_data)
+
+                        # Trigger AI Review if there are closed trades
+                        if recently_closed_trades:
+                             logger.info(f"Triggering AI Trade Review for {len(recently_closed_trades)} trades...")
+                             # Run in a separate thread to avoid blocking main loop
+                             import threading
+                             def run_review():
+                                 try:
+                                    # 1. Individual Trade Reflection (Memory)
+                                    for trade in recently_closed_trades:
+                                        reflection = self.ai_client.analyze_trade_reflection(trade)
+                                        if reflection:
+                                            # Add symbol if missing (for DB indexing)
+                                            if 'symbol' not in reflection: reflection['symbol'] = trade.get('symbol', 'UNKNOWN')
+                                            self.db_manager.save_trade_reflection(reflection)
+                                    
+                                    # 2. Batch Review (Optimization)
+                                    review_result = self.ai_client.analyze_trade_review(recently_closed_trades)
+                                    if review_result:
+                                        logger.info(f"AI Review Result: {json.dumps(review_result, indent=2, ensure_ascii=False)}")
+                                        
+                                        # [NEW] Apply AI Basket TP Recommendation
+                                        if "global_analysis" in review_result:
+                                            new_basket_tp = review_result["global_analysis"].get("basket_tp_recommendation")
+                                            if new_basket_tp and isinstance(new_basket_tp, (int, float)) and new_basket_tp > 0:
+                                                logger.info(f"💡 AI Suggests New Basket TP: ${new_basket_tp} (Old: ${self.grid_strategy.basket_tp_usd})")
+                                                self.grid_strategy.basket_tp_usd = float(new_basket_tp)
+                                                logger.info(f"✅ Updated Basket TP to ${self.grid_strategy.basket_tp_usd}")
+
+                                 except Exception as e:
+                                    logger.error(f"AI Trade Review Failed: {e}")
+                             
+                             threading.Thread(target=run_review).start()
 
         except Exception as e:
             logger.error(f"分析历史交易失败: {e}")
@@ -2569,6 +2638,12 @@ class SymbolTrader:
                 if int(time.time()) % 60 == 0:
                     self.analyze_closed_trades()
                     
+                    # [NEW] Check if AI recommended a new Basket TP during trade review
+                    # Retrieve the latest review from global context or log (simplified here)
+                    # Ideally, analyze_closed_trades should update self.grid_strategy.basket_tp_usd if recommendation exists
+                    pass
+
+                    
                 # 0.6 执行策略参数优化 (每 4 小时一次)
                 if time.time() - self.last_optimization_time > 14400:
                     self.optimize_strategy_parameters()
@@ -2693,19 +2768,21 @@ class SymbolTrader:
                     df = self.get_market_data(600) 
                     
                     if df is not None:
-                        # Fetch Multi-Timeframe Data (H1, H4)
+                        # Fetch Multi-Timeframe Data (M5, M15, H1) for High Frequency Analysis
+                        rates_m5 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_M5, 0, 300)
+                        rates_m15 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_M15, 0, 200)
                         rates_h1 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_H1, 0, 200)
                         rates_h4 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_H4, 0, 100)
                         
+                        df_m5 = pd.DataFrame(rates_m5) if rates_m5 is not None else pd.DataFrame()
+                        df_m15 = pd.DataFrame(rates_m15) if rates_m15 is not None else pd.DataFrame()
                         df_h1 = pd.DataFrame(rates_h1) if rates_h1 is not None else pd.DataFrame()
                         df_h4 = pd.DataFrame(rates_h4) if rates_h4 is not None else pd.DataFrame()
 
-                        if not df_h1.empty: 
-                            df_h1['time'] = pd.to_datetime(df_h1['time'], unit='s')
-                            if 'tick_volume' in df_h1: df_h1.rename(columns={'tick_volume': 'volume'}, inplace=True)
-                        if not df_h4.empty: 
-                            df_h4['time'] = pd.to_datetime(df_h4['time'], unit='s')
-                            if 'tick_volume' in df_h4: df_h4.rename(columns={'tick_volume': 'volume'}, inplace=True)
+                        for dframe in [df_m5, df_m15, df_h1, df_h4]:
+                            if not dframe.empty: 
+                                dframe['time'] = pd.to_datetime(dframe['time'], unit='s')
+                                if 'tick_volume' in dframe: dframe.rename(columns={'tick_volume': 'volume'}, inplace=True)
 
                         # 保存市场数据到DB
                         self.db_manager.save_market_data(df, self.symbol, self.tf_name)
@@ -2717,7 +2794,9 @@ class SymbolTrader:
                         processor = MT5DataProcessor()
                         df_features = processor.generate_features(df)
                         
-                        # Calculate features for H1/H4
+                        # Calculate features for M5/M15/H1/H4
+                        df_features_m5 = processor.generate_features(df_m5) if not df_m5.empty else pd.DataFrame()
+                        df_features_m15 = processor.generate_features(df_m15) if not df_m15.empty else pd.DataFrame()
                         df_features_h1 = processor.generate_features(df_h1) if not df_h1.empty else pd.DataFrame()
                         df_features_h4 = processor.generate_features(df_h4) if not df_h4.empty else pd.DataFrame()
                         
@@ -2726,6 +2805,8 @@ class SymbolTrader:
                             if dframe.empty: return {}
                             return dframe.iloc[-1].to_dict()
 
+                        feat_m5 = get_latest_safe(df_features_m5)
+                        feat_m15 = get_latest_safe(df_features_m15)
                         feat_h1 = get_latest_safe(df_features_h1)
                         feat_h4 = get_latest_safe(df_features_h4)
 
@@ -2768,6 +2849,20 @@ class SymbolTrader:
                                 "volatility": float(latest_features.get('volatility', 0))
                             },
                             "multi_tf_data": {
+                                "M5": {
+                                    "close": float(feat_m5.get('close', 0)),
+                                    "rsi": float(feat_m5.get('rsi', 50)),
+                                    "ema_fast": float(feat_m5.get('ema_fast', 0)),
+                                    "ema_slow": float(feat_m5.get('ema_slow', 0)),
+                                    "volatility": float(feat_m5.get('volatility', 0))
+                                },
+                                "M15": {
+                                    "close": float(feat_m15.get('close', 0)),
+                                    "rsi": float(feat_m15.get('rsi', 50)),
+                                    "ema_fast": float(feat_m15.get('ema_fast', 0)),
+                                    "ema_slow": float(feat_m15.get('ema_slow', 0)),
+                                    "volatility": float(feat_m15.get('volatility', 0))
+                                },
                                 "H1": {
                                     "close": float(feat_h1.get('close', 0)),
                                     "rsi": float(feat_h1.get('rsi', 50)),
@@ -2948,6 +3043,13 @@ class SymbolTrader:
                         except Exception as e:
                             logger.error(f"Sentiment Analysis Failed: {e}")
 
+                        # [NEW] Retrieve Historical Reflections
+                        historical_reflections = []
+                        try:
+                            historical_reflections = self.db_manager.get_recent_trade_reflections(symbol=self.symbol, limit=5)
+                        except Exception as e:
+                            logger.error(f"Failed to retrieve trade reflections: {e}")
+
                         # Call Qwen
                         # Removed DeepSeek structure, pass simplified structure
                         dummy_structure = {"market_state": "Analyzed by Qwen", "preliminary_signal": "neutral"}
@@ -2958,7 +3060,8 @@ class SymbolTrader:
                             technical_signals=technical_signals, 
                             current_positions=current_positions_list,
                             performance_stats=trade_stats,
-                            previous_analysis=self.latest_strategy
+                            previous_analysis=self.latest_strategy,
+                            historical_reflections=historical_reflections
                         )
                         self.latest_strategy = strategy
                         self.last_llm_time = time.time()
@@ -3116,6 +3219,9 @@ class SymbolTrader:
 
                         # SL/TP
                         exit_conds = strategy.get('exit_conditions', {})
+                        if exit_conds is None: # Safety check
+                            exit_conds = {}
+                            
                         opt_sl = exit_conds.get('sl_price')
                         opt_tp = exit_conds.get('tp_price')
                         
