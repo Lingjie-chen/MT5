@@ -716,7 +716,7 @@ class DeepSeekClient:
     - smc_signals_identified: list (识别的SMC信号)
     - risk_metrics: dict (风险指标)
     - next_observations: list (后续观察要点)
-    - telegram_report: str (专为Telegram优化的Markdown简报，包含关键分析结论、入场参数、SMC结构摘要。请使用emoji图标增强可读性，例如 ⚡️     等)
+    - telegram_report: str (专为Telegram优化的Markdown简报，包含四个核心板块: 1.📊市场状态, 2.📝盘前8问(简要回答), 3.🔭观察点, 4.⚖️仓位分析。请使用emoji图标增强可读性)
         """
         
         # Select Configs
