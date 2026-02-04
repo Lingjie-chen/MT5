@@ -309,8 +309,10 @@ class SymbolTrader:
 
     def check_risk_reward_ratio(self, entry_price, sl_price, tp_price):
         """检查盈亏比是否达标"""
+        # [MODIFIED] 用户明确要求完全由大模型掌控止盈止损 (No Hard SL/TP)
+        # 如果 SL 或 TP 为 0，表示由 AI 实时监控，跳过盈亏比检查
         if sl_price <= 0 or tp_price <= 0:
-            return False, 0.0
+            return True, 999.0
             
         risk = abs(entry_price - sl_price)
         reward = abs(tp_price - entry_price)
