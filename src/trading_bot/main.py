@@ -2829,6 +2829,7 @@ class SymbolTrader:
                         
                         # 获取账户资金信息
                         account_info_dict = {}
+                        recent_history = []
                         try:
                             acc = mt5.account_info()
                             if acc:
@@ -2839,12 +2840,36 @@ class SymbolTrader:
                                     "margin_free": float(acc.margin_free),
                                     "available_balance": float(acc.balance) 
                                 }
+                            
+                            # [NEW] 获取最近的交易历史 (例如最近 50 笔)
+                            from_date = datetime.now() - timedelta(days=30) # 获取最近30天
+                            history_deals = mt5.history_deals_get(from_date, datetime.now())
+                            
+                            if history_deals:
+                                # 筛选属于本 EA 的历史 (Magic Number) 或者是手工干预的
+                                # 这里我们把所有相关的都给大模型，让它有全局观，或者只给 magic
+                                relevant_deals = [d for d in history_deals if d.magic == self.magic_number and d.entry in [mt5.DEAL_ENTRY_OUT, mt5.DEAL_ENTRY_INOUT]]
+                                # 按时间倒序，取最近 10 笔，减少 Token 消耗
+                                relevant_deals.sort(key=lambda x: x.time, reverse=True)
+                                
+                                for d in relevant_deals[:10]:
+                                    recent_history.append({
+                                        "ticket": d.ticket,
+                                        "time": datetime.fromtimestamp(d.time).strftime('%Y-%m-%d %H:%M'),
+                                        "type": "buy" if d.type == mt5.DEAL_TYPE_BUY else "sell",
+                                        "volume": float(d.volume),
+                                        "price": float(d.price),
+                                        "profit": float(d.profit),
+                                        "reason": d.comment
+                                    })
+                                    
                         except Exception as e:
-                            logger.error(f"Error fetching account info: {e}")
+                            logger.error(f"Error fetching account info or history: {e}")
 
                         market_snapshot = {
                             "symbol": self.symbol,
                             "account_info": account_info_dict,
+                            "recent_trade_history": recent_history, # [NEW] 注入最近交易历史
                             "timeframe": self.tf_name,
                             "prices": {
                                 "open": float(current_price['open']),
