@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
+from file_watcher import FileWatcher
 
 # Add current directory to sys.path to ensure local imports work
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -140,7 +141,6 @@ class SymbolTrader:
         self.signal_history = []
         self.last_optimization_time = 0
         self.last_realtime_save = 0
-        self.last_checkpoint_time = 0
         
         self.latest_strategy = None
         self.latest_signal = "neutral"
@@ -2434,31 +2434,16 @@ class SymbolTrader:
             sell_signal = (ha_c_1 < ema_20_l_1) and (not ha_bull_1) and (ha_c_1 < ema_50_1) and \
                           trend_bear and (ha_c_2 > ema_50_2)
             
-            result = {
-                "signal": "neutral",
-                "reason": "No Crossover",
-                "values": {
-                    "ema_50": ema_50_1,
-                    "ema_20_high": ema_20_h_1,
-                    "ema_20_low": ema_20_l_1,
-                    "ha_close": ha_c_1,
-                    "ha_open": ha_o_1,
-                    "trend": "bullish" if trend_bull else "bearish"
-                }
-            }
-            
             if buy_signal:
-                result["signal"] = "buy"
-                result["reason"] = "EMA-HA Crossover Bullish"
+                return {"signal": "buy", "reason": "EMA-HA Crossover Bullish"}
             elif sell_signal:
-                result["signal"] = "sell"
-                result["reason"] = "EMA-HA Crossover Bearish"
-                
-            return result
+                return {"signal": "sell", "reason": "EMA-HA Crossover Bearish"}
+            
+            return {"signal": "neutral", "reason": "No Crossover"}
             
         except Exception as e:
             logger.error(f"EMA-HA Analysis Failed: {e}")
-            return {"signal": "neutral", "reason": "Error", "values": {}}
+            return {"signal": "neutral", "reason": "Error"}
 
     def optimize_short_term_params(self):
         """
@@ -2691,16 +2676,10 @@ class SymbolTrader:
                 current_bar_time = rates[0]['time']
                 
                 # --- Real-time Data Update (Added for Dashboard) ---
-                # 每隔 10 秒保存一次当前正在形成的 K 线数据到数据库
+                # 每隔 3 秒保存一次当前正在形成的 K 线数据到数据库
                 # 这样 Dashboard 就可以看到实时价格跳动
-                if time.time() - self.last_realtime_save > 10:
+                if time.time() - self.last_realtime_save > 3:
                     try:
-                        # [Checkpoint] 每隔 5 分钟 (300秒) 执行一次 WAL Checkpoint
-                        if time.time() - self.last_checkpoint_time > 300:
-                            self.db_manager.perform_checkpoint()
-                            self.master_db_manager.perform_checkpoint()
-                            self.last_checkpoint_time = time.time()
-                            
                         df_current = pd.DataFrame(rates)
                         df_current['time'] = pd.to_datetime(df_current['time'], unit='s')
                         df_current.set_index('time', inplace=True)
