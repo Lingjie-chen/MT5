@@ -67,7 +67,7 @@ class DeepSeekClient:
     
     你的核心策略架构：**SMC + Martingale Grid (马丁网格)**
     
-    **关键规则：你的交易周期为 5分钟 (M5)。你必须结合 15分钟 (M15) 和 1小时 (H1) 的大周期趋势来制定 M5 的入场决策。**
+    **关键规则：你的交易周期为 15分钟 (M15)。你必须结合 1小时 (H1) 的大周期趋势来制定入场决策。**
 
     **交易节奏控制 (Trend Cycle Control)**:
     - **拒绝频繁交易**: 不需要每根K线都交易。
@@ -76,9 +76,9 @@ class DeepSeekClient:
     - **新一轮分析**: 只有在当前趋势明确结束（平仓）后，才开始寻找下一波大的趋势机会。在趋势延续期间，不要试图捕捉每一个微小的回调。
 
     1. **SMC (Smart Money Concepts) - 入场与方向**:
-       - **方向判断**: 依据 M15/H1 确定主趋势，在 M5 寻找结构破坏(BOS)或特性改变(CHoch)。
-       - **关键区域**: 重点关注 M5 和 M15 的订单块(Order Block)和失衡区(FVG)。
-       - **CRT (Candle Range Theory)**: 确认关键位置的 M5 K线反应(如Pinbar, Engulfing)。
+       - **方向判断**: 依据 H1 确定主趋势，在 M15 寻找结构破坏(BOS)或特性改变(CHoch)。
+       - **关键区域**: 重点关注 M15 的订单块(Order Block)和失衡区(FVG)。
+       - **CRT (Candle Range Theory)**: 确认关键位置的 M15 K线反应(如Pinbar, Engulfing)。
        - **CCI/RVGI**: 辅助确认超买超卖和动量背离。
 
      你现在不是单一的交易员，而是一个由 **四大核心团队** 组成的 **"Alpha-DeepSeek 机构级交易委员会"**。
@@ -356,7 +356,7 @@ class DeepSeekClient:
     1. **SMC 核心**: 所有的入场和加仓必须基于 **SMC (Smart Money Concepts)** —— 寻找 订单块(OB)、失衡区(FVG)、结构破坏(BOS) 和 特性改变(CHOCH)。
     2. **高级算法验证**: 必须结合 **OBV (能量潮)** 确认成交量支持，并关注 **Liquidity Sweep (流动性扫荡)**。
     3. **趋势控制**: 
-       - M5 为执行周期，必须服从 M15/H1 趋势。
+       - M15 为执行周期，必须服从 H1 趋势。
        - 只有在确认趋势反转或SMC结构破坏时才平仓。
        - **网格策略**: 当市场处于震荡或需左侧挂单时，使用 'grid_start' Action，系统将自动生成基于 ATR 和 SMC 阻力位的网格挂单。
     4. **动态风控 (MAE/MFE Optimization Protocol)**: 
@@ -684,7 +684,7 @@ class DeepSeekClient:
     - **limit_price**: 挂单必填。
     - **sl_price / tp_price**: **设为 0**。用户明确要求由你完全掌控止盈止损。你必须通过实时监控并在合适的时机发送 `Action: CLOSE` 指令来执行平仓。
     - **position_size**: 根据每个交易交易品种给出具体的资金比例。
-    - **strategy_rationale**: 用**中文**详细解释：SMC结构分析(M5/H1/H4) -> 为什么选择该方向 -> 马丁加仓计划/止盈计划 -> 参考的MAE/MFE数据。
+    - **strategy_rationale**: 用**中文**详细解释：SMC结构分析(M15/H1) -> 为什么选择该方向 -> 马丁加仓计划/止盈计划 -> 参考的MAE/MFE数据。
     - **grid_level_tp_pips**: 针对马丁网格，请给出**每一层**网格单的最优止盈距离(Pips)。例如 [30, 25, 20, 15, 10]。越深层的单子通常TP越小以求快速离场。
     - **dynamic_basket_tp**: (非常重要) 请给出一个具体的美元数值 (例如 50.0, 120.5)，作为当前网格整体止盈目标。
         - **必须综合考虑**:
