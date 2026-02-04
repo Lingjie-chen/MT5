@@ -92,19 +92,19 @@ class KalmanGridStrategy:
             "global_tp": 20.0
         }
         
-        # XAUUSD Config (High Frequency Scalping - Optimized)
+        # XAUUSD Config (Trend Following - Optimized for M15)
         xau_config = {
-            "grid_step_points": 150, # [Optimized] Tighter grid (150 pts = $1.5) for HFT
-            "max_grid_steps": 20,    # [Optimized] More steps for wider coverage
+            "grid_step_points": 250, # [Optimized] Wider grid (250 pts = $2.5) for M15 Trend Following
+            "max_grid_steps": 20,    # [Optimized] Wide coverage for trend corrections
             "lot_type": 'GEOMETRIC',
             "lot_multiplier": 1.3,   # [Optimized] Slowly increasing (1.3x)
             "tp_steps": {
-                # [Optimized] Ultra-Fast Scalps: $3, $5, $8...
-                1: 3.0, 2: 5.0, 3: 8.0, 4: 12.0, 5: 18.0,
-                6: 25.0, 7: 35.0, 8: 45.0, 9: 55.0, 10: 70.0,
-                11: 85.0, 12: 100.0, 13: 120.0, 14: 140.0, 15: 160.0
+                # [Optimized] Trend Targets: $5, $8, $12...
+                1: 5.0, 2: 8.0, 3: 12.0, 4: 18.0, 5: 25.0,
+                6: 35.0, 7: 45.0, 8: 55.0, 9: 65.0, 10: 80.0,
+                11: 100.0, 12: 120.0, 13: 140.0, 14: 160.0, 15: 180.0
             },
-            "global_tp": 8.0 # [Optimized] Target $8 quick profit (Aggressive HFT)
+            "global_tp": 15.0 # [Optimized] Target $15 profit (Trend Following)
         }
         
         # Select Config
