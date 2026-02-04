@@ -834,6 +834,18 @@ class SymbolTrader:
                             "tp": explicit_tp
                         }
                         mt5.order_send(request)
+        
+        # [NEW] 如果是 close_all，需要强制检查是否还有残留仓位
+        if llm_action == 'close_all':
+             # 重新获取持仓，确认是否已清空
+             all_positions_check = mt5.positions_get(symbol=self.symbol)
+             bot_positions_check = [p for p in all_positions_check if p.magic == self.magic_number] if all_positions_check else []
+             if not bot_positions_check:
+                 logger.info("所有持仓已成功平仓 (close_all executed).")
+                 return # 既然是 close_all 且已空仓，本轮结束，不应再开新仓
+             else:
+                 logger.warning(f"尝试 close_all 后仍有 {len(bot_positions_check)} 个持仓未平仓，跳过开仓逻辑.")
+                 return
 
         # --- 3. 开仓/挂单逻辑 (未开仓 或 加仓) ---
         # 注意: 上面的循环处理了已有仓位的 Close 和 Add。
