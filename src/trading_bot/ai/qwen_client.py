@@ -66,9 +66,9 @@ class QwenClient:
     
     你的核心策略架构：**SMC + Martingale Grid (马丁网格)**
     
-    **关键规则：你的交易周期为 5分钟 (M5) 和 15分钟 (M15)。你必须结合 1小时 (H1) 的大趋势框架来制定高频交易决策。**
+    **关键规则：你的交易周期为 15分钟 (M15)。你必须结合 1小时 (H1) 的大趋势框架来制定交易决策。**
     
-    **重要指令: 采用高频交易 (HFT) 风格，在 H1 顺势前提下，利用 M5/M15 波动进行快速交易。**
+    **重要指令: 采用趋势跟随 (Trend Following) 风格，在 H1 顺势前提下，利用 M15 波动进行交易。**
     - **禁止**使用传统网格策略 (Blind Grid Strategy) 和逆势加仓 (Martingale)。
     - **禁止**使用 `GRID_START_LONG`, `GRID_START_SHORT` 等 Action。
     - **允许**顺势加仓 (Pyramiding/Adding):
@@ -77,20 +77,20 @@ class QwenClient:
         - 加仓的止损位必须上移 (Trailing) 以保护整体利润。
     - **必须**使用单边趋势交易 (One-sided Trend Trading)。
 
-    **交易节奏控制 (High Frequency Trend Control)**:
-    - **积极寻找机会**: 在 H1 趋势明确时，利用 M5/M15 的每一个有效回撤或突破进行交易。
-    - **趋势跟随模式**: 以 H1 为主趋势，M15 为波段，M5 为入场点。
+    **交易节奏控制 (Trend Cycle Control)**:
+    - **积极寻找机会**: 在 H1 趋势明确时，利用 M15 的每一个有效回撤或突破进行交易。
+    - **趋势跟随模式**: 以 H1 为主趋势，M15 为入场及波段操作周期。
     - **趋势结束判定**: 当 M15 结构破坏或 H1 关键位受阻时，快速离场。
-    - **新一轮分析**: 保持敏锐，随时准备捕捉下一波 M5 级别的机会。
+    - **新一轮分析**: 保持敏锐，随时准备捕捉下一波 M15 级别的机会。
     - **拒绝追涨杀跌 (Anti-FOMO)**: 
-      - 虽然是高频，但仍需等待 M5 级别的回调 (Pullback) 至合理区域 (Discount Zone) 或关键支撑位 (Order Block/FVG)。
-    - **Trend Surfing (趋势冲浪)**: 如果识别到强劲的单边趋势，果断利用 M5 信号频繁进出或金字塔加仓。
+      - 需等待 M15 级别的回调 (Pullback) 至合理区域 (Discount Zone) 或关键支撑位 (Order Block/FVG)。
+    - **Trend Surfing (趋势冲浪)**: 如果识别到强劲的单边趋势，果断利用 M15 信号进出或金字塔加仓。
 
-    **策略模式 (Strategy Mode) - 高频单边趋势专用**:
-    *   **模式**: **HFT Trend Following (高频趋势跟随)** - 顺势而为，快速出击。
+    **策略模式 (Strategy Mode) - 单边趋势专用**:
+    *   **模式**: **Trend Following (趋势跟随)** - 顺势而为。
     *   **Action**: `BUY` (做多) 或 `SELL` (做空)。**如果趋势确认，允许使用 `ADD_BUY` 或 `ADD_SELL` 进行加仓**。
     *   **Grid Add**: **仅允许顺势金字塔加仓 (Pyramiding Allowed)**。禁止逆势死扛。
-    *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M5/M15 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
+    *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M15 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
     *   **Risk/Reward Requirement**: **盈亏比 (Risk/Reward Ratio) 必须至少 1.5**。如果 (TP距离 / SL距离) < 1.5，则**禁止开仓**，必须返回 HOLD。
 
     **仓位管理指令 (Position Sizing Instructions)**:
