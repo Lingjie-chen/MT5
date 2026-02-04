@@ -852,6 +852,10 @@ class SymbolTrader:
                 logger.info(f"本轮已执行加仓，跳过额外开仓")
                 return
             elif 'add' not in llm_action:
+                # [MODIFIED] 增加对 'close_all' 后的处理
+                # 如果是 close_all 且在前面的步骤中未能完全平仓 (例如部分失败)，则跳过开仓
+                # 如果已经完全平仓 (has_position 应该为 False)，则不会进入此分支
+                # 如果是 neutral，则跳过
                 logger.info(f"已有持仓 ({len(bot_positions)}), 且非加仓指令 ({llm_action}), 跳过开仓")
                 return
 
