@@ -1615,20 +1615,6 @@ class SymbolTrader:
 
             if changed:
                 mt5.order_send(request)
-                            request['sl'] = opt_sl
-                            changed = True
-                    
-
-                    if opt_tp > 0:
-                        diff_tp = abs(opt_tp - tp)
-                        valid_tp = True
-                        if type_pos == mt5.POSITION_TYPE_BUY and (opt_tp - current_price < stop_level_dist): valid_tp = False
-                        if type_pos == mt5.POSITION_TYPE_SELL and (current_price - opt_tp < stop_level_dist): valid_tp = False
-                        
-                        if valid_tp and diff_tp > point * 30:
-                            request['tp'] = opt_tp
-                            changed = True
-                            logger.info(f"AI/Stats 更新 TP: {tp:.2f} -> {opt_tp:.2f}")
 
                 # 如果没有明确价格，但有 ATR 倍数建议 (兼容旧逻辑或备用)，则计算
                 # REMOVED/SKIPPED to enforce "No Dynamic Movement"
