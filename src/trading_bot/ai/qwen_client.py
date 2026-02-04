@@ -713,7 +713,7 @@ class QwenClient:
        - **执行逻辑**: 系统将立即开启首单 BUY。
     2. **SELL**:
        - 含义: 启动做空策略 (Market Sell)。
-       - 适用场景: SMC 确认看跌趋势 (BOS/CHOCH)，价格位于 M15/M5 关键阻力位 (OB/FVG)。
+       - 适用场景: SMC 确认看跌趋势 (BOS/CHOCH)，价格位于 M15 关键阻力位 (OB/FVG)。
        - **执行逻辑**: 系统将立即开启首单 SELL。
     3. **HOLD**:
        - 含义: 暂时观望。
@@ -1334,13 +1334,13 @@ class QwenClient:
         **你必须仔细分析市场结构情绪以及 BOS, SMC, CHOCH, FVG 等专业技术指标。**
         
         **入场必须同时满足以下条件**:
-        1. **M15/M5 关键位确认**: 价格必须处于 M15 或 M5 级别的 **确认订单块 (Confirmed Order Block)** 或 **重要阻力支撑位**。
+        1. **M15 关键位确认**: 价格必须处于 M15 级别的 **确认订单块 (Confirmed Order Block)** 或 **重要阻力支撑位**。
         2. **SMC 信号**: 必须出现清晰的 BOS (结构突破) 或 CHOCH (特性改变) 信号。
         3. **价格行为确认 (Price Action)**:
            - **回踩确认 (Retest)**: 如果价格突破了关键位，必须等待**回踩不破** (Retest and Hold) 才可进场。
            - **突破确认 (Breakout)**: 如果价格在关键位盘整，必须等待**有效突破且不跌破** (Breakout and Hold) 才可进场。
         4. **立即进场 (Immediate Market Entry)**: 
-           - 一旦上述条件（回踩确认或突破确认）在 M5/M15 级别得到验证，**必须立即以市场价进场 (Market Order)**，不要等待限价单成交，以免踏空。
+           - 一旦上述条件（回踩确认或突破确认）在 M15 级别得到验证，**必须立即以市场价进场 (Market Order)**，不要等待限价单成交，以免踏空。
            - 在 `action` 中返回 "buy" 或 "sell" (而非 limit_buy/limit_sell) 以触发市价单。
 
         **拒绝模糊信号**: 如果价格只是接近关键位但没有明确的 K 线确认 (如 Pinbar, Engulfing)，或者回踩力度过弱，**坚决观望 (WAIT)**。
@@ -1364,7 +1364,7 @@ class QwenClient:
             "confidence": 85,
             "market_state": "Bullish Trend",
             "analysis_breakdown": {{
-                "market_status": "M15看涨，M5回调到位",
+                "market_status": "M15看涨，回调到位",
                 "observation_points": "关注 2350 支撑有效性",
                 "position_analysis": "资金充足，结构良好，使用 0.15 手"
             }},
