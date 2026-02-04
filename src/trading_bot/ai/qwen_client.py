@@ -1058,8 +1058,7 @@ class QwenClient:
                 "phase": "accumulation/expansion/distribution",
                 "timeframe_analysis": {{
                     "h1": str,
-                    "m15": str,
-                    "m5": str
+                    "m15": str
                 }},
                 "key_levels": {{
                     "support": [list of support levels],
