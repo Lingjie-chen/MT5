@@ -711,6 +711,7 @@ class DeepSeekClient:
     - signal_strength: int
     - parameter_updates: dict
     - strategy_rationale: str (中文)
+    - pre_market_check: dict (必须回答 8 问: q1_trend, q2_start, q3_stage, q4_level, q5_bias, q6_cycle, q7_defense, q8_execution)
     - market_structure_analysis: dict (包含多时间框架分析)
     - smc_signals_identified: list (识别的SMC信号)
     - risk_metrics: dict (风险指标)
