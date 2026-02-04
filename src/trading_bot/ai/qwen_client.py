@@ -709,7 +709,7 @@ class QwenClient:
     请做出最终决策 (Action):
     1. **BUY**:
        - 含义: 启动做多策略 (Market Buy)。
-       - 适用场景: SMC 确认看涨趋势 (BOS/CHOCH)，价格位于 M15/M5 关键支撑位 (OB/FVG)。
+       - 适用场景: SMC 确认看涨趋势 (BOS/CHOCH)，价格位于 M15 关键支撑位 (OB/FVG)。
        - **执行逻辑**: 系统将立即开启首单 BUY。
     2. **SELL**:
        - 含义: 启动做空策略 (Market Sell)。
