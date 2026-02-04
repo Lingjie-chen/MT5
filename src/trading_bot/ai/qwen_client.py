@@ -761,7 +761,7 @@ class QwenClient:
     - **strategy_rationale**: str (中文, 详细解释 SMC 结构、为什么在此处启动网格、ATR 分析等)
     - **market_structure**: dict (SMC 分析摘要)
         - "trend_m15": str (M15 趋势分析)
-        - "trend_m5": str (M5 趋势分析)
+        - "trend_h1": str (H1 趋势分析)
         - "key_level": str (关键位分析)
     - "analysis_breakdown": dict (详细分析内容，用于Telegram报告)
         - "market_status": str (市场状态分析)
