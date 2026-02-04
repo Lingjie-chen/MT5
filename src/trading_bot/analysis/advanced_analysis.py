@@ -582,8 +582,8 @@ class SMCAnalyzer:
         except: return None
 
     def get_market_sentiment(self, df_current, symbol):
-        # User Request: Analysis H1 -> M15 as HTF
-        df_htf = self.get_mtf_data(symbol, mt5.TIMEFRAME_M15, 300)
+        # User Request: Analysis H1 as HTF for Sentiment
+        df_htf = self.get_mtf_data(symbol, mt5.TIMEFRAME_H1, 300)
         if df_htf is None: return 0, "Neutral"
         ema_long = self.calculate_ema(df_htf['close'], self.ma_period).iloc[-1]
         current_price_htf = df_htf['close'].iloc[-1]
@@ -901,7 +901,7 @@ class CRTAnalyzer:
     Candle Range Theory (CRT) Analyzer
     Based on identifying manipulation of previous ranges using HTF data
     """
-    def __init__(self, timeframe_htf=mt5.TIMEFRAME_M15, min_manipulation_percent=5.0):
+    def __init__(self, timeframe_htf=mt5.TIMEFRAME_H1, min_manipulation_percent=5.0):
         self.timeframe_htf = timeframe_htf
         self.min_manipulation_percent = min_manipulation_percent 
         
@@ -1048,8 +1048,8 @@ class TimeframeVisualAnalyzer:
     Uses Moving Averages alignment to simulate visual trend confirmation
     """
     def __init__(self):
-        # M6 removed, only M5 and M15 kept as per user request
-        self.timeframes = {"M5": mt5.TIMEFRAME_M5, "M15": mt5.TIMEFRAME_M15}
+        # Only M15 and H1 kept as per user request
+        self.timeframes = {"M15": mt5.TIMEFRAME_M15, "H1": mt5.TIMEFRAME_H1}
         
     def analyze(self, symbol, current_time):
         trends = {}; alignment_score = 0
