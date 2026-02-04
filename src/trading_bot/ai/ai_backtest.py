@@ -70,7 +70,7 @@ class AIBacktester:
         
         logger.info(f"AIBacktester初始化完成，初始资金: {initial_capital}, 每笔风险: {risk_per_trade}%")
     
-    def get_historical_data(self, symbol, start_date, end_date, timeframe='H1'):
+    def get_historical_data(self, symbol, start_date, end_date, timeframe='M15'):
         """
         获取历史数据
         
