@@ -1088,7 +1088,7 @@ class TimeframeVisualAnalyzer:
         return {"signal": signal, "strength": strength, "reason": reason, "details": trends}
 
 class MTFAnalyzer:
-    def __init__(self, htf1=mt5.TIMEFRAME_M5, htf2=mt5.TIMEFRAME_M15, swing_length=20):
+    def __init__(self, htf1=mt5.TIMEFRAME_M15, htf2=mt5.TIMEFRAME_H1, swing_length=20):
         self.htf1 = htf1; self.htf2 = htf2; self.swing_length = swing_length
         self.demand_zones = []; self.supply_zones = []; self.last_zone_update = 0
     def analyze(self, symbol, current_price, current_time):
@@ -1127,7 +1127,7 @@ class MTFAnalyzer:
         except: return 0
     def update_zones(self, symbol):
         try:
-            # Use htf2 (M15) for zone update as per user request
+            # Use htf2 (H1) for zone update as per user request
             rates = mt5.copy_rates_from_pos(symbol, self.htf2, 0, 500)
             if rates is None or len(rates) < 50: return
             self.demand_zones = []; self.supply_zones = []
