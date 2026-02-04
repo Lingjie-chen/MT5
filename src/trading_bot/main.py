@@ -1421,181 +1421,55 @@ class SymbolTrader:
         except Exception as e:
             logger.error(f"Telegram 发送异常: {e}")
 
-    def manage_positions(self, signal=None, strategy_params=None):
+    def close_all_positions(self, direction='all'):
         """
-        根据最新分析结果管理持仓:
-        1. Grid Strategy Logic (Basket TP, Adding Positions)
-        2. 更新止损止盈 (覆盖旧设置) - 基于 strategy_params
-        3. 执行移动止损 (Trailing Stop)
-        4. 检查是否需要平仓 (非反转情况，例如信号转弱)
+        Close all positions for the current symbol and magic number.
+        
+        Args:
+            direction (str): 'long', 'short', or 'all'
         """
         positions = mt5.positions_get(symbol=self.symbol)
-        if positions is None or len(positions) == 0:
+        if positions is None:
             return
 
-        # --- Grid Strategy Logic ---
-        # 1. Check Basket TP (Updated for Split Baskets)
-        current_atr = 0.0
-        rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
-        if rates is not None and len(rates) > 14:
-            df_temp = pd.DataFrame(rates)
-            high_low = df_temp['high'] - df_temp['low']
-            current_atr = high_low.rolling(14).mean().iloc[-1]
-
-        should_close_long, should_close_short = self.grid_strategy.check_grid_exit(positions, mt5.symbol_info_tick(self.symbol).bid, current_atr)
-
-        if should_close_long:
-            logger.info("Grid Strategy: Long Basket TP Reached. Closing ALL LONG positions.")
-            self.close_all_positions(direction='long')
-            self.grid_strategy._check_single_basket(0, 0, 0, 0, is_long=True)
-
-        if should_close_short:
-            logger.info("Grid Strategy: Short Basket TP Reached. Closing ALL SHORT positions.")
-            self.close_all_positions(direction='short')
-            self.grid_strategy._check_single_basket(0, 0, 0, 0, is_long=False)
-
-        if should_close_long or should_close_short:
-             # Refresh positions after closing
-             positions = mt5.positions_get(symbol=self.symbol)
-             if positions is None or len(positions) == 0:
-                 return
-
-        # 2. Check Grid Add (Only if allowed by LLM)
-        # 增加 LLM 权限控制: 默认允许，但如果 LLM 明确禁止 (allow_grid=False)，则暂停加仓
-        allow_grid = True
-        if self.latest_strategy and isinstance(self.latest_strategy, dict):
-            # 检查是否有 'grid_settings' 且其中有 'allow_add'
-            grid_settings = self.latest_strategy.get('parameter_updates', {}).get('grid_settings', {})
-            if 'allow_add' in grid_settings:
-                allow_grid = bool(grid_settings['allow_add'])
-        
-        tick = mt5.symbol_info_tick(self.symbol)
-        if tick and allow_grid:
-            current_price_check = tick.bid # Use Bid for price check approximation
-            action, lot = self.grid_strategy.check_grid_add(positions, current_price_check)
-            if action:
-                logger.info(f"Grid Strategy Trigger: {action} Lot={lot}")
-                trade_type = "buy" if action == 'add_buy' else "sell"
-                price = tick.ask if trade_type == 'buy' else tick.bid
-                
-                # Dynamic Add TP Logic
-                add_tp = 0.0
-                if self.latest_strategy:
-                     pos_mgmt = self.latest_strategy.get('position_management', {})
-                     grid_tps = pos_mgmt.get('grid_level_tp_pips')
-                     if grid_tps:
-                         # Determine level index
-                         current_count = self.grid_strategy.long_pos_count if trade_type == 'buy' else self.grid_strategy.short_pos_count
-                         # Use specific TP if available
-                         tp_pips = grid_tps[current_count] if current_count < len(grid_tps) else grid_tps[-1]
-                         
-                         point = mt5.symbol_info(self.symbol).point
-                         if trade_type == 'buy':
-                             add_tp = price + (tp_pips * 10 * point)
-                         else:
-                             add_tp = price - (tp_pips * 10 * point)
-                         
-                         logger.info(f"Dynamic Add TP: {add_tp} ({tp_pips} pips)")
-
-                self._send_order(trade_type, price, 0.0, add_tp, comment=f"Grid: {action}")
-                # Don't return, allow SL/TP update for existing positions
-
-        # 获取 ATR 用于计算移动止损距离 (动态调整)
-        rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
-        atr = 0.0
-        if rates is not None and len(rates) > 14:
-            df_temp = pd.DataFrame(rates)
-            high_low = df_temp['high'] - df_temp['low']
-            atr = high_low.rolling(14).mean().iloc[-1]
-            
-        if atr <= 0:
-            return # 无法计算 ATR，跳过
-
-        trailing_dist = atr * 1.5 # 默认移动止损距离
-        
-        # 如果有策略参数，尝试解析最新的 SL/TP 设置
-        new_sl_multiplier = 1.5
-        new_tp_multiplier = 2.5
-        has_new_params = False
-        
-        if strategy_params:
-            exit_cond = strategy_params.get('exit_conditions')
-            if exit_cond:
-                new_sl_multiplier = exit_cond.get('sl_atr_multiplier', 1.5)
-                new_tp_multiplier = exit_cond.get('tp_atr_multiplier', 2.5)
-                has_new_params = True
-
-        symbol_info = mt5.symbol_info(self.symbol)
-        if not symbol_info:
-            return
-        point = symbol_info.point
-        stop_level_dist = symbol_info.trade_stops_level * point
-
-        # 遍历所有持仓，独立管理
         for pos in positions:
             if pos.magic != self.magic_number:
                 continue
                 
-            symbol = pos.symbol
-            type_pos = pos.type # 0: Buy, 1: Sell
-            price_open = pos.price_open
-            sl = pos.sl
-            tp = pos.tp
-            current_price = pos.price_current
+            pos_type = pos.type
+            to_close = False
             
-            # 针对每个订单独立计算最优 SL/TP
-            # 如果是挂单成交后的新持仓，或者老持仓，都统一处理
-            
-            request = {
-                "action": mt5.TRADE_ACTION_SLTP,
-                "symbol": symbol,
-                "position": pos.ticket,
-                "sl": sl,
-                "tp": tp
-            }
-            
-            changed = False
-            
-            # --- 1. 基于最新策略更新 SL/TP (全量覆盖更新) ---
-            # 策略调整: 恢复 AI 驱动的持仓参数更新逻辑
-            # 但不使用机械式的 Trailing Stop，而是依赖 LLM 的 MFE/MAE 分析给出的新点位
-            
-            # [Manual Override Protection]
-            # 检查用户是否手动修改了 SL/TP
-            # 我们假设机器人上次设置的 SL/TP 应该与当前持仓的一致
-            # 如果差异很大且不是 0，说明用户手动干预了
-            # 为了简化，我们设定规则: 只有当 AI 建议的新 SL/TP 明显优于当前设置，或者当前设置明显偏离风险控制时才强制更新
-            
-            allow_update = True # Enabled per User Request (Dynamic AI Update)
-            
-            if allow_update and has_new_params:
-                # 使用 calculate_optimized_sl_tp 进行统一计算和验证
-                ai_exits = strategy_params.get('exit_conditions', {})
+            if direction == 'all':
+                to_close = True
+            elif direction == 'long' and pos_type == mt5.POSITION_TYPE_BUY:
+                to_close = True
+            elif direction == 'short' and pos_type == mt5.POSITION_TYPE_SELL:
+                to_close = True
                 
-                # Check if Qwen provided explicit SL/TP
-                qwen_sl_provided = ai_exits.get('sl_price', 0) > 0
-                qwen_tp_provided = ai_exits.get('tp_price', 0) > 0
+            if to_close:
+                # Close position
+                trade_type = mt5.ORDER_TYPE_SELL if pos_type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY
+                price = mt5.symbol_info_tick(self.symbol).bid if trade_type == mt5.ORDER_TYPE_SELL else mt5.symbol_info_tick(self.symbol).ask
                 
-                # If Qwen didn't provide explicit values, skip dynamic update (User Request)
-                if not qwen_sl_provided and not qwen_tp_provided:
-                    logger.info("Qwen 未提供明确 SL/TP，跳过动态更新 (防止自动移动)")
+                request = {
+                    "action": mt5.TRADE_ACTION_DEAL,
+                    "symbol": self.symbol,
+                    "volume": pos.volume,
+                    "type": trade_type,
+                    "position": pos.ticket,
+                    "price": price,
+                    "deviation": 20,
+                    "magic": self.magic_number,
+                    "comment": f"Close {direction} basket",
+                    "type_time": mt5.ORDER_TIME_GTC,
+                    "type_filling": mt5.ORDER_FILLING_IOC,
+                }
+                
+                result = mt5.order_send(request)
+                if result.retcode != mt5.TRADE_RETCODE_DONE:
+                    logger.error(f"Failed to close position {pos.ticket}: {result.comment}")
                 else:
-                    trade_dir = 'buy' if type_pos == mt5.POSITION_TYPE_BUY else 'sell'
-                    
-                    opt_sl, opt_tp = self.calculate_optimized_sl_tp(trade_dir, current_price, atr, market_context=None, ai_exit_conds=ai_exits)
-                    
-                    opt_sl = self._normalize_price(opt_sl)
-                    opt_tp = self._normalize_price(opt_tp)
-                    
-                    if opt_sl > 0:
-                        diff_sl = abs(opt_sl - sl)
-                        is_better_sl = False
-                        if type_pos == mt5.POSITION_TYPE_BUY and opt_sl > sl: is_better_sl = True
-                        if type_pos == mt5.POSITION_TYPE_SELL and opt_sl < sl: is_better_sl = True
-                        
-                        valid_sl = True
-                        if type_pos == mt5.POSITION_TYPE_BUY and (current_price - opt_sl < stop_level_dist): valid_sl = False
-                        if type_pos == mt5.POSITION_TYPE_SELL and (opt_sl - current_price < stop_level_dist): valid_sl = False
+                    logger.info(f"Closed position {pos.ticket} for {direction} basket exit")
                         
                         if valid_sl and (diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5)):
                             request['sl'] = opt_sl
