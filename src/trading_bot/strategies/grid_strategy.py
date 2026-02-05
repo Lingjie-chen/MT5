@@ -640,6 +640,8 @@ class KalmanGridStrategy:
                 if self.basket_lock_level_short is not None and total_profit_short < self.basket_lock_level_short:
                      logger.info(f"🛑 Short Basket Trailing Hit! Profit ${total_profit_short:.2f} dropped below Lock ${self.basket_lock_level_short:.2f}")
                      should_close_short = True
+        
+        return should_close_long, should_close_short
 
     def _check_single_basket(self, total_profit, count, total_volume, current_atr, is_long=True):
         if count == 0:
