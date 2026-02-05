@@ -1348,20 +1348,27 @@ class QwenClient:
         prompt = f"""
         {system_prompt}
         
-        **入场执行标准 (Entry Execution - Strict Validation)**:
-        **你必须仔细分析市场结构情绪以及 BOS, SMC, CHOCH, FVG 等专业技术指标。**
+        **入场执行标准 (Entry Execution - Strict Validation & Verification)**:
+        **你必须结合 SMC 算法策略仔细分析市场结构，严禁盲目开仓！**
+        
+        **核心原则：先验证，后交易 (Verify then Trade)**
+        1. **关键位验证 (Key Level Validation)**:
+           - **阻力/支撑位**: 仅仅价格到达阻力/支撑位**不足以**作为入场理由。必须观察到价格在该区域的**有效反应** (Effective Reaction)，如 Pinbar 拒绝、动能衰竭或小级别结构破坏。
+           - **FVG (失衡区)**: 仅仅价格进入 FVG **不足以**入场。必须等待价格**完全回补**或**回踩测试有效**后，出现反向 K 线组合才可操作。
         
         **入场必须同时满足以下条件**:
         1. **M15 关键位确认**: 价格必须处于 M15 级别的 **确认订单块 (Confirmed Order Block)** 或 **重要阻力支撑位**。
-        2. **SMC 信号**: 必须出现清晰的 BOS (结构突破) 或 CHOCH (特性改变) 信号。
+        2. **SMC 信号有效性**: 
+           - **BOS/CHoCH**: 必须清晰可见，且伴随成交量或动能支持。
+           - **FVG**: 关注 FVG 的回补情况，拒绝未回补的“空中楼阁”式交易。
         3. **价格行为确认 (Price Action)**:
            - **回踩确认 (Retest)**: 如果价格突破了关键位，必须等待**回踩不破** (Retest and Hold) 才可进场。
            - **突破确认 (Breakout)**: 如果价格在关键位盘整，必须等待**有效突破且不跌破** (Breakout and Hold) 才可进场。
         4. **立即进场 (Immediate Market Entry)**: 
-           - 一旦上述条件（回踩确认或突破确认）在 M15 级别得到验证，**必须立即以市场价进场 (Market Order)**，不要等待限价单成交，以免踏空。
-           - 在 `action` 中返回 "buy" 或 "sell" (而非 limit_buy/limit_sell) 以触发市价单。
+           - 只有当上述条件（回踩确认、FVG 验证有效）完全满足时，才可发出交易指令。
+           - 如果价格只是接近区域但未出现验证信号，**坚决观望 (WAIT)**。
 
-        **拒绝模糊信号**: 如果价格只是接近关键位但没有明确的 K 线确认 (如 Pinbar, Engulfing)，或者回踩力度过弱，**坚决观望 (WAIT)**。
+        **拒绝模糊信号**: 如果价格只是接近关键位但没有明确的 K 线确认 (如 Pinbar, Engulfing)，或者 FVG 未经测试，**坚决观望 (WAIT)**。
 
         ## 强制输出格式要求 (Format Enforcement)
         你必须返回一个严格符合 JSON 格式的响应，并确保包含以下所有顶层字段（严禁遗漏）：
