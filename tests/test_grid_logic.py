@@ -79,7 +79,7 @@ class TestGridStrategy(unittest.TestCase):
     def test_trailing_long(self):
         print("\n--- Test Trailing (Long) ---")
         # Reset
-        self.strategy = KalmanGridStrategy("XAUUSD", mt5.TIMEFRAME_M15, 123456)
+        self.strategy = KalmanGridStrategy("XAUUSD", 123456)
         self.strategy.update_dynamic_params(lock_trigger=10.0)
 
         # 1. Profit jumps to 40
