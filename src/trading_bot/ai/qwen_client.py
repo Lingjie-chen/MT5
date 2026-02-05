@@ -1446,11 +1446,23 @@ class QwenClient:
 
         **必须在 `analysis_breakdown` 中包含 `position_calculation_logic` 字段**，详细列出你的计算公式和代入数值，例如 "Balance($10000) * Risk(2%) / (SL_Dist($4) * Size(100)) = 0.5 Lots"。
 
-        ## 强制要求：明确的最优 SL/TP
+        ## 强制要求：明确的最优 SL/TP (SMC & MFE/MAE Optimized)
         无论 Action 是什么 (BUY/SELL/HOLD)，你 **必须** 在 `exit_conditions` 中返回明确的、最优的 `sl_price` 和 `tp_price`。
-        - **SL**: 基于最近的 SMC 结构失效位 (Invalidation Level) 或 MAE 统计。
-        - **TP**: 基于下一个流动性池 (Liquidity Pool) 或 MFE 统计。
-        - **严禁** 返回 0.0 或 null！
+        
+        **分析逻辑要求**:
+        1. **SMC 结构位 (Primary Basis)**:
+           - **Stop Loss (SL)**: 必须放置在关键 SMC 结构失效位之外。
+             - **多单 (Buy)**: SL 应置于最近的 Swing Low (强支撑) 或 Order Block 下边界之下 (预留少量 Buffer)。
+             - **空单 (Sell)**: SL 应置于最近的 Swing High (强阻力) 或 Order Block 上边界之上。
+           - **Take Profit (TP)**: 必须指向下一个流动性池 (Liquidity Pool) 或未回补的 FVG。
+        
+        2. **MAE/MFE 统计修正 (Statistical Validation)**:
+           - 参考历史交易的 MAE (最大浮亏) 数据：如果历史数据显示价格经常在反转前回撤 200 点，则 SL 不应小于 200 点，以免被噪音扫损。
+           - 参考 MFE (最大浮盈) 数据：TP 设置不应过度乐观，应在 MFE 统计的合理范围内 (如 80% 分位)。
+        
+        3. **综合配置**:
+           - 最终 SL/TP 应是 SMC 结构位与 MAE/MFE 统计数据的**交集与验证**。
+           - **严禁** 返回 0.0 或 null！必须给出具体数值。
 
 
         ## 当前交易上下文
