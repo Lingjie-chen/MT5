@@ -502,25 +502,19 @@ class SymbolTrader:
                     logger.warning(f"解析 LLM 仓位失败: {e}")
 
             # --- 1. 自适应基础风险 (Self-Adaptive Base Risk) ---
-            # 基于近期胜率和盈亏比动态调整基础风险
-            # 默认 2%
-            base_risk_pct = 0.02
+            # [USER-REQUESTED CHANGE] 删除基于历史胜率的硬编码风险调整 (0.01/0.03)，
+            # 完全交由 AI (Qwen) 根据市场趋势(8问)和 SMC 结构质量来动态决定风险敞口。
+            # 这里保留一个保守的基准值，仅在 AI 未返回有效仓位时作为 Fallback 计算使用。
+            base_risk_pct = 0.015 
             
-            metrics = self.db_manager.get_performance_metrics(symbol=self.symbol, limit=20)
-            win_rate = metrics.get('win_rate', 0.0)
-            profit_factor = metrics.get('profit_factor', 0.0)
-            consecutive_losses = metrics.get('consecutive_losses', 0)
+            # metrics = self.db_manager.get_performance_metrics(symbol=self.symbol, limit=20)
+            # win_rate = metrics.get('win_rate', 0.0)
+            # profit_factor = metrics.get('profit_factor', 0.0)
+            # consecutive_losses = metrics.get('consecutive_losses', 0)
             
-            # 学习逻辑:
-            # 如果近期表现好 (WinRate > 55% & PF > 1.5)，基础风险上调至 2.5% - 3.0%
-            # 如果近期表现差 (WinRate < 40% 或 连败 > 2)，基础风险下调至 1.0%
-            
-            if win_rate > 0.55 and profit_factor > 1.5:
-                base_risk_pct = 0.03
-                logger.info(f"资金管理学习: 近期表现优异 (WR={win_rate:.2%}, PF={profit_factor:.2f}), 基础风险上调至 3%")
-            elif win_rate < 0.40 or consecutive_losses >= 2:
-                base_risk_pct = 0.01
-                logger.info(f"资金管理学习: 近期表现不佳/连败 (WR={win_rate:.2%}, LossStreak={consecutive_losses}), 基础风险下调至 1%")
+            # 移除旧的硬编码规则
+            # if win_rate > 0.55 and profit_factor > 1.5: ...
+
             
             # --- 2. AI 与 算法共振加成 (Consensus Multiplier) ---
             consensus_multiplier = 1.0
