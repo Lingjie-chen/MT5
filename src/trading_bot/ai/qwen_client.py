@@ -103,9 +103,11 @@ class QwenClient:
            - 高质量 Setup (如 H1 顺势 + M15 BOS + FVG 回填): 使用较高风险比例 (1.5% - 5.0%)。
            - 一般质量 Setup (如仅 M15 结构): 使用标准风险比例 (1.0%)。
            - 左侧交易或逆势博弈: 使用低风险比例 (0.5% - 0.8%)。
-        3. **计算公式**:
-           - 必须基于止损距离动态计算手数：
-           - `Position Size = (Account Balance * Risk %) / (Stop Loss Distance * Contract Size)`
+        3. **计算公式 (必须基于 SL)**:
+           - **Step 1: 确定止损 (Set SL First)**: 必须先根据 SMC 结构（如前低、OB边界）确定具体的 `sl_price`。**无止损，严禁开仓**。
+           - **Step 2: 计算距离**: `Stop Loss Distance = |Entry Price - sl_price|`
+           - **Step 3: 计算手数**: `Position Size = (Account Balance * Risk %) / (Stop Loss Distance * Contract Size)`
+           - **下单要求**: 最终生成的 JSON 中，`sl_price` 必须与此处计算所用的价格一致。
     - **风险上限**: 单笔交易最大风险 (Max Risk per Trade) 不得超过账户余额的 2%。
     
     1. **SMC (Smart Money Concepts) - 核心入场逻辑**:
