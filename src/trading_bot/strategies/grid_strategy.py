@@ -855,7 +855,6 @@ class KalmanGridStrategy:
         last_short_time = 0
         
         for pos in positions:
-            print(f"DEBUG LOOP: PosMagic={pos.magic}, StrategyMagic={self.magic_number}, Type={pos.type}, BUY={mt5.POSITION_TYPE_BUY}")
             if pos.magic != self.magic_number: continue
             if pos.type == mt5.POSITION_TYPE_BUY:
                 self.long_pos_count += 1
