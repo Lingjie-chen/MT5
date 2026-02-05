@@ -229,7 +229,16 @@ class AIBacktester:
                 # 开多仓
                 self.position = 1
                 self.entry_price = current_data['close']
-                # 优先使用AI建议的仓位，如果为0则使用ATR计算
+                # 优先使用AI建议的仓位。如果AI建议为0.0 (风控拦截)，则不开仓。如果AI建议>0，则使用AI建议。如果缺失，则回退到ATR。
+                # 注意：我们这里需要区分 "AI Explicitly Returned 0.0" 和 "AI Returned Nothing/Invalid"
+                # 当前逻辑：ai_pos_size 默认为 0.0 (如果缺失)。
+                # 但 qwen_client 会自动修复为 0.01。
+                # 所以如果 ai_pos_size == 0.0，说明是模型明确输出 0.0 (风控拦截)
+                
+                if ai_pos_size == 0.0:
+                    logger.info(f"AI触发风控拦截 (Position Size: 0.0)，取消开仓: {symbol}")
+                    continue
+
                 position_size = ai_pos_size if ai_pos_size > 0 else self.calculate_position_size(atr)
                 
                 self.trades.append({
@@ -251,7 +260,11 @@ class AIBacktester:
                 # 开空仓
                 self.position = -1
                 self.entry_price = current_data['close']
-                # 优先使用AI建议的仓位
+                # 优先使用AI建议的仓位。如果AI建议为0.0 (风控拦截)，则不开仓。
+                if ai_pos_size == 0.0:
+                    logger.info(f"AI触发风控拦截 (Position Size: 0.0)，取消开仓: {symbol}")
+                    continue
+
                 position_size = ai_pos_size if ai_pos_size > 0 else self.calculate_position_size(atr)
                 
                 self.trades.append({
