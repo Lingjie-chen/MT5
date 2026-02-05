@@ -3355,6 +3355,25 @@ class SymbolTrader:
                             entry_params = strategy.get('entry_conditions')
                             exit_params = strategy.get('exit_conditions')
                             
+                            # [FIX] 确保 exit_params 使用了之前计算的优化值 (opt_sl/opt_tp)
+                            # 如果 AI 返回了 0.0，且我们已经通过 calculate_optimized_sl_tp 计算出了有效值 (opt_sl/opt_tp)
+                            # 那么必须将这个有效值注入到 exit_params 中，否则 execute_trade 仍会收到 0.0 并报错
+                            if exit_params is None:
+                                exit_params = {}
+                            
+                            # 如果 opt_sl/opt_tp 在上方被 fallback 逻辑计算过，这里强制覆盖无效的 0.0
+                            if opt_sl and opt_sl > 0:
+                                current_sl = exit_params.get('sl_price', 0.0)
+                                if current_sl <= 0:
+                                    exit_params['sl_price'] = opt_sl
+                                    logger.info(f"Auto-Injecting Optimized SL: {opt_sl}")
+
+                            if opt_tp and opt_tp > 0:
+                                current_tp = exit_params.get('tp_price', 0.0)
+                                if current_tp <= 0:
+                                    exit_params['tp_price'] = opt_tp
+                                    logger.info(f"Auto-Injecting Optimized TP: {opt_tp}")
+                            
                             # Calculate Lot
                             # Priority: AI Suggested Size > Dynamic Calculation
                             ai_suggested_size = strategy.get('position_size')
