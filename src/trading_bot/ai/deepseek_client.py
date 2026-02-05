@@ -1371,7 +1371,7 @@ class DeepSeekClient:
                     else:
                         try:
                             size = float(trading_decision["position_size"])
-                            trading_decision["position_size"] = max(0.01, min(10.0, size))
+                            trading_decision["position_size"] = max(0.0, min(10.0, size))
                         except (ValueError, TypeError):
                             trading_decision["position_size"] = 0.01
 
