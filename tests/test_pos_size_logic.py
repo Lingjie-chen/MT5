@@ -16,7 +16,7 @@ from trading_bot.ai.qwen_client import QwenClient
 
 class TestQwenPositionSize(unittest.TestCase):
     def setUp(self):
-        self.client = QwenClient()
+        self.client = QwenClient(api_key="dummy_key")
         # Mock the _call_api method to avoid actual network calls
         self.client._call_api = MagicMock()
         
