@@ -37,6 +37,10 @@ class KalmanGridStrategy:
         self.dynamic_tp_long = None
         self.dynamic_tp_short = None
         
+        # [NEW] Basket SL (From AI)
+        self.dynamic_sl_long = None
+        self.dynamic_sl_short = None
+        
         self.lock_profit_trigger = None # Store AI recommended Lock Trigger
         self.trailing_stop_config = None # Store AI recommended Trailing Config
         
