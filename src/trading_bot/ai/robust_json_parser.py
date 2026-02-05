@@ -253,8 +253,7 @@ def parse_llm_json(
                 if 'action' in data:
                      # Just fill them with None/0 to allow process to continue
                      for k in missing_keys:
-                         if k == 'position_size': data[k] = 0.0
-                         elif k == 'entry_conditions': data[k] = None
+                         if k == 'entry_conditions': data[k] = None
                          elif k == 'exit_conditions': data[k] = None
                          elif k == 'grid_config': data[k] = None
                          elif k == 'telegram_report': data[k] = f"Action: {data['action']} (Auto-Generated)"
