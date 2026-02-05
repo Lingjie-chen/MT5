@@ -3332,6 +3332,8 @@ class SymbolTrader:
                             if ai_suggested_size and float(ai_suggested_size) > 0:
                                 suggested_lot = float(ai_suggested_size)
                                 logger.info(f"Using AI Provided Position Size: {suggested_lot}")
+                                # Force override internal lot_size to ensure it propagates
+                                self.lot_size = suggested_lot
                             else:
                                 # Fallback to internal dynamic calculation
                                 suggested_lot = self.calculate_dynamic_lot(
