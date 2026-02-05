@@ -1372,11 +1372,12 @@ class QwenClient:
             "strategy_rationale": "你的详细分析逻辑 (中文)", // 严禁省略
             "confidence": 85,
             "market_state": "Bullish Trend",
-            "analysis_breakdown": {{
+            "analysis_breakdown": {
                 "market_status": "M15看涨，回调到位",
                 "observation_points": "关注 2350 支撑有效性",
-                "position_analysis": "资金充足，结构良好，使用 0.15 手"
-            }},
+                "position_analysis": "资金充足，结构良好，使用 0.15 手",
+                "position_calculation_logic": "Balance($10000) * Risk(1.5%) / (SL_Dist($5) * Size(100)) = 0.30 Lots"
+            },
             "telegram_report": "🚀 信号触发...\n\n📊 市场状态: ...\n\n📝 盘前8问:\n1.趋势: 多头\n2.起点: ...\n(列出所有8问)\n\n🔭 观察点: ...\n⚖️ 仓位: ...", // 严禁省略
             "grid_config": {{ // 严禁省略，填默认值即可
                 "initial_lot": 0.01,
@@ -1402,8 +1403,8 @@ class QwenClient:
         If uncertain, output 0.01 but DO NOT OMIT the field.
 
 
-        ## 核心指令更新：动态仓位计算 (Dynamic Position Sizing)
-        你必须根据以下因素，精确计算本次交易的 **position_size (Lots)**：
+        ## 核心指令更新：动态仓位计算 (Dynamic Position Sizing - CRITICAL)
+        你必须根据以下因素，精确计算本次交易的 **position_size (Lots)**，该值将直接用于实盘下单：
         1. **实时账户资金**: {current_market_data.get('account_info', {}).get('available_balance', 10000)} USD
         2. **交易商特性与风险适配 (Broker Specifics)**:
            - **Exness (高杠杆/低点差)**: 允许更激进的网格加仓和稍大的首单风险 (Risk% 可上浮 20%)。但需注意滑点。
@@ -1421,8 +1422,12 @@ class QwenClient:
            - Lots = 200 / (4 * 100) = 0.50 Lots.
         5. **市场情绪**: 结合 {market_analysis.get('sentiment_analysis', {}).get('sentiment', 'neutral')} 情绪调整。
         
-        **绝对不要**默认使用 0.01 手！必须基于资金量和你的分析信心计算。
-        请给出一个精确到小数点后两位的数字 (例如 0.15, 0.50, 1.20)，并在 `strategy_rationale` 中详细解释计算逻辑。
+        **执行规则 (Execution Rules)**:
+        - **正常交易**: 请给出一个精确到小数点后两位的数字 (例如 0.15, 0.50, 1.20)。
+        - **风控拦截**: 如果你认为当前风险极高、不宜入场，或者找不到合适的止损位，请务必输出 `position_size: 0.0`。这将触发系统的风控机制，强制停止交易。
+        - **绝对不要**默认使用 0.01 手！必须基于资金量和你的分析信心计算。
+
+        **必须在 `analysis_breakdown` 中包含 `position_calculation_logic` 字段**，详细列出你的计算公式和代入数值，例如 "Balance($10000) * Risk(2%) / (SL_Dist($4) * Size(100)) = 0.5 Lots"。
 
         ## 强制要求：明确的最优 SL/TP
         无论 Action 是什么 (BUY/SELL/HOLD)，你 **必须** 在 `exit_conditions` 中返回明确的、最优的 `sl_price` 和 `tp_price`。
