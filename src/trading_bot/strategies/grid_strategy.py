@@ -564,9 +564,6 @@ class KalmanGridStrategy:
         # Update internal state (counts, last prices)
         self._update_positions_state(positions)
         
-        # DEBUG LOG
-        # logger.info(f"DEBUG: LongCount={self.long_pos_count}, ShortCount={self.short_pos_count}")
-        
         should_close_long = False
         should_close_short = False
         
