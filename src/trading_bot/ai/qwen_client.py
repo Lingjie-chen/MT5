@@ -1372,12 +1372,12 @@ class QwenClient:
             "strategy_rationale": "你的详细分析逻辑 (中文)", // 严禁省略
             "confidence": 85,
             "market_state": "Bullish Trend",
-            "analysis_breakdown": {
+            "analysis_breakdown": {{
                 "market_status": "M15看涨，回调到位",
                 "observation_points": "关注 2350 支撑有效性",
                 "position_analysis": "资金充足，结构良好，使用 0.15 手",
                 "position_calculation_logic": "Balance($10000) * Risk(1.5%) / (SL_Dist($5) * Size(100)) = 0.30 Lots"
-            },
+            }},
             "telegram_report": "🚀 信号触发...\n\n📊 市场状态: ...\n\n📝 盘前8问:\n1.趋势: 多头\n2.起点: ...\n(列出所有8问)\n\n🔭 观察点: ...\n⚖️ 仓位: ...", // 严禁省略
             "grid_config": {{ // 严禁省略，填默认值即可
                 "initial_lot": 0.01,
