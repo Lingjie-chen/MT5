@@ -1423,8 +1423,10 @@ class QwenClient:
         你必须根据以下因素，精确计算本次交易的 **position_size (Lots)**，该值将直接用于实盘下单：
         1. **实时账户资金**: {current_market_data.get('account_info', {}).get('available_balance', 10000)} USD
         2. **交易商特性与风险适配 (Broker Specifics)**:
-           - **Exness (高杠杆/低点差)**: 允许更激进的网格加仓和稍大的首单风险 (Risk% 可上浮 20%)。但需注意滑点。
-           - **AvaTrade (标准/监管严)**: 严格遵守标准风险模型，禁止过度激进。
+           - **高杠杆环境 (1:400 Leverage)**: 
+             - **优势**: 保证金占用极低，允许在小止损（Tight Stop）策略下灵活调整头寸。
+             - **风险**: 波动放大效应显著。**严禁**仅仅因为保证金充足就过度开仓。
+             - **约束**: 必须以 **账户余额 (Balance)** 的风险百分比为锚定，而不是可用保证金。
            - **合约规格**: 请务必确认当前品种 {symbol} 的合约大小 (Contract Size)。通常 XAUUSD=100, ETHUSD=1, EURUSD=100000。
         3. **风险管理 (AI Driven Risk)**: 
            - **单笔风险**: **完全由你分析决定，不设固定限制**。
