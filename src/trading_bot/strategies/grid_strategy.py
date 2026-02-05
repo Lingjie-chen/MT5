@@ -632,7 +632,7 @@ class KalmanGridStrategy:
                     if total_profit_short > self.max_basket_profit_short:
                         self.max_basket_profit_short = total_profit_short
                         
-                    current_lock = max(10.0, self.max_basket_profit_short * 0.5)
+                    current_lock = max(1.0, self.max_basket_profit_short * 0.5)
                     
                     if self.basket_lock_level_short is None or current_lock > self.basket_lock_level_short:
                         self.basket_lock_level_short = current_lock
