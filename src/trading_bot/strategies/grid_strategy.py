@@ -584,14 +584,31 @@ class KalmanGridStrategy:
                 logger.warning(f"🛑 Long Basket SL Hit! Profit: ${total_profit_long:.2f} <= Limit: ${self.dynamic_sl_long:.2f}")
                 should_close_long = True
                 
-            # [CHECK] Lock Profit / Trailing Logic
-            if not should_close_long and self.lock_profit_trigger and total_profit_long >= self.lock_profit_trigger:
-                # Logic: If profit reaches X, set virtual SL at Y
-                # This requires state persistence which is simple here:
-                # If we hit trigger, check if we have a locked value.
-                # If current profit drops below locked value, close.
-                pass # TODO: Implement persistent locking state if needed
+            # [CHECK] Lock Profit / Trailing Logic (Enhanced)
+            if not should_close_long and self.lock_profit_trigger and self.lock_profit_trigger > 0:
+                # 触发逻辑: 只要浮盈超过 trigger (例如 10)，就启动保本/追踪
+                if total_profit_long >= self.lock_profit_trigger:
+                    # 记录最大浮盈
+                    if total_profit_long > self.max_basket_profit_long:
+                        self.max_basket_profit_long = total_profit_long
+                        
+                    # 计算锁定线: 默认锁定 50% 的最大浮盈，或者至少保本 (+1.0)
+                    # 比如 Trigger=10, Max=20 -> Lock=10
+                    # Trigger=10, Max=10 -> Lock=5
+                    
+                    # 简单逻辑: 启动后，锁定利润 = Max * 0.5 (可配置)
+                    current_lock = max(1.0, self.max_basket_profit_long * 0.5) 
+                    
+                    if self.basket_lock_level_long is None or current_lock > self.basket_lock_level_long:
+                        self.basket_lock_level_long = current_lock
+                        # Log only on update
+                        # logger.info(f"Long Basket Lock Updated: ${self.basket_lock_level_long:.2f} (Max: ${self.max_basket_profit_long:.2f})")
                 
+                # 检查是否触及锁定线
+                if self.basket_lock_level_long is not None and total_profit_long < self.basket_lock_level_long:
+                     logger.info(f"🛑 Long Basket Trailing Hit! Profit ${total_profit_long:.2f} dropped below Lock ${self.basket_lock_level_long:.2f}")
+                     should_close_long = True
+
         # --- Short Basket ---
         if self.short_pos_count > 0:
             total_profit_short = 0.0
@@ -608,8 +625,21 @@ class KalmanGridStrategy:
             if self.dynamic_sl_short is not None and self.dynamic_sl_short < 0 and total_profit_short <= self.dynamic_sl_short:
                 logger.warning(f"🛑 Short Basket SL Hit! Profit: ${total_profit_short:.2f} <= Limit: ${self.dynamic_sl_short:.2f}")
                 should_close_short = True
-        
-        return should_close_long, should_close_short
+            
+            # [CHECK] Lock Profit / Trailing Logic (Enhanced)
+            if not should_close_short and self.lock_profit_trigger and self.lock_profit_trigger > 0:
+                if total_profit_short >= self.lock_profit_trigger:
+                    if total_profit_short > self.max_basket_profit_short:
+                        self.max_basket_profit_short = total_profit_short
+                        
+                    current_lock = max(1.0, self.max_basket_profit_short * 0.5)
+                    
+                    if self.basket_lock_level_short is None or current_lock > self.basket_lock_level_short:
+                        self.basket_lock_level_short = current_lock
+                
+                if self.basket_lock_level_short is not None and total_profit_short < self.basket_lock_level_short:
+                     logger.info(f"🛑 Short Basket Trailing Hit! Profit ${total_profit_short:.2f} dropped below Lock ${self.basket_lock_level_short:.2f}")
+                     should_close_short = True
 
     def _check_single_basket(self, total_profit, count, total_volume, current_atr, is_long=True):
         if count == 0:
