@@ -307,6 +307,26 @@ class SymbolTrader:
             self.send_telegram_message(f"🔄 *Position Closed*\nTicket: `{position.ticket}`\nReason: {comment}\nProfit: {profit}")
             return True
 
+    def close_all_positions(self, direction=None, comment="Close All"):
+        """Close all positions for this symbol, optionally filtering by direction ('long' or 'short')"""
+        positions = mt5.positions_get(symbol=self.symbol)
+        if positions is None:
+            return
+
+        for pos in positions:
+            if pos.magic != self.magic_number:
+                continue
+            
+            # Filter by direction if specified
+            if direction:
+                is_long = (pos.type == mt5.POSITION_TYPE_BUY)
+                if direction == 'long' and not is_long:
+                    continue
+                if direction == 'short' and is_long:
+                    continue
+            
+            self.close_position(pos, comment=comment)
+
     def check_risk_reward_ratio(self, entry_price, sl_price, tp_price):
         """检查盈亏比是否达标"""
         # [MODIFIED] 用户明确要求完全由大模型掌控止盈止损 (No Hard SL/TP)
