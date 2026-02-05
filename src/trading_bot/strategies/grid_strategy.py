@@ -597,7 +597,7 @@ class KalmanGridStrategy:
                     # Trigger=10, Max=10 -> Lock=5
                     
                     # 简单逻辑: 启动后，锁定利润 = Max * 0.5 (可配置)
-                    current_lock = max(1.0, self.max_basket_profit_long * 0.5) 
+                    current_lock = max(10, self.max_basket_profit_long * 0.5) 
                     
                     if self.basket_lock_level_long is None or current_lock > self.basket_lock_level_long:
                         self.basket_lock_level_long = current_lock
