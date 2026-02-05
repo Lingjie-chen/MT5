@@ -3051,7 +3051,7 @@ class SymbolTrader:
                         # 准备技术信号摘要
                         technical_signals = {
                             "crt": crt_result,
-                            "smc": smc_result['signal'],
+                            "smc": smc_result, # [MODIFIED] Pass full SMC details (OB/FVG/Structure) for AI validation
                             "grid_strategy": {
                                 "signal": grid_signal,
                                 "status": grid_status,
