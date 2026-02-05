@@ -11,8 +11,13 @@ import MetaTrader5 as mt5
 
 class TestGridStrategy(unittest.TestCase):
     def setUp(self):
+        # Mock logger to avoid clutter but allow inspection if needed
+        # logging.basicConfig(level=logging.INFO)
         self.strategy = KalmanGridStrategy("XAUUSD", mt5.TIMEFRAME_M15, 123456)
-        # Configure Dynamic Params
+        
+        # Ensure constants match standard MT5
+        mt5.POSITION_TYPE_BUY = 0
+        mt5.POSITION_TYPE_SELL = 1
         self.strategy.update_dynamic_params(
             basket_tp=100.0,
             basket_sl_long=-50.0,
