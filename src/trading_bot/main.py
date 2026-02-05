@@ -3283,6 +3283,11 @@ class SymbolTrader:
 
                         if telegram_report and len(telegram_report) > 50:
                             # 使用 Qwen 生成的专用 Telegram 报告
+                            pos_size_val = strategy.get('position_size', 0.01)
+                            pos_size_str = f"{pos_size_val}"
+                            if float(pos_size_val) == 0.0:
+                                pos_size_str += " (Risk Control)"
+                            
                             analysis_msg = (
                                 f"🤖 *AI Strategy Report ({current_model_name})*\n"
                                 f"Symbol: `{self.symbol}` | TF: `{self.tf_name}`\n"
@@ -3290,7 +3295,7 @@ class SymbolTrader:
                                 f"{telegram_report}\n\n"
                                 f"📊 *Live Status*\n"
                                 f"• Action: *{final_signal.upper()}*\n"
-                                f"• Lots: `{strategy.get('position_size', 0.01)}`\n"
+                                f"• Lots: `{pos_size_str}`\n"
                                 f"• Strength: {strength:.0f}%\n"
                                 f"• Sentiment: {qwen_sent_label.upper()} ({qwen_sent_score:.2f})\n\n"
                                 f"💼 *Positions*\n"
@@ -3298,6 +3303,11 @@ class SymbolTrader:
                             )
                         else:
                             # 备用：手动构建结构化消息
+                            pos_size_val = strategy.get('position_size', 0.01)
+                            pos_size_str = f"{pos_size_val}"
+                            if float(pos_size_val) == 0.0:
+                                pos_size_str += " (Risk Control)"
+                                
                             analysis_msg = (
                                 f"🤖 *AI Strategy Report ({current_model_name})*\n"
                                 f"Symbol: `{self.symbol}` | TF: `{self.tf_name}`\n"
@@ -3305,7 +3315,7 @@ class SymbolTrader:
                                 
                                 f"🧙‍♂️ *Qwen Analysis*\n"
                                 f"• Action: *{qw_action.upper()}*\n"
-                                f"• Lots: `{strategy.get('position_size', 0.01)}` (Dynamic)\n"
+                                f"• Lots: `{pos_size_str}` (Dynamic)\n"
                                 f"• Sentiment: {qwen_sent_label.upper()} ({qwen_sent_score})\n"
                                 f"• Logic: _{self.escape_markdown(reason)}_\n\n"
                                 
