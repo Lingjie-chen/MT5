@@ -3301,6 +3301,25 @@ class SymbolTrader:
                             current_model_name = self.qwen_client.model # Fallback to default
 
                         if telegram_report and len(telegram_report) > 50:
+                            # [NEW] Extract Basket TP/SL Info
+                            grid_tp_long = getattr(self.grid_strategy, 'dynamic_tp_long', None)
+                            grid_tp_short = getattr(self.grid_strategy, 'dynamic_tp_short', None)
+                            grid_sl_long = getattr(self.grid_strategy, 'dynamic_sl_long', None)
+                            grid_sl_short = getattr(self.grid_strategy, 'dynamic_sl_short', None)
+                            global_tp = getattr(self.grid_strategy, 'global_tp', 0.0)
+
+                            basket_info_lines = []
+                            if grid_tp_long and grid_tp_long > 0: basket_info_lines.append(f"• TP Long: `${grid_tp_long:.2f}`")
+                            if grid_tp_short and grid_tp_short > 0: basket_info_lines.append(f"• TP Short: `${grid_tp_short:.2f}`")
+                            if not grid_tp_long and not grid_tp_short and global_tp > 0: basket_info_lines.append(f"• TP Global: `${global_tp:.2f}`")
+                            
+                            if grid_sl_long and grid_sl_long < 0: basket_info_lines.append(f"• SL Long: `${grid_sl_long:.2f}`")
+                            if grid_sl_short and grid_sl_short < 0: basket_info_lines.append(f"• SL Short: `${grid_sl_short:.2f}`")
+                            
+                            basket_info_str = ""
+                            if basket_info_lines:
+                                 basket_info_str = "💰 *Basket Settings*\n" + "\n".join(basket_info_lines) + "\n\n"
+
                             # 使用 Qwen 生成的专用 Telegram 报告
                             pos_size_val = strategy.get('position_size', 0.01)
                             pos_size_str = f"{pos_size_val}"
@@ -3312,6 +3331,7 @@ class SymbolTrader:
                                 f"Symbol: `{self.symbol}` | TF: `{self.tf_name}`\n"
                                 f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
                                 f"{telegram_report}\n\n"
+                                f"{basket_info_str}"
                                 f"📊 *Live Status*\n"
                                 f"• Action: *{final_signal.upper()}*\n"
                                 f"• Lots: `{pos_size_str}`\n"
@@ -3322,6 +3342,23 @@ class SymbolTrader:
                             )
                         else:
                             # 备用：手动构建结构化消息
+                            # [NEW] Extract Basket TP/SL Info (Duplicate logic for fallback branch)
+                            grid_tp_long = getattr(self.grid_strategy, 'dynamic_tp_long', None)
+                            grid_tp_short = getattr(self.grid_strategy, 'dynamic_tp_short', None)
+                            grid_sl_long = getattr(self.grid_strategy, 'dynamic_sl_long', None)
+                            grid_sl_short = getattr(self.grid_strategy, 'dynamic_sl_short', None)
+                            
+                            basket_info_lines = []
+                            if grid_tp_long and grid_tp_long > 0: basket_info_lines.append(f"• TP Long: `${grid_tp_long:.2f}`")
+                            if grid_tp_short and grid_tp_short > 0: basket_info_lines.append(f"• TP Short: `${grid_tp_short:.2f}`")
+                            
+                            if grid_sl_long and grid_sl_long < 0: basket_info_lines.append(f"• SL Long: `${grid_sl_long:.2f}`")
+                            if grid_sl_short and grid_sl_short < 0: basket_info_lines.append(f"• SL Short: `${grid_sl_short:.2f}`")
+                            
+                            basket_info_str = ""
+                            if basket_info_lines:
+                                 basket_info_str = "💰 *Basket Settings*\n" + "\n".join(basket_info_lines) + "\n\n"
+
                             pos_size_val = strategy.get('position_size', 0.01)
                             pos_size_str = f"{pos_size_val}"
                             if float(pos_size_val) == 0.0:
@@ -3341,7 +3378,7 @@ class SymbolTrader:
                                 f"🏆 *Decision: {final_signal.upper()}*\n"
                                 f"• Strength: {strength:.0f}%\n"
                                 f"• SL: `{opt_sl:.2f}` | TP: `{opt_tp:.2f}`\n\n"
-                                
+                                f"{basket_info_str}"
                                 f"💼 *Positions*\n"
                                 f"{self.escape_markdown(pos_summary)}"
                             )
