@@ -710,7 +710,17 @@ class SymbolTrader:
         
         if self.latest_strategy:
             explicit_sl = self.latest_strategy.get('sl')
+            # [FIX] 尝试从 exit_conditions 嵌套结构中提取
+            if explicit_sl is None:
+                exit_conds = self.latest_strategy.get('exit_conditions')
+                if exit_conds:
+                    explicit_sl = exit_conds.get('sl_price')
+
             explicit_tp = self.latest_strategy.get('tp')
+            if explicit_tp is None:
+                exit_conds = self.latest_strategy.get('exit_conditions')
+                if exit_conds:
+                    explicit_tp = exit_conds.get('tp_price')
         
         # 如果没有具体价格，回退到 sl_tp_params (通常也是 LLM 生成的)
         if explicit_sl is None and sl_tp_params:
@@ -1079,11 +1089,11 @@ class SymbolTrader:
                 return
 
         if trade_type and price > 0:
-            # 再次确认 SL/TP 是否存在
-            if explicit_sl is None or explicit_tp is None:
+            # 再次确认 SL/TP 是否有效 (Fix: Treat 0.0 as invalid and trigger auto-calc)
+            if not explicit_sl or explicit_sl <= 0 or not explicit_tp or explicit_tp <= 0:
                 # 策略优化: 如果 LLM 未提供明确价格，则使用基于 MFE/MAE 的统计优化值
                 # 移除旧的 ATR 动态计算，确保策略的一致性和基于绩效的优化
-                logger.info("LLM 未提供明确 SL/TP，使用 MFE/MAE 统计优化值")
+                logger.info("LLM 未提供明确 SL/TP (or 0.0)，使用 MFE/MAE 统计优化值")
                 
                 # 计算 ATR
                 rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
