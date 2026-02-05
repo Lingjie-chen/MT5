@@ -1478,6 +1478,11 @@ class QwenClient:
         4. 制定Martingale网格加仓计划
         5. 严格遵循风险管理规则
         6. 生成Telegram简报（使用emoji图标增强可读性）
+
+        **FINAL CHECKLIST BEFORE OUTPUT:**
+        1. **Check `position_size`**: Did you include it? It must be a float (e.g. 0.15). If not trading, set to 0.0.
+        2. **Check `action`**: Is it one of the valid actions?
+        3. **Check `exit_conditions`**: Are SL/TP prices set?
         """
         
         # 构建payload
