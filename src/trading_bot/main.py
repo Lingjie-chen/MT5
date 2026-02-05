@@ -3109,7 +3109,7 @@ class SymbolTrader:
                         if 'position_size' in strategy:
                             try:
                                 qwen_lot = float(strategy['position_size'])
-                                if qwen_lot > 0:
+                                if qwen_lot >= 0:
                                     self.lot_size = qwen_lot
                                     logger.info(f"Updated lot size from Qwen: {self.lot_size}")
                             except Exception as e:

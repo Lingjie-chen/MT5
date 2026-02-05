@@ -1581,8 +1581,8 @@ class QwenClient:
                             if action_val not in ['hold', 'wait', 'close', 'neutral']:
                                 logger.info(f"✅ 模型返回动态仓位: {raw_size} (已根据资金动态计算)")
                             
-                            # 0.01 到 10.0 手之间
-                            trading_decision["position_size"] = max(0.01, min(10.0, size))
+                            # 0.0 到 10.0 手之间 (允许模型返回 0.0 以表示极高风险不交易)
+                            trading_decision["position_size"] = max(0.0, min(10.0, size))
                         except (ValueError, TypeError):
                             logger.error(f"⚠️ 模型返回的 'position_size' 无效 ({trading_decision.get('position_size')})")
                             return None
