@@ -1232,9 +1232,12 @@ class SymbolTrader:
         if is_buy:
             # Buy: SL must be < Price, TP must be > Price
             if sl > 0 and sl >= price:
-                logger.warning(f"Invalid SL for BUY (SL {sl:.2f} >= Price {price:.2f}). Auto-Correcting: Removing SL.")
-                sl = 0.0 # 移除无效 SL，优先保证成交
-            
+                logger.error(f"Invalid SL for BUY (SL {sl:.2f} >= Price {price:.2f}). Refusing to trade without valid SL.")
+                return # [USER REQUEST] 强制 SL，无效则拒绝开仓
+            if sl <= 0:
+                logger.error(f"Missing SL for BUY. Refusing to trade without valid SL.")
+                return
+
             if tp > 0 and tp <= price:
                 logger.warning(f"Invalid TP for BUY (TP {tp:.2f} <= Price {price:.2f}). Auto-Correcting: Removing TP.")
                 tp = 0.0
@@ -1242,8 +1245,11 @@ class SymbolTrader:
         elif is_sell:
             # Sell: SL must be > Price, TP must be < Price
             if sl > 0 and sl <= price:
-                logger.warning(f"Invalid SL for SELL (SL {sl:.2f} <= Price {price:.2f}). Auto-Correcting: Removing SL.")
-                sl = 0.0
+                logger.error(f"Invalid SL for SELL (SL {sl:.2f} <= Price {price:.2f}). Refusing to trade without valid SL.")
+                return # [USER REQUEST] 强制 SL，无效则拒绝开仓
+            if sl <= 0:
+                logger.error(f"Missing SL for SELL. Refusing to trade without valid SL.")
+                return
                 
             if tp > 0 and tp >= price:
                 logger.warning(f"Invalid TP for SELL (TP {tp:.2f} >= Price {price:.2f}). Auto-Correcting: Removing TP.")
