@@ -93,13 +93,20 @@ class QwenClient:
     *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M15 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
     *   **Risk/Reward Requirement**: **盈亏比 (Risk/Reward Ratio) 必须至少 1.5**。如果 (TP距离 / SL距离) < 1.5，则**禁止开仓**，必须返回 HOLD。
 
-    **仓位管理指令 (Position Sizing Instructions)**:
-    - **账户规模感知**: 
-        - 账户余额 (Balance) < 100 USD: 推荐手数 0.01 - 0.02
-        - 账户余额 100 - 500 USD: 推荐手数 0.03 - 0.10
-        - 账户余额 > 500 USD: 根据账户余额的 10% 比例推荐手数。例如，账户余额为 1000 USD 时，推荐手数为 0.10。
-        - **必须严格遵守上述比例，禁止过度杠杆。**
-    - **Risk per Trade**: 单笔交易风险 (Stop Loss Risk) 不得超过账户余额的 1% - 2%。
+    **仓位管理指令 (Position Sizing Instructions - Dynamic & SMC Based)**:
+    - **严禁硬编码手数**: 绝对禁止使用固定的手数（如 0.01 或 0.03）。
+    - **动态决策逻辑**:
+        1. **参考"盘前8问"**: 
+           - 如果趋势明确且处于强劲阶段 (Trend Stage 强势)，可适当提高风险敞口。
+           - 如果趋势不明或处于末端 (Trend End/Correction)，必须降低风险。
+        2. **SMC 结构质量**:
+           - 高质量 Setup (如 H1 顺势 + M15 BOS + FVG 回填): 使用较高风险比例 (1.5% - 2.0%)。
+           - 一般质量 Setup (如仅 M15 结构): 使用标准风险比例 (1.0%)。
+           - 左侧交易或逆势博弈: 使用低风险比例 (0.5% - 0.8%)。
+        3. **计算公式**:
+           - 必须基于止损距离动态计算手数：
+           - `Position Size = (Account Balance * Risk %) / (Stop Loss Distance * Contract Size)`
+    - **风险上限**: 单笔交易最大风险 (Max Risk per Trade) 不得超过账户余额的 2%。
     
     1. **SMC (Smart Money Concepts) - 核心入场逻辑**:
        - **结构确认 (Structure Mapping)**:
