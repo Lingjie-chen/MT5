@@ -1488,7 +1488,17 @@ class SymbolTrader:
             high_low = df_temp['high'] - df_temp['low']
             current_atr = high_low.rolling(14).mean().iloc[-1]
 
-        should_close_long, should_close_short = self.grid_strategy.check_grid_exit(positions, mt5.symbol_info_tick(self.symbol).bid, current_atr)
+        # [FIX] Handle potential None return from check_grid_exit
+        try:
+            exit_result = self.grid_strategy.check_grid_exit(positions, mt5.symbol_info_tick(self.symbol).bid, current_atr)
+            if exit_result and isinstance(exit_result, tuple) and len(exit_result) == 2:
+                should_close_long, should_close_short = exit_result
+            else:
+                # logger.warning(f"check_grid_exit returned invalid result: {exit_result}. Defaulting to False.")
+                should_close_long, should_close_short = False, False
+        except Exception as e:
+            logger.error(f"Error in check_grid_exit: {e}")
+            should_close_long, should_close_short = False, False
 
         if should_close_long:
             logger.info("Grid Strategy: Long Basket TP Reached. Closing ALL LONG positions.")
