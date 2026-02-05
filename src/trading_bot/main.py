@@ -3337,7 +3337,7 @@ class SymbolTrader:
                                     # 如果 AI 明确返回 0.0，则视为风控拦截，不进行交易
                                     if suggested_lot_val == 0.0:
                                         logger.warning(f"⚠️ AI 明确建议仓位为 0.0 (Risk Control)，跳过本次交易执行 (Action={final_signal})")
-                                        continue # Skip this trade execution loop
+                                        return # Skip this trade execution loop
                                     
                                     if suggested_lot_val > 0:
                                         suggested_lot = suggested_lot_val
