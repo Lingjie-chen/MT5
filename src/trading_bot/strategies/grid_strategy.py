@@ -603,6 +603,11 @@ class KalmanGridStrategy:
             if self.dynamic_tp_short is not None and self.dynamic_tp_short > 0 and total_profit_short >= self.dynamic_tp_short:
                 logger.info(f"✅ Short Basket TP Hit! Profit: ${total_profit_short:.2f} >= Target: ${self.dynamic_tp_short:.2f}")
                 should_close_short = True
+
+            # [CHECK] Dynamic Basket SL
+            if self.dynamic_sl_short is not None and self.dynamic_sl_short < 0 and total_profit_short <= self.dynamic_sl_short:
+                logger.warning(f"🛑 Short Basket SL Hit! Profit: ${total_profit_short:.2f} <= Limit: ${self.dynamic_sl_short:.2f}")
+                should_close_short = True
         
         return should_close_long, should_close_short
 

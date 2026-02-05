@@ -3103,17 +3103,26 @@ class SymbolTrader:
                         self.latest_strategy = strategy
                         self.last_llm_time = time.time()
                         
-                        # --- [NEW] Update Grid Strategy Dynamic Params (Basket TP) ---
-                        # Ensure AI Dynamic TP is applied
+                        # --- [NEW] Update Grid Strategy Dynamic Params (Basket TP/SL) ---
+                        # Ensure AI Dynamic TP/SL is applied
                         pos_mgmt = strategy.get('position_management', {})
                         if pos_mgmt:
+                            # 1. Basket TP
                             basket_tp = pos_mgmt.get('dynamic_basket_tp')
-                            if basket_tp:
+                            
+                            # 2. Basket SL (New)
+                            basket_sl = pos_mgmt.get('dynamic_basket_sl') # e.g., -100.0 or 100.0
+                            
+                            if basket_tp or basket_sl:
                                 try:
-                                    self.grid_strategy.update_dynamic_params(basket_tp)
-                                    logger.info(f"Applied AI Dynamic Basket TP: {basket_tp}")
+                                    self.grid_strategy.update_dynamic_params(
+                                        basket_tp=basket_tp,
+                                        basket_sl_long=basket_sl, # Apply same SL to both directions for now
+                                        basket_sl_short=basket_sl
+                                    )
+                                    logger.info(f"Applied AI Dynamic Basket Params: TP={basket_tp}, SL={basket_sl}")
                                 except Exception as e:
-                                    logger.error(f"Failed to update dynamic basket TP: {e}")
+                                    logger.error(f"Failed to update dynamic basket params: {e}")
 
                         # Update lot_size from Qwen Strategy
                         if 'position_size' in strategy:
