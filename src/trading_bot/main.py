@@ -1103,7 +1103,24 @@ class SymbolTrader:
                      high_low = df_temp['high'] - df_temp['low']
                      atr = high_low.rolling(14).mean().iloc[-1]
                 
-                explicit_sl, explicit_tp = self.calculate_optimized_sl_tp(trade_type, price, atr, ai_exit_conds=sl_tp_params)
+                calc_sl, calc_tp = self.calculate_optimized_sl_tp(trade_type, price, atr, ai_exit_conds=sl_tp_params)
+                
+                # [USER REQ] 强制回写：如果计算成功，将其作为 Explicit SL/TP 使用
+                # 这样下方的日志 "Explicit SL=..." 就会显示正确的值，且后续逻辑也会使用它
+                if calc_sl > 0: 
+                    explicit_sl = calc_sl
+                    # 同时尝试更新 strategy 字典以保持一致性 (Optional but good for debug)
+                    if self.latest_strategy:
+                        if 'exit_conditions' not in self.latest_strategy or self.latest_strategy['exit_conditions'] is None:
+                            self.latest_strategy['exit_conditions'] = {}
+                        self.latest_strategy['exit_conditions']['sl_price'] = calc_sl
+
+                if calc_tp > 0: 
+                    explicit_tp = calc_tp
+                    if self.latest_strategy:
+                        if 'exit_conditions' not in self.latest_strategy or self.latest_strategy['exit_conditions'] is None:
+                            self.latest_strategy['exit_conditions'] = {}
+                        self.latest_strategy['exit_conditions']['tp_price'] = calc_tp
                 
                 if explicit_sl == 0 or explicit_tp == 0:
                      logger.error("无法计算优化 SL/TP，放弃交易")
@@ -3399,17 +3416,14 @@ class SymbolTrader:
                                 exit_params = {}
                             
                             # 如果 opt_sl/opt_tp 在上方被 fallback 逻辑计算过，这里强制覆盖无效的 0.0
+                            # [USER REQ Update] 直接使用 opt_sl/opt_tp 覆盖，确保一致性
                             if opt_sl and opt_sl > 0:
-                                current_sl = exit_params.get('sl_price', 0.0)
-                                if current_sl <= 0:
-                                    exit_params['sl_price'] = opt_sl
-                                    logger.info(f"Auto-Injecting Optimized SL: {opt_sl}")
+                                exit_params['sl_price'] = opt_sl
+                                logger.info(f"Auto-Injecting Optimized SL: {opt_sl}")
 
                             if opt_tp and opt_tp > 0:
-                                current_tp = exit_params.get('tp_price', 0.0)
-                                if current_tp <= 0:
-                                    exit_params['tp_price'] = opt_tp
-                                    logger.info(f"Auto-Injecting Optimized TP: {opt_tp}")
+                                exit_params['tp_price'] = opt_tp
+                                logger.info(f"Auto-Injecting Optimized TP: {opt_tp}")
                             
                             # Calculate Lot
                             # Priority: AI Suggested Size > Dynamic Calculation
