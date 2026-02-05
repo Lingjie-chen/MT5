@@ -3328,13 +3328,26 @@ class SymbolTrader:
                             
                             # Calculate Lot
                             # Priority: AI Suggested Size > Dynamic Calculation
-                            ai_suggested_size = strategy.get('position_size', 0.0)
-                            if ai_suggested_size and float(ai_suggested_size) > 0:
-                                suggested_lot = float(ai_suggested_size)
-                                logger.info(f"Using AI Provided Position Size: {suggested_lot}")
-                                # Force override internal lot_size to ensure it propagates
-                                self.lot_size = suggested_lot
-                            else:
+                            ai_suggested_size = strategy.get('position_size')
+                            suggested_lot = None
+                            
+                            if ai_suggested_size is not None:
+                                try:
+                                    suggested_lot_val = float(ai_suggested_size)
+                                    # 如果 AI 明确返回 0.0，则视为风控拦截，不进行交易
+                                    if suggested_lot_val == 0.0:
+                                        logger.warning(f"⚠️ AI 明确建议仓位为 0.0 (Risk Control)，跳过本次交易执行 (Action={final_signal})")
+                                        continue # Skip this trade execution loop
+                                    
+                                    if suggested_lot_val > 0:
+                                        suggested_lot = suggested_lot_val
+                                        logger.info(f"Using AI Provided Position Size: {suggested_lot}")
+                                        # Force override internal lot_size to ensure it propagates
+                                        self.lot_size = suggested_lot
+                                except ValueError:
+                                    pass
+                            
+                            if suggested_lot is None:
                                 # Fallback to internal dynamic calculation
                                 suggested_lot = self.calculate_dynamic_lot(
                                     strength, 
