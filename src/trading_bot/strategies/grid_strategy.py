@@ -606,10 +606,9 @@ class KalmanGridStrategy:
                 
                 # 检查是否触及锁定线 (且当前必须为盈利状态，亏损则不触发 Trailing Close，依靠 SL)
                 if self.basket_lock_level_long is not None and total_profit_long < self.basket_lock_level_long:
-                     if total_profit_long > 0:
-                         logger.info(f"🛑 Long Basket Trailing Hit! Profit ${total_profit_long:.2f} dropped below Lock ${self.basket_lock_level_long:.2f}")
-                         should_close_long = True
-                     # else: Log debug? "Trailing Hit but Loss (ignored)"
+                     # if total_profit_long > 0: # [USER REQ] 允许亏损时也触发 Trailing Hit (保护已到手的利润，即使回撤到亏损)
+                     logger.info(f"🛑 Long Basket Trailing Hit! Profit ${total_profit_long:.2f} dropped below Lock ${self.basket_lock_level_long:.2f}")
+                     should_close_long = True
 
         # --- Short Basket ---
         if self.short_pos_count > 0:
