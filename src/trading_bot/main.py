@@ -198,8 +198,29 @@ class SymbolTrader:
             if not mt5.symbol_select(self.symbol, True):
                 logger.error(f"[{self.symbol}] 无法选中交易品种")
                 return False
-        
+                
         return True
+
+    def check_trading_hours(self):
+        """
+        检查当前品种是否在允许的交易时间段内 (Server Time)
+        XAUUSD/EURUSD: 08:00 - 23:00
+        """
+        tick = mt5.symbol_info_tick(self.symbol)
+        if not tick: return False
+        
+        server_dt = datetime.fromtimestamp(tick.time)
+        hour = server_dt.hour
+        
+        # Configurable Hours
+        # 08:00 (London Open) -> 23:00 (NY Close / Pre-Rollover)
+        start_hour = 8
+        end_hour = 23
+        
+        if start_hour <= hour < end_hour:
+            return True
+            
+        return False
 
     def get_market_data(self, num_candles=100):
         """直接从 MT5 获取历史数据"""
@@ -2813,6 +2834,14 @@ class SymbolTrader:
                 should_trade_analyze = is_new_bar or (self.last_analysis_time == 0)
                 
                 if should_trade_analyze:
+                    # [NEW] Check Trading Hours
+                    if not self.check_trading_hours():
+                         self.last_bar_time = current_bar_time # Mark bar as processed
+                         if time.time() - self.last_log_time > 3600:
+                             logger.info("Outside Active Trading Hours (08:00-23:00 Server Time). Skipping Analysis.")
+                             self.last_log_time = time.time()
+                         continue
+
                     # Run Optimization if needed (Every 4 hours)
                     if time.time() - self.last_optimization_time > 3600 * 4: # 4 hours
                          self.optimize_strategy_parameters()
