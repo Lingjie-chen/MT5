@@ -597,17 +597,19 @@ class KalmanGridStrategy:
                     # Trigger=10, Max=10 -> Lock=5
                     
                     # 简单逻辑: 启动后，锁定利润 = Max * 0.5 (可配置)
-                    current_lock = max(10, self.max_basket_profit_long * 0.5) 
+                    current_lock = max(1.0, self.max_basket_profit_long * 0.5) 
                     
                     if self.basket_lock_level_long is None or current_lock > self.basket_lock_level_long:
                         self.basket_lock_level_long = current_lock
                         # Log only on update
                         # logger.info(f"Long Basket Lock Updated: ${self.basket_lock_level_long:.2f} (Max: ${self.max_basket_profit_long:.2f})")
                 
-                # 检查是否触及锁定线
+                # 检查是否触及锁定线 (且当前必须为盈利状态，亏损则不触发 Trailing Close，依靠 SL)
                 if self.basket_lock_level_long is not None and total_profit_long < self.basket_lock_level_long:
-                     logger.info(f"🛑 Long Basket Trailing Hit! Profit ${total_profit_long:.2f} dropped below Lock ${self.basket_lock_level_long:.2f}")
-                     should_close_long = True
+                     if total_profit_long > 0:
+                         logger.info(f"🛑 Long Basket Trailing Hit! Profit ${total_profit_long:.2f} dropped below Lock ${self.basket_lock_level_long:.2f}")
+                         should_close_long = True
+                     # else: Log debug? "Trailing Hit but Loss (ignored)"
 
         # --- Short Basket ---
         if self.short_pos_count > 0:
@@ -632,14 +634,16 @@ class KalmanGridStrategy:
                     if total_profit_short > self.max_basket_profit_short:
                         self.max_basket_profit_short = total_profit_short
                         
-                    current_lock = max(10.0, self.max_basket_profit_short * 0.5)
+                    current_lock = max(1.0, self.max_basket_profit_short * 0.5)
                     
                     if self.basket_lock_level_short is None or current_lock > self.basket_lock_level_short:
                         self.basket_lock_level_short = current_lock
                 
                 if self.basket_lock_level_short is not None and total_profit_short < self.basket_lock_level_short:
-                     logger.info(f"🛑 Short Basket Trailing Hit! Profit ${total_profit_short:.2f} dropped below Lock ${self.basket_lock_level_short:.2f}")
-                     should_close_short = True
+                     if total_profit_short > 0:
+                         logger.info(f"🛑 Short Basket Trailing Hit! Profit ${total_profit_short:.2f} dropped below Lock ${self.basket_lock_level_short:.2f}")
+                         should_close_short = True
+
         
         return should_close_long, should_close_short
 
