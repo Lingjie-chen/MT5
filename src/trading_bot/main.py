@@ -2693,52 +2693,54 @@ class SymbolTrader:
     def is_trading_time(self):
         """
         Check if current time is within allowed trading hours.
-        Target: Gold (XAUUSD) and EURUSD.
+        Target: Gold (XAUUSD), EURUSD, ETHUSD.
         Schedule: 
-          - Monday 06:00 to Saturday 06:00: Allowed.
-          - Saturday 06:00 to Monday 06:00: Restricted.
+          - Gold/EURUSD: Monday 06:00 to Saturday 06:00 (Weekdays).
+          - ETHUSD: Saturday 06:00 to Monday 05:59 (Weekend Only).
         """
         # Normalize symbol
         symbol_upper = self.symbol.upper()
         
-        # Only apply to Gold and EURUSD (and variations like "GOLD+", "EURUSD_i")
-        is_target = False
-        if "GOLD" in symbol_upper or "XAUUSD" in symbol_upper:
-            is_target = True
-        elif "EURUSD" in symbol_upper:
-            is_target = True
-            
-        if not is_target:
-            return True # Not a target symbol, always allow trading (e.g., Crypto)
-
         now = datetime.now()
         weekday = now.weekday() # Monday=0, ... Saturday=5, Sunday=6
         hour = now.hour
 
-        # Saturday (5) >= 06:00
-        if weekday == 5 and hour >= 6:
-            return False
-        
-        # Sunday (6)
-        if weekday == 6:
-            return False
+        # 1. GOLD / EURUSD (Weekdays)
+        if "GOLD" in symbol_upper or "XAUUSD" in symbol_upper or "EURUSD" in symbol_upper:
+            # Saturday (5) >= 06:00 -> Stop
+            if weekday == 5 and hour >= 6: return False
+            # Sunday (6) -> Stop
+            if weekday == 6: return False
+            # Monday (0) < 06:00 -> Stop
+            if weekday == 0 and hour < 6: return False
+            return True
 
-        # Monday (0) < 06:00
-        if weekday == 0 and hour < 6:
-            return False
+        # 2. ETHUSD (Weekend Only: Sat 06:00 - Mon 05:59)
+        elif "ETHUSD" in symbol_upper:
+            # Allowed windows:
+            # Sat >= 06:00
+            # Sun (All day)
+            # Mon < 06:00 (i.e., 05:59)
+            
+            is_weekend_session = False
+            if weekday == 5 and hour >= 6: is_weekend_session = True
+            elif weekday == 6: is_weekend_session = True
+            elif weekday == 0 and hour < 6: is_weekend_session = True
+            
+            return is_weekend_session
 
-        return True
+        return True # Others (e.g. BTCUSD if added later)
 
     def process_tick(self):
         """Single tick processing"""
         if not self.is_running:
             return
 
-        # [NEW] Check trading hours for Gold/EURUSD
+        # [NEW] Check trading hours
         if not self.is_trading_time():
             # Log periodically to avoid spam
             if int(time.time()) % 3600 == 0:
-                logger.info(f"[{self.symbol}] Outside trading hours (Sat 06:00 - Mon 06:00). Pausing.")
+                logger.info(f"[{self.symbol}] Outside allowed trading hours. Pausing.")
             time.sleep(5) # Sleep to reduce CPU usage
             return
 
