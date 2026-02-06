@@ -2690,9 +2690,56 @@ class SymbolTrader:
         self.sync_account_history()
         self.is_running = True
 
+    def is_trading_time(self):
+        """
+        Check if current time is within allowed trading hours.
+        Target: Gold (XAUUSD) and EURUSD.
+        Schedule: 
+          - Monday 06:00 to Saturday 06:00: Allowed.
+          - Saturday 06:00 to Monday 06:00: Restricted.
+        """
+        # Normalize symbol
+        symbol_upper = self.symbol.upper()
+        
+        # Only apply to Gold and EURUSD (and variations like "GOLD+", "EURUSD_i")
+        is_target = False
+        if "GOLD" in symbol_upper or "XAUUSD" in symbol_upper:
+            is_target = True
+        elif "EURUSD" in symbol_upper:
+            is_target = True
+            
+        if not is_target:
+            return True # Not a target symbol, always allow trading (e.g., Crypto)
+
+        now = datetime.now()
+        weekday = now.weekday() # Monday=0, ... Saturday=5, Sunday=6
+        hour = now.hour
+
+        # Saturday (5) >= 06:00
+        if weekday == 5 and hour >= 6:
+            return False
+        
+        # Sunday (6)
+        if weekday == 6:
+            return False
+
+        # Monday (0) < 06:00
+        if weekday == 0 and hour < 6:
+            return False
+
+        return True
+
     def process_tick(self):
         """Single tick processing"""
         if not self.is_running:
+            return
+
+        # [NEW] Check trading hours for Gold/EURUSD
+        if not self.is_trading_time():
+            # Log periodically to avoid spam
+            if int(time.time()) % 3600 == 0:
+                logger.info(f"[{self.symbol}] Outside trading hours (Sat 06:00 - Mon 06:00). Pausing.")
+            time.sleep(5) # Sleep to reduce CPU usage
             return
 
         try:
