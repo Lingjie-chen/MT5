@@ -1224,7 +1224,7 @@ class DeepSeekClient:
         2. **交易商特性与风险适配 (Broker Specifics)**:
            - **Exness (高杠杆/低点差)**: 允许更激进的网格加仓和稍大的首单风险 (Risk% 可上浮 20%)。但需注意滑点。
            - **AvaTrade (标准/监管严)**: 严格遵守标准风险模型，禁止过度激进。
-           - **合约规格**: 请务必确认当前品种 {symbol} 的合约大小 (Contract Size)。通常 XAUUSD=100, ETHUSD=1, EURUSD=100000。
+           - **合约规格**: 当前品种 {symbol} 的合约大小 (Contract Size) 为 **{current_market_data.get('contract_size', 100)}**。计算 Lots 时必须使用此数值。
         3. **风险管理 (AI Driven Risk)**: 
            - **单笔风险**: **完全由你分析决定，不设固定限制**。
            - **建议范围**: 

@@ -2967,6 +2967,7 @@ class SymbolTrader:
 
                         market_snapshot = {
                             "symbol": self.symbol,
+                            "contract_size": contract_size, # [NEW] Pass contract size for position sizing
                             "account_info": account_info_dict,
                             "recent_trade_history": recent_history, # [NEW] 注入最近交易历史
                             "timeframe": self.tf_name,

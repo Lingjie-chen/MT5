@@ -1427,7 +1427,7 @@ class QwenClient:
              - **优势**: 保证金占用极低，允许在小止损（Tight Stop）策略下灵活调整头寸。
              - **风险**: 波动放大效应显著。**严禁**仅仅因为保证金充足就过度开仓。
              - **约束**: 必须以 **账户余额 (Balance)** 的风险百分比为锚定，而不是可用保证金。
-           - **合约规格**: 请务必确认当前品种 {symbol} 的合约大小 (Contract Size)。通常 XAUUSD=100, ETHUSD=1, EURUSD=100000。
+           - **合约规格**: 当前品种 {symbol} 的合约大小 (Contract Size) 为 **{current_market_data.get('contract_size', 100)}**。计算 Lots 时必须使用此数值。
         3. **风险管理 (AI Driven Risk)**: 
            - **单笔风险**: **完全由你分析决定，不设固定限制**。
            - **建议范围**: 
