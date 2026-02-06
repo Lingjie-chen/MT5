@@ -3207,9 +3207,9 @@ class SymbolTrader:
                                         basket_tp=basket_tp,
                                         basket_sl_long=basket_sl, 
                                         basket_sl_short=basket_sl,
-                                        lock_trigger=10.0 # [USER REQ] 默认启用 $10 利润锁定
+                                        lock_trigger=None # [USER REQ] Disable Lock Profit Trigger
                                     )
-                                    logger.info(f"Applied AI Dynamic Basket Params: TP={basket_tp}, SL={basket_sl}, Lock=10.0")
+                                    logger.info(f"Applied AI Dynamic Basket Params: TP={basket_tp}, SL={basket_sl}, Lock=Disabled")
                                 except Exception as e:
                                     logger.error(f"Failed to update dynamic basket params: {e}")
 
