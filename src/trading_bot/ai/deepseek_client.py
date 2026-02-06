@@ -387,11 +387,13 @@ class DeepSeekClient:
            - `Dynamic_Basket_TP` = min(SMC_Adjusted, Max_MFE_Based_Target)
          - **拒绝固定值**: 严禁使用固定的数值 (如 50.0)！必须是经过上述逻辑计算后的结果。
          - **更新指令**: 在 `position_management` -> `dynamic_basket_tp` 中返回计算后的数值。
-       - **Lock Profit Trigger (Profit Locking)**:
-         - **定义**: 当 Basket 整体利润达到此数值时，启动强制利润锁定机制 (Trailing Stop for Basket)。
-         - **逻辑**: 如果利润达到此阈值，系统将锁定大部分利润 (如 60%)，防止利润回撤。
-         - **最小值**: 必须 >= 10.0 USD。
-         - **更新指令**: 在 `position_management` -> `lock_profit_trigger` 中返回计算后的数值。
+       - **Basket Stop Loss (Basket SL) - [NEW MANDATORY]**:
+         - **定义**: 当 Basket 整体亏损达到此数值时，强制平仓所有订单，防止亏损失控。
+         - **核心逻辑**: 
+           - 必须设定一个**正数** (例如 100.0 表示亏损达到 -$100 时平仓)。
+           - **计算参考**: 建议基于账户余额的 2% - 5% 设定。例如余额 $10000，Basket SL 可设为 200.0 - 500.0。
+           - **Ethical Rule**: 永远不要让账户面临爆仓风险，必须设定 Basket SL。
+         - **更新指令**: 在 `position_management` -> `dynamic_basket_sl` 中返回计算后的数值。
 
     5. **CandleSmoothing EMA 策略 (Strategy B)**:
        - **核心逻辑**: 基于 EMA50 趋势过滤，结合 EMA20 High/Low 通道突破和 Heiken Ashi 蜡烛形态。
