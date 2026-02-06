@@ -2690,9 +2690,81 @@ class SymbolTrader:
         self.sync_account_history()
         self.is_running = True
 
+    def is_trading_hours(self):
+        """
+        Check if current time is within allowed trading hours for specific symbols.
+        Returns:
+            bool: True if allowed, False if restricted.
+        """
+        now = datetime.now() # Server time usually preferred, but using local for now as per env
+        current_hour = now.hour
+        
+        # [USER REQUEST] 
+        # Gold (XAUUSD): 对应品种可交易时间段交易
+        # EURUSD: 对应品种可交易时间段交易
+        # 其余时间不交易
+        
+        # 简化版交易时段逻辑 (基于 UTC+2/3 的常见平台时间或本地时间)
+        # 假设本地时间即为参考时间。
+        # 黄金通常休市: 每日 23:00-00:00 (大概), 周末全天
+        # 外汇通常休市: 周末全天
+        
+        # 这里实现一个通用的“活跃时段”过滤器，避免在极低流动性时段交易
+        # 设定: 01:00 - 23:00 为可交易时段 (避开 23:00-01:00 的换日高点差时段)
+        
+        if self.symbol in ["XAUUSD", "GOLD", "Gold"]:
+             # Gold Specific: Avoid 22:00 - 01:00 (Rollover & Low Liquidity)
+             if current_hour >= 22 or current_hour < 1:
+                 return False
+                 
+        if self.symbol in ["EURUSD", "GBPUSD", "USDJPY"]:
+             # Forex Specific: Avoid 22:00 - 00:00 (Rollover)
+             if current_hour >= 22 or current_hour < 0:
+                 return False
+        
+        # Weekend Filter (Saturday=5, Sunday=6)
+        if now.weekday() >= 5:
+            return False
+            
+        return True
+
     def process_tick(self):
         """Single tick processing"""
         if not self.is_running:
+            return
+
+        # [NEW] Check Trading Hours
+        if not self.is_trading_hours():
+            # Still manage positions (trailing stop etc) but DO NOT analyze for new entries
+            # We can skip the heavy analysis part
+            
+            # 仍然允许 manage_positions 以处理平仓/止损逻辑
+            if self.latest_strategy:
+                self.manage_positions(self.latest_signal, self.latest_strategy)
+            else:
+                self.manage_positions()
+            
+            # 实时数据更新仍需继续，以便监控
+            # ... (Copied relevant parts or just return early for entry logic)
+            
+            # 为简单起见，如果不在交易时间，我们只做基本的持仓管理和数据更新，
+            # 跳过 analyze_market。
+            
+            # --- Real-time Data Update Logic (Keep this running) ---
+            rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 1)
+            if rates is not None and time.time() - self.last_realtime_save > 3:
+                 try:
+                    df_current = pd.DataFrame(rates)
+                    df_current['time'] = pd.to_datetime(df_current['time'], unit='s')
+                    df_current.set_index('time', inplace=True)
+                    if 'tick_volume' in df_current.columns:
+                        df_current.rename(columns={'tick_volume': 'volume'}, inplace=True)
+                    self.db_manager.save_market_data(df_current.copy(), self.symbol, self.tf_name)
+                    self.master_db_manager.save_market_data(df_current.copy(), self.symbol, self.tf_name)
+                    self.last_realtime_save = time.time()
+                 except: pass
+
+            time.sleep(1)
             return
 
         try:
