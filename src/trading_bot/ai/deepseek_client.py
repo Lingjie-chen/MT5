@@ -697,7 +697,7 @@ class DeepSeekClient:
           4. **SMC 结构**: TP 不应超过最近的主要阻力位/订单块。
           5. **MFE 历史数据**: 参考过去类似行情的最大浮盈。
           - 你的输出将作为基础值，与系统内部算法(ATR/SMC)进行加权融合，计算最终 TP。
-    - **lock_profit_trigger**: 利润锁定触发值 (USD)。建议设置为 Basket TP 的 70% 左右。
+    - **dynamic_basket_sl**: (NEW) 整体止损金额 (正数)。例如 100.0 表示亏损达到 $100 时平仓。
     - **trailing_stop_config**: (NEW) 利润锁定后的移动止损配置。
          - `type`: "atr_distance" (推荐, 动态适应波动) 或 "fixed_pips" (固定点数)
          - `value`: 如果是 "atr_distance"，请输入 ATR 倍数 (如 2.0); 如果是 "fixed_pips"，请输入点数 (如 300)。
@@ -708,7 +708,7 @@ class DeepSeekClient:
     - action: str ("buy", "sell", "hold", "close", "add_buy", "add_sell", "grid_start", "close_buy_open_sell", "close_sell_open_buy")
     - entry_conditions: dict ("limit_price": float)
     - exit_conditions: dict ("sl_price": float, "tp_price": float)
-    - position_management: dict ("martingale_multiplier": float, "grid_step_logic": str, "recommended_grid_step_pips": float, "grid_level_tp_pips": list[float], "dynamic_basket_tp": float, "lock_profit_trigger": float, "trailing_stop_config": dict)
+    - position_management: dict ("martingale_multiplier": float, "grid_step_logic": str, "recommended_grid_step_pips": float, "grid_level_tp_pips": list[float], "dynamic_basket_tp": float, "dynamic_basket_sl": float, "trailing_stop_config": dict)
     - position_size: float
     - leverage: int
     - signal_strength: int
