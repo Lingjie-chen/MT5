@@ -1445,6 +1445,7 @@ class QwenClient:
         - **风控拦截**: 如果你认为当前风险极高、不宜入场，或者找不到合适的止损位，请务必输出 `position_size: 0.0`。这将触发系统的风控机制，强制停止交易。
         - **保底逻辑 (Fallback)**: 如果你对风险计算不确定，但确定这是一个高胜率的信号，**请至少返回 0.01 手**，不要返回 0.0，否则信号将被系统丢弃！
         - **绝对不要**默认使用 0.01 手！必须基于资金量和你的分析信心计算。
+        - **Top-Level Requirement**: `position_size` must be present at the top level of the JSON response. Do not bury it inside `grid_config`.
 
         **必须在 `analysis_breakdown` 中包含 `position_calculation_logic` 字段**，详细列出你的计算公式和代入数值，例如 "Balance($10000) * Risk(2%) / (SL_Dist($4) * Size(100)) = 0.5 Lots"。
 
