@@ -1510,7 +1510,7 @@ class QwenClient:
         6. 生成Telegram简报（使用emoji图标增强可读性）
 
         **FINAL CHECKLIST BEFORE OUTPUT:**
-        1. **Check `position_size`**: Did you include it? It must be a float (e.g. 0.15). If not trading, set to 0.0.
+        1. **Check `position_size`**: Did you include it at the top level? It must be a float (e.g. 0.15). Even for "wait" or "hold", return a default (e.g. 0.0 or 0.01). DO NOT OMIT IT.
         2. **Check `action`**: Is it one of the valid actions?
         3. **Check `exit_conditions`**: Are SL/TP prices set?
         """
