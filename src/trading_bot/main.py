@@ -1346,6 +1346,59 @@ class SymbolTrader:
             "type_filling": self._get_filling_mode(),
         }
         
+        # [NEW] Pre-Trade Margin Check & Auto-Adjustment
+        # 防止 10019 No Money 错误，根据实时余额自动下调手数
+        if action in [mt5.TRADE_ACTION_DEAL, mt5.TRADE_ACTION_PENDING]:
+            try:
+                acc_info = mt5.account_info()
+                if acc_info:
+                    free_margin = acc_info.margin_free
+                    
+                    # Map pending types to market types for margin calc
+                    calc_type = order_type
+                    if order_type in [mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP]:
+                        calc_type = mt5.ORDER_TYPE_BUY
+                    elif order_type in [mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP]:
+                        calc_type = mt5.ORDER_TYPE_SELL
+                        
+                    # Calculate required margin
+                    # Use provided price (for pending) or current tick (for market if price=0, though price usually passed)
+                    calc_price = price
+                    if calc_price <= 0:
+                        tick = mt5.symbol_info_tick(self.symbol)
+                        calc_price = tick.ask if calc_type == mt5.ORDER_TYPE_BUY else tick.bid
+                        
+                    margin_required = mt5.order_calc_margin(calc_type, self.symbol, self.lot_size, calc_price)
+                    
+                    if margin_required is not None and margin_required > free_margin:
+                        logger.warning(f"⚠️ 资金预警 (Error 10019 Risk): 需要保证金 {margin_required:.2f} > 可用 {free_margin:.2f}")
+                        
+                        # Calculate max feasible volume
+                        # MaxVol = Volume * (Free / Required) * 0.95 (Buffer)
+                        if margin_required > 0:
+                            max_vol_raw = self.lot_size * (free_margin / margin_required) * 0.95
+                            
+                            # Round to step
+                            sym_info = mt5.symbol_info(self.symbol)
+                            if sym_info:
+                                step = sym_info.volume_step
+                                min_vol = sym_info.volume_min
+                                
+                                # Round down to nearest step
+                                import math
+                                max_vol = math.floor(max_vol_raw / step) * step
+                                max_vol = round(max_vol, 2)
+                                
+                                if max_vol < min_vol:
+                                    logger.error(f"❌ 资金严重不足，无法开立最小手数 ({min_vol}). Max possible: {max_vol}")
+                                    return # Cancel trade to avoid error spam
+                                
+                                logger.info(f"✅ 自动调整手数: {self.lot_size} -> {max_vol} (适配账户余额)")
+                                request['volume'] = max_vol
+                                # self.lot_size = max_vol # Optional: update state, but maybe strictly local to request is safer
+            except Exception as e:
+                logger.error(f"Margin check failed: {e}")
+        
         # --- 增强的订单发送逻辑 (自动重试不同的 Filling Mode) ---
         # 针对 Error 10030 (Unsupported filling mode) 进行自动故障转移
         
