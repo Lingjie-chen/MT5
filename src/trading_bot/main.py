@@ -150,6 +150,7 @@ class SymbolTrader:
             "TETA": TETA()
         }
         self.active_optimizer_name = "WOAm"
+        self.last_log_time = 0
 
     def initialize(self):
         """
