@@ -2922,7 +2922,14 @@ class SymbolTrader:
                         # 获取账户资金信息
                         account_info_dict = {}
                         recent_history = []
+                        contract_size = 100.0 # Default fallback
+                        
                         try:
+                            # Get Symbol Info for Contract Size
+                            sym_info = mt5.symbol_info(self.symbol)
+                            if sym_info:
+                                contract_size = float(sym_info.trade_contract_size)
+                            
                             acc = mt5.account_info()
                             if acc:
                                 account_info_dict = {
