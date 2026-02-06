@@ -597,7 +597,7 @@ class KalmanGridStrategy:
                     # Trigger=10, Max=10 -> Lock=5
                     
                     # 简单逻辑: 启动后，锁定利润 = Max * 0.5 (可配置)
-                    current_lock = max(1.0, self.max_basket_profit_long * 0.5) 
+                    current_lock = max(10.0, self.max_basket_profit_long * 0.6) 
                     
                     if self.basket_lock_level_long is None or current_lock > self.basket_lock_level_long:
                         self.basket_lock_level_long = current_lock
@@ -633,7 +633,12 @@ class KalmanGridStrategy:
                     if total_profit_short > self.max_basket_profit_short:
                         self.max_basket_profit_short = total_profit_short
                         
-                    current_lock = max(1.0, self.max_basket_profit_short * 0.5)
+                        # 计算锁定线: 默认锁定 50% 的最大浮盈，或者至少保本 (+1.0)
+                    # 比如 Trigger=10, Max=20 -> Lock=10
+                    # Trigger=10, Max=10 -> Lock=5
+                    
+                    # 简单逻辑: 启动后，锁定利润 = Max * 0.6 (可配置)
+                    current_lock = max(10.0, self.max_basket_profit_short * 0.6) 
                     
                     if self.basket_lock_level_short is None or current_lock > self.basket_lock_level_short:
                         self.basket_lock_level_short = current_lock
