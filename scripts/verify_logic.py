@@ -19,13 +19,15 @@ sys.modules["MetaTrader5"] = mock_mt5
 # Assuming the script is run from project root
 import os
 sys.path.append(os.getcwd())
-from src.trading_bot.main import WindowsBot
+from src.trading_bot.main import SymbolTrader
 
 class TestBotLogic(unittest.TestCase):
     def setUp(self):
-        self.bot = WindowsBot("ETHUSD", timeframe=mock_mt5.TIMEFRAME_M15)
+        self.bot = SymbolTrader("ETHUSD", timeframe=mock_mt5.TIMEFRAME_M15)
         self.bot.lot_size = 1.0
         self.bot.magic_number = 123456
+        # Mock logger to avoid spam
+        self.bot.logger = MagicMock()
 
     def test_ethusd_trading_hours(self):
         """Verify ETHUSD is only allowed on Weekends (Sat 06:00 - Mon 05:59)"""
