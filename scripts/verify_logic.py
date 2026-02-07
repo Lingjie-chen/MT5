@@ -65,11 +65,21 @@ class TestBotLogic(unittest.TestCase):
         mock_acc = MagicMock()
         mock_acc.margin_free = 10000.0
         mock_mt5.account_info.return_value = mock_acc
+        
+        # Mock symbol info
+        mock_sym = MagicMock()
+        mock_sym.point = 0.01
+        mock_sym.trade_stops_level = 10
+        mock_sym.volume_step = 0.01
+        mock_sym.volume_min = 0.01
+        mock_mt5.symbol_info.return_value = mock_sym
+        
         mock_mt5.order_calc_margin.return_value = 100.0 # Low margin req
         mock_mt5.order_send.return_value = MagicMock(retcode=10009) # Done
 
-        # Execute trade with SL=50, TP=50
-        self.bot._send_order(mock_mt5.TRADE_ACTION_DEAL, mock_mt5.ORDER_TYPE_BUY, 2000.0, sl=1950.0, tp=2050.0)
+        # Execute trade with SL=1950, TP=2050
+        # Signature: _send_order(self, type_str, price, sl, tp, comment="")
+        self.bot._send_order("buy", 2000.0, 1950.0, 2050.0)
         
         # Check arguments passed to order_send
         args, _ = mock_mt5.order_send.call_args
@@ -92,13 +102,15 @@ class TestBotLogic(unittest.TestCase):
         
         # Mock symbol info for step
         mock_sym = MagicMock()
+        mock_sym.point = 0.01
+        mock_sym.trade_stops_level = 10
         mock_sym.volume_step = 0.01
         mock_sym.volume_min = 0.01
         mock_mt5.symbol_info.return_value = mock_sym
         
         self.bot.lot_size = 1.0 # Requesting 1.0
         
-        self.bot._send_order(mock_mt5.TRADE_ACTION_DEAL, mock_mt5.ORDER_TYPE_BUY, 2000.0, sl=0, tp=0)
+        self.bot._send_order("buy", 2000.0, 0, 0)
         
         args, _ = mock_mt5.order_send.call_args
         request = args[0]
