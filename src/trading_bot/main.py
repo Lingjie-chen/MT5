@@ -1808,8 +1808,8 @@ class SymbolTrader:
                         logger.info(f"持仓修改成功 (Ticket: {pos.ticket})")
                         break
                     elif result.retcode == mt5.TRADE_RETCODE_NO_CHANGES:
-                        # 10025: No changes
-                        logger.info(f"持仓无需修改 (Ticket: {pos.ticket}, Retcode: 10025)")
+                        # 10025: No changes - Suppress log as per user request
+                        # logger.info(f"持仓无需修改 (Ticket: {pos.ticket}, Retcode: 10025)")
                         break
                     elif result.retcode in [mt5.TRADE_RETCODE_CONNECTION, mt5.TRADE_RETCODE_TIMEOUT, mt5.TRADE_RETCODE_TOO_MANY_REQUESTS]:
                         logger.warning(f"持仓修改网络错误 ({result.comment})，等待重试... (Attempt {attempt+1}/{max_retries})")
