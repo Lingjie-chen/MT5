@@ -581,7 +581,7 @@ class KalmanGridStrategy:
 
             # [CHECK] Dynamic Basket SL
             if self.dynamic_sl_long is not None and self.dynamic_sl_long < 0 and total_profit_long <= self.dynamic_sl_long:
-                logger.warning(f"🛑 Long Basket SL Hit! Profit: ${total_profit_long:.2f} <= Limit: ${self.dynamic_sl_long:.2f}")
+                logger.warning(f"🛑 Long Basket SL Reached! Profit: ${total_profit_long:.2f} <= Limit: ${self.dynamic_sl_long:.2f}")
                 should_close_long = True
                 
             # [CHECK] Lock Profit / Trailing Logic (Enhanced)
@@ -640,7 +640,8 @@ class KalmanGridStrategy:
                     # 简单逻辑: 启动后，锁定利润 = Max * 0.6 (可配置)
                     current_lock = max(10.0, self.max_basket_profit_short * 0.6) 
                     
-                    if self.basket_lock_level_short is None or current_lock > self.basket_lock_level_short:
+                    if
+                     self.basket_lock_level_short is None or current_lock > self.basket_lock_level_short:
                         self.basket_lock_level_short = current_lock
                 
                 if self.basket_lock_level_short is not None and total_profit_short < self.basket_lock_level_short:
