@@ -1693,7 +1693,23 @@ class SymbolTrader:
             
             allow_update = True # Enabled per User Request (Dynamic AI Update)
             
-            if allow_update and has_new_params:
+            # [USER REQ Update] Basket Risk Mode: Force removal of individual SL/TP
+            # We override the logic: If current SL/TP > 0, we must reset them to 0.0
+            # We ignore AI suggestions for individual SL/TP updates in this mode.
+            
+            if sl > 0:
+                request["sl"] = 0.0
+                changed = True
+                logger.info(f"Basket Mode: Removing Individual SL for #{pos.ticket} ({sl} -> 0.0)")
+                
+            if tp > 0:
+                request["tp"] = 0.0
+                changed = True
+                logger.info(f"Basket Mode: Removing Individual TP for #{pos.ticket} ({tp} -> 0.0)")
+
+            # Disable AI dynamic update logic below for now
+            # if allow_update and has_new_params:
+            if False: # Disabled to enforce Basket Mode
                 # 使用 calculate_optimized_sl_tp 进行统一计算和验证
                 ai_exits = strategy_params.get('exit_conditions', {})
                 
