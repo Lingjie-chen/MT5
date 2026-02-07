@@ -3399,6 +3399,43 @@ class SymbolTrader:
                         if valid_tech_count > 0:
                             strength += (matching_count / valid_tech_count) * 30
                             
+                        # [NEW] Update Grid Strategy Market Status for Dynamic Risk Management
+                        # 1. Prepare MAE Stats
+                        mae_95 = 0.0
+                        if trade_stats:
+                            # Assuming trade_stats has 'mae' field (Max Adverse Excursion in USD or Points)
+                            # We need to check the format. If it's from DB, it might be 'mae'.
+                            # Let's extract safely.
+                            maes = [float(t.get('mae', 0)) for t in trade_stats if t.get('mae') is not None]
+                            if maes:
+                                mae_95 = np.percentile(maes, 95)
+                        
+                        mae_stats_dict = {'mae_95': mae_95}
+                        
+                        # 2. Prepare Full Analysis
+                        # Merge Technicals and Sentiment
+                        full_analysis_for_risk = {}
+                        if adv_result:
+                            full_analysis_for_risk.update(adv_result)
+                        
+                        # Add Sentiment
+                        full_analysis_for_risk['sentiment_score'] = qwen_sent_score
+                        
+                        # Add SMC Details
+                        full_analysis_for_risk['details'] = full_analysis_for_risk.get('details', {})
+                        full_analysis_for_risk['details']['smc'] = smc_result
+                        full_analysis_for_risk['details']['smart_structure'] = smc_result.get('details', {}).get('smart_structure', {})
+                        full_analysis_for_risk['details']['ob'] = smc_result.get('details', {}).get('ob', {})
+                        full_analysis_for_risk['details']['fvg'] = smc_result.get('details', {}).get('fvg', {})
+                        full_analysis_for_risk['details']['bos'] = smc_result.get('details', {}).get('bos', {})
+                        
+                        # Update Strategy
+                        self.grid_strategy.update_market_status(
+                            analysis=full_analysis_for_risk,
+                            ai_confidence=strength,
+                            mae_stats=mae_stats_dict
+                        )
+                            
                         # 构建所有信号字典
                         all_signals = {
                             "qwen": qw_signal,
