@@ -10,7 +10,7 @@ cd /d "%~dp0"
 :: -----------------------------------------------------------------------------
 
 echo Launching ETHUSD Strategy (Ava Demo - Acc3)...
-start "Strategy - ETHUSD (Ava Demo)" run_bot_watchdog.bat ETHUSD --account 3
+start "Strategy - ETHUSD (Ava Demo)" "%~dp0run_bot_watchdog.bat" ETHUSD --account 3
 timeout /t 1 /nobreak >nul
 
 echo.
