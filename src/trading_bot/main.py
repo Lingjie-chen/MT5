@@ -2996,11 +2996,28 @@ class SymbolTrader:
                         contract_size = 100.0 # Default fallback
                         
                         try:
-                            # Get Symbol Info for Contract Size
+                            # Get Symbol Info for Contract Size & Spread
                             sym_info = mt5.symbol_info(self.symbol)
+                            spread_points = 0
+                            spread_cost = 0.0
+                            
                             if sym_info:
                                 contract_size = float(sym_info.trade_contract_size)
-                            
+                                spread_points = sym_info.spread
+                                # Spread Cost (Approx) per lot = SpreadPoints * PointValue * ContractSize ?
+                                # Or simpler: (Ask-Bid) * ContractSize
+                                # Point value is not always reliable for cost calc, but spread is in points.
+                                # Let's use tick value if available or estimate.
+                                # Spread in price = Ask - Bid.
+                                # Let's capture the real-time spread in price units.
+                                tick = mt5.symbol_info_tick(self.symbol)
+                                if tick:
+                                     spread_price = tick.ask - tick.bid
+                                     spread_cost = spread_price * contract_size
+                                else:
+                                     spread_price = spread_points * sym_info.point
+                                     spread_cost = spread_price * contract_size
+                                     
                             acc = mt5.account_info()
                             if acc:
                                 account_info_dict = {
@@ -3039,6 +3056,11 @@ class SymbolTrader:
                         market_snapshot = {
                             "symbol": self.symbol,
                             "contract_size": contract_size, # [NEW] Pass contract size for position sizing
+                            "spread_info": { # [NEW] Real-time Spread Data
+                                "points": spread_points,
+                                "price_diff": spread_price,
+                                "cost_per_lot": spread_cost
+                            },
                             "account_info": account_info_dict,
                             "recent_trade_history": recent_history, # [NEW] 注入最近交易历史
                             "timeframe": self.tf_name,
