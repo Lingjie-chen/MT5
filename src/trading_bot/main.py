@@ -1697,15 +1697,22 @@ class SymbolTrader:
             # We override the logic: If current SL/TP > 0, we must reset them to 0.0
             # We ignore AI suggestions for individual SL/TP updates in this mode.
             
-            if sl > 0:
-                request["sl"] = 0.0
-                changed = True
-                logger.info(f"Basket Mode: Removing Individual SL for #{pos.ticket} ({sl} -> 0.0)")
+            # [USER FEEDBACK] Allow manual overrides.
+            # If we force reset to 0.0, users cannot set manual SL/TP.
+            # Logic Change:
+            # 1. We still disable AI auto-updates (to prevent Bot from fighting User).
+            # 2. We STOP actively resetting SL/TP to 0.0. If User sets it, it stays.
+            # 3. New trades are still opened with SL=0/TP=0 (handled in execute_trade).
+            
+            # if sl > 0:
+            #    request["sl"] = 0.0
+            #    changed = True
+            #    logger.info(f"Basket Mode: Removing Individual SL for #{pos.ticket} ({sl} -> 0.0)")
                 
-            if tp > 0:
-                request["tp"] = 0.0
-                changed = True
-                logger.info(f"Basket Mode: Removing Individual TP for #{pos.ticket} ({tp} -> 0.0)")
+            # if tp > 0:
+            #    request["tp"] = 0.0
+            #    changed = True
+            #    logger.info(f"Basket Mode: Removing Individual TP for #{pos.ticket} ({tp} -> 0.0)")
 
             # Disable AI dynamic update logic below for now
             # if allow_update and has_new_params:
