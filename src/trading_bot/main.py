@@ -3562,9 +3562,13 @@ class SymbolTrader:
                                 exit_params['sl_price'] = opt_sl
                                 logger.info(f"Auto-Injecting Optimized SL: {opt_sl}")
 
-                            if opt_tp and opt_tp > 0:
-                                exit_params['tp_price'] = opt_tp
-                                logger.info(f"Auto-Injecting Optimized TP: {opt_tp}")
+                            # [USER REQ] Disable Individual TP (Rely on Basket TP)
+                            exit_params['tp_price'] = 0.0
+                            logger.info(f"Forcing TP to 0.0 (Basket TP Mode)")
+                            
+                            # if opt_tp and opt_tp > 0:
+                            #    exit_params['tp_price'] = opt_tp
+                            #    logger.info(f"Auto-Injecting Optimized TP: {opt_tp}")
                             
                             # Calculate Lot
                             # Priority: AI Suggested Size > Dynamic Calculation
