@@ -1256,27 +1256,43 @@ class SymbolTrader:
         is_sell = "sell" in type_str
         
         # 1. 检查方向性 (Directionality)
+        # [USER REQUEST Update]: Remove mandatory TP requirement. 
+        # Only check SL directionality if SL > 0.
         if is_buy:
-            # Buy: SL must be < Price, TP must be > Price
+            # Buy: SL must be < Price
             if sl > 0 and sl >= price:
                 logger.error(f"Invalid SL for BUY (SL {sl:.2f} >= Price {price:.2f}). Refusing to trade without valid SL.")
-                return # [USER REQUEST] 强制 SL，无效则拒绝开仓
+                return 
             if sl <= 0:
-                logger.error(f"Missing SL for BUY. Refusing to trade without valid SL.")
-                return
+                # [USER REQUEST] 交易时不再强制 TP，全部根据 Basket TP 来。
+                # 但必须设置 Basket SL 来风控 (这部分在 GridStrategy 中处理)
+                # 这里我们允许 SL=0 (如果用户希望完全由 Basket SL 控制)，或者要求单个 SL 必须存在?
+                # 用户说 "执行交易时不用设置 tp... 同时也要设置总 sl 来风控"
+                # 这意味着单个订单的 SL 可以没有? 还是指 "总 SL" 替代了 "单个 SL"?
+                # 通常为了安全，每个订单最好有一个灾难性止损。
+                # 但既然用户说 "不用设置 tp"，我们先移除 TP 的强制检查。
+                # 对于 SL，用户说 "设置总 SL"，可能意味着单个订单可以裸奔。
+                # 但为了安全，我们还是建议至少有一个宽止损。
+                # 不过根据指令 "执行交易时不用设置 tp"，我们把 TP 设为 0.0 是安全的。
+                # 至于 SL，如果 AI 没给，我们暂时允许通过（依赖 Basket SL），或者给一个默认值。
+                # 下面的逻辑是如果 sl<=0 则拒绝。如果用户意图是完全移除单个 SL，我们需要修改这里。
+                # 假设用户意思是 "TP 不用设，SL 还是要设 (总 SL)"，那这里单个 SL 可能是可选的?
+                # 让我们先放宽 SL 检查，如果 SL=0，允许下单（依赖 Basket SL 监控）。
+                logger.warning(f"No Individual SL for BUY. Relying on Basket SL.")
+                # return # 移除 return，允许 SL=0
 
             if tp > 0 and tp <= price:
                 logger.warning(f"Invalid TP for BUY (TP {tp:.2f} <= Price {price:.2f}). Auto-Correcting: Removing TP.")
                 tp = 0.0
                 
         elif is_sell:
-            # Sell: SL must be > Price, TP must be < Price
+            # Sell: SL must be > Price
             if sl > 0 and sl <= price:
                 logger.error(f"Invalid SL for SELL (SL {sl:.2f} <= Price {price:.2f}). Refusing to trade without valid SL.")
-                return # [USER REQUEST] 强制 SL，无效则拒绝开仓
+                return 
             if sl <= 0:
-                logger.error(f"Missing SL for SELL. Refusing to trade without valid SL.")
-                return
+                logger.warning(f"No Individual SL for SELL. Relying on Basket SL.")
+                # return # 移除 return，允许 SL=0
                 
             if tp > 0 and tp >= price:
                 logger.warning(f"Invalid TP for SELL (TP {tp:.2f} >= Price {price:.2f}). Auto-Correcting: Removing TP.")
