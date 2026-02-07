@@ -624,7 +624,7 @@ class KalmanGridStrategy:
 
             # [CHECK] Dynamic Basket SL
             if self.dynamic_sl_short is not None and self.dynamic_sl_short < 0 and total_profit_short <= self.dynamic_sl_short:
-                logger.warning(f"🛑 Short Basket SL Hit! Profit: ${total_profit_short:.2f} <= Limit: ${self.dynamic_sl_short:.2f}")
+                logger.warning(f"🛑 Short Basket SL Reached! Profit: ${total_profit_short:.2f} <= Limit: ${self.dynamic_sl_short:.2f}")
                 should_close_short = True
             
             # [CHECK] Lock Profit / Trailing Logic (Enhanced)
