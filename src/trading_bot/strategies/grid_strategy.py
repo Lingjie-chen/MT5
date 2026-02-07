@@ -656,14 +656,33 @@ class KalmanGridStrategy:
                     total_profit_short += (pos.profit + pos.swap)
             
             # [CHECK] Dynamic Basket TP
-            if self.dynamic_tp_short is not None and self.dynamic_tp_short > 0 and total_profit_short >= self.dynamic_tp_short:
-                logger.info(f"✅ Short Basket TP Hit! Profit: ${total_profit_short:.2f} >= Target: ${self.dynamic_tp_short:.2f}")
+            base_tp_short = self.dynamic_tp_short if (self.dynamic_tp_short is not None and self.dynamic_tp_short > 0) else self.global_tp
+            target_tp_short = self.risk_manager.calculate_tiered_tp(
+                base_tp=base_tp_short,
+                current_atr=current_atr if current_atr else 0,
+                level_index=self.short_pos_count
+            )
+            
+            if total_profit_short >= target_tp_short:
+                logger.info(f"✅ Short Basket TP Hit! Profit: ${total_profit_short:.2f} >= Target: ${target_tp_short:.2f} (Base: {base_tp_short}, Tiered)")
                 should_close_short = True
 
-            # [CHECK] Dynamic Basket SL
-            if self.dynamic_sl_short is not None and self.dynamic_sl_short < 0 and total_profit_short <= self.dynamic_sl_short:
-                logger.warning(f"🛑 Short Basket SL Reached! Profit: ${total_profit_short:.2f} <= Limit: ${self.dynamic_sl_short:.2f}")
-                should_close_short = True
+            # [CHECK] Dynamic Basket SL (Enhanced)
+            if self.dynamic_sl_short is not None and self.dynamic_sl_short < 0:
+                base_sl = abs(self.dynamic_sl_short)
+                effective_sl, log_details = self.risk_manager.calculate_dynamic_basket_sl(
+                    base_sl_amount=base_sl,
+                    direction='short',
+                    market_analysis=self.market_status,
+                    ai_confidence=self.ai_confidence,
+                    mae_stats=self.mae_stats,
+                    current_drawdown=abs(total_profit_short) if total_profit_short < 0 else 0
+                )
+                
+                if total_profit_short <= effective_sl:
+                    logger.warning(f"🛑 Short Basket Dynamic SL Reached! Profit: ${total_profit_short:.2f} <= Limit: ${effective_sl:.2f} (Base: -{base_sl})")
+                    logger.info(f"Dynamic SL Logic: {log_details}")
+                    should_close_short = True
             
             # [CHECK] Lock Profit / Trailing Logic (Enhanced)
             if not should_close_short and self.lock_profit_trigger and self.lock_profit_trigger > 0:
