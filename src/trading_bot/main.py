@@ -3588,8 +3588,13 @@ class SymbolTrader:
                             )
                         self.send_telegram_message(analysis_msg)
 
-                        # 4. 执行交易
-                        if final_signal != 'hold':
+                        # 4. 执行交易 (包括紧急平仓)
+                        # [USER REQ Fix] 确保 'close' Action 被正确执行
+                        if final_signal == 'close':
+                            logger.warning(f">>> 接收到紧急平仓指令 (Action: CLOSE) <<<")
+                            self.execute_trade('close', strength, {}, {})
+                        
+                        elif final_signal != 'hold' and final_signal != 'neutral':
                             logger.info(f">>> 执行 Qwen 决策: {final_signal.upper()} <<<")
                             
                             # 传入 Qwen 参数
