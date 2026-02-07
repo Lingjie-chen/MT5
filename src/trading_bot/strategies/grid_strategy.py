@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import MetaTrader5 as mt5
 import logging
+from trading_bot.risk.dynamic_risk_manager import DynamicRiskManager
 
 logger = logging.getLogger("KalmanGrid")
 
@@ -11,6 +12,12 @@ class KalmanGridStrategy:
         self.magic_number = magic_number
         self.lot = initial_lot
         logger.info(f"KalmanGridStrategy Initialized for {symbol} (v2026.01.12.1)")
+        
+        # Risk Manager
+        self.risk_manager = DynamicRiskManager()
+        self.market_status = {} # Store latest full market analysis
+        self.ai_confidence = 0.8
+        self.mae_stats = {} 
         
         # --- Load Symbol Specific Config ---
         self._load_config()
