@@ -3610,8 +3610,13 @@ class MultiSymbolBot:
              account = 232809484
              server = "Exness-MT5Real5"
              password = "Clj568741230#"
+        elif account_index == 3:
+             # Ava Demo Account
+             account = 101589572
+             server = "Ava-Demo 1-MT5"
+             password = "Clj568741230#"
         else:
-             # Default to Ava (Account 1)
+             # Default to Ava Real (Account 1)
              account = 89633982
              server = "Ava-Real 1-MT5"
              password = "Clj568741230#"
