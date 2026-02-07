@@ -1431,6 +1431,7 @@ class QwenClient:
            - **合约规格**: 当前品种 {symbol} 的合约大小 (Contract Size) 为 **{current_market_data.get('contract_size', 100)}**。计算 Lots 时必须使用此数值。
            - **ETHUSD 特别注意**: 
              - ETHUSD 的波动性远高于黄金和外汇。请务必使用 **ATR (平均真实波幅)** 来辅助计算合理的止损距离。
+             - **最大仓位限制**: **严禁** ETHUSD 单笔仓位超过 **0.01 Lots**。这是硬性风控规则。任何超过 0.01 的建议都将被系统拒绝。
              - 建议 ETHUSD 单笔风险不超过账户余额的 1.5%。
              - 仔细检查合约大小 (Contract Size)，通常为 1 或 10，这与 XAUUSD (100) 不同，直接影响 Lots 计算结果。务必代入公式：Lots = (Balance * Risk%) / (SL_Distance * Contract_Size)。
         3. **风险管理 (AI Driven Risk)**: 
