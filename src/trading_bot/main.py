@@ -3558,13 +3558,14 @@ class SymbolTrader:
                             
                             # 如果 opt_sl/opt_tp 在上方被 fallback 逻辑计算过，这里强制覆盖无效的 0.0
                             # [USER REQ Update] 直接使用 opt_sl/opt_tp 覆盖，确保一致性
-                            if opt_sl and opt_sl > 0:
-                                exit_params['sl_price'] = opt_sl
-                                logger.info(f"Auto-Injecting Optimized SL: {opt_sl}")
+                            # if opt_sl and opt_sl > 0:
+                            #    exit_params['sl_price'] = opt_sl
+                            #    logger.info(f"Auto-Injecting Optimized SL: {opt_sl}")
 
-                            # [USER REQ] Disable Individual TP (Rely on Basket TP)
+                            # [USER REQ] Disable Individual SL & TP (Rely on Basket Risk Management)
+                            exit_params['sl_price'] = 0.0
                             exit_params['tp_price'] = 0.0
-                            logger.info(f"Forcing TP to 0.0 (Basket TP Mode)")
+                            logger.info(f"Forcing SL/TP to 0.0 (Basket Risk Mode)")
                             
                             # if opt_tp and opt_tp > 0:
                             #    exit_params['tp_price'] = opt_tp
