@@ -640,8 +640,7 @@ class KalmanGridStrategy:
                     # 简单逻辑: 启动后，锁定利润 = Max * 0.6 (可配置)
                     current_lock = max(10.0, self.max_basket_profit_short * 0.6) 
                     
-                    if
-                     self.basket_lock_level_short is None or current_lock > self.basket_lock_level_short:
+                    if self.basket_lock_level_short is None or current_lock > self.basket_lock_level_short:
                         self.basket_lock_level_short = current_lock
                 
                 if self.basket_lock_level_short is not None and total_profit_short < self.basket_lock_level_short:
