@@ -1428,11 +1428,10 @@ class QwenClient:
                 "basket_tp_usd": 50.0
             }},
             "position_management": {{ // [MANDATORY] 必须实时更新，即使是 HOLD
-                "dynamic_basket_tp": 55.0, // 基于最新波动率重新计算
-                "dynamic_basket_sl": 150.0 // 基于最新风险重新计算
+                "dynamic_basket_tp": 0.0, // [DO NOT COPY] 必须基于 ATR 和 阻力位 计算具体数值 (e.g. 45.5)
+                "dynamic_basket_sl": 0.0 // [DO NOT COPY] 必须基于 账户风险(2%) 和 支撑位 计算具体数值 (e.g. 200.0)
             }}
         }}
-        ```
 
         **Action Definitions**:
         - "wait": **CRITICAL**: Use this ONLY when there are NO open positions and you are just observing. (Display: ⏳ 观望中)
@@ -1494,7 +1493,8 @@ class QwenClient:
         4. **统计回测 (MAE/MFE - 10%)**: 参考历史 `avg_mae` (SL 下限) 和 `avg_mfe` (TP 上限)。
         5. **AI 置信度 (AI Conf - 15%)**: 高置信度可适当扩大风险敞口，低置信度必须防御。
         
-        **必须在 `analysis_breakdown` 中包含 `position_calculation_logic` 字段**，详细列出你的计算公式和代入数值，例如 "Balance($10000) * Risk(2%) / (SL_Dist($4) * Size(100)) = 0.5 Lots"。同时简述 Basket SL/TP 的五维加权逻辑。
+        **必须在 `analysis_breakdown` 中包含 `position_calculation_logic` 字段**，详细列出你的计算公式和代入数值，例如 "Balance($10000) * Risk(2%) / (SL_Dist($4) * Size(100)) = 0.5 Lots"。
+        同时，必须在 `analysis_breakdown` 中包含 `basket_params_logic` 字段，解释 dynamic_basket_tp/sl 的计算依据。例如："Basket SL = Balance * 1.5% = $150; Basket TP = ATR * 3 * Lots = $60"。
 
         ## 强制要求：明确的最优 SL/TP (SMC & MFE/MAE Optimized)
         无论 Action 是什么 (BUY/SELL/HOLD)，你 **必须** 在 `exit_conditions` 中返回明确的、最优的 `sl_price` 和 `tp_price`。
