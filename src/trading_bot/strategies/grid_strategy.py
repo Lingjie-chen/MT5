@@ -2,7 +2,11 @@ import pandas as pd
 import numpy as np
 import MetaTrader5 as mt5
 import logging
-from trading_bot.risk.dynamic_risk_manager import DynamicRiskManager
+try:
+    from risk.dynamic_risk_manager import DynamicRiskManager
+except ImportError:
+    # Fallback if running from a different context
+    from trading_bot.risk.dynamic_risk_manager import DynamicRiskManager
 
 logger = logging.getLogger("KalmanGrid")
 
