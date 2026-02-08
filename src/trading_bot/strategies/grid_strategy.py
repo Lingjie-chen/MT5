@@ -60,6 +60,12 @@ class KalmanGridStrategy:
         self.max_basket_profit_long = 0.0 
         self.basket_lock_level_short = None
         self.max_basket_profit_short = 0.0
+
+        # [SNAPSHOT] Effective TP/SL Snapshot (from Preview)
+        self.effective_dynamic_sl_long = None
+        self.effective_dynamic_tp_long = None
+        self.effective_dynamic_sl_short = None
+        self.effective_dynamic_tp_short = None
         
         # Deprecated mixed state (kept for safety if referenced elsewhere)
         self.basket_lock_level = None 
