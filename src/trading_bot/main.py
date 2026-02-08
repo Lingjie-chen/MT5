@@ -3404,17 +3404,20 @@ class SymbolTrader:
                             strength += (matching_count / valid_tech_count) * 30
                             
                         # [NEW] Update Grid Strategy Market Status for Dynamic Risk Management
-                        # 1. Prepare MAE Stats
+                        # 1. Prepare MAE/MFE Stats
                         mae_95 = 0.0
+                        mfe_target = 0.0
                         if trade_stats:
-                            # Assuming trade_stats has 'mae' field (Max Adverse Excursion in USD or Points)
-                            # We need to check the format. If it's from DB, it might be 'mae'.
-                            # Let's extract safely.
                             maes = [float(t.get('mae', 0)) for t in trade_stats if t.get('mae') is not None]
                             if maes:
                                 mae_95 = np.percentile(maes, 95)
+                            
+                            mfes = [float(t.get('mfe', 0)) for t in trade_stats if t.get('mfe') is not None]
+                            if mfes:
+                                # Use 60th percentile for conservative target
+                                mfe_target = np.percentile(mfes, 60)
                         
-                        mae_stats_dict = {'mae_95': mae_95}
+                        mae_stats_dict = {'mae_95': mae_95, 'mfe_target': mfe_target}
                         
                         # 2. Prepare Full Analysis
                         # Merge Technicals and Sentiment
