@@ -954,7 +954,8 @@ class KalmanGridStrategy:
                         market_analysis=self.market_status,
                         ai_confidence=self.ai_confidence,
                         mae_stats=self.mae_stats,
-                        current_drawdown=0 # Preview only (Assuming neutral start or reset)
+                        current_drawdown=0, # Preview only
+                        spread_cost=0.0 # Preview only (Realtime will add spread)
                     )
                     mult_sl = log_sl_long.get('multiplier', 0)
                     self.effective_dynamic_sl_long = eff_sl_long
@@ -984,7 +985,8 @@ class KalmanGridStrategy:
                         market_analysis=self.market_status,
                         ai_confidence=self.ai_confidence,
                         mae_stats=self.mae_stats,
-                        current_drawdown=0
+                        current_drawdown=0,
+                        spread_cost=0.0 # Preview only
                     )
                     mult_sl = log_sl_short.get('multiplier', 0)
                     self.effective_dynamic_sl_short = eff_sl_short
