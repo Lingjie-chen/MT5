@@ -51,7 +51,8 @@ class DynamicRiskManager:
         market_analysis: Dict,
         ai_confidence: float = 0.8,
         mae_stats: Optional[Dict] = None,
-        current_drawdown: float = 0.0
+        current_drawdown: float = 0.0,
+        spread_cost: float = 0.0
     ) -> Tuple[float, Dict]:
         """
         Calculate the dynamic Basket SL threshold ($ amount).
@@ -63,6 +64,7 @@ class DynamicRiskManager:
             ai_confidence (float): 0.0 to 1.0 (or 0-100).
             mae_stats (Dict): Historical MAE stats (e.g. {'95%': 150.0}).
             current_drawdown (float): Current drawdown amount (positive).
+            spread_cost (float): Estimated total spread cost for open positions (USD).
 
         Returns:
             Tuple[float, Dict]: (New SL Amount (negative), Log Details)
@@ -100,13 +102,16 @@ class DynamicRiskManager:
         # Calculate Adjustment Multiplier using Configured Parameters
         multiplier = self.sl_multiplier_base + (total_score * self.sl_multiplier_factor)
         
-        # Apply Volatility Adjustment (Optional, if volatility is extreme, maybe widen?)
-        # For now, we assume Trend Score already accounts for volatility risk.
-        
         new_sl_amount = base_sl_amount * multiplier
         
         # Ensure it's not too tight (e.g., minimum 30% of base)
         new_sl_amount = max(new_sl_amount, base_sl_amount * 0.3)
+        
+        # [NEW] Spread Adjustment
+        # Widen the SL by the spread cost to avoid noise stop-outs.
+        # This ensures the SL is based on "Net Price Movement" rather than "Gross P&L"
+        if spread_cost > 0:
+            new_sl_amount += spread_cost
 
         log_details = {
             "base_sl": base_sl_amount,
@@ -120,6 +125,7 @@ class DynamicRiskManager:
             },
             "total_score": round(total_score, 3),
             "multiplier": round(multiplier, 3),
+            "spread_adj": round(spread_cost, 2),
             "calculated_sl": round(new_sl_amount, 2),
             "conflict_alert": total_score < 0.4 # Alert if score is very low
         }
