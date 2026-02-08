@@ -1484,9 +1484,17 @@ class QwenClient:
         - **保底逻辑 (Fallback)**: 如果你对风险计算不确定，但确定这是一个高胜率的信号，**请至少返回 0.01 手**，不要返回 0.0，否则信号将被系统丢弃！
         - **绝对不要**默认使用 0.01 手！必须基于资金量和你的分析信心计算。
         - **Top-Level Requirement**: `position_size` must be present at the top level of the JSON response. Do not bury it inside `grid_config`.
-        - **Real-Time Basket Params Update**: Regardless of the action (BUY/SELL/HOLD/WAIT), you MUST re-evaluate and output the latest optimal `dynamic_basket_tp` and `dynamic_basket_sl` in the `position_management` object. This is crucial for managing the risk of existing positions.
-
-        **必须在 `analysis_breakdown` 中包含 `position_calculation_logic` 字段**，详细列出你的计算公式和代入数值，例如 "Balance($10000) * Risk(2%) / (SL_Dist($4) * Size(100)) = 0.5 Lots"。
+        - **Real-Time Basket Params Update**: Regardless of the action (BUY/SELL/HOLD/WAIT), you MUST re-evaluate and output the latest optimal `dynamic_basket_tp` and `dynamic_basket_sl` in the `position_management` object. 
+        
+        **动态 Basket 参数五维计算协议 (5-Dimensional Risk Calculation Protocol)**:
+        你必须基于以下权重模型综合计算 `dynamic_basket_sl` (止损额) 和 `dynamic_basket_tp` (止盈额)：
+        1. **趋势强度 (Trend - 30%)**: 强趋势允许放宽 SL 以容忍波动；震荡市需收紧 SL。
+        2. **情绪指标 (Sentiment - 20%)**: 极端情绪(贪婪/恐慌)下，若顺势则 TP 可激进，逆势则 SL 需极紧。
+        3. **SMC 结构 (SMC - 25%)**: SL 必须位于 OB/Swing 结构之外；TP 指向 FVG/流动性池。
+        4. **统计回测 (MAE/MFE - 10%)**: 参考历史 `avg_mae` (SL 下限) 和 `avg_mfe` (TP 上限)。
+        5. **AI 置信度 (AI Conf - 15%)**: 高置信度可适当扩大风险敞口，低置信度必须防御。
+        
+        **必须在 `analysis_breakdown` 中包含 `position_calculation_logic` 字段**，详细列出你的计算公式和代入数值，例如 "Balance($10000) * Risk(2%) / (SL_Dist($4) * Size(100)) = 0.5 Lots"。同时简述 Basket SL/TP 的五维加权逻辑。
 
         ## 强制要求：明确的最优 SL/TP (SMC & MFE/MAE Optimized)
         无论 Action 是什么 (BUY/SELL/HOLD)，你 **必须** 在 `exit_conditions` 中返回明确的、最优的 `sl_price` 和 `tp_price`。
