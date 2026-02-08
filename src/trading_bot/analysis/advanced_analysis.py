@@ -21,6 +21,91 @@ class AdvancedMarketAnalysis:
     def __init__(self):
         self.indicators_cache = {}
     
+    def calculate_money_flow_index(self, df: pd.DataFrame, period: int = 14) -> float:
+        """
+        计算资金流向指数 (MFI) - 作为资金流向的代理指标
+        """
+        if len(df) < period + 1: return 50.0
+        
+        typical_price = (df['high'] + df['low'] + df['close']) / 3
+        money_flow = typical_price * df['volume']
+        
+        positive_flow = []
+        negative_flow = []
+        
+        for i in range(1, len(typical_price)):
+            if typical_price.iloc[i] > typical_price.iloc[i-1]:
+                positive_flow.append(money_flow.iloc[i])
+                negative_flow.append(0)
+            elif typical_price.iloc[i] < typical_price.iloc[i-1]:
+                positive_flow.append(0)
+                negative_flow.append(money_flow.iloc[i])
+            else:
+                positive_flow.append(0)
+                negative_flow.append(0)
+                
+        pos_flow_sum = pd.Series(positive_flow).rolling(window=period).sum().iloc[-1]
+        neg_flow_sum = pd.Series(negative_flow).rolling(window=period).sum().iloc[-1]
+        
+        if neg_flow_sum == 0: return 100.0
+        mfi = 100 - (100 / (1 + pos_flow_sum / neg_flow_sum))
+        return mfi
+
+    def calculate_fear_greed_index(self, df: pd.DataFrame) -> Dict[str, any]:
+        """
+        计算恐慌贪婪指数 (Fear & Greed Index) - 技术面代理
+        综合考虑: RSI, 波动率, 动量
+        """
+        if len(df) < 50: return {"score": 50, "label": "Neutral"}
+        
+        # 1. RSI (Momentum) - Weight 40%
+        # RSI > 70 Greed, RSI < 30 Fear
+        delta = df['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs.iloc[-1])) if not pd.isna(loss.iloc[-1]) and loss.iloc[-1] != 0 else 50
+        
+        # Normalize RSI to 0-100 Score (RSI is already 0-100)
+        rsi_score = rsi
+        
+        # 2. Volatility (VIX Proxy) - Weight 30%
+        # High volatility often means Fear
+        returns = df['close'].pct_change()
+        volatility = returns.std() * np.sqrt(252) # Annualized
+        # Normalize volatility: assume 0.05 is low (Greed), 0.30 is high (Fear)
+        # We want Score 0 = Fear (High Vol), Score 100 = Greed (Low Vol)
+        # But actually F&G index: Extreme Fear (0) happens at crash (High Vol).
+        # So High Volatility -> Low Score.
+        vol_score = max(0, min(100, 100 - (volatility / 0.30) * 100))
+        
+        # 3. Trend Strength (ADX/MA) - Weight 30%
+        # Strong Uptrend -> Greed, Strong Downtrend -> Fear
+        sma50 = df['close'].tail(50).mean()
+        price = df['close'].iloc[-1]
+        dist_ma = (price - sma50) / sma50 # e.g. 0.05 or -0.05
+        # Map -0.05...0.05 to 0...100
+        trend_score = 50 + (dist_ma * 1000) # 0.05 * 1000 = 50 -> 50+50=100
+        trend_score = max(0, min(100, trend_score))
+        
+        final_score = (rsi_score * 0.4) + (vol_score * 0.3) + (trend_score * 0.3)
+        
+        label = "Neutral"
+        if final_score >= 75: label = "Extreme Greed"
+        elif final_score >= 55: label = "Greed"
+        elif final_score <= 25: label = "Extreme Fear"
+        elif final_score <= 45: label = "Fear"
+        
+        return {
+            "score": round(final_score, 2),
+            "label": label,
+            "components": {
+                "rsi_contribution": round(rsi_score, 1),
+                "volatility_contribution": round(vol_score, 1),
+                "trend_contribution": round(trend_score, 1)
+            }
+        }
+
     def calculate_technical_indicators(self, df: pd.DataFrame) -> Dict[str, float]:
         if len(df) < 20:
             return self._get_default_indicators()
