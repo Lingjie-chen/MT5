@@ -598,9 +598,19 @@ class KalmanGridStrategy:
         # --- Long Basket ---
         if self.long_pos_count > 0:
             total_profit_long = 0.0
+            total_volume_long = 0.0
             for pos in positions:
                 if pos.magic == self.magic_number and pos.type == mt5.POSITION_TYPE_BUY:
                     total_profit_long += (pos.profit + pos.swap)
+                    total_volume_long += pos.volume
+            
+            # Calculate Spread Cost
+            symbol_info = mt5.symbol_info(self.symbol)
+            spread_cost_long = 0.0
+            if symbol_info:
+                # spread is in points. trade_tick_value is value of 1 point per lot.
+                # Cost = Spread * TickValue * Volume
+                spread_cost_long = symbol_info.spread * symbol_info.trade_tick_value * total_volume_long
             
             # [CHECK] Dynamic Basket TP (Enhanced)
             # Calculate Tiered TP Target
@@ -642,7 +652,8 @@ class KalmanGridStrategy:
                         market_analysis=self.market_status,
                         ai_confidence=self.ai_confidence,
                         mae_stats=self.mae_stats,
-                        current_drawdown=abs(total_profit_long) if total_profit_long < 0 else 0
+                        current_drawdown=abs(total_profit_long) if total_profit_long < 0 else 0,
+                        spread_cost=spread_cost_long
                     )
                 
                 if total_profit_long <= effective_sl:
@@ -679,9 +690,17 @@ class KalmanGridStrategy:
         # --- Short Basket ---
         if self.short_pos_count > 0:
             total_profit_short = 0.0
+            total_volume_short = 0.0
             for pos in positions:
                 if pos.magic == self.magic_number and pos.type == mt5.POSITION_TYPE_SELL:
                     total_profit_short += (pos.profit + pos.swap)
+                    total_volume_short += pos.volume
+            
+            # Calculate Spread Cost
+            symbol_info = mt5.symbol_info(self.symbol)
+            spread_cost_short = 0.0
+            if symbol_info:
+                spread_cost_short = symbol_info.spread * symbol_info.trade_tick_value * total_volume_short
             
             # [CHECK] Dynamic Basket TP (Enhanced)
             base_tp_short = self.dynamic_tp_short if (self.dynamic_tp_short is not None and self.dynamic_tp_short > 0) else self.global_tp
