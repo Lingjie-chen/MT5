@@ -596,17 +596,28 @@ class KalmanGridStrategy:
                 if pos.magic == self.magic_number and pos.type == mt5.POSITION_TYPE_BUY:
                     total_profit_long += (pos.profit + pos.swap)
             
-            # [CHECK] Dynamic Basket TP
+            # [CHECK] Dynamic Basket TP (Enhanced)
             # Calculate Tiered TP Target
             base_tp_long = self.dynamic_tp_long if (self.dynamic_tp_long is not None and self.dynamic_tp_long > 0) else self.global_tp
-            target_tp_long = self.risk_manager.calculate_tiered_tp(
-                base_tp=base_tp_long,
+            
+            # Use new Multi-Dimensional TP Calculation
+            target_tp_long, log_details_tp = self.risk_manager.calculate_dynamic_basket_tp(
+                base_tp_amount=base_tp_long,
+                direction='long',
+                market_analysis=self.market_status,
+                ai_confidence=self.ai_confidence,
+                mae_stats=self.mae_stats,
                 current_atr=current_atr if current_atr else 0,
-                level_index=self.long_pos_count
+                current_profit=total_profit_long
             )
             
+            # Apply tiered logic on top (or integrated? The new method returns a single value based on factors)
+            # The new method handles market factors. We can add simple scaling for levels if needed.
+            # But let's trust the Multi-Dimensional output.
+            
             if total_profit_long >= target_tp_long:
-                logger.info(f"✅ Long Basket TP Hit! Profit: ${total_profit_long:.2f} >= Target: ${target_tp_long:.2f} (Base: {base_tp_long}, Tiered)")
+                logger.info(f"✅ Long Basket TP Hit! Profit: ${total_profit_long:.2f} >= Target: ${target_tp_long:.2f} (Base: {base_tp_long})")
+                logger.info(f"Dynamic TP Logic: {log_details_tp}")
                 should_close_long = True
 
             # [CHECK] Dynamic Basket SL (Enhanced)
@@ -659,16 +670,23 @@ class KalmanGridStrategy:
                 if pos.magic == self.magic_number and pos.type == mt5.POSITION_TYPE_SELL:
                     total_profit_short += (pos.profit + pos.swap)
             
-            # [CHECK] Dynamic Basket TP
+            # [CHECK] Dynamic Basket TP (Enhanced)
             base_tp_short = self.dynamic_tp_short if (self.dynamic_tp_short is not None and self.dynamic_tp_short > 0) else self.global_tp
-            target_tp_short = self.risk_manager.calculate_tiered_tp(
-                base_tp=base_tp_short,
+            
+            # Use new Multi-Dimensional TP Calculation
+            target_tp_short, log_details_tp = self.risk_manager.calculate_dynamic_basket_tp(
+                base_tp_amount=base_tp_short,
+                direction='short',
+                market_analysis=self.market_status,
+                ai_confidence=self.ai_confidence,
+                mae_stats=self.mae_stats,
                 current_atr=current_atr if current_atr else 0,
-                level_index=self.short_pos_count
+                current_profit=total_profit_short
             )
             
             if total_profit_short >= target_tp_short:
-                logger.info(f"✅ Short Basket TP Hit! Profit: ${total_profit_short:.2f} >= Target: ${target_tp_short:.2f} (Base: {base_tp_short}, Tiered)")
+                logger.info(f"✅ Short Basket TP Hit! Profit: ${total_profit_short:.2f} >= Target: ${target_tp_short:.2f} (Base: {base_tp_short})")
+                logger.info(f"Dynamic TP Logic: {log_details_tp}")
                 should_close_short = True
 
             # [CHECK] Dynamic Basket SL (Enhanced)
