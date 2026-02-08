@@ -740,7 +740,8 @@ class KalmanGridStrategy:
                         market_analysis=self.market_status,
                         ai_confidence=self.ai_confidence,
                         mae_stats=self.mae_stats,
-                        current_drawdown=abs(total_profit_short) if total_profit_short < 0 else 0
+                        current_drawdown=abs(total_profit_short) if total_profit_short < 0 else 0,
+                        spread_cost=spread_cost_short
                     )
                 
                 if total_profit_short <= effective_sl:
