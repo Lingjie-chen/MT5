@@ -17,6 +17,7 @@ class DynamicRiskManager:
     """
 
     def __init__(self):
+        # 1. Weights for Total Score Calculation (Sum must be 1.0)
         self.weights = {
             "trend": 0.3,
             "sentiment": 0.2,
@@ -24,7 +25,24 @@ class DynamicRiskManager:
             "mae_mfe": 0.1,
             "ai": 0.15
         }
+        
+        # 2. SL Multiplier Config (Asymmetric - Conservative)
+        # Score 0.0 -> 0.5x SL (Very Tight)
+        # Score 0.5 -> 0.85x SL (Tight)
+        # Score 1.0 -> 1.2x SL (Looser)
+        self.sl_multiplier_base = 0.5
+        self.sl_multiplier_factor = 0.7 
+        
+        # 3. TP Multiplier Config (Asymmetric - Optimistic)
+        # Score 0.0 -> 0.6x TP (Quick Take Profit)
+        # Score 0.5 -> 1.3x TP (Run)
+        # Score 1.0 -> 2.0x TP (Let it Fly)
+        self.tp_multiplier_base = 0.6
+        self.tp_multiplier_factor = 1.4
+        
         logger.info("DynamicRiskManager Initialized with weights: %s", self.weights)
+        logger.info(f"SL Config: Base={self.sl_multiplier_base}, Factor={self.sl_multiplier_factor}")
+        logger.info(f"TP Config: Base={self.tp_multiplier_base}, Factor={self.tp_multiplier_factor}")
 
     def calculate_dynamic_basket_sl(
         self, 
@@ -79,14 +97,8 @@ class DynamicRiskManager:
             ai_score * self.weights["ai"]
         )
 
-        # Calculate Adjustment Multiplier
-        # Logic: 
-        # Score 1.0 (Perfect conditions) -> 1.2x Base SL (Allow slightly more room)
-        # Score 0.5 (Neutral) -> 1.0x Base SL
-        # Score 0.0 (Terrible) -> 0.5x Base SL (Tighten significantly)
-        
-        # Linear mapping: Multiplier = 0.5 + (Total_Score * 0.7) -> Range [0.5, 1.2]
-        multiplier = 0.5 + (total_score * 0.7)
+        # Calculate Adjustment Multiplier using Configured Parameters
+        multiplier = self.sl_multiplier_base + (total_score * self.sl_multiplier_factor)
         
         # Apply Volatility Adjustment (Optional, if volatility is extreme, maybe widen?)
         # For now, we assume Trend Score already accounts for volatility risk.
@@ -172,14 +184,8 @@ class DynamicRiskManager:
             ai_score * self.weights["ai"]
         )
         
-        # Calculate Multiplier for TP
-        # Logic:
-        # High Score (>0.8) -> Strong Trend/Sentiment -> Expand TP to capture "Runner" (up to 2.0x)
-        # Low Score (<0.4) -> Weak/Choppy -> Contract TP to bag quick profits (down to 0.5x)
-        # Neutral (0.5) -> 1.0x
-        
-        # Mapping: 0.5 -> 1.0x, 1.0 -> 2.0x, 0.0 -> 0.6x
-        multiplier = 0.6 + (total_score * 1.4) # Range [0.6, 2.0]
+        # Calculate Multiplier for TP using Configured Parameters
+        multiplier = self.tp_multiplier_base + (total_score * self.tp_multiplier_factor)
         
         new_tp_amount = base_tp_amount * multiplier
         
