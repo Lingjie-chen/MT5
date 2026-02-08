@@ -1257,6 +1257,12 @@ class AdvancedMarketAnalysisAdapter(AdvancedMarketAnalysis):
             donchian = self.calculate_donchian_channels(df, period=20)
             strict_sd = self.detect_strict_supply_demand(df)
             
+            # [NEW] Market Sentiment Quantitative Indicators
+            mfi = self.calculate_money_flow_index(df, period=14)
+            fear_greed = self.calculate_fear_greed_index(df)
+            # Placeholder for Options PCR (requires external data)
+            options_pcr = {"ratio": 1.0, "sentiment": "Neutral", "note": "Requires external options data"}
+
             return {
                 "indicators": indicators,
                 "regime": regime,
@@ -1267,7 +1273,12 @@ class AdvancedMarketAnalysisAdapter(AdvancedMarketAnalysis):
                 "ifvg": ifvg,
                 "rvgi_cci": rvgi_cci,
                 "donchian": donchian,
-                "strict_supply_demand": strict_sd
+                "strict_supply_demand": strict_sd,
+                "sentiment_metrics": {
+                    "mfi": mfi,
+                    "fear_greed_index": fear_greed,
+                    "put_call_ratio": options_pcr
+                }
             }
         except Exception as e:
             logging.error(f"Full Analysis failed: {e}")
