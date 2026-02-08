@@ -645,6 +645,9 @@ class KalmanGridStrategy:
                 if self.effective_dynamic_sl_long is not None:
                     effective_sl = self.effective_dynamic_sl_long
                     log_details = "Using Snapshot"
+                    # Apply Real-Time Spread Adjustment to Snapshot
+                    if spread_cost_long > 0:
+                        effective_sl -= spread_cost_long
                 else:
                     effective_sl, log_details = self.risk_manager.calculate_dynamic_basket_sl(
                         base_sl_amount=base_sl,
@@ -733,6 +736,9 @@ class KalmanGridStrategy:
                 if self.effective_dynamic_sl_short is not None:
                     effective_sl = self.effective_dynamic_sl_short
                     log_details = "Using Snapshot"
+                    # Apply Real-Time Spread Adjustment to Snapshot
+                    if spread_cost_short > 0:
+                        effective_sl -= spread_cost_short
                 else:
                     effective_sl, log_details = self.risk_manager.calculate_dynamic_basket_sl(
                         base_sl_amount=base_sl,
