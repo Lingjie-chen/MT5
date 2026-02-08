@@ -26,19 +26,19 @@ class DynamicRiskManager:
             "ai": 0.15
         }
         
-        # 2. SL Multiplier Config (Asymmetric - Conservative)
-        # Score 0.0 -> 0.5x SL (Very Tight)
-        # Score 0.5 -> 0.85x SL (Tight)
+        # 2. SL Multiplier Config (Optimized for Stability)
+        # Score 0.0 -> 0.6x SL (Tight, but not choking)
+        # Score 0.5 -> 0.9x SL (Conservative)
         # Score 1.0 -> 1.2x SL (Looser)
-        self.sl_multiplier_base = 0.5
-        self.sl_multiplier_factor = 0.7 
+        self.sl_multiplier_base = 0.6
+        self.sl_multiplier_factor = 0.6 
         
-        # 3. TP Multiplier Config (Asymmetric - Optimistic)
-        # Score 0.0 -> 0.6x TP (Quick Take Profit)
-        # Score 0.5 -> 1.3x TP (Run)
+        # 3. TP Multiplier Config (Optimized for Growth)
+        # Score 0.0 -> 0.8x TP (Conservative Take Profit)
+        # Score 0.5 -> 1.4x TP (Aggressive Expansion)
         # Score 1.0 -> 2.0x TP (Let it Fly)
-        self.tp_multiplier_base = 0.6
-        self.tp_multiplier_factor = 1.4
+        self.tp_multiplier_base = 0.8
+        self.tp_multiplier_factor = 1.2
         
         logger.info("DynamicRiskManager Initialized with weights: %s", self.weights)
         logger.info(f"SL Config: Base={self.sl_multiplier_base}, Factor={self.sl_multiplier_factor}")
