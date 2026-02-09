@@ -641,11 +641,42 @@ class KalmanGridStrategy:
             if self.dynamic_sl_long is not None and self.dynamic_sl_long < 0:
                 base_sl = abs(self.dynamic_sl_long)
                 
+                # Calculate Volume Scaling Factor
+                # If Initial Lot is 0.01 and Total is 0.03 -> Factor = 3.0
+                # We use a dampener to prevent explosion? No, user wants price distance.
+                # Factor = Total / Initial
+                # But 'initial_lot' is self.lot.
+                volume_factor = 1.0
+                if self.lot > 0:
+                    volume_factor = total_volume_long / self.lot
+                
                 # Use [SNAPSHOT] Effective SL if available
                 if self.effective_dynamic_sl_long is not None:
                     effective_sl = self.effective_dynamic_sl_long
                     log_details = "Using Snapshot"
-                    # Apply Real-Time Spread Adjustment to Snapshot
+                    
+                    # Apply Volume Scaling to Snapshot (because Snapshot was likely based on Volume=1 or Base)
+                    # Wait, if snapshot is taken at update_dynamic_params, does it know volume?
+                    # No, update_dynamic_params is called from main loop, usually when positions might change or market changes.
+                    # But the 'effective_dynamic_sl_long' stored there might be raw.
+                    # Actually, better to apply scaling inside risk manager every tick.
+                    
+                    # Re-calculate or Apply Scaling to Snapshot?
+                    # If we scale snapshot, we risk double counting if snapshot already had volume.
+                    # Let's assume snapshot is BASE per lot unit? No, AI gives Total Risk $.
+                    
+                    # ISSUE: AI gives "Basket SL = $100". Does AI mean "Fixed $100 Risk" or "Distance based $100"?
+                    # Qwen prompt says: "Basket SL = Balance * 1.5%". This is FIXED RISK.
+                    # If it is Fixed Risk, then as Volume increases, Price Distance decreases.
+                    # User complains this is bad.
+                    # So we MUST scale it to maintain distance.
+                    
+                    # So, effective_sl (from snapshot) is likely the FIXED $ amount.
+                    # We should scale it.
+                    if volume_factor > 1.0:
+                         effective_sl = effective_sl * volume_factor
+                    
+                    # Apply Real-Time Spread Adjustment
                     if spread_cost_long > 0:
                         effective_sl -= spread_cost_long
                 else:
@@ -656,11 +687,12 @@ class KalmanGridStrategy:
                         ai_confidence=self.ai_confidence,
                         mae_stats=self.mae_stats,
                         current_drawdown=abs(total_profit_long) if total_profit_long < 0 else 0,
-                        spread_cost=spread_cost_long
+                        spread_cost=spread_cost_long,
+                        volume_scaling=volume_factor
                     )
                 
                 if total_profit_long <= effective_sl:
-                    logger.warning(f"🛑 Long Basket Dynamic SL Reached! Profit: ${total_profit_long:.2f} <= Limit: ${effective_sl:.2f} (Snapshot/Base: -{base_sl})")
+                    logger.warning(f"🛑 Long Basket Dynamic SL Reached! Profit: ${total_profit_long:.2f} <= Limit: ${effective_sl:.2f} (Snapshot/Base: -{base_sl}, VolFactor: {volume_factor:.1f})")
                     # logger.info(f"Dynamic SL Logic: {log_details}")
                     should_close_long = True
                 
@@ -732,10 +764,19 @@ class KalmanGridStrategy:
             if self.dynamic_sl_short is not None and self.dynamic_sl_short < 0:
                 base_sl = abs(self.dynamic_sl_short)
                 
+                # Volume Scaling
+                volume_factor = 1.0
+                if self.lot > 0:
+                    volume_factor = total_volume_short / self.lot
+                
                 # Use [SNAPSHOT] Effective SL if available
                 if self.effective_dynamic_sl_short is not None:
                     effective_sl = self.effective_dynamic_sl_short
                     log_details = "Using Snapshot"
+                    
+                    if volume_factor > 1.0:
+                         effective_sl = effective_sl * volume_factor
+                    
                     # Apply Real-Time Spread Adjustment to Snapshot
                     if spread_cost_short > 0:
                         effective_sl -= spread_cost_short
@@ -747,11 +788,12 @@ class KalmanGridStrategy:
                         ai_confidence=self.ai_confidence,
                         mae_stats=self.mae_stats,
                         current_drawdown=abs(total_profit_short) if total_profit_short < 0 else 0,
-                        spread_cost=spread_cost_short
+                        spread_cost=spread_cost_short,
+                        volume_scaling=volume_factor
                     )
                 
                 if total_profit_short <= effective_sl:
-                    logger.warning(f"🛑 Short Basket Dynamic SL Reached! Profit: ${total_profit_short:.2f} <= Limit: ${effective_sl:.2f} (Snapshot/Base: -{base_sl})")
+                    logger.warning(f"🛑 Short Basket Dynamic SL Reached! Profit: ${total_profit_short:.2f} <= Limit: ${effective_sl:.2f} (Snapshot/Base: -{base_sl}, VolFactor: {volume_factor:.1f})")
                     # logger.info(f"Dynamic SL Logic: {log_details}")
                     should_close_short = True
             
