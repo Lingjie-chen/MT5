@@ -3270,9 +3270,9 @@ class SymbolTrader:
                         perf_analysis = self.perf_analyzer.analyze_trades(trade_stats)
                         
                         # [NEW] Identify Optimal Entry Zones (OEZ)
-                        # We need full DF. m15_data is latest DF.
+                        # We need full DF. df_m15 is latest DF.
                         oez_data = self.advanced_adapter.identify_optimal_entry_zones(
-                            m15_data, 
+                            df_m15, 
                             smc_data=smc_result
                         )
                         
