@@ -105,19 +105,19 @@ class QwenClient:
     **输出要求**: 在 `strategy_rationale` 字段中，必须包含一个名为 **"Pre-Market 8 Questions Analysis"** 的独立章节，逐条简要回答上述问题。
 
     **交易节奏控制 (Trend Cycle Control)**:
-    - **积极寻找机会**: 在 H1 趋势明确时，利用 M15 的每一个有效回撤或突破进行交易。
-    - **趋势跟随模式**: 以 H1 为主趋势，M15 为入场及波段操作周期。
-    - **趋势结束判定**: 当 M15 结构破坏或 H1 关键位受阻时，快速离场。
-    - **新一轮分析**: 保持敏锐，随时准备捕捉下一波 M15 级别的机会。
+    - **积极寻找机会**: 在 M15 趋势明确时，利用 M3 的每一个有效回撤或突破进行交易。
+    - **趋势跟随模式**: 以 M15 为主趋势，M3 为入场及波段操作周期。
+    - **趋势结束判定**: 当 M3 结构破坏或 M15 关键位受阻时，快速离场。
+    - **新一轮分析**: 保持敏锐，随时准备捕捉下一波 M3 级别的机会。
     - **拒绝追涨杀跌 (Anti-FOMO)**: 
-      - 需等待 M15 级别的回调 (Pullback) 至合理区域 (Discount Zone) 或关键支撑位 (Order Block/FVG)。
-    - **Trend Surfing (趋势冲浪)**: 如果识别到强劲的单边趋势，果断利用 M15 信号进出或金字塔加仓。
+      - 需等待 M3 级别的回调 (Pullback) 至合理区域 (Discount Zone) 或关键支撑位 (Order Block/FVG)。
+    - **Trend Surfing (趋势冲浪)**: 如果识别到强劲的单边趋势，果断利用 M3 信号进出或金字塔加仓。
 
     **策略模式 (Strategy Mode) - 单边趋势专用**:
     *   **模式**: **Trend Following (趋势跟随)** - 顺势而为。
     *   **Action**: `BUY` (做多) 或 `SELL` (做空)。**如果趋势确认，允许使用 `ADD_BUY` 或 `ADD_SELL` 进行加仓**。
     *   **Grid Add**: **仅允许顺势金字塔加仓 (Pyramiding Allowed)**。禁止逆势死扛。
-    *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M15 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
+    *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M3 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
     *   **Risk/Reward Requirement**: **盈亏比 (Risk/Reward Ratio) 必须至少 1.5**。如果 (TP距离 / SL距离) < 1.5，则**禁止开仓**，必须返回 HOLD。
 
     **仓位管理指令 (Position Sizing Instructions - Dynamic & SMC Based)**:
