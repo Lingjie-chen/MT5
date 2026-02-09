@@ -3232,6 +3232,16 @@ class SymbolTrader:
                              # Fallback to local Symbol DB
                              trade_stats = self.db_manager.get_trade_performance_stats(symbol=self.symbol, limit=50)
                         
+                        # [NEW] Advanced Performance Analysis
+                        perf_analysis = self.perf_analyzer.analyze_trades(trade_stats)
+                        
+                        # [NEW] Identify Optimal Entry Zones (OEZ)
+                        # We need full DF. m15_data is latest DF.
+                        oez_data = self.advanced_adapter.analyzer.identify_optimal_entry_zones(
+                            m15_data, 
+                            smc_data=smc_result
+                        )
+                        
                         # 获取当前持仓状态
                         positions = mt5.positions_get(symbol=self.symbol)
                         current_positions_list = []
@@ -3263,6 +3273,7 @@ class SymbolTrader:
                         technical_signals = {
                             "crt": crt_result,
                             "smc": smc_result, # [MODIFIED] Pass full SMC details (OB/FVG/Structure) for AI validation
+                            "optimal_entry_zones": oez_data, # [NEW] Pass Golden Pocket & SMC Zones
                             "grid_strategy": {
                                 "signal": grid_signal,
                                 "status": grid_status,
@@ -3272,7 +3283,8 @@ class SymbolTrader:
                             "ifvg": ifvg_result['signal'],
                             "rvgi_cci": rvgi_cci_result['signal'],
                             "ema_ha": ema_ha_result, # Pass full result including values
-                            "performance_stats": trade_stats
+                            "performance_stats": trade_stats,
+                            "perf_analysis": perf_analysis # [NEW] Pass detailed loss patterns & metrics
                         }
                         
                         # Qwen Sentiment Analysis
