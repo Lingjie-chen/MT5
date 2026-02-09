@@ -459,8 +459,11 @@ class QwenClient:
         common_rules = """
     ## 共同执行规则 (All Teams Must Follow)
     1. **SMC 核心**: 所有的入场和加仓必须基于 **SMC (Smart Money Concepts)** —— 寻找 订单块(OB)、失衡区(FVG)、结构破坏(BOS) 和 特性改变(CHOCH)。
-    2. **高级算法验证**: 必须结合 **OBV (能量潮)** 确认成交量支持，并关注 **Liquidity Sweep (流动性扫荡)**。
-    3. **趋势控制**: 
+    2. **[NEW] OEZ 验证 (Optimal Entry Zones)**: 
+       - **Golden Pocket**: 必须优先在 **斐波那契 0.618-0.786** 与 **SMC 订单块** 重叠的 `Optimal Entry Zones` 区域寻找入场机会。
+       - **Context Reference**: 请仔细阅读 `[AI FOCUS] Optimal Entry Zones` 上下文。如果价格处于 "INSIDE" 状态，这是极高胜率的入场信号。
+    3. **高级算法验证**: 必须结合 **OBV (能量潮)** 确认成交量支持，并关注 **Liquidity Sweep (流动性扫荡)**。
+    4. **趋势控制**: 
        - M15 为执行周期，必须服从 H1 趋势。
        - **量化书籍参考**: 遵循《量化交易策略》中的均值回归与趋势跟踪双重验证原则。
        - 只有在确认趋势反转或SMC结构破坏时才平仓。
@@ -1386,7 +1389,53 @@ class QwenClient:
             sigs_copy = technical_signals.copy()
             if 'performance_stats' in sigs_copy:
                 del sigs_copy['performance_stats']
-            tech_context = f"\n技术信号 (SMC/CRT/CCI):\n{json.dumps(sigs_copy, indent=2, cls=CustomJSONEncoder)}\n"
+            
+            # [NEW] Enhanced OEZ & Structure Context
+            oez_desc = ""
+            structure_desc = ""
+            
+            try:
+                # 1. Optimal Entry Zones (OEZ)
+                oez_data = sigs_copy.get('optimal_entry_zones', {})
+                zones = oez_data.get('zones', [])
+                current_price = current_market_data.get('close', 0)
+                
+                if zones and current_price > 0:
+                    oez_desc += "\n[AI FOCUS] Optimal Entry Zones (OEZ):\n"
+                    nearby_zones = []
+                    for z in zones:
+                        # Check distance
+                        dist = 0
+                        if current_price > z['top']: dist = current_price - z['top']
+                        elif current_price < z['bottom']: dist = z['bottom'] - current_price
+                        
+                        # Only mention zones within reasonable distance (e.g. 0.5% price)
+                        if dist / current_price < 0.005:
+                            status = "INSIDE" if z['bottom'] <= current_price <= z['top'] else "NEARBY"
+                            nearby_zones.append(f"- {z['name']} ({z['type'].upper()}): {z['bottom']:.2f}-{z['top']:.2f} [{status}]")
+                    
+                    if nearby_zones:
+                        oez_desc += "\n".join(nearby_zones) + "\n"
+                    else:
+                        oez_desc += "- No OEZ nearby (Wait for price to approach Golden Pocket/OB).\n"
+
+                # 2. Smart Structure (SMC)
+                smc_data = sigs_copy.get('smc', {})
+                smart_struc = smc_data.get('smart_structure', {})
+                if smart_struc and smart_struc.get('signal') != 'neutral':
+                    structure_desc = (
+                        f"\n[AI FOCUS] Smart Structure:\n"
+                        f"- Signal: {smart_struc.get('type', 'Structure')} {smart_struc.get('signal').upper()}\n"
+                        f"- Reason: {smart_struc.get('reason')}\n"
+                    )
+            except Exception as e:
+                logger.error(f"Error processing enhanced signals: {e}")
+
+            tech_context = (
+                f"\n技术信号 (SMC/CRT/CCI):\n{json.dumps(sigs_copy, indent=2, cls=CustomJSONEncoder)}\n"
+                f"{structure_desc}"
+                f"{oez_desc}"
+            )
 
         # 构建完整提示词
         symbol = current_market_data.get("symbol", "XAUUSD")
