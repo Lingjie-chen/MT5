@@ -511,6 +511,38 @@ class AdvancedMarketAnalysis:
         # Let's return list of Price Ranges with Scores.
         return {"zones": zones, "reference_high": high_price, "reference_low": low_price}
 
+    def detect_structure_points(self, df):
+        """
+        识别最近的市场结构点 (Swing Highs / Swing Lows)
+        返回: 结构列表, 包含价格、索引、类型(SH/SL)
+        """
+        highs = df['high'].values; lows = df['low'].values
+        n = len(df)
+        points = []
+        
+        # 使用动态回溯，寻找分形点
+        # Fractal: High[i] > High[i-2...i+2]
+        for i in range(n-3, 2, -1):
+            is_sh = True
+            is_sl = True
+            
+            # Check Swing High
+            for k in range(1, 4): # Look left and right 3 bars
+                if i-k >= 0 and highs[i] <= highs[i-k]: is_sh = False
+                if i+k < n and highs[i] <= highs[i+k]: is_sh = False
+            
+            # Check Swing Low
+            for k in range(1, 4):
+                if i-k >= 0 and lows[i] >= lows[i-k]: is_sl = False
+                if i+k < n and lows[i] >= lows[i+k]: is_sl = False
+                
+            if is_sh: points.append({'type': 'SH', 'price': highs[i], 'index': i, 'time': df.index[i]})
+            if is_sl: points.append({'type': 'SL', 'price': lows[i], 'index': i, 'time': df.index[i]})
+            
+            if len(points) >= 10: break # 只找最近的10个点
+            
+        return sorted(points, key=lambda x: x['index']) # 按时间正序排列
+
     def generate_analysis_summary(self, df: pd.DataFrame) -> Dict[str, any]:
         if len(df) < 20: return {"summary": "数据不足", "recommendation": "hold", "confidence": 0.0}
         indicators = self.calculate_technical_indicators(df)
