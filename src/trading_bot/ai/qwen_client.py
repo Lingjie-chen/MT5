@@ -1316,6 +1316,9 @@ class QwenClient:
         # 5. 性能统计上下文
         stats_to_use = performance_stats
         
+        # [NEW] Enhanced Performance Analysis Context
+        perf_analysis_context = ""
+        
         if stats_to_use:
             recent_trades = []
             summary_stats = {}
@@ -1340,6 +1343,21 @@ class QwenClient:
                              'win_rate': (wins / len(recent_trades)) * 100 if recent_trades else 0,
                              'profit_factor': (total_profit / total_loss) if total_loss > 0 else 99.9
                          }
+                         
+                         # [NEW] Loss Pattern Analysis (Simplified for Prompt)
+                         losing_trades = [t for t in recent_trades if t.get('profit', 0) <= 0]
+                         loss_reasons = {}
+                         for t in losing_trades:
+                             reason = t.get('reason', 'Unknown')
+                             loss_reasons[reason] = loss_reasons.get(reason, 0) + 1
+                         
+                         perf_analysis_context = (
+                             f"\n[AI SELF-REFLECTION] Loss Analysis (Last {len(recent_trades)} Trades):\n"
+                             f"- Common Loss Reasons: {json.dumps(loss_reasons)}\n"
+                             f"- Win Rate: {summary_stats['win_rate']:.1f}%\n"
+                             f"- Action Required: {'⚠️ STOP TRADING & REFINE' if summary_stats['win_rate'] < 40 else '✅ SYSTEM HEALTHY'}\n"
+                         )
+
                 elif isinstance(stats_to_use, dict):
                     summary_stats = stats_to_use
                     recent_trades = stats_to_use.get('recent_trades', [])
@@ -1357,6 +1375,7 @@ class QwenClient:
                     f"- 平均 MFE: {summary_stats.get('avg_mfe', 0):.2f}%\n"
                     f"- 平均 MAE: {summary_stats.get('avg_mae', 0):.2f}%\n"
                     f"- 最近交易详情 (用于分析体质): \n{trades_summary}\n"
+                    f"{perf_analysis_context}"
                 )
             except Exception as e:
                 logger.error(f"Error processing stats_to_use: {e}")
