@@ -50,14 +50,15 @@ def verify_optimization():
     ama = AdvancedMarketAnalysis()
     
     # 模拟 M15 数据 (构造一个简单的摆动结构)
-    data = {
-        'close': [100, 105, 110, 108, 102, 100, 105, 115, 112, 108], # Swing Low 100 -> High 115 -> Retrace
-        'high':  [102, 107, 112, 110, 104, 102, 107, 117, 114, 110],
-        'low':   [98,  103, 108, 106, 100, 98,  103, 113, 110, 106],
-        'open':  [100, 105, 110, 108, 102, 100, 105, 115, 112, 108],
-        'volume': [100]*10
-    }
-    df = pd.DataFrame(data)
+    # 扩展数据长度到 60 以通过 len(df) < 50 检查
+    close_prices = [100 + i%10 for i in range(60)] # Dummy
+    df = pd.DataFrame({
+        'close': close_prices,
+        'high': [c + 2 for c in close_prices],
+        'low': [c - 2 for c in close_prices],
+        'open': close_prices,
+        'volume': [100]*60
+    })
     
     # Mock SMC Data
     smc_data = {
