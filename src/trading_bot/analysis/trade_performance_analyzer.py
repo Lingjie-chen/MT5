@@ -126,11 +126,72 @@ class TradePerformanceAnalyzer:
         elif win_rate > 0.60:
             thresholds["min_confidence"] = 0.65 # Relax slightly to catch more trades
             
-        # 2. RSI Optimization (Simplified Simulation)
-        # In a real scenario, we would parse the 'technical_signals' stored in trade history
-        # Here we apply a heuristic based on overall trend performance if available
-        
         return thresholds
+
+    def calculate_strategy_health_score(self, trades: List[Dict]) -> Dict:
+        """
+        [NEW] Strategy Health Diagnosis & Self-Repair Trigger
+        Calculates a composite health score (0-100) and triggers repair actions if critical.
+        """
+        if not trades or len(trades) < 10:
+            return {"score": 100, "status": "Healthy", "action": "maintain"}
+            
+        df = pd.DataFrame(trades)
+        recent = df.tail(20) # Analyze last 20 trades for immediate health
+        
+        # 1. Component Scores
+        # Win Rate Score (Target 50%)
+        wr = len(recent[recent['profit'] > 0]) / len(recent)
+        score_wr = min(100, (wr / 0.5) * 80)
+        
+        # Profit Factor Score (Target 1.5)
+        gross_profit = recent[recent['profit'] > 0]['profit'].sum()
+        gross_loss = abs(recent[recent['profit'] < 0]['profit'].sum())
+        pf = gross_profit / gross_loss if gross_loss > 0 else 2.0
+        score_pf = min(100, (pf / 1.5) * 80)
+        
+        # Drawdown Penalty
+        # Check consecutive losses in recent 5 trades
+        consecutive_losses = 0
+        for p in recent['profit'].values[::-1]:
+            if p < 0: consecutive_losses += 1
+            else: break
+        
+        penalty = consecutive_losses * 15 # -15 points per consecutive loss
+        
+        # Final Score
+        final_score = (0.4 * score_wr) + (0.6 * score_pf) - penalty
+        final_score = max(0, min(100, final_score))
+        
+        # 2. Diagnosis & Repair Actions
+        status = "Healthy"
+        action = "maintain"
+        repair_config = {}
+        
+        if final_score < 40:
+            status = "Critical"
+            action = "emergency_repair"
+            repair_config = {
+                "reduce_risk_scale": 0.5, # Cut position size by 50%
+                "increase_min_confidence": 0.15, # +15% confidence required
+                "tighten_sl_multiplier": 0.8, # Tighter SL
+                "reset_indicators": True # Suggest resetting indicator parameters
+            }
+        elif final_score < 60:
+            status = "Unhealthy"
+            action = "optimization_needed"
+            repair_config = {
+                "reduce_risk_scale": 0.8, # Cut position size by 20%
+                "increase_min_confidence": 0.05, # +5% confidence required
+            }
+            
+        return {
+            "score": round(final_score, 1),
+            "status": status,
+            "action": action,
+            "repair_config": repair_config,
+            "metrics": {"win_rate": round(wr, 2), "profit_factor": round(pf, 2), "consecutive_losses": consecutive_losses}
+        }
 
     def _analyze_recent_trend(self, df: pd.DataFrame) -> str:
         if len(df) < 5: return "Stable"
