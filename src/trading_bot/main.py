@@ -48,6 +48,8 @@ try:
         CRTAnalyzer, MTFAnalyzer
     )
     from analysis.trade_performance_analyzer import TradePerformanceAnalyzer # [NEW]
+    from analysis.stress_tester import StrategyStressTester # [NEW]
+    from analysis.rl_weight_optimizer import RLWeightOptimizer # [NEW]
     from strategies.grid_strategy import KalmanGridStrategy
 except ImportError as e:
     logger.error(f"Failed to import modules: {e}")
@@ -55,6 +57,7 @@ except ImportError as e:
 
 class HybridOptimizer:
     def __init__(self):
+        # Initial static weights, will be overridden by RL
         self.weights = {
             "qwen": 1.5, 
             "crt": 0.8,
@@ -62,7 +65,13 @@ class HybridOptimizer:
             "rvgi_cci": 0.6,
             "ema_ha": 0.9
         }
+        self.rl_optimizer = RLWeightOptimizer() # Initialize RL Engine
         self.history = []
+
+    def update_from_trade(self, trade_result):
+        """Bridge to RL Optimizer"""
+        self.rl_optimizer.update_weights(trade_result)
+        self.weights = self.rl_optimizer.get_weights()
 
     def combine_signals(self, signals):
         weighted_sum = 0
@@ -137,6 +146,9 @@ class SymbolTrader:
         
         # [NEW] Trade Performance Analyzer
         self.perf_analyzer = TradePerformanceAnalyzer(lookback_window=50)
+        
+        # [NEW] Stress Tester
+        self.stress_tester = StrategyStressTester()
         
         # Grid Strategy Integration
         self.grid_strategy = KalmanGridStrategy(self.symbol, self.magic_number)
