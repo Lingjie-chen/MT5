@@ -66,9 +66,9 @@ class QwenClient:
     
     你的核心策略架构：**SMC + Martingale Grid (马丁网格)**
     
-    **关键规则：你的交易周期为 15分钟 (M15)。你必须结合 1小时 (H1) 的大趋势框架来制定交易决策。**
+    **关键规则：你的交易周期为 3分钟 (M3)。你必须结合 15分钟 (M15) 的大趋势框架来制定交易决策。**
     
-    **重要指令: 采用趋势跟随 (Trend Following) 风格，在 H1 顺势前提下，利用 M15 波动进行交易。**
+    **重要指令: 采用趋势跟随 (Trend Following) 风格，在 M15 顺势前提下，利用 M3 波动进行交易。**
     - **禁止**使用传统网格策略 (Blind Grid Strategy) 和逆势加仓 (Martingale)。
     - **禁止**使用 `GRID_START_LONG`, `GRID_START_SHORT` 等 Action。
     - **允许**顺势加仓 (Pyramiding/Adding):
