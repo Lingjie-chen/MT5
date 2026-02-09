@@ -3798,6 +3798,16 @@ class SymbolTrader:
                         elif final_signal != 'hold' and final_signal != 'neutral':
                             logger.info(f">>> 执行 Qwen 决策: {final_signal.upper()} <<<")
                             
+                            # [NEW] Record Signal Snapshot for RL Attribution
+                            signal_snapshot = {
+                                "qwen": qw_signal,
+                                "smc": smc_result['signal'],
+                                "crt": crt_result['signal'],
+                                "rvgi_cci": rvgi_cci_result['signal'],
+                                "ema_ha": ema_ha_result['signal']
+                            }
+                            self.latest_signal_snapshot = signal_snapshot
+
                             # 传入 Qwen 参数
                             entry_params = strategy.get('entry_conditions')
                             exit_params = strategy.get('exit_conditions')
