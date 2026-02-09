@@ -2061,8 +2061,18 @@ class SymbolTrader:
                         }
                         recently_closed_trades.append(trade_review_data)
 
+                        # [NEW] RL Weight Update
+                        self.on_trade_closed(trade_review_data)
+
                         # Trigger AI Review if there are closed trades
                         if recently_closed_trades:
+                             # [NEW] Run Performance Analysis immediately for next tick
+                             try:
+                                 all_trades = self.db_manager.get_trades(limit=50).to_dict('records')
+                                 self.performance_context = self.perf_analyzer.analyze_trades(all_trades)
+                             except Exception as e_perf:
+                                 logger.error(f"Performance Analysis Error: {e_perf}")
+
                              logger.info(f"Triggering AI Trade Review for {len(recently_closed_trades)} trades...")
                              # Run in a separate thread to avoid blocking main loop
                              import threading
