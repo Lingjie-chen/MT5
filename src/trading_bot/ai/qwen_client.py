@@ -1322,7 +1322,40 @@ class QwenClient:
         # [NEW] Enhanced Performance Analysis Context
         perf_analysis_context = ""
         
-        if stats_to_use:
+        # Check if pre-calculated advanced analysis is available in technical_signals
+        advanced_perf = technical_signals.get('perf_analysis') if technical_signals else None
+        
+        if advanced_perf:
+            # Use the advanced analyzer results
+            metrics = advanced_perf.get('metrics', {})
+            loss_analysis = advanced_perf.get('loss_analysis', {})
+            dyn_thresholds = advanced_perf.get('dynamic_thresholds', {})
+            recent_trend = advanced_perf.get('recent_trend', 'Normal')
+            
+            perf_analysis_context = (
+                f"\n[AI SELF-REFLECTION] Deep Performance Analysis:\n"
+                f"- Recent Trend: {recent_trend}\n"
+                f"- Win Rate: {metrics.get('win_rate', 0)}%\n"
+                f"- Profit Factor: {metrics.get('profit_factor', 0)}\n"
+                f"- Risky Trading Hours: {loss_analysis.get('risky_hours', [])} (Avoid trading during these hours!)\n"
+                f"- Common Loss Reasons: {json.dumps(loss_analysis.get('common_tags', []))}\n"
+                f"- Dynamic Thresholds: Min Confidence {dyn_thresholds.get('min_confidence', 0.75)} (Adjusted based on performance)\n"
+            )
+            
+            # Use metrics for summary stats display
+            summary_stats = {
+                'trade_count': metrics.get('total_trades', 0),
+                'win_rate': metrics.get('win_rate', 0),
+                'profit_factor': metrics.get('profit_factor', 0),
+                'avg_mfe': 0, # Analyzer might not provide this yet, keep 0 or extract if added
+                'avg_mae': 0
+            }
+            
+            # Extract raw trades for list display if available
+            recent_trades = stats_to_use if isinstance(stats_to_use, list) else []
+            
+        elif stats_to_use:
+            # Fallback to ad-hoc calculation
             recent_trades = []
             summary_stats = {}
             
@@ -1365,24 +1398,28 @@ class QwenClient:
                     summary_stats = stats_to_use
                     recent_trades = stats_to_use.get('recent_trades', [])
                     if not isinstance(recent_trades, list): recent_trades = []
-
-                trades_summary = ""
-                if recent_trades:
-                    trades_summary = json.dumps(recent_trades[:10], indent=2, cls=CustomJSONEncoder)
-
-                perf_context = (
-                    f"\n历史交易绩效参考 (用于 MFE/MAE 象限分析与 SL/TP 优化):\n"
-                    f"- 样本交易数: {summary_stats.get('trade_count', 0)}\n"
-                    f"- 胜率 (Win Rate): {summary_stats.get('win_rate', 0):.2f}%\n"
-                    f"- 盈亏比 (Profit Factor): {summary_stats.get('profit_factor', 0):.2f}\n"
-                    f"- 平均 MFE: {summary_stats.get('avg_mfe', 0):.2f}%\n"
-                    f"- 平均 MAE: {summary_stats.get('avg_mae', 0):.2f}%\n"
-                    f"- 最近交易详情 (用于分析体质): \n{trades_summary}\n"
-                    f"{perf_analysis_context}"
-                )
             except Exception as e:
-                logger.error(f"Error processing stats_to_use: {e}")
-                perf_context = "\n历史交易绩效: 数据解析错误\n"
+                logger.error(f"Error processing stats_to_use fallback: {e}")
+
+        # Construct final perf_context
+        try:
+            trades_summary = ""
+            if 'recent_trades' in locals() and recent_trades:
+                trades_summary = json.dumps(recent_trades[:10], indent=2, cls=CustomJSONEncoder)
+
+            perf_context = (
+                f"\n历史交易绩效参考 (用于 MFE/MAE 象限分析与 SL/TP 优化):\n"
+                f"- 样本交易数: {summary_stats.get('trade_count', 0)}\n"
+                f"- 胜率 (Win Rate): {summary_stats.get('win_rate', 0):.2f}%\n"
+                f"- 盈亏比 (Profit Factor): {summary_stats.get('profit_factor', 0):.2f}\n"
+                f"- 平均 MFE: {summary_stats.get('avg_mfe', 0):.2f}%\n"
+                f"- 平均 MAE: {summary_stats.get('avg_mae', 0):.2f}%\n"
+                f"- 最近交易详情 (用于分析体质): \n{trades_summary}\n"
+                f"{perf_analysis_context}"
+            )
+        except Exception as e:
+             logger.error(f"Error constructing perf_context: {e}")
+             perf_context = "\n历史交易绩效: 数据解析错误\n"
 
         # 6. 技术信号上下文
         if technical_signals:
