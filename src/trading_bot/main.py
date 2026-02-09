@@ -2916,16 +2916,34 @@ class SymbolTrader:
                 # [NEW] Strategy Health Check & Self-Repair (Every 15 mins)
                 if int(time.time()) % 900 == 0:
                     try:
-                        trades_df = self.db_manager.get_trades(limit=50)
+                        trades_df = self.db_manager.get_trades(limit=100) # Need more for stress test
                         if not trades_df.empty:
                             trades_list = trades_df.to_dict('records')
+                            
+                            # 1. Basic Health Score
                             health_report = self.perf_analyzer.calculate_strategy_health_score(trades_list)
                             
-                            if health_report['status'] in ['Unhealthy', 'Critical']:
-                                logger.warning(f"Strategy Health: {health_report['status']} (Score: {health_report['score']})")
+                            # 2. Monte Carlo Stress Test
+                            stress_report = self.stress_tester.run_stress_test(trades_list)
+                            health_report['stress_score'] = stress_report['score']
+                            
+                            # Combine Scores (Health 70%, Stress 30%)
+                            combined_score = (health_report['score'] * 0.7) + (stress_report['score'] * 0.3)
+                            
+                            logger.info(f"Diagnostics: Health={health_report['score']}, Stress={stress_report['score']}, Final={combined_score:.1f}")
+                            
+                            if combined_score < 40: # Critical Threshold
+                                logger.warning(f"CRITICAL STRATEGY FAILURE (Score {combined_score:.1f}). Initiating Self-Repair Protocol...")
+                                
+                                # Trigger Repair
+                                repair_config = health_report['repair_config']
+                                repair_config['reset_indicators'] = True # Force re-opt
+                                self.apply_self_repair(repair_config)
+                                
+                            elif combined_score < 60:
+                                logger.info(f"Strategy Underperforming (Score {combined_score:.1f}). Tuning parameters.")
                                 self.apply_self_repair(health_report['repair_config'])
-                            else:
-                                logger.info(f"Strategy Health Check: {health_report['status']} (Score: {health_report['score']})")
+                                
                     except Exception as e:
                         logger.error(f"Health Check Failed: {e}")
                     
