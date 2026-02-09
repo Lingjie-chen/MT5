@@ -52,7 +52,8 @@ class DynamicRiskManager:
         ai_confidence: float = 0.8,
         mae_stats: Optional[Dict] = None,
         current_drawdown: float = 0.0,
-        spread_cost: float = 0.0
+        spread_cost: float = 0.0,
+        volume_scaling: float = 1.0 # [NEW] Volume scaling factor
     ) -> Tuple[float, Dict]:
         """
         Calculate the dynamic Basket SL threshold ($ amount).
@@ -65,6 +66,7 @@ class DynamicRiskManager:
             mae_stats (Dict): Historical MAE stats (e.g. {'95%': 150.0}).
             current_drawdown (float): Current drawdown amount (positive).
             spread_cost (float): Estimated total spread cost for open positions (USD).
+            volume_scaling (float): Factor to scale SL based on increased volume (e.g., 1.5 if volume increased by 50%).
 
         Returns:
             Tuple[float, Dict]: (New SL Amount (negative), Log Details)
@@ -102,19 +104,26 @@ class DynamicRiskManager:
         # Calculate Adjustment Multiplier using Configured Parameters
         multiplier = self.sl_multiplier_base + (total_score * self.sl_multiplier_factor)
         
-        new_sl_amount = base_sl_amount * multiplier
+        # Apply Volume Scaling
+        # Logic: If volume doubles, SL amount should theoretically double to maintain same Price Distance.
+        # However, we might want to be slightly more conservative than linear scaling.
+        # But user complains about "stopped out then rebound", which means SL is too tight.
+        # So linear scaling (or close to it) is appropriate to maintain the "Structural SL".
+        
+        scaled_base_sl = base_sl_amount * volume_scaling
+        new_sl_amount = scaled_base_sl * multiplier
         
         # Ensure it's not too tight (e.g., minimum 30% of base)
         new_sl_amount = max(new_sl_amount, base_sl_amount * 0.3)
         
         # [NEW] Spread Adjustment
-        # Widen the SL by the spread cost to avoid noise stop-outs.
-        # This ensures the SL is based on "Net Price Movement" rather than "Gross P&L"
         if spread_cost > 0:
             new_sl_amount += spread_cost
 
         log_details = {
             "base_sl": base_sl_amount,
+            "volume_factor": round(volume_scaling, 2),
+            "scaled_base": round(scaled_base_sl, 2),
             "direction": direction,
             "scores": {
                 "trend": round(trend_score, 2),
