@@ -3271,7 +3271,7 @@ class SymbolTrader:
                         
                         # [NEW] Identify Optimal Entry Zones (OEZ)
                         # We need full DF. m15_data is latest DF.
-                        oez_data = self.advanced_adapter.analyzer.identify_optimal_entry_zones(
+                        oez_data = self.advanced_adapter.identify_optimal_entry_zones(
                             m15_data, 
                             smc_data=smc_result
                         )
