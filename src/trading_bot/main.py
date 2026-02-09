@@ -47,6 +47,7 @@ try:
         AdvancedMarketAnalysis, AdvancedMarketAnalysisAdapter, SMCAnalyzer, 
         CRTAnalyzer, MTFAnalyzer
     )
+    from analysis.trade_performance_analyzer import TradePerformanceAnalyzer # [NEW]
     from strategies.grid_strategy import KalmanGridStrategy
 except ImportError as e:
     logger.error(f"Failed to import modules: {e}")
@@ -128,6 +129,9 @@ class SymbolTrader:
         self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_M15, htf2=mt5.TIMEFRAME_H1) 
         self.advanced_adapter = AdvancedMarketAnalysisAdapter()
         self.smc_analyzer = SMCAnalyzer()
+        
+        # [NEW] Trade Performance Analyzer
+        self.perf_analyzer = TradePerformanceAnalyzer(lookback_window=50)
         
         # Grid Strategy Integration
         self.grid_strategy = KalmanGridStrategy(self.symbol, self.magic_number)
