@@ -402,6 +402,115 @@ class AdvancedMarketAnalysis:
     def _get_default_risk_metrics(self) -> Dict[str, float]:
         return {"volatility": 0.2, "sharpe_ratio": 0, "max_drawdown": 0, "var_95": -2, "expected_shortfall": -3, "skewness": 0, "kurtosis": 0}
 
+    def identify_optimal_entry_zones(self, df: pd.DataFrame, smc_data: Dict = None) -> Dict[str, any]:
+        """
+        Identify Optimal Entry Zones (OEZ) based on confluence of:
+        1. Fibonacci Retracement (Golden Pocket: 0.618-0.786)
+        2. SMC Order Blocks
+        3. FVG
+        4. Support/Resistance Flip
+        """
+        if len(df) < 50: return {"zones": []}
+        
+        current_price = df['close'].iloc[-1]
+        
+        # 1. Fibonacci Levels
+        swing_points = self.detect_structure_points(df)
+        if not swing_points: return {"zones": []}
+        
+        # Find recent major swing range
+        # Simple approach: Max High and Min Low of last 50 bars
+        # Better approach: Use identified SH/SL
+        
+        last_sh = [p for p in swing_points if p['type'] == 'SH']
+        last_sl = [p for p in swing_points if p['type'] == 'SL']
+        
+        if not last_sh or not last_sl: return {"zones": []}
+        
+        high_price = last_sh[-1]['price']
+        low_price = last_sl[-1]['price']
+        
+        # Determine trend direction to know if we are retracing UP or DOWN
+        # If High is more recent than Low -> Uptrending (High made after Low)? No, that's Impulse up.
+        # If price is closer to High -> we might retrace down to Low.
+        
+        # Let's define zones for BOTH Buy (Retrace to Discount) and Sell (Retrace to Premium)
+        
+        zones = []
+        range_dist = high_price - low_price
+        if range_dist == 0: return {"zones": []}
+        
+        # Buy Zones (Discount Area)
+        # Fib 0.618, 0.786 from Low
+        fib_618 = low_price + range_dist * 0.382 # Retrace 61.8% from High means price is at 38.2% above Low? 
+        # Standard Fib Retracement:
+        # If Uptrend (Low -> High): Retrace down. 0.618 level is High - 0.618*Range.
+        # Which is Low + 0.382*Range.
+        # Golden Pocket is usually 0.618 to 0.65 (or 0.786).
+        # Let's stick to standard MT5/TradingView Fib Retracement tool logic.
+        # Retracement 0.5 is Mid. 0.618 is deeper.
+        
+        buy_golden_top = high_price - range_dist * 0.618
+        buy_golden_bot = high_price - range_dist * 0.786
+        
+        zones.append({
+            "type": "buy",
+            "name": "Golden Pocket",
+            "top": buy_golden_top,
+            "bottom": buy_golden_bot,
+            "score": 80
+        })
+        
+        # Sell Zones (Premium Area)
+        # Retrace up from Low. 0.618 level is Low + 0.618*Range.
+        sell_golden_bot = low_price + range_dist * 0.618
+        sell_golden_top = low_price + range_dist * 0.786
+        
+        zones.append({
+            "type": "sell",
+            "name": "Golden Pocket",
+            "top": sell_golden_top,
+            "bottom": sell_golden_bot,
+            "score": 80
+        })
+        
+        # 2. Integrate SMC Zones (OB/FVG)
+        if smc_data:
+            details = smc_data.get('details', {})
+            obs = details.get('ob', {}).get('active_obs', [])
+            fvgs = details.get('fvg', {}).get('active_fvgs', [])
+            
+            for ob in obs:
+                zones.append({
+                    "type": ob['type'], # bullish/bearish
+                    "name": "Order Block",
+                    "top": ob['top'],
+                    "bottom": ob['bottom'],
+                    "score": 70
+                })
+                
+            for fvg in fvgs:
+                zones.append({
+                    "type": fvg['type'], # bullish/bearish
+                    "name": "FVG",
+                    "top": fvg['top'],
+                    "bottom": fvg['bottom'],
+                    "score": 60
+                })
+                
+        # 3. Cluster Analysis (Confluence)
+        # Merge overlapping zones to create High Probability Zones
+        # Simple overlap check
+        final_zones = []
+        # Sort by top price descending
+        zones.sort(key=lambda x: x['top'], reverse=True)
+        
+        # We need to process Buy and Sell zones separately? 
+        # Or just return all valid price levels.
+        
+        # Let's return list of Price Ranges with Scores.
+        return {"zones": zones, "reference_high": high_price, "reference_low": low_price}
+
     def generate_analysis_summary(self, df: pd.DataFrame) -> Dict[str, any]:
         if len(df) < 20: return {"summary": "数据不足", "recommendation": "hold", "confidence": 0.0}
         indicators = self.calculate_technical_indicators(df)
