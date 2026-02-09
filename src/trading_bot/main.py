@@ -1062,6 +1062,40 @@ class SymbolTrader:
             
             grid_orders = self.grid_strategy.generate_grid_plan(current_price, direction, atr, point=point, dynamic_step_pips=dynamic_step, grid_level_tps=grid_level_tps)
             
+            # [NEW] Price Buffering Check
+            # If AI provides specific entry_price, check if it differs significantly from current market price.
+            # If diff > threshold, force LIMIT order.
+            
+            ai_entry_price = sl_tp_params.get('entry_price')
+            
+            current_market_price = price # Passed from analyze_market -> execute_trade
+            if ai_entry_price and ai_entry_price > 0:
+                price_diff_pips = abs(ai_entry_price - current_market_price) / point / 10
+                
+                # Threshold: 5 pips (or 50 points)
+                buffer_threshold = 5.0
+                if price_diff_pips > buffer_threshold:
+                    logger.info(f"Entry Price Buffer Triggered: AI Price {ai_entry_price} vs Market {current_market_price} (Diff: {price_diff_pips:.1f} pips)")
+                    
+                    # Switch to Limit Order
+                    if 'buy' in trade_type.lower():
+                        if ai_entry_price < current_market_price:
+                            trade_type = "limit_buy"
+                            price = ai_entry_price # Use AI price
+                            logger.info(f"Forcing LIMIT_BUY at {price}")
+                        else:
+                            # Price is higher? Stop Buy? Or just Market?
+                            # Usually AI gives lower entry for buy. If higher, maybe breakout (Stop Buy).
+                            # Let's stick to Limit for better price (lower). If higher, use Market.
+                            pass
+                    elif 'sell' in trade_type.lower():
+                        if ai_entry_price > current_market_price:
+                            trade_type = "limit_sell"
+                            price = ai_entry_price
+                            logger.info(f"Forcing LIMIT_SELL at {price}")
+                        else:
+                            pass
+            
             # 4. 执行挂单
             if grid_orders:
                 logger.info(f"网格计划生成 {len(grid_orders)} 个挂单")
