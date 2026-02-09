@@ -98,6 +98,7 @@ class SymbolTrader:
         self.timeframe = timeframe
         self.tf_name = "M15"
         if timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
+        elif timeframe == mt5.TIMEFRAME_M3: self.tf_name = "M3"
         elif timeframe == mt5.TIMEFRAME_H1: self.tf_name = "H1"
         elif timeframe == mt5.TIMEFRAME_H4: self.tf_name = "H4"
         elif timeframe == mt5.TIMEFRAME_M6: self.tf_name = "M6"
@@ -124,8 +125,9 @@ class SymbolTrader:
         
         # Advanced Models: SMC, CRT, CCI (via Adapter)
         # MTF kept for context structure
-        self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_H1)
-        # [MODIFIED] 只关注 M15 (执行) 和 H1 (趋势)
+        # [MODIFIED] CRT HTF adjusted to M15 for M3 execution
+        self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_M15)
+        # [MODIFIED] MTF M15/H1 are suitable HTFs for M3 execution (3->15->60)
         self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_M15, htf2=mt5.TIMEFRAME_H1) 
         self.advanced_adapter = AdvancedMarketAnalysisAdapter()
         self.smc_analyzer = SMCAnalyzer()
@@ -3947,5 +3949,5 @@ if __name__ == "__main__":
     
     logger.info(f"Starting Bot with Account {args.account} for symbols: {symbols}")
             
-    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M15)
+    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M3)
     bot.start(account_index=args.account)
