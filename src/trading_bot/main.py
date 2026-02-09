@@ -107,6 +107,9 @@ class SymbolTrader:
         self.lot_size = 0.01 
         self.max_drawdown_pct = 0.05
         
+        # [NEW] Risk Scaling Factor for Self-Repair
+        self.risk_scale = 1.0
+        
         # 使用特定品种的独立数据库文件，确保数据完全隔离
         current_dir = os.path.dirname(os.path.abspath(__file__))
         db_filename = f"trading_data_{symbol}.db"
