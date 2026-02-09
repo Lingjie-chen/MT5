@@ -2901,6 +2901,21 @@ class SymbolTrader:
                     # Ideally, analyze_closed_trades should update self.grid_strategy.basket_tp_usd if recommendation exists
                     pass
 
+                # [NEW] Strategy Health Check & Self-Repair (Every 15 mins)
+                if int(time.time()) % 900 == 0:
+                    try:
+                        trades_df = self.db_manager.get_trades(limit=50)
+                        if not trades_df.empty:
+                            trades_list = trades_df.to_dict('records')
+                            health_report = self.perf_analyzer.calculate_strategy_health_score(trades_list)
+                            
+                            if health_report['status'] in ['Unhealthy', 'Critical']:
+                                logger.warning(f"Strategy Health: {health_report['status']} (Score: {health_report['score']})")
+                                self.apply_self_repair(health_report['repair_config'])
+                            else:
+                                logger.info(f"Strategy Health Check: {health_report['status']} (Score: {health_report['score']})")
+                    except Exception as e:
+                        logger.error(f"Health Check Failed: {e}")
                     
                 # 0.6 执行策略参数优化 (每 4 小时一次)
                 if time.time() - self.last_optimization_time > 14400:
