@@ -1380,9 +1380,16 @@ class QwenClient:
         **你必须结合 SMC 算法策略仔细分析市场结构，严禁盲目开仓！**
         
         **核心原则：先验证，后交易 (Verify then Trade)**
-        1. **关键位验证 (Key Level Validation)**:
-           - **阻力/支撑位**: 仅仅价格到达阻力/支撑位**不足以**作为入场理由。必须观察到价格在该区域的**有效反应** (Effective Reaction)，如 Pinbar 拒绝、动能衰竭或小级别结构破坏。
-           - **FVG (失衡区)**: 仅仅价格进入 FVG **不足以**入场。必须等待价格**完全回补**或**回踩测试有效**后，出现反向 K 线组合才可操作。
+        **三级验证体系 (Three-Level Validation Protocol)**:
+        1. **一级：SMC 结构确认 (SMC Structure)**:
+           - 必须存在清晰的 BOS (趋势延续) 或 CHoCH (趋势反转)。
+           - 价格必须处于有效的 Order Block 或 FVG 区域内。
+        2. **二级：多时间周期共振 (Multi-Timeframe Alignment)**:
+           - **必须至少有 3 个时间周期方向一致** (例如: H4 看涨, H1 看涨, M15 出现做多信号)。
+           - 如果 H4 和 H1 方向相反，**坚决观望 (WAIT)**。
+        3. **三级：价格行为与风控 (Price Action & Risk)**:
+           - **价格缓冲机制 (Price Buffering)**: 如果计算出的最优入场价 (Optimal Entry) 距离当前价格超过 50 points (黄金) 或 5 pips (外汇)，**必须使用 Limit Order (挂单)**，严禁追单 (Market Order)。
+           - **K线确认**: 必须等待当前 M15 K 线收盘，且出现明确的反转形态 (Pinbar/Engulfing)。
         
         **入场必须同时满足以下条件**:
         1. **M15 关键位确认**: 价格必须处于 M15 级别的 **确认订单块 (Confirmed Order Block)** 或 **重要阻力支撑位**。
