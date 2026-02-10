@@ -103,13 +103,13 @@ class HybridOptimizer:
         return final_signal, final_score, self.weights
 
 class SymbolTrader:
-    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M1):
+    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M15):
         self.symbol = symbol
         self.timeframe = timeframe
-        self.tf_name = "M1"
-        if timeframe == mt5.TIMEFRAME_M1: self.tf_name = "M1"
+        self.tf_name = "M15"
+        if timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
+        elif timeframe == mt5.TIMEFRAME_M1: self.tf_name = "M1"
         elif timeframe == mt5.TIMEFRAME_M5: self.tf_name = "M5"
-        elif timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
         elif timeframe == mt5.TIMEFRAME_M3: self.tf_name = "M3"
         elif timeframe == mt5.TIMEFRAME_H1: self.tf_name = "H1"
         elif timeframe == mt5.TIMEFRAME_H4: self.tf_name = "H4"
@@ -140,10 +140,10 @@ class SymbolTrader:
         
         # Advanced Models: SMC, CRT, CCI (via Adapter)
         # MTF kept for context structure
-        # [MODIFIED] CRT HTF adjusted to M15 for M1 execution
-        self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_M15)
-        # [MODIFIED] MTF M5/M15 are suitable HTFs for M1 execution
-        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_M5, htf2=mt5.TIMEFRAME_M15) 
+        # [MODIFIED] CRT HTF adjusted to H1 for M15 execution
+        self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_H1)
+        # [MODIFIED] MTF H1/H4 are suitable HTFs for M15 execution
+        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_H1, htf2=mt5.TIMEFRAME_H4) 
         self.advanced_adapter = AdvancedMarketAnalysisAdapter()
         self.smc_analyzer = SMCAnalyzer()
         
