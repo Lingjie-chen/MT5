@@ -1357,12 +1357,15 @@ class QwenClient:
            - 如果趋势不一致 (Mixed)，**坚决观望 (WAIT)**。
            
         2. **SMC 精确狙击 (Sniper Entry)**: 
-           - **下单价位必须深思熟虑**: 拒绝随意市价进场。
-           - **回踩验证 (Retest)**: 价格必须回踩关键支撑/阻力位 (Support/Resistance) 或 Order Block，并出现拒绝信号 (Rejection Candle)。
-           - **FVG Mitigation**: 价格回补 FVG (Fair Value Gap) 后出现反转信号。
-           - **结构确认**: M5/M15 级别出现 BOS (Break of Structure) 确认趋势延续。
+           - **关键位验证**: 仅仅价格到达阻力/支撑位**不足以**作为入场理由。必须观察到价格在该区域的**有效反应** (如 Pinbar 拒绝)。
+           - **FVG 回补**: 必须等待价格**完全回补**或**回踩测试有效**后，出现反向 K 线组合才可操作。
+           - **下单方式**: 建议使用 Limit 挂单或在明确反转信号出现后立即进场。拒绝随意市价追单。
 
-        3. **立即进场 (Immediate Market Entry)**: 
+        3. **价格行为确认 (Price Action)**: 
+           - **回踩确认 (Retest)**: 如果价格突破了关键位，必须等待**回踩不破** (Retest and Hold) 才可进场。
+           - **突破确认 (Breakout)**: 如果价格在关键位盘整，必须等待**有效突破且不跌破** (Breakout and Hold) 才可进场。
+
+        4. **立即进场 (Immediate Market Entry)**: 
            - 只有当上述条件（趋势共振 + 回踩确认 + FVG 验证有效）完全满足时，才可发出交易指令。
            - 如果价格只是接近区域但未出现验证信号，**坚决观望 (WAIT)**。
 
