@@ -3071,6 +3071,7 @@ class SymbolTrader:
                             "account_info": account_info_dict,
                             "recent_trade_history": recent_history, # [NEW] 注入最近交易历史
                             "timeframe": self.tf_name,
+                            "trend_alignment": trend_alignment_info, # [NEW] M5+M15+H1 Trend Status
                             "prices": {
                                 "open": float(current_price['open']),
                                 "high": float(current_price['high']),
@@ -3086,6 +3087,12 @@ class SymbolTrader:
                                 "volatility": float(latest_features.get('volatility', 0))
                             },
                             "multi_tf_data": {
+                                "M5": {
+                                    "close": float(feat_m5.get('close', 0)),
+                                    "rsi": float(feat_m5.get('rsi', 50)),
+                                    "ema_fast": float(feat_m5.get('ema_fast', 0)),
+                                    "ema_slow": float(feat_m5.get('ema_slow', 0))
+                                },
                                 "M15": {
                                     "close": float(feat_m15.get('close', 0)),
                                     "rsi": float(feat_m15.get('rsi', 50)),
