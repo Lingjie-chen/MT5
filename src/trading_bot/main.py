@@ -47,7 +47,6 @@ try:
         AdvancedMarketAnalysis, AdvancedMarketAnalysisAdapter, SMCAnalyzer, 
         CRTAnalyzer, MTFAnalyzer
     )
-    from analysis.trade_performance_analyzer import TradePerformanceAnalyzer # [NEW]
     from strategies.grid_strategy import KalmanGridStrategy
 except ImportError as e:
     logger.error(f"Failed to import modules: {e}")
@@ -129,9 +128,6 @@ class SymbolTrader:
         self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_M15, htf2=mt5.TIMEFRAME_H1) 
         self.advanced_adapter = AdvancedMarketAnalysisAdapter()
         self.smc_analyzer = SMCAnalyzer()
-        
-        # [NEW] Trade Performance Analyzer
-        self.perf_analyzer = TradePerformanceAnalyzer(lookback_window=50)
         
         # Grid Strategy Integration
         self.grid_strategy = KalmanGridStrategy(self.symbol, self.magic_number)
@@ -1061,40 +1057,6 @@ class SymbolTrader:
                          logger.info(f"Using Dynamic Grid Level TPs: {grid_level_tps}")
             
             grid_orders = self.grid_strategy.generate_grid_plan(current_price, direction, atr, point=point, dynamic_step_pips=dynamic_step, grid_level_tps=grid_level_tps)
-            
-            # [NEW] Price Buffering Check
-            # If AI provides specific entry_price, check if it differs significantly from current market price.
-            # If diff > threshold, force LIMIT order.
-            
-            ai_entry_price = sl_tp_params.get('entry_price')
-            
-            current_market_price = price # Passed from analyze_market -> execute_trade
-            if ai_entry_price and ai_entry_price > 0:
-                price_diff_pips = abs(ai_entry_price - current_market_price) / point / 10
-                
-                # Threshold: 5 pips (or 50 points)
-                buffer_threshold = 5.0
-                if price_diff_pips > buffer_threshold:
-                    logger.info(f"Entry Price Buffer Triggered: AI Price {ai_entry_price} vs Market {current_market_price} (Diff: {price_diff_pips:.1f} pips)")
-                    
-                    # Switch to Limit Order
-                    if 'buy' in trade_type.lower():
-                        if ai_entry_price < current_market_price:
-                            trade_type = "limit_buy"
-                            price = ai_entry_price # Use AI price
-                            logger.info(f"Forcing LIMIT_BUY at {price}")
-                        else:
-                            # Price is higher? Stop Buy? Or just Market?
-                            # Usually AI gives lower entry for buy. If higher, maybe breakout (Stop Buy).
-                            # Let's stick to Limit for better price (lower). If higher, use Market.
-                            pass
-                    elif 'sell' in trade_type.lower():
-                        if ai_entry_price > current_market_price:
-                            trade_type = "limit_sell"
-                            price = ai_entry_price
-                            logger.info(f"Forcing LIMIT_SELL at {price}")
-                        else:
-                            pass
             
             # 4. 执行挂单
             if grid_orders:
@@ -3266,16 +3228,6 @@ class SymbolTrader:
                              # Fallback to local Symbol DB
                              trade_stats = self.db_manager.get_trade_performance_stats(symbol=self.symbol, limit=50)
                         
-                        # [NEW] Advanced Performance Analysis
-                        perf_analysis = self.perf_analyzer.analyze_trades(trade_stats)
-                        
-                        # [NEW] Identify Optimal Entry Zones (OEZ)
-                        # We need full DF. df_m15 is latest DF.
-                        oez_data = self.advanced_adapter.identify_optimal_entry_zones(
-                            df_m15, 
-                            smc_data=smc_result
-                        )
-                        
                         # 获取当前持仓状态
                         positions = mt5.positions_get(symbol=self.symbol)
                         current_positions_list = []
@@ -3307,7 +3259,6 @@ class SymbolTrader:
                         technical_signals = {
                             "crt": crt_result,
                             "smc": smc_result, # [MODIFIED] Pass full SMC details (OB/FVG/Structure) for AI validation
-                            "optimal_entry_zones": oez_data, # [NEW] Pass Golden Pocket & SMC Zones
                             "grid_strategy": {
                                 "signal": grid_signal,
                                 "status": grid_status,
@@ -3317,8 +3268,7 @@ class SymbolTrader:
                             "ifvg": ifvg_result['signal'],
                             "rvgi_cci": rvgi_cci_result['signal'],
                             "ema_ha": ema_ha_result, # Pass full result including values
-                            "performance_stats": trade_stats,
-                            "perf_analysis": perf_analysis # [NEW] Pass detailed loss patterns & metrics
+                            "performance_stats": trade_stats
                         }
                         
                         # Qwen Sentiment Analysis

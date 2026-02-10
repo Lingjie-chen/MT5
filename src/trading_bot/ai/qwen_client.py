@@ -1316,9 +1316,6 @@ class QwenClient:
         # 5. 性能统计上下文
         stats_to_use = performance_stats
         
-        # [NEW] Enhanced Performance Analysis Context
-        perf_analysis_context = ""
-        
         if stats_to_use:
             recent_trades = []
             summary_stats = {}
@@ -1343,21 +1340,6 @@ class QwenClient:
                              'win_rate': (wins / len(recent_trades)) * 100 if recent_trades else 0,
                              'profit_factor': (total_profit / total_loss) if total_loss > 0 else 99.9
                          }
-                         
-                         # [NEW] Loss Pattern Analysis (Simplified for Prompt)
-                         losing_trades = [t for t in recent_trades if t.get('profit', 0) <= 0]
-                         loss_reasons = {}
-                         for t in losing_trades:
-                             reason = t.get('reason', 'Unknown')
-                             loss_reasons[reason] = loss_reasons.get(reason, 0) + 1
-                         
-                         perf_analysis_context = (
-                             f"\n[AI SELF-REFLECTION] Loss Analysis (Last {len(recent_trades)} Trades):\n"
-                             f"- Common Loss Reasons: {json.dumps(loss_reasons)}\n"
-                             f"- Win Rate: {summary_stats['win_rate']:.1f}%\n"
-                             f"- Action Required: {'⚠️ STOP TRADING & REFINE' if summary_stats['win_rate'] < 40 else '✅ SYSTEM HEALTHY'}\n"
-                         )
-
                 elif isinstance(stats_to_use, dict):
                     summary_stats = stats_to_use
                     recent_trades = stats_to_use.get('recent_trades', [])
@@ -1375,7 +1357,6 @@ class QwenClient:
                     f"- 平均 MFE: {summary_stats.get('avg_mfe', 0):.2f}%\n"
                     f"- 平均 MAE: {summary_stats.get('avg_mae', 0):.2f}%\n"
                     f"- 最近交易详情 (用于分析体质): \n{trades_summary}\n"
-                    f"{perf_analysis_context}"
                 )
             except Exception as e:
                 logger.error(f"Error processing stats_to_use: {e}")
@@ -1399,16 +1380,9 @@ class QwenClient:
         **你必须结合 SMC 算法策略仔细分析市场结构，严禁盲目开仓！**
         
         **核心原则：先验证，后交易 (Verify then Trade)**
-        **三级验证体系 (Three-Level Validation Protocol)**:
-        1. **一级：SMC 结构确认 (SMC Structure)**:
-           - 必须存在清晰的 BOS (趋势延续) 或 CHoCH (趋势反转)。
-           - 价格必须处于有效的 Order Block 或 FVG 区域内。
-        2. **二级：多时间周期共振 (Multi-Timeframe Alignment)**:
-           - **必须至少有 3 个时间周期方向一致** (例如: H4 看涨, H1 看涨, M15 出现做多信号)。
-           - 如果 H4 和 H1 方向相反，**坚决观望 (WAIT)**。
-        3. **三级：价格行为与风控 (Price Action & Risk)**:
-           - **价格缓冲机制 (Price Buffering)**: 如果计算出的最优入场价 (Optimal Entry) 距离当前价格超过 50 points (黄金) 或 5 pips (外汇)，**必须使用 Limit Order (挂单)**，严禁追单 (Market Order)。
-           - **K线确认**: 必须等待当前 M15 K 线收盘，且出现明确的反转形态 (Pinbar/Engulfing)。
+        1. **关键位验证 (Key Level Validation)**:
+           - **阻力/支撑位**: 仅仅价格到达阻力/支撑位**不足以**作为入场理由。必须观察到价格在该区域的**有效反应** (Effective Reaction)，如 Pinbar 拒绝、动能衰竭或小级别结构破坏。
+           - **FVG (失衡区)**: 仅仅价格进入 FVG **不足以**入场。必须等待价格**完全回补**或**回踩测试有效**后，出现反向 K 线组合才可操作。
         
         **入场必须同时满足以下条件**:
         1. **M15 关键位确认**: 价格必须处于 M15 级别的 **确认订单块 (Confirmed Order Block)** 或 **重要阻力支撑位**。
