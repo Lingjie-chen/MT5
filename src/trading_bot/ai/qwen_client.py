@@ -591,7 +591,7 @@ class QwenClient:
 
 
     
-        analysis_framework = """
+        analysis_framework_part1 = """
     ### 一、大趋势分析框架 (Multi-Timeframe)
     你必须从多时间框架分析整体市场结构 (查看提供的 `multi_tf_data`)：
     
