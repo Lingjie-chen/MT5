@@ -520,8 +520,8 @@ class DeepSeekClient:
        - 必须在开仓前确定。
        - 参考: 极值点、大级别中枢边缘、EMA 慢线。
     8. **要不要到交易周期里去?** (Execution Decision)
-       - **Yes**: 前 7 问答案清晰一致，且 M15 级别出现反转信号。
-       - **No**: 任意答案模糊或逻辑矛盾 -> **HOLD**。
+       - **Yes**: 仅当当前 tick 价格**已经满足**所有入场条件（趋势共振+结构确认+信号触发），**无需等待**任何后续确认时。
+       - **No**: 需要等待突破、等待回调、等待K线收盘确认、或条件不满足。 -> **Action 必须为 HOLD 或 WAIT**。
     
     ### 二、SMC信号处理
     
@@ -677,6 +677,7 @@ class DeepSeekClient:
     **AI 最终决定 (Action Consistency)**:
     - 你的最终 `action` 字段必须与你在 `strategy_rationale` 和 `telegram_report` 中描述的交易计划完全一致。
     - **严禁** 出现计划说 "买入" 但 Action 是 "HOLD" 的情况，反之亦然。以及交易计划说“限价买入”，但Action 是 "Buy" 的情况
+    - **严禁矛盾 (Contradiction Check)**: 如果你在 `strategy_rationale` 或观察点中写了 "关注 5050 回踩" 或 "等待突破"，这表示**条件尚未满足**。此时 Action **必须** 是 `HOLD` (观望) 或 `LIMIT_BUY` (挂单)。**绝对不能** 输出 `BUY` (市价买入)。
     - 如果需要反手，请确保 Action 明确指示 (如 "close_buy_open_sell")。
 
     输出要求：
