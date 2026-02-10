@@ -148,6 +148,31 @@ class MT5DataProcessor:
         obv = (np.sign(df[price_column].diff()) * df[volume_column]).fillna(0).cumsum()
         return obv
 
+    def calculate_macd(self, df, fast_period=12, slow_period=26, signal_period=9, price_column='close'):
+        """Calculate MACD
+        
+        Args:
+            df (pd.DataFrame): Price data
+            fast_period (int): Fast EMA period
+            slow_period (int): Slow EMA period
+            signal_period (int): Signal EMA period
+            price_column (str): Price column name
+        
+        Returns:
+            pd.DataFrame: DataFrame with 'macd', 'macd_signal', 'macd_hist'
+        """
+        ema_fast = df[price_column].ewm(span=fast_period, adjust=False).mean()
+        ema_slow = df[price_column].ewm(span=slow_period, adjust=False).mean()
+        macd = ema_fast - ema_slow
+        macd_signal = macd.ewm(span=signal_period, adjust=False).mean()
+        macd_hist = macd - macd_signal
+        
+        return pd.DataFrame({
+            'macd': macd,
+            'macd_signal': macd_signal,
+            'macd_hist': macd_hist
+        })
+
     def generate_features(self, df, fast_ema=12, slow_ema=26, atr_period=14, rsi_period=14):
         """Generate trading features
         
@@ -166,6 +191,12 @@ class MT5DataProcessor:
         # Calculate EMA
         df['ema_fast'] = self.calculate_ema(df, fast_ema)
         df['ema_slow'] = self.calculate_ema(df, slow_ema)
+        
+        # Calculate MACD
+        macd_df = self.calculate_macd(df, fast_ema, slow_ema, 9)
+        df['macd'] = macd_df['macd']
+        df['macd_signal'] = macd_df['macd_signal']
+        df['macd_hist'] = macd_df['macd_hist']
         
         # Calculate ATR
         df['atr'] = self.calculate_atr(df, atr_period)
