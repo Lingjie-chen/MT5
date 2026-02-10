@@ -944,8 +944,8 @@ class SMCAnalyzer:
         except: return None
 
     def get_market_sentiment(self, df_current, symbol):
-        # User Request: Analysis M15 as HTF for Sentiment (Core is M1)
-        df_htf = self.get_mtf_data(symbol, mt5.TIMEFRAME_M15, 300)
+        # User Request: Analysis H1 as HTF for Sentiment (Core is M15)
+        df_htf = self.get_mtf_data(symbol, mt5.TIMEFRAME_H1, 300)
         if df_htf is None: return 0, "Neutral"
         ema_long = self.calculate_ema(df_htf['close'], self.ma_period).iloc[-1]
         current_price_htf = df_htf['close'].iloc[-1]
@@ -1435,8 +1435,8 @@ class TimeframeVisualAnalyzer:
     Uses Moving Averages alignment to simulate visual trend confirmation
     """
     def __init__(self):
-        # M1 Core, M5/M15 Aux
-        self.timeframes = {"M1": mt5.TIMEFRAME_M1, "M5": mt5.TIMEFRAME_M5, "M15": mt5.TIMEFRAME_M15}
+        # M15 Core, H1/H4 Aux
+        self.timeframes = {"M15": mt5.TIMEFRAME_M15, "H1": mt5.TIMEFRAME_H1, "H4": mt5.TIMEFRAME_H4}
         
     def analyze(self, symbol, current_time):
         trends = {}; alignment_score = 0
