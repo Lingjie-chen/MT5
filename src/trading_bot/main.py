@@ -3260,19 +3260,19 @@ class SymbolTrader:
                                 "volatility": float(latest_features.get('volatility', 0))
                             },
                             "multi_tf_data": {
-                                "M5": {
-                                    "close": float(feat_m5.get('close', 0)),
-                                    "rsi": float(feat_m5.get('rsi', 50)),
-                                    "ema_fast": float(feat_m5.get('ema_fast', 0)),
-                                    "ema_slow": float(feat_m5.get('ema_slow', 0)),
-                                    "volatility": float(feat_m5.get('volatility', 0))
+                                "H1": {
+                                    "close": float(feat_h1.get('close', 0)),
+                                    "rsi": float(feat_h1.get('rsi', 50)),
+                                    "ema_fast": float(feat_h1.get('ema_fast', 0)),
+                                    "ema_slow": float(feat_h1.get('ema_slow', 0)),
+                                    "volatility": float(feat_h1.get('volatility', 0))
                                 },
-                                "M15": {
-                                    "close": float(feat_m15.get('close', 0)),
-                                    "rsi": float(feat_m15.get('rsi', 50)),
-                                    "ema_fast": float(feat_m15.get('ema_fast', 0)),
-                                    "ema_slow": float(feat_m15.get('ema_slow', 0)),
-                                    "trend": "bullish" if feat_m15.get('ema_fast', 0) > feat_m15.get('ema_slow', 0) else "bearish"
+                                "H4": {
+                                    "close": float(feat_h4.get('close', 0)),
+                                    "rsi": float(feat_h4.get('rsi', 50)),
+                                    "ema_fast": float(feat_h4.get('ema_fast', 0)),
+                                    "ema_slow": float(feat_h4.get('ema_slow', 0)),
+                                    "trend": "bullish" if feat_h4.get('ema_fast', 0) > feat_h4.get('ema_slow', 0) else "bearish"
                                 }
                             },
                             "sr_resonance": sr_resonance # [NEW] Inject Resonance Data
@@ -4066,5 +4066,5 @@ if __name__ == "__main__":
     
     logger.info(f"Starting Bot with Account {args.account} for symbols: {symbols}")
             
-    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M1)
+    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M15)
     bot.start(account_index=args.account)
