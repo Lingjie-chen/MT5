@@ -448,18 +448,23 @@ class QwenClient:
              - **TP**: 根据实时 MFE 预测，如果动能衰竭，提前移动 TP 锁定利润。
        - **Basket TP 动态实时配置 (Real-time Dynamic Basket TP)**:
          - **核心要求**: 对于每个品种的趋势交易，必须根据以下所有维度进行综合分析和自我学习，给出一个**最优的美元数值**：
-           1. **SMC 市场结构 (Structure)**: 
-              - **阻力位 (OB/FVG)**: 如果上方存在清晰的 H1/H4 级别 Bearish Order Block 或未回补 FVG，Basket TP 应设定在该区域下方一点（留出缓冲）。
-              - **结构破坏 (BOS)**: 如果顺势且刚刚完成 BOS，预期会有延续，TP 可设定在下一个扩展位 (Fib 1.272/1.618)。
-           2. **市场趋势与情绪 (Trend & Sentiment)**: 
-              - **强趋势 (Strong Trend)**: 若 ADX > 25 且价格位于 EMA50 之上，大幅上调 TP (例如正常值的 2-3 倍)，防止只吃了一小部分利润就过早离场。
-              - **震荡/逆势**: 目标应保守，快速落袋为安。
-           3. **盘前计划 (Pre-Market Plan)**: 
-              - 必须回顾 `analysis_breakdown` 中的计划。如果是 "Daily Trend Following"，TP 应放宽；如果是 "Scalping"，TP 应收紧。
-           4. **历史绩效 (MAE/MFE Optimization)**: 
-              - **必须参考** `performance_stats` 中的 `avg_mfe` (平均最大有利偏移)。
-              - **Basket TP 上限** = (Position Size * Contract Size * Avg_MFE_Points * 0.8)。不要设定超过历史平均表现太多的不切实际目标。
-              - **Basket TP 下限** = 能够覆盖交易成本 (Spread + Swap + Commission) 的最小利润。
+           1. **当前总持仓量 (Total Lot Size) [CRITICAL]**:
+             - **正比放大 (Proportional Scaling)**: Basket TP (USD) 必须与总持仓量 (Lot Size) 成正比。
+             - **仓位重 (Heavy Position)**: TP 应显著 **增大** (例如 > $100)，因为相同点数下每点价值更高，且高风险应对应高回报。
+             - **仓位轻 (Light Position)**: TP 应相对 **减小** (例如 < $20)，因为小仓位即使跑同样距离，产生的美元利润也较少。
+             - **逻辑**: 不要试图在重仓时只赚一点点钱就跑 (这会导致风险回报极度不匹配)。重仓意味着你承担了巨大风险，必须赚取足够大的绝对利润金额才值得。
+          2. **SMC 市场结构 (Structure)**: 
+             - **阻力位 (OB/FVG)**: 如果上方存在清晰的 H1/H4 级别 Bearish Order Block 或未回补 FVG，Basket TP 应设定在该区域下方一点（留出缓冲）。
+             - **结构破坏 (BOS)**: 如果顺势且刚刚完成 BOS，预期会有延续，TP 可设定在下一个扩展位 (Fib 1.272/1.618)。
+          3. **市场趋势与情绪 (Trend & Sentiment)**: 
+             - **强趋势 (Strong Trend)**: 若 ADX > 25 且价格位于 EMA50 之上，大幅上调 TP (例如正常值的 2-3 倍)，防止只吃了一小部分利润就过早离场。
+             - **震荡/逆势**: 目标应保守，快速落袋为安。
+          4. **盘前计划 (Pre-Market Plan)**: 
+             - 必须回顾 `analysis_breakdown` 中的计划。如果是 "Daily Trend Following"，TP 应放宽；如果是 "Scalping"，TP 应收紧。
+          5. **历史绩效 (MAE/MFE Optimization)**: 
+             - **必须参考** `performance_stats` 中的 `avg_mfe` (平均最大有利偏移)。
+             - **Basket TP 上限** = (Position Size * Contract Size * Avg_MFE_Points * 0.8)。不要设定超过历史平均表现太多的不切实际目标。
+             - **Basket TP 下限** = 能够覆盖交易成本 (Spread + Swap + Commission) 的最小利润。
          - **计算公式参考**:
            - `Base_Target` = (ATR * Position_Size * Contract_Size * 1.5)
            - `SMC_Adjusted`: 如果上方最近阻力位距离 < Base_Target，则使用 (阻力位距离 * Position_Size * Contract_Size * 0.9)。
