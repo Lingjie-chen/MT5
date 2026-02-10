@@ -466,13 +466,9 @@ class QwenClient:
            - `Dynamic_Basket_TP` = min(SMC_Adjusted, Max_MFE_Based_Target)
          - **拒绝固定值**: 严禁使用固定的数值 (如 50.0)！必须是经过上述逻辑计算后的结果。
          - **更新指令**: 在 `position_management` -> `dynamic_basket_tp` 中返回计算后的数值。
-       - **Basket Stop Loss (Basket SL) - [NEW MANDATORY]**:
-          - **定义**: 当 Basket 整体亏损达到此数值时，强制平仓所有订单，防止亏损失控。
-          - **核心逻辑**: 
-            - 必须设定一个**正数** (例如 100.0 表示亏损达到 -$100 时平仓)。
-            - **计算参考**: 建议基于账户余额的 2% - 5% 设定。例如余额 $10000，Basket SL 可设为 200.0 - 500.0。
-            - **Ethical Rule**: 永远不要让账户面临爆仓风险，必须设定 Basket SL。
-          - **更新指令**: 在 `position_management` -> `dynamic_basket_sl` 中返回计算后的数值。
+       - **Basket Stop Loss (Basket SL) - [DISABLED]**:
+          - 用户要求移除 Basket SL，只保留 Basket TP。
+          - 风险控制完全依赖单单止损 (SL) 和 仓位控制。
 
     5. **CandleSmoothing EMA 策略 (Strategy B)**:
        - **核心逻辑**: 基于 EMA50 趋势过滤，结合 EMA20 High/Low 通道突破和 Heiken Ashi 蜡烛形态。
@@ -1353,20 +1349,21 @@ class QwenClient:
         **你必须结合 SMC 算法策略仔细分析市场结构，严禁盲目开仓！**
         
         **核心原则：先验证，后交易 (Verify then Trade)**
-        1. **关键位验证 (Key Level Validation)**:
-           - **阻力/支撑位**: 仅仅价格到达阻力/支撑位**不足以**作为入场理由。必须观察到价格在该区域的**有效反应** (Effective Reaction)，如 Pinbar 拒绝、动能衰竭或小级别结构破坏。
-           - **FVG (失衡区)**: 仅仅价格进入 FVG **不足以**入场。必须等待价格**完全回补**或**回踩测试有效**后，出现反向 K 线组合才可操作。
         
-        **入场必须同时满足以下条件**:
-        1. **M15 关键位确认**: 价格必须处于 M15 级别的 **确认订单块 (Confirmed Order Block)** 或 **重要阻力支撑位**。
-        2. **SMC 信号有效性**: 
-           - **BOS/CHoCH**: 必须清晰可见，且伴随成交量或动能支持。
-           - **FVG**: 关注 FVG 的回补情况，拒绝未回补的“空中楼阁”式交易。
-        3. **价格行为确认 (Price Action)**:
-           - **回踩确认 (Retest)**: 如果价格突破了关键位，必须等待**回踩不破** (Retest and Hold) 才可进场。
-           - **突破确认 (Breakout)**: 如果价格在关键位盘整，必须等待**有效突破且不跌破** (Breakout and Hold) 才可进场。
-        4. **立即进场 (Immediate Market Entry)**: 
-           - 只有当上述条件（回踩确认、FVG 验证有效）完全满足时，才可发出交易指令。
+        **入场必须同时满足以下条件 (All Conditions Mandatory)**:
+        1. **多周期趋势共振 (Trend Alignment - CRITICAL)**:
+           - **必须检查** `trend_alignment` 字段 (M5 + M15 + H1)。
+           - 只有当 M5, M15, H1 三者趋势方向**完全一致** (All Bullish 或 All Bearish) 时，才允许开仓 (Buy/Sell)。
+           - 如果趋势不一致 (Mixed)，**坚决观望 (WAIT)**。
+           
+        2. **SMC 精确狙击 (Sniper Entry)**: 
+           - **下单价位必须深思熟虑**: 拒绝随意市价进场。
+           - **回踩验证 (Retest)**: 价格必须回踩关键支撑/阻力位 (Support/Resistance) 或 Order Block，并出现拒绝信号 (Rejection Candle)。
+           - **FVG Mitigation**: 价格回补 FVG (Fair Value Gap) 后出现反转信号。
+           - **结构确认**: M5/M15 级别出现 BOS (Break of Structure) 确认趋势延续。
+
+        3. **立即进场 (Immediate Market Entry)**: 
+           - 只有当上述条件（趋势共振 + 回踩确认 + FVG 验证有效）完全满足时，才可发出交易指令。
            - 如果价格只是接近区域但未出现验证信号，**坚决观望 (WAIT)**。
 
         **拒绝模糊信号**: 如果价格只是接近关键位但没有明确的 K 线确认 (如 Pinbar, Engulfing)，或者 FVG 未经测试，**坚决观望 (WAIT)**。
