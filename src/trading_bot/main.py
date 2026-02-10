@@ -1714,6 +1714,7 @@ class SymbolTrader:
                     
                     opt_sl = self._normalize_price(opt_sl)
                     opt_tp = self._normalize_price(opt_tp)
+                    opt_tp = 0.0 # Force TP to 0 for Basket Mode (User Request)
                     
                     if opt_sl > 0:
                         diff_sl = abs(opt_sl - sl)
