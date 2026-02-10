@@ -3292,14 +3292,14 @@ class SymbolTrader:
 
                         market_snapshot = {
                             "symbol": self.symbol,
-                            "contract_size": contract_size, # [NEW] Pass contract size for position sizing
-                            "spread_info": { # [NEW] Real-time Spread Data
+                            "contract_size": contract_size,
+                            "spread_info": {
                                 "points": spread_points,
                                 "price_diff": spread_price,
                                 "cost_per_lot": spread_cost
                             },
                             "account_info": account_info_dict,
-                            "recent_trade_history": recent_history, # [NEW] 注入最近交易历史
+                            "recent_trade_history": recent_history,
                             "timeframe": self.tf_name,
                             "prices": {
                                 "open": float(current_price['open']),
@@ -3313,22 +3313,24 @@ class SymbolTrader:
                                 "atr": float(latest_features.get('atr', 0)),
                                 "ema_fast": float(latest_features.get('ema_fast', 0)),
                                 "ema_slow": float(latest_features.get('ema_slow', 0)),
-                                "volatility": float(latest_features.get('volatility', 0))
+                                "volatility": float(latest_features.get('volatility', 0)),
+                                "macd": float(latest_features.get('macd', 0)),
+                                "macd_signal": float(latest_features.get('macd_signal', 0))
                             },
+                            "system_filters": system_filters, # [NEW] Pass system filter results
+                            "risk_status": {"ok": risk_ok, "msg": risk_msg}, # [NEW] Pass risk status
                             "multi_tf_data": {
+                                "M5": {
+                                    "close": float(feat_m5.get('close', 0)),
+                                    "rsi": float(feat_m5.get('rsi', 50)),
+                                    "macd": float(feat_m5.get('macd', 0)),
+                                    "trend": "bullish" if feat_m5.get('macd', 0) > 0 else "bearish"
+                                },
                                 "M15": {
                                     "close": float(feat_m15.get('close', 0)),
                                     "rsi": float(feat_m15.get('rsi', 50)),
-                                    "ema_fast": float(feat_m15.get('ema_fast', 0)),
-                                    "ema_slow": float(feat_m15.get('ema_slow', 0)),
-                                    "volatility": float(feat_m15.get('volatility', 0))
-                                },
-                                "H1": {
-                                    "close": float(feat_h1.get('close', 0)),
-                                    "rsi": float(feat_h1.get('rsi', 50)),
-                                    "ema_fast": float(feat_h1.get('ema_fast', 0)),
-                                    "ema_slow": float(feat_h1.get('ema_slow', 0)),
-                                    "trend": "bullish" if feat_h1.get('ema_fast', 0) > feat_h1.get('ema_slow', 0) else "bearish"
+                                    "macd": float(feat_m15.get('macd', 0)),
+                                    "trend": "bullish" if feat_m15.get('macd', 0) > 0 else "bearish"
                                 }
                             }
                         }
