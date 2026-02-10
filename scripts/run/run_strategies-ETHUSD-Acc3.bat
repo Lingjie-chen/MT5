@@ -9,8 +9,8 @@ cd /d "%~dp0"
 :: 我们直接调用 run_bot_watchdog.bat 来处理具体的启动和重启逻辑
 :: -----------------------------------------------------------------------------
 
-echo Launching ETHUSD Strategy (Ava Demo - Acc3)...
-start "Strategy - ETHUSD (Ava Demo)" "%~dp0run_bot_watchdog.bat" ETHUSD --account 3
+echo Launching GOLD Strategy (Ava Demo - Acc3)...
+start "Strategy - GOLD (Ava Demo)" "%~dp0run_bot_watchdog.bat" GOLD --account 3
 timeout /t 1 /nobreak >nul
 
 echo.
