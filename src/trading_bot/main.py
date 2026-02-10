@@ -98,7 +98,6 @@ class SymbolTrader:
         self.timeframe = timeframe
         self.tf_name = "M15"
         if timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
-        elif timeframe == mt5.TIMEFRAME_M3: self.tf_name = "M3"
         elif timeframe == mt5.TIMEFRAME_H1: self.tf_name = "H1"
         elif timeframe == mt5.TIMEFRAME_H4: self.tf_name = "H4"
         elif timeframe == mt5.TIMEFRAME_M6: self.tf_name = "M6"
@@ -106,9 +105,6 @@ class SymbolTrader:
         self.magic_number = 123456
         self.lot_size = 0.01 
         self.max_drawdown_pct = 0.05
-        
-        # [NEW] Risk Scaling Factor for Self-Repair
-        self.risk_scale = 1.0
         
         # 使用特定品种的独立数据库文件，确保数据完全隔离
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -128,9 +124,8 @@ class SymbolTrader:
         
         # Advanced Models: SMC, CRT, CCI (via Adapter)
         # MTF kept for context structure
-        # [MODIFIED] CRT HTF adjusted to M15 for M3 execution
-        self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_M15)
-        # [MODIFIED] MTF M15/H1 are suitable HTFs for M3 execution (3->15->60)
+        self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_H1)
+        # [MODIFIED] 只关注 M15 (执行) 和 H1 (趋势)
         self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_M15, htf2=mt5.TIMEFRAME_H1) 
         self.advanced_adapter = AdvancedMarketAnalysisAdapter()
         self.smc_analyzer = SMCAnalyzer()
@@ -2901,21 +2896,6 @@ class SymbolTrader:
                     # Ideally, analyze_closed_trades should update self.grid_strategy.basket_tp_usd if recommendation exists
                     pass
 
-                # [NEW] Strategy Health Check & Self-Repair (Every 15 mins)
-                if int(time.time()) % 900 == 0:
-                    try:
-                        trades_df = self.db_manager.get_trades(limit=50)
-                        if not trades_df.empty:
-                            trades_list = trades_df.to_dict('records')
-                            health_report = self.perf_analyzer.calculate_strategy_health_score(trades_list)
-                            
-                            if health_report['status'] in ['Unhealthy', 'Critical']:
-                                logger.warning(f"Strategy Health: {health_report['status']} (Score: {health_report['score']})")
-                                self.apply_self_repair(health_report['repair_config'])
-                            else:
-                                logger.info(f"Strategy Health Check: {health_report['status']} (Score: {health_report['score']})")
-                    except Exception as e:
-                        logger.error(f"Health Check Failed: {e}")
                     
                 # 0.6 执行策略参数优化 (每 4 小时一次)
                 if time.time() - self.last_optimization_time > 14400:
@@ -3967,5 +3947,5 @@ if __name__ == "__main__":
     
     logger.info(f"Starting Bot with Account {args.account} for symbols: {symbols}")
             
-    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M3)
+    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M15)
     bot.start(account_index=args.account)
