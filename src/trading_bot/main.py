@@ -2950,15 +2950,17 @@ class SymbolTrader:
                     df = self.get_market_data(600) 
                     
                     if df is not None:
-                        # Fetch Multi-Timeframe Data (M15, H1) for Analysis
-                        # [MODIFIED] 只保留 M15 (执行) 和 H1 (大趋势)
+                        # Fetch Multi-Timeframe Data (M5, M15, H1) for Analysis
+                        # [MODIFIED] Added M5 for User Requirement (M5+M15+H1 Alignment)
+                        rates_m5 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_M5, 0, 200)
                         rates_m15 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_M15, 0, 200)
                         rates_h1 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_H1, 0, 200)
                         
+                        df_m5 = pd.DataFrame(rates_m5) if rates_m5 is not None else pd.DataFrame()
                         df_m15 = pd.DataFrame(rates_m15) if rates_m15 is not None else pd.DataFrame()
                         df_h1 = pd.DataFrame(rates_h1) if rates_h1 is not None else pd.DataFrame()
 
-                        for dframe in [df_m15, df_h1]:
+                        for dframe in [df_m5, df_m15, df_h1]:
                             if not dframe.empty: 
                                 dframe['time'] = pd.to_datetime(dframe['time'], unit='s')
                                 if 'tick_volume' in dframe: dframe.rename(columns={'tick_volume': 'volume'}, inplace=True)
@@ -2973,7 +2975,8 @@ class SymbolTrader:
                         processor = MT5DataProcessor()
                         df_features = processor.generate_features(df)
                         
-                        # Calculate features for M15/H1
+                        # Calculate features for MTF
+                        df_features_m5 = processor.generate_features(df_m5) if not df_m5.empty else pd.DataFrame()
                         df_features_m15 = processor.generate_features(df_m15) if not df_m15.empty else pd.DataFrame()
                         df_features_h1 = processor.generate_features(df_h1) if not df_h1.empty else pd.DataFrame()
                         
@@ -2982,8 +2985,34 @@ class SymbolTrader:
                             if dframe.empty: return {}
                             return dframe.iloc[-1].to_dict()
 
+                        feat_m5 = get_latest_safe(df_features_m5)
                         feat_m15 = get_latest_safe(df_features_m15)
                         feat_h1 = get_latest_safe(df_features_h1)
+
+                        # [NEW] Calculate Trend Alignment (M5 + M15 + H1)
+                        def get_trend_status(dframe):
+                            if dframe.empty or len(dframe) < 55: return "neutral"
+                            # Simple EMA50 Logic: Close > EMA50 = Bullish
+                            try:
+                                ema50 = dframe['close'].ewm(span=50, adjust=False).mean().iloc[-1]
+                                close = dframe['close'].iloc[-1]
+                                return "bullish" if close > ema50 else "bearish"
+                            except:
+                                return "neutral"
+
+                        trend_m5 = get_trend_status(df_m5)
+                        trend_m15 = get_trend_status(df_m15)
+                        trend_h1 = get_trend_status(df_h1)
+                        
+                        trend_aligned = (trend_m5 == trend_m15 == trend_h1) and (trend_m5 != "neutral")
+                        
+                        trend_alignment_info = {
+                            "m5": trend_m5,
+                            "m15": trend_m15,
+                            "h1": trend_h1,
+                            "is_aligned": trend_aligned,
+                            "direction": trend_m15 if trend_aligned else "mixed"
+                        }
 
                         # 3. 调用 AI 与高级分析
                         # 构建市场快照
