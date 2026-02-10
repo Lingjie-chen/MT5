@@ -247,18 +247,21 @@ class GitSyncManager:
         max_retries = 3
         for i in range(max_retries):
             try:
-                os.remove(db_path)
-                logger.info(f"  [DELETE] {os.path.basename(db_path)} (Safe cleanup completed)")
-                
-                # Clean artifacts
+                # Clean artifacts (Ensure cleanup even if db_path removal fails or succeeds)
+                # We attempt to remove artifacts *before* the main DB file to avoid "ghost" shm/wal files
+                # if the main file deletion fails or is interrupted.
                 wal = db_path + "-wal"
                 shm = db_path + "-shm"
                 if os.path.exists(wal): 
                     try: os.remove(wal)
-                    except: pass
+                    except OSError: pass
                 if os.path.exists(shm): 
                     try: os.remove(shm)
-                    except: pass
+                    except OSError: pass
+
+                if os.path.exists(db_path):
+                     os.remove(db_path)
+                     logger.info(f"  [DELETE] {os.path.basename(db_path)} (Safe cleanup completed)")
                 break
             except OSError as e:
                 if i < max_retries - 1:
