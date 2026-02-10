@@ -1416,6 +1416,7 @@ class QwenClient:
 
         **Action Logic Constraint**:
         - **Consistency Check (CRITICAL)**: If your `observation_points` or `strategy_rationale` mentions "waiting for confirmation", "observing breakout", or "waiting for pullback", your Action **MUST** be `wait` (or `limit_buy`/`limit_sell`). **DO NOT** return `buy` or `sell` if the entry condition is in the future.
+        - **严禁矛盾 (Contradiction Check)**: 如果你在 `strategy_rationale` 或观察点中写了 "关注 5050 回踩" 或 "等待突破"，这表示**条件尚未满足**。此时 Action **必须** 是 `HOLD` (观望) 或 `LIMIT_BUY` (挂单)。**绝对不能** 输出 `BUY` (市价买入)。
         - IF `current_positions` is EMPTY: You CANNOT return "hold". You must return "wait" (if no signal) or "buy"/"sell".
         - IF `current_positions` is NOT EMPTY: You CANNOT return "wait". You must return "hold" (to keep) or "close" (to exit) or "add_buy"/"add_sell" (to pyramid).
         - **Pyramiding (Adding)**: If trend is strong and current position is profitable, you can return "add_buy" or "add_sell" to scale in.
