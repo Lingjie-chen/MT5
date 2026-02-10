@@ -64,6 +64,7 @@ class GitSyncManager:
     def __init__(self, base_dir):
         self.base_dir = base_dir
         self.failed_files = set() # Track files that failed verification to suppress logs
+        self.failed_deletes = set() # Track files that failed deletion to suppress logs
 
     def sync_code_only(self):
         """Sync ONLY code files (exclude .db), high frequency"""
