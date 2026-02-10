@@ -133,6 +133,9 @@ class SymbolTrader:
         # Grid Strategy Integration
         self.grid_strategy = KalmanGridStrategy(self.symbol, self.magic_number)
         
+        # Risk Manager (Quantum Position Engine)
+        self.risk_manager = MT5RiskManager()
+
         self.optimizer = HybridOptimizer()
         
         self.last_bar_time = 0
@@ -1211,12 +1214,37 @@ class SymbolTrader:
                             market_ctx['volatility_regime'] = adv_sum.get('risk', {}).get('level', 'Normal')
 
                 # 计算最终仓位
-                optimized_lot = self.calculate_dynamic_lot(
-                    strength, 
-                    market_context=market_ctx, 
-                    mfe_mae_ratio=mfe_mae_ratio,
-                    ai_signals=ai_signals_data
-                )
+                # [MODIFIED] 使用 Quantum Position Engine (Risk Manager)
+                # 优先使用 explicit_sl 计算基于风险百分比的手数
+                if explicit_sl and explicit_sl > 0:
+                    # 尝试从策略中获取风险百分比，默认 2.0%
+                    risk_pct = 2.0
+                    if self.latest_strategy and 'risk_percent' in self.latest_strategy:
+                        try:
+                            risk_pct = float(self.latest_strategy['risk_percent'])
+                        except:
+                            pass
+                            
+                    logger.info(f"调用 Quantum Position Engine: Entry={price}, SL={explicit_sl}, Risk={risk_pct}%")
+                    optimized_lot = self.risk_manager.calculate_lot_size(self.symbol, price, explicit_sl, risk_percent=risk_pct)
+                    
+                    if optimized_lot <= 0:
+                        logger.warning("Quantum Position Engine 返回 0 手数 (可能风险过高或保证金不足)，回退到 calculate_dynamic_lot")
+                        optimized_lot = self.calculate_dynamic_lot(
+                            strength, 
+                            market_context=market_ctx, 
+                            mfe_mae_ratio=mfe_mae_ratio,
+                            ai_signals=ai_signals_data
+                        )
+                    else:
+                         logger.info(f"Quantum Position Engine 计算结果: {optimized_lot} Lots")
+                else:
+                    optimized_lot = self.calculate_dynamic_lot(
+                        strength, 
+                        market_context=market_ctx, 
+                        mfe_mae_ratio=mfe_mae_ratio,
+                        ai_signals=ai_signals_data
+                    )
             
             self.lot_size = optimized_lot # 临时覆盖 self.lot_size 供 _send_order 使用
             
