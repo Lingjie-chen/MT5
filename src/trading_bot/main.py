@@ -3479,25 +3479,10 @@ class SymbolTrader:
                                 try:
                                     self.grid_strategy.update_dynamic_params(
                                         basket_tp=basket_tp,
-                                        basket_sl_long=basket_sl, 
-                                        basket_sl_short=basket_sl,
+                                        basket_sl=basket_sl, 
                                         lock_trigger=None # [USER REQ] Disable Lock Profit Trigger
                                     )
-                                    
-                                    # [ENHANCED LOGGING] Retrieve Effective Snapshot values
-                                    eff_sl_long = getattr(self.grid_strategy, 'effective_dynamic_sl_long', None)
-                                    eff_tp_long = getattr(self.grid_strategy, 'effective_dynamic_tp_long', None)
-                                    eff_sl_short = getattr(self.grid_strategy, 'effective_dynamic_sl_short', None)
-                                    eff_tp_short = getattr(self.grid_strategy, 'effective_dynamic_tp_short', None)
-                                    
-                                    log_msg = f"Applied AI Dynamic Basket Params: Base TP={basket_tp}, Base SL={basket_sl}, Lock=Disabled"
-                                    
-                                    if eff_sl_long is not None or eff_tp_long is not None:
-                                        log_msg += f"\n   >> [SNAPSHOT] Effective Long: TP={eff_tp_long}, SL={eff_sl_long}"
-                                    if eff_sl_short is not None or eff_tp_short is not None:
-                                        log_msg += f"\n   >> [SNAPSHOT] Effective Short: TP={eff_tp_short}, SL={eff_sl_short}"
-                                        
-                                    logger.info(log_msg)
+                                    logger.info(f"Applied Unified Basket Params: TP=${basket_tp}, SL=-${basket_sl}")
                                 except Exception as e:
                                     logger.error(f"Failed to update dynamic basket params: {e}")
 
@@ -3718,20 +3703,19 @@ class SymbolTrader:
                             current_model_name = self.qwen_client.model # Fallback to default
 
                         if telegram_report and len(telegram_report) > 50:
-                            # [NEW] Extract Basket TP/SL Info
-                            grid_tp_long = getattr(self.grid_strategy, 'dynamic_tp_long', None)
-                            grid_tp_short = getattr(self.grid_strategy, 'dynamic_tp_short', None)
-                            grid_sl_long = getattr(self.grid_strategy, 'dynamic_sl_long', None)
-                            grid_sl_short = getattr(self.grid_strategy, 'dynamic_sl_short', None)
+                            # [NEW] Extract Unified Basket TP/SL Info
+                            unified_tp = getattr(self.grid_strategy, 'basket_tp', None)
+                            unified_sl = getattr(self.grid_strategy, 'basket_sl', None)
                             global_tp = getattr(self.grid_strategy, 'global_tp', 0.0)
 
                             basket_info_lines = []
-                            if grid_tp_long and grid_tp_long > 0: basket_info_lines.append(f"• TP Long: `${grid_tp_long:.2f}`")
-                            if grid_tp_short and grid_tp_short > 0: basket_info_lines.append(f"• TP Short: `${grid_tp_short:.2f}`")
-                            if not grid_tp_long and not grid_tp_short and global_tp > 0: basket_info_lines.append(f"• TP Global: `${global_tp:.2f}`")
+                            if unified_tp and unified_tp > 0: 
+                                basket_info_lines.append(f"• Basket TP: `${unified_tp:.2f}`")
+                            elif global_tp > 0:
+                                basket_info_lines.append(f"• Basket TP: `${global_tp:.2f}` (Global)")
                             
-                            if grid_sl_long and grid_sl_long < 0: basket_info_lines.append(f"• SL Long: `${grid_sl_long:.2f}`")
-                            if grid_sl_short and grid_sl_short < 0: basket_info_lines.append(f"• SL Short: `${grid_sl_short:.2f}`")
+                            if unified_sl and unified_sl > 0: 
+                                basket_info_lines.append(f"• Basket SL: `-${unified_sl:.2f}`")
                             
                             basket_info_str = ""
                             if basket_info_lines:
