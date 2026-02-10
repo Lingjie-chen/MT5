@@ -1693,30 +1693,7 @@ class SymbolTrader:
             
             allow_update = True # Enabled per User Request (Dynamic AI Update)
             
-            # [USER REQ Update] Basket Risk Mode: Force removal of individual SL/TP
-            # We override the logic: If current SL/TP > 0, we must reset them to 0.0
-            # We ignore AI suggestions for individual SL/TP updates in this mode.
-            
-            # [USER FEEDBACK] Allow manual overrides.
-            # If we force reset to 0.0, users cannot set manual SL/TP.
-            # Logic Change:
-            # 1. We still disable AI auto-updates (to prevent Bot from fighting User).
-            # 2. We STOP actively resetting SL/TP to 0.0. If User sets it, it stays.
-            # 3. New trades are still opened with SL=0/TP=0 (handled in execute_trade).
-            
-            # if sl > 0:
-            #    request["sl"] = 0.0
-            #    changed = True
-            #    logger.info(f"Basket Mode: Removing Individual SL for #{pos.ticket} ({sl} -> 0.0)")
-                
-            # if tp > 0:
-            #    request["tp"] = 0.0
-            #    changed = True
-            #    logger.info(f"Basket Mode: Removing Individual TP for #{pos.ticket} ({tp} -> 0.0)")
-
-            # Disable AI dynamic update logic below for now
-            # if allow_update and has_new_params:
-            if False: # Disabled to enforce Basket Mode
+            if allow_update and has_new_params:
                 # 使用 calculate_optimized_sl_tp 进行统一计算和验证
                 ai_exits = strategy_params.get('exit_conditions', {})
                 
@@ -1831,8 +1808,8 @@ class SymbolTrader:
                         logger.info(f"持仓修改成功 (Ticket: {pos.ticket})")
                         break
                     elif result.retcode == mt5.TRADE_RETCODE_NO_CHANGES:
-                        # 10025: No changes - Suppress log as per user request
-                        # logger.info(f"持仓无需修改 (Ticket: {pos.ticket}, Retcode: 10025)")
+                        # 10025: No changes
+                        logger.info(f"持仓无需修改 (Ticket: {pos.ticket}, Retcode: 10025)")
                         break
                     elif result.retcode in [mt5.TRADE_RETCODE_CONNECTION, mt5.TRADE_RETCODE_TIMEOUT, mt5.TRADE_RETCODE_TOO_MANY_REQUESTS]:
                         logger.warning(f"持仓修改网络错误 ({result.comment})，等待重试... (Attempt {attempt+1}/{max_retries})")
@@ -3588,13 +3565,8 @@ class SymbolTrader:
                             )
                         self.send_telegram_message(analysis_msg)
 
-                        # 4. 执行交易 (包括紧急平仓)
-                        # [USER REQ Fix] 确保 'close' Action 被正确执行
-                        if final_signal == 'close':
-                            logger.warning(f">>> 接收到紧急平仓指令 (Action: CLOSE) <<<")
-                            self.execute_trade('close', strength, {}, {})
-                        
-                        elif final_signal != 'hold' and final_signal != 'neutral':
+                        # 4. 执行交易
+                        if final_signal != 'hold':
                             logger.info(f">>> 执行 Qwen 决策: {final_signal.upper()} <<<")
                             
                             # 传入 Qwen 参数
