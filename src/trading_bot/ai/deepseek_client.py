@@ -1244,6 +1244,26 @@ class DeepSeekClient:
         **绝对不要**默认使用 0.01 手！必须基于资金量和你的分析信心计算。
         请给出一个精确到小数点后两位的数字 (例如 0.15, 0.50, 1.20)，并在 `strategy_rationale` 中详细解释计算逻辑。
 
+        **入场执行标准 (Entry Execution - Strict Validation)**:
+        **你必须结合 SMC 算法策略仔细分析市场结构，严禁盲目开仓！**
+        
+        **入场必须同时满足以下条件 (Mandatory)**:
+        1. **多周期趋势共振 (Trend Alignment - CRITICAL)**:
+           - **必须检查** `trend_alignment` 字段 (M5 + M15 + H1)。
+           - 只有当 M5, M15, H1 三者趋势方向**完全一致** (All Bullish 或 All Bearish) 时，才允许开仓 (Buy/Sell)。
+           - 如果趋势不一致 (Mixed)，**坚决观望 (WAIT)**。
+
+        2. **SMC 精确狙击 (Sniper Entry)**:
+           - **关键位验证**: 仅仅价格到达阻力/支撑位**不足以**作为入场理由。必须观察到价格在该区域的**有效反应** (如 Pinbar 拒绝)。
+           - **FVG 回补**: 必须等待价格**完全回补**或**回踩测试有效**后，出现反向 K 线组合才可操作。
+           - **下单方式**: 建议使用 Limit 挂单或在明确反转信号出现后立即进场。拒绝随意市价追单。
+
+        3. **价格行为确认**:
+           - **回踩确认 (Retest)**: 突破后必须等待回踩不破。
+           - **结构破坏 (BOS)**: 必须有清晰的结构破坏信号。
+
+        **拒绝模糊信号**: 如果价格只是接近关键位但没有明确的 K 线确认，**坚决观望 (WAIT)**。
+
         ## 强制要求：明确的最优 SL/TP
         无论 Action 是什么 (BUY/SELL/HOLD)，你 **必须** 在 `exit_conditions` 中返回明确的、最优的 `sl_price` 和 `tp_price`。
         - **SL**: 基于最近的 SMC 结构失效位 (Invalidation Level) 或 MAE 统计。
