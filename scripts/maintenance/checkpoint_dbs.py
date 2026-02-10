@@ -63,6 +63,7 @@ class GitSyncManager:
     """Handles auto-syncing of local files with GitHub"""
     def __init__(self, base_dir):
         self.base_dir = base_dir
+        self.failed_files = set() # Track files that failed verification to suppress logs
 
     def sync_code_only(self):
         """Sync ONLY code files (exclude .db), high frequency"""
@@ -214,8 +215,16 @@ class GitSyncManager:
                 if self.verify_db_synced(db_file, db_manager):
                     # 3. Safe Delete
                     self.safe_delete_db(db_file)
+                    # Clear from failure tracker if it was there
+                    if db_file in self.failed_files:
+                        self.failed_files.remove(db_file)
                 else:
-                    logger.warning(f"  [KEEP] {os.path.basename(db_file)} (Verification failed)")
+                    if db_file not in self.failed_files:
+                         logger.warning(f"  [KEEP] {os.path.basename(db_file)} (Verification failed)")
+                         self.failed_files.add(db_file)
+                    else:
+                         # Already logged, suppress repetitive output or log debug
+                         pass
 
             except Exception as e:
                 logger.error(f"  [ERROR] Processing {os.path.basename(db_file)}: {e}")
@@ -337,22 +346,34 @@ class DBSyncManager:
             except:
                 return # Table doesn't exist in SQLite
             
-            # Get Max from Postgres
+            # Get Max from Postgres or Missing IDs
             max_val = None
             pk = config['pk']
             date_col = config['date_col']
             
             filter_clause = ""
+            exclude_ids = set()
             
             try:
                 # Check if table exists in PG first
                 insp = inspect(self.pg_engine)
                 if table_name in insp.get_table_names():
                     if pk:
-                        query = f"SELECT MAX({pk}) FROM {table_name}"
-                        max_val = pd.read_sql_query(query, self.pg_engine).iloc[0, 0]
-                        if max_val is not None:
-                            filter_clause = f" WHERE {pk} > {max_val}"
+                        # Improved Sync: Fetch ALL existing IDs to handle gaps (Backfill)
+                        # Instead of just MAX(id), we get all IDs to filter out duplicates robustly
+                        query = f"SELECT {pk} FROM {table_name}"
+                        existing_df = pd.read_sql_query(query, self.pg_engine)
+                        if not existing_df.empty:
+                            exclude_ids = set(existing_df[pk].tolist())
+                            
+                        # If list is too huge, fallback to MAX (optimization for very large datasets)
+                        if len(exclude_ids) > 100000:
+                             exclude_ids = set() # Reset
+                             query = f"SELECT MAX({pk}) FROM {table_name}"
+                             max_val = pd.read_sql_query(query, self.pg_engine).iloc[0, 0]
+                             if max_val is not None:
+                                 filter_clause = f" WHERE {pk} > {max_val}"
+                                 
                     elif date_col:
                         query = f"SELECT MAX({date_col}) FROM {table_name}"
                         max_val = pd.read_sql_query(query, self.pg_engine).iloc[0, 0]
@@ -363,12 +384,23 @@ class DBSyncManager:
                 # Table likely doesn't exist in PG yet, sync all
                 pass
 
-            # Read filtered data
+            # Read data from SQLite
             query = f"SELECT * FROM {table_name} {filter_clause}"
             df = pd.read_sql_query(query, sqlite_conn)
             
             if df.empty:
                 return
+
+            # Filter duplicates if using ID-based exclusion
+            if pk and exclude_ids:
+                 initial_len = len(df)
+                 df = df[~df[pk].isin(exclude_ids)]
+                 if len(df) < initial_len:
+                     logger.debug(f"Filtered {initial_len - len(df)} duplicates using PK check")
+
+            if df.empty:
+                return
+
 
             # Data Type Conversion
             if date_col and date_col in df.columns:
