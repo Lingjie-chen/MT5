@@ -26,19 +26,19 @@ class DynamicRiskManager:
             "ai": 0.15
         }
         
-        # 2. SL Multiplier Config (Optimized for Stability)
-        # Score 0.0 -> 0.6x SL (Tight, but not choking)
-        # Score 0.5 -> 0.9x SL (Conservative)
+        # 2. SL Multiplier Config (Asymmetric - Conservative)
+        # Score 0.0 -> 0.5x SL (Very Tight)
+        # Score 0.5 -> 0.85x SL (Tight)
         # Score 1.0 -> 1.2x SL (Looser)
-        self.sl_multiplier_base = 0.6
-        self.sl_multiplier_factor = 0.6 
+        self.sl_multiplier_base = 0.5
+        self.sl_multiplier_factor = 0.7 
         
-        # 3. TP Multiplier Config (Optimized for Growth)
-        # Score 0.0 -> 0.8x TP (Conservative Take Profit)
-        # Score 0.5 -> 1.4x TP (Aggressive Expansion)
+        # 3. TP Multiplier Config (Asymmetric - Optimistic)
+        # Score 0.0 -> 0.6x TP (Quick Take Profit)
+        # Score 0.5 -> 1.3x TP (Run)
         # Score 1.0 -> 2.0x TP (Let it Fly)
-        self.tp_multiplier_base = 0.8
-        self.tp_multiplier_factor = 1.2
+        self.tp_multiplier_base = 0.6
+        self.tp_multiplier_factor = 1.4
         
         logger.info("DynamicRiskManager Initialized with weights: %s", self.weights)
         logger.info(f"SL Config: Base={self.sl_multiplier_base}, Factor={self.sl_multiplier_factor}")
@@ -51,9 +51,7 @@ class DynamicRiskManager:
         market_analysis: Dict,
         ai_confidence: float = 0.8,
         mae_stats: Optional[Dict] = None,
-        current_drawdown: float = 0.0,
-        spread_cost: float = 0.0,
-        volume_scaling: float = 1.0 # [NEW] Volume scaling factor
+        current_drawdown: float = 0.0
     ) -> Tuple[float, Dict]:
         """
         Calculate the dynamic Basket SL threshold ($ amount).
@@ -65,8 +63,6 @@ class DynamicRiskManager:
             ai_confidence (float): 0.0 to 1.0 (or 0-100).
             mae_stats (Dict): Historical MAE stats (e.g. {'95%': 150.0}).
             current_drawdown (float): Current drawdown amount (positive).
-            spread_cost (float): Estimated total spread cost for open positions (USD).
-            volume_scaling (float): Factor to scale SL based on increased volume (e.g., 1.5 if volume increased by 50%).
 
         Returns:
             Tuple[float, Dict]: (New SL Amount (negative), Log Details)
@@ -104,26 +100,16 @@ class DynamicRiskManager:
         # Calculate Adjustment Multiplier using Configured Parameters
         multiplier = self.sl_multiplier_base + (total_score * self.sl_multiplier_factor)
         
-        # Apply Volume Scaling
-        # Logic: If volume doubles, SL amount should theoretically double to maintain same Price Distance.
-        # However, we might want to be slightly more conservative than linear scaling.
-        # But user complains about "stopped out then rebound", which means SL is too tight.
-        # So linear scaling (or close to it) is appropriate to maintain the "Structural SL".
+        # Apply Volatility Adjustment (Optional, if volatility is extreme, maybe widen?)
+        # For now, we assume Trend Score already accounts for volatility risk.
         
-        scaled_base_sl = base_sl_amount * volume_scaling
-        new_sl_amount = scaled_base_sl * multiplier
+        new_sl_amount = base_sl_amount * multiplier
         
         # Ensure it's not too tight (e.g., minimum 30% of base)
         new_sl_amount = max(new_sl_amount, base_sl_amount * 0.3)
-        
-        # [NEW] Spread Adjustment
-        if spread_cost > 0:
-            new_sl_amount += spread_cost
 
         log_details = {
             "base_sl": base_sl_amount,
-            "volume_factor": round(volume_scaling, 2),
-            "scaled_base": round(scaled_base_sl, 2),
             "direction": direction,
             "scores": {
                 "trend": round(trend_score, 2),
@@ -134,7 +120,6 @@ class DynamicRiskManager:
             },
             "total_score": round(total_score, 3),
             "multiplier": round(multiplier, 3),
-            "spread_adj": round(spread_cost, 2),
             "calculated_sl": round(new_sl_amount, 2),
             "conflict_alert": total_score < 0.4 # Alert if score is very low
         }

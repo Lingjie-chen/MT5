@@ -3328,21 +3328,7 @@ class SymbolTrader:
                                         basket_sl_short=basket_sl,
                                         lock_trigger=None # [USER REQ] Disable Lock Profit Trigger
                                     )
-                                    
-                                    # [ENHANCED LOGGING] Retrieve Effective Snapshot values
-                                    eff_sl_long = getattr(self.grid_strategy, 'effective_dynamic_sl_long', None)
-                                    eff_tp_long = getattr(self.grid_strategy, 'effective_dynamic_tp_long', None)
-                                    eff_sl_short = getattr(self.grid_strategy, 'effective_dynamic_sl_short', None)
-                                    eff_tp_short = getattr(self.grid_strategy, 'effective_dynamic_tp_short', None)
-                                    
-                                    log_msg = f"Applied AI Dynamic Basket Params: Base TP={basket_tp}, Base SL={basket_sl}, Lock=Disabled"
-                                    
-                                    if eff_sl_long is not None or eff_tp_long is not None:
-                                        log_msg += f"\n   >> [SNAPSHOT] Effective Long: TP={eff_tp_long}, SL={eff_sl_long}"
-                                    if eff_sl_short is not None or eff_tp_short is not None:
-                                        log_msg += f"\n   >> [SNAPSHOT] Effective Short: TP={eff_tp_short}, SL={eff_sl_short}"
-                                        
-                                    logger.info(log_msg)
+                                    logger.info(f"Applied AI Dynamic Basket Params: TP={basket_tp}, SL={basket_sl}, Lock=Disabled")
                                 except Exception as e:
                                     logger.error(f"Failed to update dynamic basket params: {e}")
 

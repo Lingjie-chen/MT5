@@ -60,12 +60,6 @@ class KalmanGridStrategy:
         self.max_basket_profit_long = 0.0 
         self.basket_lock_level_short = None
         self.max_basket_profit_short = 0.0
-
-        # [SNAPSHOT] Effective TP/SL Snapshot (from Preview)
-        self.effective_dynamic_sl_long = None
-        self.effective_dynamic_tp_long = None
-        self.effective_dynamic_sl_short = None
-        self.effective_dynamic_tp_short = None
         
         # Deprecated mixed state (kept for safety if referenced elsewhere)
         self.basket_lock_level = None 
@@ -598,102 +592,49 @@ class KalmanGridStrategy:
         # --- Long Basket ---
         if self.long_pos_count > 0:
             total_profit_long = 0.0
-            total_volume_long = 0.0
             for pos in positions:
                 if pos.magic == self.magic_number and pos.type == mt5.POSITION_TYPE_BUY:
                     total_profit_long += (pos.profit + pos.swap)
-                    total_volume_long += pos.volume
-            
-            # Calculate Spread Cost
-            symbol_info = mt5.symbol_info(self.symbol)
-            spread_cost_long = 0.0
-            if symbol_info:
-                # spread is in points. trade_tick_value is value of 1 point per lot.
-                # Cost = Spread * TickValue * Volume
-                spread_cost_long = symbol_info.spread * symbol_info.trade_tick_value * total_volume_long
             
             # [CHECK] Dynamic Basket TP (Enhanced)
             # Calculate Tiered TP Target
             base_tp_long = self.dynamic_tp_long if (self.dynamic_tp_long is not None and self.dynamic_tp_long > 0) else self.global_tp
             
-            # Use [SNAPSHOT] Effective TP if available, otherwise calculate fallback
-            if self.effective_dynamic_tp_long is not None:
-                target_tp_long = self.effective_dynamic_tp_long
-                log_details_tp = "Using Snapshot"
-            else:
-                # Fallback to realtime calculation if snapshot missing
-                target_tp_long, log_details_tp = self.risk_manager.calculate_dynamic_basket_tp(
-                    base_tp_amount=base_tp_long,
-                    direction='long',
-                    market_analysis=self.market_status,
-                    ai_confidence=self.ai_confidence,
-                    mae_stats=self.mae_stats,
-                    current_atr=current_atr if current_atr else 0,
-                    current_profit=total_profit_long
-                )
+            # Use new Multi-Dimensional TP Calculation
+            target_tp_long, log_details_tp = self.risk_manager.calculate_dynamic_basket_tp(
+                base_tp_amount=base_tp_long,
+                direction='long',
+                market_analysis=self.market_status,
+                ai_confidence=self.ai_confidence,
+                mae_stats=self.mae_stats,
+                current_atr=current_atr if current_atr else 0,
+                current_profit=total_profit_long
+            )
+            
+            # Apply tiered logic on top (or integrated? The new method returns a single value based on factors)
+            # The new method handles market factors. We can add simple scaling for levels if needed.
+            # But let's trust the Multi-Dimensional output.
             
             if total_profit_long >= target_tp_long:
-                logger.info(f"✅ Long Basket TP Hit! Profit: ${total_profit_long:.2f} >= Target: ${target_tp_long:.2f} (Snapshot/Base: {base_tp_long})")
-                # logger.info(f"Dynamic TP Logic: {log_details_tp}") # Reduce spam for snapshot
+                logger.info(f"✅ Long Basket TP Hit! Profit: ${total_profit_long:.2f} >= Target: ${target_tp_long:.2f} (Base: {base_tp_long})")
+                logger.info(f"Dynamic TP Logic: {log_details_tp}")
                 should_close_long = True
 
             # [CHECK] Dynamic Basket SL (Enhanced)
             if self.dynamic_sl_long is not None and self.dynamic_sl_long < 0:
                 base_sl = abs(self.dynamic_sl_long)
-                
-                # Calculate Volume Scaling Factor
-                # If Initial Lot is 0.01 and Total is 0.03 -> Factor = 3.0
-                # We use a dampener to prevent explosion? No, user wants price distance.
-                # Factor = Total / Initial
-                # But 'initial_lot' is self.lot.
-                volume_factor = 1.0
-                if self.lot > 0:
-                    volume_factor = total_volume_long / self.lot
-                
-                # Use [SNAPSHOT] Effective SL if available
-                if self.effective_dynamic_sl_long is not None:
-                    effective_sl = self.effective_dynamic_sl_long
-                    log_details = "Using Snapshot"
-                    
-                    # Apply Volume Scaling to Snapshot (because Snapshot was likely based on Volume=1 or Base)
-                    # Wait, if snapshot is taken at update_dynamic_params, does it know volume?
-                    # No, update_dynamic_params is called from main loop, usually when positions might change or market changes.
-                    # But the 'effective_dynamic_sl_long' stored there might be raw.
-                    # Actually, better to apply scaling inside risk manager every tick.
-                    
-                    # Re-calculate or Apply Scaling to Snapshot?
-                    # If we scale snapshot, we risk double counting if snapshot already had volume.
-                    # Let's assume snapshot is BASE per lot unit? No, AI gives Total Risk $.
-                    
-                    # ISSUE: AI gives "Basket SL = $100". Does AI mean "Fixed $100 Risk" or "Distance based $100"?
-                    # Qwen prompt says: "Basket SL = Balance * 1.5%". This is FIXED RISK.
-                    # If it is Fixed Risk, then as Volume increases, Price Distance decreases.
-                    # User complains this is bad.
-                    # So we MUST scale it to maintain distance.
-                    
-                    # So, effective_sl (from snapshot) is likely the FIXED $ amount.
-                    # We should scale it.
-                    if volume_factor > 1.0:
-                         effective_sl = effective_sl * volume_factor
-                    
-                    # Apply Real-Time Spread Adjustment
-                    if spread_cost_long > 0:
-                        effective_sl -= spread_cost_long
-                else:
-                    effective_sl, log_details = self.risk_manager.calculate_dynamic_basket_sl(
-                        base_sl_amount=base_sl,
-                        direction='long',
-                        market_analysis=self.market_status,
-                        ai_confidence=self.ai_confidence,
-                        mae_stats=self.mae_stats,
-                        current_drawdown=abs(total_profit_long) if total_profit_long < 0 else 0,
-                        spread_cost=spread_cost_long,
-                        volume_scaling=volume_factor
-                    )
+                effective_sl, log_details = self.risk_manager.calculate_dynamic_basket_sl(
+                    base_sl_amount=base_sl,
+                    direction='long',
+                    market_analysis=self.market_status,
+                    ai_confidence=self.ai_confidence,
+                    mae_stats=self.mae_stats,
+                    current_drawdown=abs(total_profit_long) if total_profit_long < 0 else 0
+                )
                 
                 if total_profit_long <= effective_sl:
-                    logger.warning(f"🛑 Long Basket Dynamic SL Reached! Profit: ${total_profit_long:.2f} <= Limit: ${effective_sl:.2f} (Snapshot/Base: -{base_sl}, VolFactor: {volume_factor:.1f})")
-                    # logger.info(f"Dynamic SL Logic: {log_details}")
+                    logger.warning(f"🛑 Long Basket Dynamic SL Reached! Profit: ${total_profit_long:.2f} <= Limit: ${effective_sl:.2f} (Base: -{base_sl})")
+                    logger.info(f"Dynamic SL Logic: {log_details}")
                     should_close_long = True
                 
             # [CHECK] Lock Profit / Trailing Logic (Enhanced)
@@ -725,76 +666,44 @@ class KalmanGridStrategy:
         # --- Short Basket ---
         if self.short_pos_count > 0:
             total_profit_short = 0.0
-            total_volume_short = 0.0
             for pos in positions:
                 if pos.magic == self.magic_number and pos.type == mt5.POSITION_TYPE_SELL:
                     total_profit_short += (pos.profit + pos.swap)
-                    total_volume_short += pos.volume
-            
-            # Calculate Spread Cost
-            symbol_info = mt5.symbol_info(self.symbol)
-            spread_cost_short = 0.0
-            if symbol_info:
-                spread_cost_short = symbol_info.spread * symbol_info.trade_tick_value * total_volume_short
             
             # [CHECK] Dynamic Basket TP (Enhanced)
             base_tp_short = self.dynamic_tp_short if (self.dynamic_tp_short is not None and self.dynamic_tp_short > 0) else self.global_tp
             
-            # Use [SNAPSHOT] Effective TP if available
-            if self.effective_dynamic_tp_short is not None:
-                target_tp_short = self.effective_dynamic_tp_short
-                log_details_tp = "Using Snapshot"
-            else:
-                target_tp_short, log_details_tp = self.risk_manager.calculate_dynamic_basket_tp(
-                    base_tp_amount=base_tp_short,
-                    direction='short',
-                    market_analysis=self.market_status,
-                    ai_confidence=self.ai_confidence,
-                    mae_stats=self.mae_stats,
-                    current_atr=current_atr if current_atr else 0,
-                    current_profit=total_profit_short
-                )
+            # Use new Multi-Dimensional TP Calculation
+            target_tp_short, log_details_tp = self.risk_manager.calculate_dynamic_basket_tp(
+                base_tp_amount=base_tp_short,
+                direction='short',
+                market_analysis=self.market_status,
+                ai_confidence=self.ai_confidence,
+                mae_stats=self.mae_stats,
+                current_atr=current_atr if current_atr else 0,
+                current_profit=total_profit_short
+            )
             
             if total_profit_short >= target_tp_short:
-                logger.info(f"✅ Short Basket TP Hit! Profit: ${total_profit_short:.2f} >= Target: ${target_tp_short:.2f} (Snapshot/Base: {base_tp_short})")
-                # logger.info(f"Dynamic TP Logic: {log_details_tp}")
+                logger.info(f"✅ Short Basket TP Hit! Profit: ${total_profit_short:.2f} >= Target: ${target_tp_short:.2f} (Base: {base_tp_short})")
+                logger.info(f"Dynamic TP Logic: {log_details_tp}")
                 should_close_short = True
 
             # [CHECK] Dynamic Basket SL (Enhanced)
             if self.dynamic_sl_short is not None and self.dynamic_sl_short < 0:
                 base_sl = abs(self.dynamic_sl_short)
-                
-                # Volume Scaling
-                volume_factor = 1.0
-                if self.lot > 0:
-                    volume_factor = total_volume_short / self.lot
-                
-                # Use [SNAPSHOT] Effective SL if available
-                if self.effective_dynamic_sl_short is not None:
-                    effective_sl = self.effective_dynamic_sl_short
-                    log_details = "Using Snapshot"
-                    
-                    if volume_factor > 1.0:
-                         effective_sl = effective_sl * volume_factor
-                    
-                    # Apply Real-Time Spread Adjustment to Snapshot
-                    if spread_cost_short > 0:
-                        effective_sl -= spread_cost_short
-                else:
-                    effective_sl, log_details = self.risk_manager.calculate_dynamic_basket_sl(
-                        base_sl_amount=base_sl,
-                        direction='short',
-                        market_analysis=self.market_status,
-                        ai_confidence=self.ai_confidence,
-                        mae_stats=self.mae_stats,
-                        current_drawdown=abs(total_profit_short) if total_profit_short < 0 else 0,
-                        spread_cost=spread_cost_short,
-                        volume_scaling=volume_factor
-                    )
+                effective_sl, log_details = self.risk_manager.calculate_dynamic_basket_sl(
+                    base_sl_amount=base_sl,
+                    direction='short',
+                    market_analysis=self.market_status,
+                    ai_confidence=self.ai_confidence,
+                    mae_stats=self.mae_stats,
+                    current_drawdown=abs(total_profit_short) if total_profit_short < 0 else 0
+                )
                 
                 if total_profit_short <= effective_sl:
-                    logger.warning(f"🛑 Short Basket Dynamic SL Reached! Profit: ${total_profit_short:.2f} <= Limit: ${effective_sl:.2f} (Snapshot/Base: -{base_sl}, VolFactor: {volume_factor:.1f})")
-                    # logger.info(f"Dynamic SL Logic: {log_details}")
+                    logger.warning(f"🛑 Short Basket Dynamic SL Reached! Profit: ${total_profit_short:.2f} <= Limit: ${effective_sl:.2f} (Base: -{base_sl})")
+                    logger.info(f"Dynamic SL Logic: {log_details}")
                     should_close_short = True
             
             # [CHECK] Lock Profit / Trailing Logic (Enhanced)
@@ -996,65 +905,47 @@ class KalmanGridStrategy:
             try:
                 # Preview Long SL/TP
                 if self.dynamic_sl_long:
-                    eff_sl_long, log_sl_long = self.risk_manager.calculate_dynamic_basket_sl(
+                    eff_sl_long, _ = self.risk_manager.calculate_dynamic_basket_sl(
                         base_sl_amount=abs(self.dynamic_sl_long),
                         direction='long',
                         market_analysis=self.market_status,
                         ai_confidence=self.ai_confidence,
                         mae_stats=self.mae_stats,
-                        current_drawdown=0, # Preview only
-                        spread_cost=0.0 # Preview only (Realtime will add spread)
+                        current_drawdown=0 # Preview only
                     )
-                    mult_sl = log_sl_long.get('multiplier', 0)
-                    self.effective_dynamic_sl_long = eff_sl_long
-                    logger.info(f" >> [SNAPSHOT] Effective Dynamic SL (Long): {eff_sl_long:.2f} (Base: {self.dynamic_sl_long}, x{mult_sl:.2f})")
-                else:
-                    self.effective_dynamic_sl_long = None
+                    logger.info(f" >> [PREVIEW] Effective Dynamic SL (Long): {eff_sl_long:.2f} (Base: {self.dynamic_sl_long})")
                 
                 if self.dynamic_tp_long:
-                    eff_tp_long, log_tp_long = self.risk_manager.calculate_dynamic_basket_tp(
+                    eff_tp_long, _ = self.risk_manager.calculate_dynamic_basket_tp(
                         base_tp_amount=self.dynamic_tp_long,
                         direction='long',
                         market_analysis=self.market_status,
                         ai_confidence=self.ai_confidence,
                         mae_stats=self.mae_stats
                     )
-                    mult_tp = log_tp_long.get('multiplier', 0)
-                    self.effective_dynamic_tp_long = eff_tp_long
-                    logger.info(f" >> [SNAPSHOT] Effective Dynamic TP (Long): {eff_tp_long:.2f} (Base: {self.dynamic_tp_long}, x{mult_tp:.2f})")
-                else:
-                    self.effective_dynamic_tp_long = None
+                    logger.info(f" >> [PREVIEW] Effective Dynamic TP (Long): {eff_tp_long:.2f} (Base: {self.dynamic_tp_long})")
 
                 # Preview Short SL/TP
                 if self.dynamic_sl_short:
-                    eff_sl_short, log_sl_short = self.risk_manager.calculate_dynamic_basket_sl(
+                    eff_sl_short, _ = self.risk_manager.calculate_dynamic_basket_sl(
                         base_sl_amount=abs(self.dynamic_sl_short),
                         direction='short',
                         market_analysis=self.market_status,
                         ai_confidence=self.ai_confidence,
                         mae_stats=self.mae_stats,
-                        current_drawdown=0,
-                        spread_cost=0.0 # Preview only
+                        current_drawdown=0
                     )
-                    mult_sl = log_sl_short.get('multiplier', 0)
-                    self.effective_dynamic_sl_short = eff_sl_short
-                    logger.info(f" >> [SNAPSHOT] Effective Dynamic SL (Short): {eff_sl_short:.2f} (Base: {self.dynamic_sl_short}, x{mult_sl:.2f})")
-                else:
-                    self.effective_dynamic_sl_short = None
+                    logger.info(f" >> [PREVIEW] Effective Dynamic SL (Short): {eff_sl_short:.2f} (Base: {self.dynamic_sl_short})")
                 
                 if self.dynamic_tp_short:
-                    eff_tp_short, log_tp_short = self.risk_manager.calculate_dynamic_basket_tp(
+                    eff_tp_short, _ = self.risk_manager.calculate_dynamic_basket_tp(
                         base_tp_amount=self.dynamic_tp_short,
                         direction='short',
                         market_analysis=self.market_status,
                         ai_confidence=self.ai_confidence,
                         mae_stats=self.mae_stats
                     )
-                    mult_tp = log_tp_short.get('multiplier', 0)
-                    self.effective_dynamic_tp_short = eff_tp_short
-                    logger.info(f" >> [SNAPSHOT] Effective Dynamic TP (Short): {eff_tp_short:.2f} (Base: {self.dynamic_tp_short}, x{mult_tp:.2f})")
-                else:
-                    self.effective_dynamic_tp_short = None
+                    logger.info(f" >> [PREVIEW] Effective Dynamic TP (Short): {eff_tp_short:.2f} (Base: {self.dynamic_tp_short})")
 
             except Exception as e:
                 logger.warning(f"Failed to generate dynamic SL/TP preview: {e}")
