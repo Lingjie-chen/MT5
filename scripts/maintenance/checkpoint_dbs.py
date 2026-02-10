@@ -291,18 +291,22 @@ class GitSyncManager:
             except OSError as e:
                 if i < max_retries - 1:
                     # Suppress retry log if previously failed to avoid spam
-                    if db_path not in self.failed_files:
+                    if db_path not in self.failed_deletes:
                         logger.warning(f"  Delete failed (locked?), retrying in 1s... ({i+1}/{max_retries})")
                     time.sleep(1)
                 else:
                     # Final failure
-                    if db_path not in self.failed_files:
+                    if db_path not in self.failed_deletes:
                         # Log error once
                         logger.error(f"  Failed to delete {db_path}: {e}")
-                        self.failed_files.add(db_path) # Mark as failed to suppress future logs
+                        self.failed_deletes.add(db_path) # Mark as failed to suppress future logs
                     else:
                         # Already logged error, silent
                         pass
+        
+        # If we reached here and file is gone (or we broke out of loop successfully)
+        if not os.path.exists(db_path) and db_path in self.failed_deletes:
+            self.failed_deletes.remove(db_path)
 
 class DBSyncManager:
     """Handles SQLite WAL checkpointing and Sync to Postgres"""
