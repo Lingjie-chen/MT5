@@ -1122,12 +1122,13 @@ class SymbolTrader:
                             self.latest_strategy['exit_conditions'] = {}
                         self.latest_strategy['exit_conditions']['tp_price'] = calc_tp
                 
-                if explicit_sl == 0 or explicit_tp == 0:
-                     logger.error("无法计算优化 SL/TP，放弃交易")
+                if explicit_sl == 0:
+                     logger.error("无法计算优化 SL，放弃交易")
                      return 
 
             # 再次确认 R:R (针对 Limit 单的最终确认)
-            if 'limit' in trade_type or 'stop' in trade_type:
+            # [USER REQ] Skip RR check if TP is 0 (Basket Mode)
+            if ('limit' in trade_type or 'stop' in trade_type) and explicit_tp > 0:
                  valid, rr = self.check_risk_reward_ratio(price, explicit_sl, explicit_tp)
                  if not valid:
                      logger.warning(f"Limit单最终 R:R 检查未通过: {rr:.2f}")
@@ -1185,6 +1186,8 @@ class SymbolTrader:
             
             self.lot_size = optimized_lot # 临时覆盖 self.lot_size 供 _send_order 使用
             
+            # [USER REQ] Force TP=0.0 for Basket Mode (Override any calculated TP)
+            explicit_tp = 0.0
             result = self._send_order(trade_type, price, explicit_sl, explicit_tp, comment=comment)
             
             # [NEW] Save Trade to Master DB (Redundant check if _send_order handles it)
