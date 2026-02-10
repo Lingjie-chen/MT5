@@ -3893,6 +3893,18 @@ if __name__ == "__main__":
     symbols = [s.strip().upper() for s in args.symbols.split(",")]
     
     logger.info(f"Starting Bot with Account {args.account} for symbols: {symbols}")
+
+    # Start File Watcher
+    watcher = FileWatcher(directories=[
+        os.path.join(current_dir, "ai"),
+        os.path.join(current_dir, "analysis"),
+        os.path.join(current_dir, "core"),
+        os.path.join(current_dir, "strategies"),
+        os.path.join(current_dir, "utils"),
+        os.path.join(current_dir, "..", "position_engine"), # Watch position_engine
+        current_dir # Watch main.py
+    ])
+    watcher.start()
             
     bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M15)
     bot.start(account_index=args.account)
