@@ -77,6 +77,9 @@ class QwenClient:
         """
         symbol = symbol.upper()
         
+        # Load Strategy Rules from file (Synced from docs/strategy_rules.md)
+        strategy_rules_content = self._load_strategy_rules()
+        
         # --- 1. 核心策略架构 (通用) ---
         core_strategy = f"""
     作为{symbol}交易的唯一核心决策大脑，你全权负责基于SMC(Smart Money Concepts)和Martingale(马丁格尔)策略的交易执行。
@@ -831,9 +834,6 @@ class QwenClient:
         # Select Configs
         martingale_config = martingale_configs.get(symbol, martingale_configs["DEFAULT"])
         market_spec = market_specs.get(symbol, market_specs["DEFAULT"])
-        
-        # Load Strategy Rules from file
-        strategy_rules_content = self._load_strategy_rules()
         
         # Reflection Skills (Synced from CLAUDE.local.md)
         reflection_skills = """
