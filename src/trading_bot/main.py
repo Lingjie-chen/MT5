@@ -684,6 +684,18 @@ class SymbolTrader:
         llm_action = "hold"
         if self.latest_strategy:
              llm_action = self.latest_strategy.get('action', 'hold').lower()
+             
+             # [NEW] 严格执行盘前8问 (Pre-Market 8 Questions Enforcement)
+             # 如果 Q8 (Execution) 为 No/Wait，强制拦截
+             pre_market = self.latest_strategy.get('pre_market_check', {})
+             q8_exec = pre_market.get('q8_execution', 'Yes') # Default to Yes if missing to avoid blocking legacy
+             
+             if isinstance(q8_exec, str):
+                 q8_clean = q8_exec.lower()
+                 if "no" in q8_clean or "wait" in q8_clean or "false" in q8_clean:
+                     logger.warning(f"🛑 盘前8问拦截 (Q8 Execution: {q8_exec}): 强制 HOLD")
+                     llm_action = "hold"
+                     signal = "hold" # Force signal to hold as well
         elif entry_params and 'action' in entry_params:
              llm_action = entry_params.get('action', 'hold').lower()
         else:
