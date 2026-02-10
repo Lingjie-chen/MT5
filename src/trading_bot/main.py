@@ -103,12 +103,14 @@ class HybridOptimizer:
         return final_signal, final_score, self.weights
 
 class SymbolTrader:
-    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M15):
+    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M1):
         self.symbol = symbol
         self.timeframe = timeframe
-        self.tf_name = "M15"
+        self.tf_name = "M1"
         if timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
+        elif timeframe == mt5.TIMEFRAME_M1: self.tf_name = "M1"
         elif timeframe == mt5.TIMEFRAME_M3: self.tf_name = "M3"
+        elif timeframe == mt5.TIMEFRAME_M5: self.tf_name = "M5"
         elif timeframe == mt5.TIMEFRAME_H1: self.tf_name = "H1"
         elif timeframe == mt5.TIMEFRAME_H4: self.tf_name = "H4"
         elif timeframe == mt5.TIMEFRAME_M6: self.tf_name = "M6"
@@ -116,6 +118,13 @@ class SymbolTrader:
         self.magic_number = 123456
         self.lot_size = 0.01 
         self.max_drawdown_pct = 0.05
+        
+        # [NEW] Risk Control & Execution Tracking
+        self.daily_trade_count = 0
+        self.last_trade_date = None
+        self.consecutive_losses = 0
+        self.cooldown_until = 0
+        self.max_daily_trades = 3
         
         # [NEW] Risk Scaling Factor for Self-Repair
         self.risk_scale = 1.0
