@@ -921,135 +921,44 @@ class KalmanGridStrategy:
                 
         return False
 
-    def update_dynamic_params(self, basket_tp=None, basket_tp_long=None, basket_tp_short=None, 
-                              basket_sl_long=None, basket_sl_short=None,
-                              lock_trigger=None, trailing_config=None):
-        """Update dynamic parameters from AI analysis"""
+    def update_dynamic_params(self, basket_tp=None, basket_sl=None, lock_trigger=None, trailing_config=None, **kwargs):
+        """
+        Update Dynamic Basket TP/SL from AI (Unified)
+        """
         updated_any = False
         
+        # Unified Basket TP
         try:
-            if basket_tp is not None:
-                val = float(basket_tp)
+            # Handle legacy args via kwargs
+            val_tp = basket_tp
+            if val_tp is None:
+                val_tp = kwargs.get('basket_tp_long') or kwargs.get('basket_tp_short')
+                
+            if val_tp is not None:
+                val = float(val_tp)
                 if val > 0:
-                    self.dynamic_global_tp = val
-                    # If specific ones are not provided, apply global to both
-                    if basket_tp_long is None: self.dynamic_tp_long = val
-                    if basket_tp_short is None: self.dynamic_tp_short = val
-                    logger.info(f"Updated Dynamic Basket TP (Global): {self.dynamic_global_tp}")
+                    self.basket_tp = val
+                    logger.info(f"Updated Unified Basket TP: ${self.basket_tp:.2f}")
                     updated_any = True
         except (ValueError, TypeError):
              logger.warning(f"Invalid basket_tp value: {basket_tp}")
             
+        # Unified Basket SL
         try:
-            if basket_tp_long is not None:
-                val = float(basket_tp_long)
-                if val > 0:
-                    self.dynamic_tp_long = val
-                    logger.info(f"Updated Dynamic Basket TP (Long): {self.dynamic_tp_long}")
-                    updated_any = True
-        except (ValueError, TypeError):
-             logger.warning(f"Invalid basket_tp_long value: {basket_tp_long}")
-            
-        try:
-            if basket_tp_short is not None:
-                val = float(basket_tp_short)
-                if val > 0:
-                    self.dynamic_tp_short = val
-                    logger.info(f"Updated Dynamic Basket TP (Short): {self.dynamic_tp_short}")
-                    updated_any = True
-        except (ValueError, TypeError):
-             logger.warning(f"Invalid basket_tp_short value: {basket_tp_short}")
-
-        # [NEW] Basket SL Updates
-        try:
-            if basket_sl_long is not None:
-                val = float(basket_sl_long)
+            val_sl = basket_sl
+            if val_sl is None:
+                val_sl = kwargs.get('basket_sl_long') or kwargs.get('basket_sl_short')
+                
+            if val_sl is not None:
+                val = float(val_sl)
                 if val < 0: val = abs(val) # ensure positive magnitude
                 if val > 0:
-                    self.dynamic_sl_long = -val
-                    logger.info(f"Updated Dynamic Basket SL (Long): {self.dynamic_sl_long}")
+                    self.basket_sl = val 
+                    logger.info(f"Updated Unified Basket SL: -${self.basket_sl:.2f}")
                     updated_any = True
-        except: pass
-        
-        try:
-            if basket_sl_short is not None:
-                val = float(basket_sl_short)
-                if val < 0: val = abs(val)
-                if val > 0:
-                    self.dynamic_sl_short = -val
-                    logger.info(f"Updated Dynamic Basket SL (Short): {self.dynamic_sl_short}")
-                    updated_any = True
-        except: pass
+        except (ValueError, TypeError):
+             logger.warning(f"Invalid basket_sl value: {basket_sl}")
 
-        # [IMMEDIATE FEEDBACK] Pre-calculate effective SL to show user the real dynamic limit
-        if updated_any and self.market_status:
-            try:
-                # Preview Long SL/TP
-                if self.dynamic_sl_long:
-                    eff_sl_long, log_sl_long = self.risk_manager.calculate_dynamic_basket_sl(
-                        base_sl_amount=abs(self.dynamic_sl_long),
-                        direction='long',
-                        market_analysis=self.market_status,
-                        ai_confidence=self.ai_confidence,
-                        mae_stats=self.mae_stats,
-                        current_drawdown=0, # Preview only
-                        spread_cost=0.0 # Preview only (Realtime will add spread)
-                    )
-                    mult_sl = log_sl_long.get('multiplier', 0)
-                    self.effective_dynamic_sl_long = eff_sl_long
-                    logger.info(f" >> [SNAPSHOT] Effective Dynamic SL (Long): {eff_sl_long:.2f} (Base: {self.dynamic_sl_long}, x{mult_sl:.2f})")
-                else:
-                    self.effective_dynamic_sl_long = None
-                
-                if self.dynamic_tp_long:
-                    eff_tp_long, log_tp_long = self.risk_manager.calculate_dynamic_basket_tp(
-                        base_tp_amount=self.dynamic_tp_long,
-                        direction='long',
-                        market_analysis=self.market_status,
-                        ai_confidence=self.ai_confidence,
-                        mae_stats=self.mae_stats
-                    )
-                    mult_tp = log_tp_long.get('multiplier', 0)
-                    self.effective_dynamic_tp_long = eff_tp_long
-                    logger.info(f" >> [SNAPSHOT] Effective Dynamic TP (Long): {eff_tp_long:.2f} (Base: {self.dynamic_tp_long}, x{mult_tp:.2f})")
-                else:
-                    self.effective_dynamic_tp_long = None
-
-                # Preview Short SL/TP
-                if self.dynamic_sl_short:
-                    eff_sl_short, log_sl_short = self.risk_manager.calculate_dynamic_basket_sl(
-                        base_sl_amount=abs(self.dynamic_sl_short),
-                        direction='short',
-                        market_analysis=self.market_status,
-                        ai_confidence=self.ai_confidence,
-                        mae_stats=self.mae_stats,
-                        current_drawdown=0,
-                        spread_cost=0.0 # Preview only
-                    )
-                    mult_sl = log_sl_short.get('multiplier', 0)
-                    self.effective_dynamic_sl_short = eff_sl_short
-                    logger.info(f" >> [SNAPSHOT] Effective Dynamic SL (Short): {eff_sl_short:.2f} (Base: {self.dynamic_sl_short}, x{mult_sl:.2f})")
-                else:
-                    self.effective_dynamic_sl_short = None
-                
-                if self.dynamic_tp_short:
-                    eff_tp_short, log_tp_short = self.risk_manager.calculate_dynamic_basket_tp(
-                        base_tp_amount=self.dynamic_tp_short,
-                        direction='short',
-                        market_analysis=self.market_status,
-                        ai_confidence=self.ai_confidence,
-                        mae_stats=self.mae_stats
-                    )
-                    mult_tp = log_tp_short.get('multiplier', 0)
-                    self.effective_dynamic_tp_short = eff_tp_short
-                    logger.info(f" >> [SNAPSHOT] Effective Dynamic TP (Short): {eff_tp_short:.2f} (Base: {self.dynamic_tp_short}, x{mult_tp:.2f})")
-                else:
-                    self.effective_dynamic_tp_short = None
-
-            except Exception as e:
-                logger.warning(f"Failed to generate dynamic SL/TP preview: {e}")
-
-            
         if lock_trigger is not None:
             if lock_trigger > 0:
                 self.lock_profit_trigger = float(lock_trigger)
