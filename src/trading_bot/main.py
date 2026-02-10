@@ -2946,6 +2946,38 @@ class SymbolTrader:
 
         return True # Others (e.g. BTCUSD if added later)
 
+    def check_risk_limits(self):
+        """
+        Check strict risk control limits:
+        1. Max 3 trades per day.
+        2. Cooldown after 2 consecutive losses.
+        """
+        current_date = datetime.now().date()
+        if self.last_trade_date != current_date:
+            self.daily_trade_count = 0
+            self.last_trade_date = current_date
+            
+        if self.daily_trade_count >= self.max_daily_trades:
+            logger.warning(f"Daily trade limit reached ({self.daily_trade_count}/{self.max_daily_trades}). Locked.")
+            return False, "Daily Limit Reached"
+            
+        if time.time() < self.cooldown_until:
+            wait_min = int((self.cooldown_until - time.time()) / 60)
+            logger.warning(f"In Cooldown mode. Remaining: {wait_min} mins.")
+            return False, f"Cooldown Active ({wait_min}m)"
+            
+        return True, "OK"
+
+    def update_trade_outcome(self, profit: float):
+        """Update trade stats for risk management"""
+        if profit < 0:
+            self.consecutive_losses += 1
+            if self.consecutive_losses >= 2:
+                self.cooldown_until = time.time() + 3600 # 1 hour cooldown
+                logger.warning("2 Consecutive Losses! Triggering 1-hour Cooldown.")
+        else:
+            self.consecutive_losses = 0
+
     def process_tick(self):
         """Single tick processing"""
         if not self.is_running:
