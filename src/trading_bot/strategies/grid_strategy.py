@@ -596,28 +596,17 @@ class KalmanGridStrategy:
                 if pos.magic == self.magic_number and pos.type == mt5.POSITION_TYPE_BUY:
                     total_profit_long += (pos.profit + pos.swap)
             
-            # [CHECK] Dynamic Basket TP (Enhanced)
+            # [CHECK] Dynamic Basket TP
             # Calculate Tiered TP Target
             base_tp_long = self.dynamic_tp_long if (self.dynamic_tp_long is not None and self.dynamic_tp_long > 0) else self.global_tp
-            
-            # Use new Multi-Dimensional TP Calculation
-            target_tp_long, log_details_tp = self.risk_manager.calculate_dynamic_basket_tp(
-                base_tp_amount=base_tp_long,
-                direction='long',
-                market_analysis=self.market_status,
-                ai_confidence=self.ai_confidence,
-                mae_stats=self.mae_stats,
+            target_tp_long = self.risk_manager.calculate_tiered_tp(
+                base_tp=base_tp_long,
                 current_atr=current_atr if current_atr else 0,
-                current_profit=total_profit_long
+                level_index=self.long_pos_count
             )
             
-            # Apply tiered logic on top (or integrated? The new method returns a single value based on factors)
-            # The new method handles market factors. We can add simple scaling for levels if needed.
-            # But let's trust the Multi-Dimensional output.
-            
             if total_profit_long >= target_tp_long:
-                logger.info(f"✅ Long Basket TP Hit! Profit: ${total_profit_long:.2f} >= Target: ${target_tp_long:.2f} (Base: {base_tp_long})")
-                logger.info(f"Dynamic TP Logic: {log_details_tp}")
+                logger.info(f"✅ Long Basket TP Hit! Profit: ${total_profit_long:.2f} >= Target: ${target_tp_long:.2f} (Base: {base_tp_long}, Tiered)")
                 should_close_long = True
 
             # [CHECK] Dynamic Basket SL (Enhanced)
@@ -670,23 +659,16 @@ class KalmanGridStrategy:
                 if pos.magic == self.magic_number and pos.type == mt5.POSITION_TYPE_SELL:
                     total_profit_short += (pos.profit + pos.swap)
             
-            # [CHECK] Dynamic Basket TP (Enhanced)
+            # [CHECK] Dynamic Basket TP
             base_tp_short = self.dynamic_tp_short if (self.dynamic_tp_short is not None and self.dynamic_tp_short > 0) else self.global_tp
-            
-            # Use new Multi-Dimensional TP Calculation
-            target_tp_short, log_details_tp = self.risk_manager.calculate_dynamic_basket_tp(
-                base_tp_amount=base_tp_short,
-                direction='short',
-                market_analysis=self.market_status,
-                ai_confidence=self.ai_confidence,
-                mae_stats=self.mae_stats,
+            target_tp_short = self.risk_manager.calculate_tiered_tp(
+                base_tp=base_tp_short,
                 current_atr=current_atr if current_atr else 0,
-                current_profit=total_profit_short
+                level_index=self.short_pos_count
             )
             
             if total_profit_short >= target_tp_short:
-                logger.info(f"✅ Short Basket TP Hit! Profit: ${total_profit_short:.2f} >= Target: ${target_tp_short:.2f} (Base: {base_tp_short})")
-                logger.info(f"Dynamic TP Logic: {log_details_tp}")
+                logger.info(f"✅ Short Basket TP Hit! Profit: ${total_profit_short:.2f} >= Target: ${target_tp_short:.2f} (Base: {base_tp_short}, Tiered)")
                 should_close_short = True
 
             # [CHECK] Dynamic Basket SL (Enhanced)
@@ -903,7 +885,7 @@ class KalmanGridStrategy:
         # [IMMEDIATE FEEDBACK] Pre-calculate effective SL to show user the real dynamic limit
         if updated_any and self.market_status:
             try:
-                # Preview Long SL/TP
+                # Preview Long SL
                 if self.dynamic_sl_long:
                     eff_sl_long, _ = self.risk_manager.calculate_dynamic_basket_sl(
                         base_sl_amount=abs(self.dynamic_sl_long),
@@ -915,17 +897,7 @@ class KalmanGridStrategy:
                     )
                     logger.info(f" >> [PREVIEW] Effective Dynamic SL (Long): {eff_sl_long:.2f} (Base: {self.dynamic_sl_long})")
                 
-                if self.dynamic_tp_long:
-                    eff_tp_long, _ = self.risk_manager.calculate_dynamic_basket_tp(
-                        base_tp_amount=self.dynamic_tp_long,
-                        direction='long',
-                        market_analysis=self.market_status,
-                        ai_confidence=self.ai_confidence,
-                        mae_stats=self.mae_stats
-                    )
-                    logger.info(f" >> [PREVIEW] Effective Dynamic TP (Long): {eff_tp_long:.2f} (Base: {self.dynamic_tp_long})")
-
-                # Preview Short SL/TP
+                # Preview Short SL
                 if self.dynamic_sl_short:
                     eff_sl_short, _ = self.risk_manager.calculate_dynamic_basket_sl(
                         base_sl_amount=abs(self.dynamic_sl_short),
@@ -936,19 +908,8 @@ class KalmanGridStrategy:
                         current_drawdown=0
                     )
                     logger.info(f" >> [PREVIEW] Effective Dynamic SL (Short): {eff_sl_short:.2f} (Base: {self.dynamic_sl_short})")
-                
-                if self.dynamic_tp_short:
-                    eff_tp_short, _ = self.risk_manager.calculate_dynamic_basket_tp(
-                        base_tp_amount=self.dynamic_tp_short,
-                        direction='short',
-                        market_analysis=self.market_status,
-                        ai_confidence=self.ai_confidence,
-                        mae_stats=self.mae_stats
-                    )
-                    logger.info(f" >> [PREVIEW] Effective Dynamic TP (Short): {eff_tp_short:.2f} (Base: {self.dynamic_tp_short})")
-
             except Exception as e:
-                logger.warning(f"Failed to generate dynamic SL/TP preview: {e}")
+                logger.warning(f"Failed to generate dynamic SL preview: {e}")
 
             
         if lock_trigger is not None:

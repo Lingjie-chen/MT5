@@ -17,7 +17,6 @@ class DynamicRiskManager:
     """
 
     def __init__(self):
-        # 1. Weights for Total Score Calculation (Sum must be 1.0)
         self.weights = {
             "trend": 0.3,
             "sentiment": 0.2,
@@ -25,24 +24,7 @@ class DynamicRiskManager:
             "mae_mfe": 0.1,
             "ai": 0.15
         }
-        
-        # 2. SL Multiplier Config (Asymmetric - Conservative)
-        # Score 0.0 -> 0.5x SL (Very Tight)
-        # Score 0.5 -> 0.85x SL (Tight)
-        # Score 1.0 -> 1.2x SL (Looser)
-        self.sl_multiplier_base = 0.5
-        self.sl_multiplier_factor = 0.7 
-        
-        # 3. TP Multiplier Config (Asymmetric - Optimistic)
-        # Score 0.0 -> 0.6x TP (Quick Take Profit)
-        # Score 0.5 -> 1.3x TP (Run)
-        # Score 1.0 -> 2.0x TP (Let it Fly)
-        self.tp_multiplier_base = 0.6
-        self.tp_multiplier_factor = 1.4
-        
         logger.info("DynamicRiskManager Initialized with weights: %s", self.weights)
-        logger.info(f"SL Config: Base={self.sl_multiplier_base}, Factor={self.sl_multiplier_factor}")
-        logger.info(f"TP Config: Base={self.tp_multiplier_base}, Factor={self.tp_multiplier_factor}")
 
     def calculate_dynamic_basket_sl(
         self, 
@@ -97,8 +79,14 @@ class DynamicRiskManager:
             ai_score * self.weights["ai"]
         )
 
-        # Calculate Adjustment Multiplier using Configured Parameters
-        multiplier = self.sl_multiplier_base + (total_score * self.sl_multiplier_factor)
+        # Calculate Adjustment Multiplier
+        # Logic: 
+        # Score 1.0 (Perfect conditions) -> 1.2x Base SL (Allow slightly more room)
+        # Score 0.5 (Neutral) -> 1.0x Base SL
+        # Score 0.0 (Terrible) -> 0.5x Base SL (Tighten significantly)
+        
+        # Linear mapping: Multiplier = 0.5 + (Total_Score * 0.7) -> Range [0.5, 1.2]
+        multiplier = 0.5 + (total_score * 0.7)
         
         # Apply Volatility Adjustment (Optional, if volatility is extreme, maybe widen?)
         # For now, we assume Trend Score already accounts for volatility risk.
@@ -126,94 +114,6 @@ class DynamicRiskManager:
         
         # Return as negative number (standard MT5/Codebase convention for loss limit)
         return -new_sl_amount, log_details
-
-    def calculate_dynamic_basket_tp(
-        self,
-        base_tp_amount: float,
-        direction: str,
-        market_analysis: Dict,
-        ai_confidence: float = 0.8,
-        mae_stats: Optional[Dict] = None,
-        current_atr: float = 0.0,
-        current_profit: float = 0.0
-    ) -> Tuple[float, Dict]:
-        """
-        Calculate the dynamic Basket TP target ($ amount) using 5-Dimensional Analysis.
-        
-        Args:
-            base_tp_amount (float): The base target profit (positive float).
-            direction (str): 'long' or 'short'.
-            market_analysis (Dict): Full market analysis including Sentiment, SMC, etc.
-            ai_confidence (float): 0.0 to 1.0.
-            mae_stats (Dict): Contains 'avg_mfe' or 'mfe_target'.
-            current_atr (float): Current ATR for volatility scaling.
-            current_profit (float): Current floating profit (for context).
-
-        Returns:
-            Tuple[float, Dict]: (New TP Amount, Log Details)
-        """
-        if base_tp_amount <= 0:
-            return 50.0, {"error": "Invalid base_tp_amount"}
-
-        is_long = direction.lower() == 'long'
-        
-        # 1. Trend Score (Trend Following -> Higher TP)
-        trend_score = self._calculate_trend_score(market_analysis, is_long)
-        
-        # 2. Sentiment Score (Greed -> Higher TP, Fear -> Lower TP)
-        # We need to map Sentiment Score (-1 to 1) to a scaling factor
-        # If Sentiment supports direction strongly -> Score 1.0 -> Expand TP
-        sentiment_score = self._calculate_sentiment_score(market_analysis, is_long)
-        
-        # 3. SMC Score (Structure Support -> Higher TP)
-        smc_score = self._calculate_smc_score(market_analysis, is_long)
-        
-        # 4. MFE Score (Historical Potential)
-        # If MFE stats say we usually hit $80, but Base is $50 -> Expand
-        mfe_score = self._calculate_mfe_score(mae_stats, base_tp_amount)
-        
-        # 5. AI Score
-        ai_score = min(max(ai_confidence if ai_confidence <= 1.0 else ai_confidence / 100.0, 0.0), 1.0)
-        
-        # Weighted Sum
-        total_score = (
-            trend_score * self.weights["trend"] +
-            sentiment_score * self.weights["sentiment"] +
-            smc_score * self.weights["smc"] +
-            mfe_score * self.weights["mae_mfe"] +
-            ai_score * self.weights["ai"]
-        )
-        
-        # Calculate Multiplier for TP using Configured Parameters
-        multiplier = self.tp_multiplier_base + (total_score * self.tp_multiplier_factor)
-        
-        new_tp_amount = base_tp_amount * multiplier
-        
-        # Volatility Scaling (ATR)
-        # If high volatility, we can aim higher
-        if current_atr > 0:
-            # Assuming standard "base" volatility context, if ATR expands, target expands
-            # This is a bit subjective, let's just use it as a sanity check minimum
-            min_atr_tp = current_atr * 10.0 # Example: 10 pips * volume? No, this is hard to generalize without volume.
-            # Let's skip direct ATR math on $ amount unless we know volume.
-            pass
-
-        log_details = {
-            "base_tp": base_tp_amount,
-            "direction": direction,
-            "scores": {
-                "trend": round(trend_score, 2),
-                "sentiment": round(sentiment_score, 2),
-                "smc": round(smc_score, 2),
-                "mfe": round(mfe_score, 2),
-                "ai": round(ai_score, 2)
-            },
-            "total_score": round(total_score, 3),
-            "multiplier": round(multiplier, 3),
-            "calculated_tp": round(new_tp_amount, 2)
-        }
-        
-        return new_tp_amount, log_details
 
     def calculate_tiered_tp(
         self,
@@ -306,25 +206,6 @@ class DynamicRiskManager:
             if bos_signal == 'buy': score -= 0.3
             
         return min(max(score, 0.0), 1.0)
-
-    def _calculate_mfe_score(self, mae_stats: Optional[Dict], base_tp: float) -> float:
-        """
-        Calculate MFE Score: Does historical MFE support this Target?
-        """
-        if not mae_stats: return 0.5
-        
-        # We need MFE stats. Let's assume passed dict has 'mfe_target' or similar.
-        # If not, try to infer from what we have.
-        # In main.py, we only passed 'mae_95'. We need to update main.py to pass MFE.
-        
-        mfe_target = mae_stats.get('mfe_target', base_tp * 1.5) 
-        
-        if mfe_target > base_tp * 1.2:
-            return 0.8 # History says we can hit higher
-        elif mfe_target < base_tp * 0.8:
-            return 0.2 # History says this is too ambitious
-        else:
-            return 0.5 # Neutral
 
     def _calculate_mae_score(self, mae_stats: Optional[Dict], current_drawdown: float, base_sl: float) -> float:
         # If no stats, return neutral
