@@ -806,6 +806,9 @@ class QwenClient:
     - "telegram_report": str (Markdown 格式的简报。必须包含四个核心板块: 1.📊市场状态, 2.📝盘前8问(简要回答), 3.🔭观察点, 4.⚖️仓位分析)
         """
         
+        # Combine Analysis Framework
+        analysis_framework = f"{analysis_framework_part1}\n\n### 核心规则：盘前交易计划 (Strategy Rules)\n{strategy_rules_content}\n\n{analysis_framework_part2}"
+        
         # Select Configs
         martingale_config = martingale_configs.get(symbol, martingale_configs["DEFAULT"])
         market_spec = market_specs.get(symbol, market_specs["DEFAULT"])
