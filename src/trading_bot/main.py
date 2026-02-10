@@ -3568,7 +3568,12 @@ class SymbolTrader:
                         # Qwen 信号转换
                         qw_action = strategy.get('action', 'neutral').lower()
                         
-                        # [NEW] Strict Filters (Quality Score & R:R)
+                        # [NEW] Strict Filters
+                        # 0. Trend Consistency Hard Filter
+                        if not trend_consistent and qw_action in ['buy', 'sell']:
+                            logger.warning(f"⛔ Trade Blocked: Trend Inconsistency ({trend_status_msg}). Action forced to HOLD.")
+                            qw_action = 'hold'
+
                         # 1. Quality Score >= 80
                         q_score = int(strategy.get('quality_score', 0))
                         if q_score < 80 and qw_action in ['buy', 'sell']:
