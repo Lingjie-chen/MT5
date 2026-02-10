@@ -140,10 +140,10 @@ class SymbolTrader:
         
         # Advanced Models: SMC, CRT, CCI (via Adapter)
         # MTF kept for context structure
-        # [MODIFIED] CRT HTF adjusted to M15 for M3 execution
+        # [MODIFIED] CRT HTF adjusted to M15 for M1 execution
         self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_M15)
-        # [MODIFIED] MTF M15/H1 are suitable HTFs for M3 execution (3->15->60)
-        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_M15, htf2=mt5.TIMEFRAME_H1) 
+        # [MODIFIED] MTF M5/M15 are suitable HTFs for M1 execution
+        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_M5, htf2=mt5.TIMEFRAME_M15) 
         self.advanced_adapter = AdvancedMarketAnalysisAdapter()
         self.smc_analyzer = SMCAnalyzer()
         
