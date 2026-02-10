@@ -1116,26 +1116,22 @@ class SymbolTrader:
                         self.latest_strategy['exit_conditions']['sl_price'] = calc_sl
 
                 if calc_tp > 0: 
-                    # [USER REQ] 下单时不设置 TP，依赖 Basket TP
-                    explicit_tp = 0.0 
-                    # if self.latest_strategy:
-                    #     if 'exit_conditions' not in self.latest_strategy or self.latest_strategy['exit_conditions'] is None:
-                    #         self.latest_strategy['exit_conditions'] = {}
-                    #     self.latest_strategy['exit_conditions']['tp_price'] = calc_tp
+                    explicit_tp = calc_tp
+                    if self.latest_strategy:
+                        if 'exit_conditions' not in self.latest_strategy or self.latest_strategy['exit_conditions'] is None:
+                            self.latest_strategy['exit_conditions'] = {}
+                        self.latest_strategy['exit_conditions']['tp_price'] = calc_tp
                 
-                if explicit_sl == 0: # 允许 explicit_tp 为 0
-                     logger.error("无法计算优化 SL，放弃交易")
+                if explicit_sl == 0 or explicit_tp == 0:
+                     logger.error("无法计算优化 SL/TP，放弃交易")
                      return 
 
             # 再次确认 R:R (针对 Limit 单的最终确认)
             if 'limit' in trade_type or 'stop' in trade_type:
-                 # 对于 Limit 单，如果 TP=0，我们暂时跳过 RR 检查，或者使用虚拟 TP 检查
-                 # 这里我们假设 TP=0 意味着无限 TP，所以只检查 SL
-                 pass 
-                 # valid, rr = self.check_risk_reward_ratio(price, explicit_sl, explicit_tp)
-                 # if not valid:
-                 #     logger.warning(f"Limit单最终 R:R 检查未通过: {rr:.2f}")
-                 #     return
+                 valid, rr = self.check_risk_reward_ratio(price, explicit_sl, explicit_tp)
+                 if not valid:
+                     logger.warning(f"Limit单最终 R:R 检查未通过: {rr:.2f}")
+                     return
 
             # FIX: Ensure 'action' is defined for the comment
             # action variable was used in _send_order's comment but was coming from llm_action
