@@ -216,9 +216,10 @@ class GitSyncManager:
                 if self.verify_db_synced(db_file, db_manager):
                     # 3. Safe Delete
                     self.safe_delete_db(db_file)
-                    # Clear from failure tracker if it was there
+                    # Clear from failure tracker if it was there (and succeeded)
                     if db_file in self.failed_files:
                         self.failed_files.remove(db_file)
+                    # Note: safe_delete_db handles failed_deletes logic internally now (see below)
                 else:
                     if db_file not in self.failed_files:
                          logger.warning(f"  [KEEP] {os.path.basename(db_file)} (Verification failed)")
