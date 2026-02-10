@@ -5,6 +5,13 @@ color 0d
 :: Navigate to the project root directory (two levels up from scripts/run)
 cd /d "%~dp0\..\.."
 
+:: Activate Virtual Environment
+if exist venv\Scripts\activate.bat (
+    call venv\Scripts\activate.bat
+) else (
+    echo Warning: Virtual environment not found at venv\Scripts\activate.bat
+)
+
 echo [%DATE% %TIME%] Starting AI Trading Dashboard...
 echo ---------------------------------------------------
 echo Access the dashboard at http://localhost:8501

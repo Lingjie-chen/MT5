@@ -5,6 +5,13 @@ color 0a
 :: Switch to script directory's parent (project root)
 cd /d "%~dp0\..\.."
 
+:: Activate Virtual Environment
+if exist venv\Scripts\activate.bat (
+    call venv\Scripts\activate.bat
+) else (
+    echo Warning: Virtual environment not found at venv\Scripts\activate.bat
+)
+
 :loop
 echo [%DATE% %TIME%] Starting Multi-Symbol AI Trading Bot...
 echo ---------------------------------------------------
