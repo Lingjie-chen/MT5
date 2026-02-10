@@ -63,7 +63,8 @@ echo 🧹 Cleaning up duplicate data...
 python scripts\maintenance\clean_backup_data.py
 python scripts\maintenance\clean_postgres_db.py
 
-:: Run the engine
-python scripts\maintenance\checkpoint_dbs.py
+:: Run the engine (Enable Safe Cleanup by default)
+python scripts\maintenance\checkpoint_dbs.py --cleanup
+
 
 pause
