@@ -148,6 +148,38 @@ class MT5DataProcessor:
         obv = (np.sign(df[price_column].diff()) * df[volume_column]).fillna(0).cumsum()
         return obv
 
+    def calculate_macd(self, df, fast_period=12, slow_period=26, signal_period=9, price_column='close'):
+        """Calculate MACD (Moving Average Convergence Divergence)
+        
+        Args:
+            df (pd.DataFrame): Price data
+            fast_period (int): Fast EMA period
+            slow_period (int): Slow EMA period
+            signal_period (int): Signal line period
+            price_column (str): Price column name
+        
+        Returns:
+            pd.DataFrame: DataFrame with 'macd', 'macd_signal', 'macd_hist' columns
+        """
+        # Calculate Fast and Slow EMAs
+        ema_fast = df[price_column].ewm(span=fast_period, adjust=False).mean()
+        ema_slow = df[price_column].ewm(span=slow_period, adjust=False).mean()
+        
+        # Calculate MACD Line
+        macd_line = ema_fast - ema_slow
+        
+        # Calculate Signal Line
+        macd_signal = macd_line.ewm(span=signal_period, adjust=False).mean()
+        
+        # Calculate MACD Histogram
+        macd_hist = macd_line - macd_signal
+        
+        return pd.DataFrame({
+            'macd': macd_line,
+            'macd_signal': macd_signal,
+            'macd_hist': macd_hist
+        }, index=df.index)
+
     def generate_features(self, df, fast_ema=12, slow_ema=26, atr_period=14, rsi_period=14):
         """Generate trading features
         
@@ -166,6 +198,12 @@ class MT5DataProcessor:
         # Calculate EMA
         df['ema_fast'] = self.calculate_ema(df, fast_ema)
         df['ema_slow'] = self.calculate_ema(df, slow_ema)
+        
+        # Calculate MACD [NEW] - Explicitly added for Pre-Market 8 Questions
+        macd_df = self.calculate_macd(df, fast_period=fast_ema, slow_period=slow_ema)
+        df['macd'] = macd_df['macd']
+        df['macd_signal'] = macd_df['macd_signal']
+        df['macd_hist'] = macd_df['macd_hist']
         
         # Calculate ATR
         df['atr'] = self.calculate_atr(df, atr_period)
@@ -189,7 +227,7 @@ class MT5DataProcessor:
         
         # Instead of dropping rows with NaN, fill forward from first valid value
         # This preserves all original data points while handling missing indicator values
-        indicators = ['ema_fast', 'ema_slow', 'atr', 'rsi', 'obv', 'ema_crossover', 'volatility', 'price_change']
+        indicators = ['ema_fast', 'ema_slow', 'atr', 'rsi', 'obv', 'ema_crossover', 'volatility', 'price_change', 'macd', 'macd_signal', 'macd_hist']
         for indicator in indicators:
             if indicator in df.columns:
                 # Fill NaN values with the first valid value of the indicator
