@@ -3122,17 +3122,17 @@ class SymbolTrader:
                     df = self.get_market_data(600) 
                     
                     if df is not None:
-                        # Fetch Multi-Timeframe Data (M5, M15, H1) for Analysis
-                        # [MODIFIED] M5, M15, H1 for Trend Consistency
+                        # Fetch Multi-Timeframe Data (M1, M5, M15) for Analysis
+                        # [MODIFIED] M1, M5, M15 for Trend Consistency
+                        rates_m1 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_M1, 0, 200)
                         rates_m5 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_M5, 0, 200)
                         rates_m15 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_M15, 0, 200)
-                        rates_h1 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_H1, 0, 200)
                         
+                        df_m1 = pd.DataFrame(rates_m1) if rates_m1 is not None else pd.DataFrame()
                         df_m5 = pd.DataFrame(rates_m5) if rates_m5 is not None else pd.DataFrame()
                         df_m15 = pd.DataFrame(rates_m15) if rates_m15 is not None else pd.DataFrame()
-                        df_h1 = pd.DataFrame(rates_h1) if rates_h1 is not None else pd.DataFrame()
 
-                        for dframe in [df_m5, df_m15, df_h1]:
+                        for dframe in [df_m1, df_m5, df_m15]:
                             if not dframe.empty: 
                                 dframe['time'] = pd.to_datetime(dframe['time'], unit='s')
                                 if 'tick_volume' in dframe: dframe.rename(columns={'tick_volume': 'volume'}, inplace=True)
@@ -3147,25 +3147,25 @@ class SymbolTrader:
                         processor = MT5DataProcessor()
                         df_features = processor.generate_features(df)
                         
-                        # Calculate features for M5/M15/H1
+                        # Calculate features for M1/M5/M15
+                        df_features_m1 = processor.generate_features(df_m1) if not df_m1.empty else pd.DataFrame()
                         df_features_m5 = processor.generate_features(df_m5) if not df_m5.empty else pd.DataFrame()
                         df_features_m15 = processor.generate_features(df_m15) if not df_m15.empty else pd.DataFrame()
-                        df_features_h1 = processor.generate_features(df_h1) if not df_h1.empty else pd.DataFrame()
                         
                         # Helper to safely get latest dict
                         def get_latest_safe(dframe):
                             if dframe.empty: return {}
                             return dframe.iloc[-1].to_dict()
 
+                        feat_m1 = get_latest_safe(df_features_m1)
                         feat_m5 = get_latest_safe(df_features_m5)
                         feat_m15 = get_latest_safe(df_features_m15)
-                        feat_h1 = get_latest_safe(df_features_h1)
 
-                        # [NEW] Calculate S/R Resonance (M5, M15, H1)
+                        # [NEW] Calculate S/R Resonance (M1, M5, M15)
+                        sr_m1 = self.advanced_adapter.detect_valid_sr_levels(df_m1)
                         sr_m5 = self.advanced_adapter.detect_valid_sr_levels(df_m5)
                         sr_m15 = self.advanced_adapter.detect_valid_sr_levels(df_m15)
-                        sr_h1 = self.advanced_adapter.detect_valid_sr_levels(df_h1)
-                        sr_resonance = self.advanced_adapter.check_sr_resonance(sr_m5, sr_m15, sr_h1)
+                        sr_resonance = self.advanced_adapter.check_sr_resonance(sr_m1, sr_m5, sr_m15)
                         logger.info(f"S/R Resonance: {sr_resonance}")
 
                         # [NEW] Multi-Timeframe Trend Consistency Check
@@ -3181,15 +3181,15 @@ class SymbolTrader:
                             if close < fast < slow: return "bearish"
                             return "ranging"
 
+                        trend_m1 = determine_trend(feat_m1)
                         trend_m5 = determine_trend(feat_m5)
                         trend_m15 = determine_trend(feat_m15)
-                        trend_h1 = determine_trend(feat_h1)
                         
-                        trend_consistent = (trend_m5 == trend_m15 == trend_h1) and (trend_m5 in ['bullish', 'bearish'])
-                        trend_status_msg = f"M5:{trend_m5} | M15:{trend_m15} | H1:{trend_h1}"
+                        trend_consistent = (trend_m1 == trend_m5 == trend_m15) and (trend_m1 in ['bullish', 'bearish'])
+                        trend_status_msg = f"M1:{trend_m1} | M5:{trend_m5} | M15:{trend_m15}"
                         
                         if trend_consistent:
-                            logger.info(f"✅ Trend Consistent: {trend_m5.upper()} ({trend_status_msg})")
+                            logger.info(f"✅ Trend Consistent: {trend_m1.upper()} ({trend_status_msg})")
                         else:
                             logger.warning(f"❌ Trend Inconsistent: {trend_status_msg}")
 
@@ -3287,6 +3287,13 @@ class SymbolTrader:
                                 "volatility": float(latest_features.get('volatility', 0))
                             },
                             "multi_tf_data": {
+                                "M1": {
+                                    "close": float(feat_m1.get('close', 0)),
+                                    "rsi": float(feat_m1.get('rsi', 50)),
+                                    "ema_fast": float(feat_m1.get('ema_fast', 0)),
+                                    "ema_slow": float(feat_m1.get('ema_slow', 0)),
+                                    "trend": trend_m1
+                                },
                                 "M5": {
                                     "close": float(feat_m5.get('close', 0)),
                                     "rsi": float(feat_m5.get('rsi', 50)),
@@ -3300,18 +3307,11 @@ class SymbolTrader:
                                     "ema_fast": float(feat_m15.get('ema_fast', 0)),
                                     "ema_slow": float(feat_m15.get('ema_slow', 0)),
                                     "trend": trend_m15
-                                },
-                                "H1": {
-                                    "close": float(feat_h1.get('close', 0)),
-                                    "rsi": float(feat_h1.get('rsi', 50)),
-                                    "ema_fast": float(feat_h1.get('ema_fast', 0)),
-                                    "ema_slow": float(feat_h1.get('ema_slow', 0)),
-                                    "trend": trend_h1
                                 }
                             },
                             "trend_consistency": {
                                 "consistent": trend_consistent,
-                                "direction": trend_m5 if trend_consistent else "mixed",
+                                "direction": trend_m1 if trend_consistent else "mixed",
                                 "details": trend_status_msg
                             },
                             "sr_resonance": sr_resonance # [NEW] Inject Resonance Data
