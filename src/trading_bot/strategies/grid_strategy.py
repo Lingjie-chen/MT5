@@ -791,26 +791,26 @@ class KalmanGridStrategy:
         except (ValueError, TypeError):
              logger.warning(f"Invalid basket_tp_short value: {basket_tp_short}")
 
-        # [NEW] Basket SL Updates
-        try:
-            if basket_sl_long is not None:
-                val = float(basket_sl_long)
-                if val < 0: val = abs(val) # Store as positive value representing loss amount
-                if val > 0:
-                    self.dynamic_sl_long = -val # Store as negative number
-                    logger.info(f"Updated Dynamic Basket SL (Long): {self.dynamic_sl_long}")
-        except (ValueError, TypeError):
-             logger.warning(f"Invalid basket_sl_long value: {basket_sl_long}")
+        # [NEW] Basket SL Updates - DISABLED
+        # try:
+        #     if basket_sl_long is not None:
+        #         val = float(basket_sl_long)
+        #         if val < 0: val = abs(val) # Store as positive value representing loss amount
+        #         if val > 0:
+        #             self.dynamic_sl_long = -val # Store as negative number
+        #             logger.info(f"Updated Dynamic Basket SL (Long): {self.dynamic_sl_long}")
+        # except (ValueError, TypeError):
+        #      logger.warning(f"Invalid basket_sl_long value: {basket_sl_long}")
 
-        try:
-            if basket_sl_short is not None:
-                val = float(basket_sl_short)
-                if val < 0: val = abs(val)
-                if val > 0:
-                    self.dynamic_sl_short = -val # Store as negative number
-                    logger.info(f"Updated Dynamic Basket SL (Short): {self.dynamic_sl_short}")
-        except (ValueError, TypeError):
-             logger.warning(f"Invalid basket_sl_short value: {basket_sl_short}")
+        # try:
+        #     if basket_sl_short is not None:
+        #         val = float(basket_sl_short)
+        #         if val < 0: val = abs(val)
+        #         if val > 0:
+        #             self.dynamic_sl_short = -val # Store as negative number
+        #             logger.info(f"Updated Dynamic Basket SL (Short): {self.dynamic_sl_short}")
+        # except (ValueError, TypeError):
+        #      logger.warning(f"Invalid basket_sl_short value: {basket_sl_short}")
 
             
         if lock_trigger is not None:

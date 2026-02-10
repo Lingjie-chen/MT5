@@ -1728,7 +1728,7 @@ class SymbolTrader:
                         if valid_sl and (diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5)):
                              request["sl"] = opt_sl
                              changed = True
-                             logger.info(f"AI Updating SL for #{pos.ticket}: {sl} -> {opt_sl}")
+                             # logger.info(f"AI Updating SL for #{pos.ticket}: {sl} -> {opt_sl}")
 
                     if opt_tp > 0:
                         diff_tp = abs(opt_tp - tp)
