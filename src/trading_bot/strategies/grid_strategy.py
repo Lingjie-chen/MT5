@@ -44,28 +44,18 @@ class KalmanGridStrategy:
         self.bb_period = 100
         self.bb_deviation = 2.0
         
-        self.dynamic_global_tp = None # Deprecated, use specific ones
-        self.dynamic_tp_long = None
-        self.dynamic_tp_short = None
-        
-        # [NEW] Basket SL (From AI)
-        self.dynamic_sl_long = None
-        self.dynamic_sl_short = None
+        # [NEW] Unified Basket TP/SL (Absolute Value in USD)
+        self.basket_tp = None
+        self.basket_sl = None
         
         self.lock_profit_trigger = None # Store AI recommended Lock Trigger
         self.trailing_stop_config = None # Store AI recommended Trailing Config
         
-        # [MODIFIED] Separate State for Long and Short Baskets
+        # [MODIFIED] Separate State for Long and Short Baskets (Still needed for tracking max profit)
         self.basket_lock_level_long = None 
         self.max_basket_profit_long = 0.0 
         self.basket_lock_level_short = None
         self.max_basket_profit_short = 0.0
-
-        # [SNAPSHOT] Effective TP/SL Snapshot (from Preview)
-        self.effective_dynamic_sl_long = None
-        self.effective_dynamic_tp_long = None
-        self.effective_dynamic_sl_short = None
-        self.effective_dynamic_tp_short = None
         
         # Deprecated mixed state (kept for safety if referenced elsewhere)
         self.basket_lock_level = None 
