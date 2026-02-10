@@ -580,23 +580,23 @@ class QwenClient:
 
     
         analysis_framework = """
-    ### 一、交易系统核心架构 (Multi-Cycle Resonance: M5 + M15 + H1)
+    ### 一、交易系统核心架构 (Multi-Cycle Resonance: M1 + M5 + M15)
     你必须基于以下统一的交易周期架构进行分析 (查看提供的 `multi_tf_data`, `trend_consistency`, `sr_resonance`)：
     
-    1. **多周期趋势共振 (Multi-Cycle Resonance)**: **M5, M15, H1**
-       - **核心规则**: 只有当 M5、M15、H1 三个周期的趋势方向（Bullish/Bearish）完全一致时，才允许寻找入场机会。
+    1. **多周期趋势共振 (Multi-Cycle Resonance)**: **M1, M5, M15**
+       - **核心规则**: 只有当 M1、M5、M15 三个周期的趋势方向（Bullish/Bearish）完全一致时，才允许寻找入场机会。
        - **一致性检查**: 查看 `trend_consistency` 字段。如果 `consistent` 为 `False`，**强制 HOLD**。
     
     2. **周期角色**:
-       - **M15 (Core)**: 核心交易与执行周期。
-       - **H1 (Macro)**: 大趋势方向确认。
-       - **M5 (Micro)**: 精准入场点与微观结构确认。
+       - **M1 (Core)**: 核心交易与执行周期，寻找精准入场点。
+       - **M5 (Trend)**: 短期趋势确认。
+       - **M15 (Macro)**: 大趋势方向确认。
 
     ### 二、严格过滤器 (Strict Filters)
     **任何不满足以下条件的信号，必须直接丢弃 (Action = HOLD)**：
     
     1. **趋势一致性硬性阻断 (Trend Consistency Block)**
-       - **规则**: `M5_Trend == M15_Trend == H1_Trend`
+       - **规则**: `M1_Trend == M5_Trend == M15_Trend`
        - 检查: 如果 `trend_consistency['consistent']` 为 `False`，禁止任何开仓 (Action 必须为 HOLD 或 CLOSE_ALL)。
        - 即使有完美的 SMC 结构，如果趋势不共振，也不允许交易。
     
@@ -605,7 +605,7 @@ class QwenClient:
        - 计算: (TP距离 / SL距离) 必须 >= 1.5。
     
     3. **S/R 有效性定义 (Valid S/R)**
-       - 必须在 M5/M15/H1 的共振阻力/支撑位附近。
+       - 必须在 M1/M5/M15 的共振阻力/支撑位附近。
     
     4. **质量评分 (Quality Score)**
        - **评分标准**:
@@ -619,14 +619,14 @@ class QwenClient:
     **在做出任何入场决定 (Action != HOLD) 前，必须严格自我反思并回答以下 8 个问题。若任意一条不满足，强制 HOLD。**
     
     1. **当前市场正在干什么?** (Trend Identification)
-       - M5/M15/H1 是否共振？
+       - M1/M5/M15 是否共振？
     2. **趋势的起点在哪里?**
     3. **当前趋势是什么阶段?**
     4. **当前趋势的级别是什么?**
     5. **你的偏见是什么?**
        - 必须顺应三周期共振方向。
     6. **你是顺哪个大级别，逆哪个小级别周期?**
-       - **规则升级**: 必须顺应 H1/M15/M5 的共振趋势。在 M1/M5 级别寻找微小回调结束点入场。
+       - **规则升级**: 必须顺应 M15/M5 的共振趋势。在 M1 级别寻找微小回调结束点入场。
     7. **你的防守位在哪里?**
     8. **要不要到交易周期里去?**
        - **Yes**: 趋势共振 + Score >= 80。
