@@ -513,60 +513,35 @@ class AdvancedMarketAnalysis:
 
     def detect_structure_points(self, df):
         """
-        Identify Market Structure Points (Swing Highs / Swing Lows) using SMC logic.
-        Algorithm:
-        1. Identify Fractals (Bill Williams).
-        2. Filter for Alternating Swing Points (Swing High -> Swing Low) to remove internal noise.
-        3. A Swing High is the highest high between two Swing Lows.
-        4. A Swing Low is the lowest low between two Swing Highs.
-        
-        Returns:
-        List[Dict]: [{'type': 'SH', 'price': 1.0, 'index': 10, 'time': ...}, ...]
+        识别最近的市场结构点 (Swing Highs / Swing Lows)
+        返回: 结构列表, 包含价格、索引、类型(SH/SL)
         """
-        highs = df['high'].values
-        lows = df['low'].values
+        highs = df['high'].values; lows = df['low'].values
         n = len(df)
-        if n < 5: return []
+        points = []
         
-        # 1. Identify Raw Fractals (5-bar)
-        fractals = []
-        for i in range(2, n-2):
-            # Bullish Fractal (Swing Low)
-            if lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
-                fractals.append({'type': 'SL', 'price': lows[i], 'index': i, 'time': df.index[i]})
+        # 使用动态回溯，寻找分形点
+        # Fractal: High[i] > High[i-2...i+2]
+        for i in range(n-3, 2, -1):
+            is_sh = True
+            is_sl = True
             
-            # Bearish Fractal (Swing High)
-            if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
-                fractals.append({'type': 'SH', 'price': highs[i], 'index': i, 'time': df.index[i]})
-        
-        if not fractals: return []
-        
-        # 2. Filter for Major Structure (Alternating High/Low)
-        clean_points = []
-        last_type = None
-        
-        # Initialize with the first fractal
-        clean_points.append(fractals[0])
-        last_type = fractals[0]['type']
-        
-        for i in range(1, len(fractals)):
-            curr = fractals[i]
-            prev = clean_points[-1]
+            # Check Swing High
+            for k in range(1, 4): # Look left and right 3 bars
+                if i-k >= 0 and highs[i] <= highs[i-k]: is_sh = False
+                if i+k < n and highs[i] <= highs[i+k]: is_sh = False
             
-            if curr['type'] == last_type:
-                # Same type, check if better (Lower Low or Higher High)
-                if curr['type'] == 'SL':
-                    if curr['price'] < prev['price']:
-                        clean_points[-1] = curr # Update to lower low
-                elif curr['type'] == 'SH':
-                    if curr['price'] > prev['price']:
-                        clean_points[-1] = curr # Update to higher high
-            else:
-                # Different type, simply add (Alternation)
-                clean_points.append(curr)
-                last_type = curr['type']
+            # Check Swing Low
+            for k in range(1, 4):
+                if i-k >= 0 and lows[i] >= lows[i-k]: is_sl = False
+                if i+k < n and lows[i] >= lows[i+k]: is_sl = False
                 
-        return clean_points
+            if is_sh: points.append({'type': 'SH', 'price': highs[i], 'index': i, 'time': df.index[i]})
+            if is_sl: points.append({'type': 'SL', 'price': lows[i], 'index': i, 'time': df.index[i]})
+            
+            if len(points) >= 10: break # 只找最近的10个点
+            
+        return sorted(points, key=lambda x: x['index']) # 按时间正序排列
 
     def generate_analysis_summary(self, df: pd.DataFrame) -> Dict[str, any]:
         if len(df) < 20: return {"summary": "数据不足", "recommendation": "hold", "confidence": 0.0}
@@ -999,60 +974,35 @@ class SMCAnalyzer:
 
     def detect_structure_points(self, df):
         """
-        Identify Market Structure Points (Swing Highs / Swing Lows) using SMC logic.
-        Algorithm:
-        1. Identify Fractals (Bill Williams).
-        2. Filter for Alternating Swing Points (Swing High -> Swing Low) to remove internal noise.
-        3. A Swing High is the highest high between two Swing Lows.
-        4. A Swing Low is the lowest low between two Swing Highs.
-        
-        Returns:
-        List[Dict]: [{'type': 'SH', 'price': 1.0, 'index': 10, 'time': ...}, ...]
+        识别最近的市场结构点 (Swing Highs / Swing Lows)
+        返回: 结构列表, 包含价格、索引、类型(SH/SL)
         """
-        highs = df['high'].values
-        lows = df['low'].values
+        highs = df['high'].values; lows = df['low'].values
         n = len(df)
-        if n < 5: return []
+        points = []
         
-        # 1. Identify Raw Fractals (5-bar)
-        fractals = []
-        for i in range(2, n-2):
-            # Bullish Fractal (Swing Low)
-            if lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
-                fractals.append({'type': 'SL', 'price': lows[i], 'index': i, 'time': df.index[i]})
+        # 使用动态回溯，寻找分形点
+        # Fractal: High[i] > High[i-2...i+2]
+        for i in range(n-3, 2, -1):
+            is_sh = True
+            is_sl = True
             
-            # Bearish Fractal (Swing High)
-            if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
-                fractals.append({'type': 'SH', 'price': highs[i], 'index': i, 'time': df.index[i]})
-        
-        if not fractals: return []
-        
-        # 2. Filter for Major Structure (Alternating High/Low)
-        clean_points = []
-        last_type = None
-        
-        # Initialize with the first fractal
-        clean_points.append(fractals[0])
-        last_type = fractals[0]['type']
-        
-        for i in range(1, len(fractals)):
-            curr = fractals[i]
-            prev = clean_points[-1]
+            # Check Swing High
+            for k in range(1, 4): # Look left and right 3 bars
+                if i-k >= 0 and highs[i] <= highs[i-k]: is_sh = False
+                if i+k < n and highs[i] <= highs[i+k]: is_sh = False
             
-            if curr['type'] == last_type:
-                # Same type, check if better (Lower Low or Higher High)
-                if curr['type'] == 'SL':
-                    if curr['price'] < prev['price']:
-                        clean_points[-1] = curr # Update to lower low
-                elif curr['type'] == 'SH':
-                    if curr['price'] > prev['price']:
-                        clean_points[-1] = curr # Update to higher high
-            else:
-                # Different type, simply add (Alternation)
-                clean_points.append(curr)
-                last_type = curr['type']
+            # Check Swing Low
+            for k in range(1, 4):
+                if i-k >= 0 and lows[i] >= lows[i-k]: is_sl = False
+                if i+k < n and lows[i] >= lows[i+k]: is_sl = False
                 
-        return clean_points
+            if is_sh: points.append({'type': 'SH', 'price': highs[i], 'index': i, 'time': df.index[i]})
+            if is_sl: points.append({'type': 'SL', 'price': lows[i], 'index': i, 'time': df.index[i]})
+            
+            if len(points) >= 10: break # 只找最近的10个点
+            
+        return sorted(points, key=lambda x: x['index']) # 按时间正序排列
 
     def detect_smart_structure(self, df, sentiment_score):
         """
