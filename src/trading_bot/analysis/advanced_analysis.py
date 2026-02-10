@@ -944,8 +944,8 @@ class SMCAnalyzer:
         except: return None
 
     def get_market_sentiment(self, df_current, symbol):
-        # User Request: Analysis H1 as HTF for Sentiment
-        df_htf = self.get_mtf_data(symbol, mt5.TIMEFRAME_H1, 300)
+        # User Request: Analysis M15 as HTF for Sentiment (Core is M1)
+        df_htf = self.get_mtf_data(symbol, mt5.TIMEFRAME_M15, 300)
         if df_htf is None: return 0, "Neutral"
         ema_long = self.calculate_ema(df_htf['close'], self.ma_period).iloc[-1]
         current_price_htf = df_htf['close'].iloc[-1]
