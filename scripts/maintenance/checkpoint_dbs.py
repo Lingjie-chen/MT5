@@ -249,11 +249,13 @@ class GitSyncManager:
                 try:
                     count_pg = pd.read_sql_query(f"SELECT COUNT(*) FROM {table}", db_manager.pg_engine).iloc[0, 0]
                     if count_pg < count_sqlite:
-                        logger.warning(f"    Table {table} mismatch: Local={count_sqlite}, Remote={count_pg}")
+                        if db_path not in self.failed_files: # Suppress detail log too
+                             logger.warning(f"    Table {table} mismatch: Local={count_sqlite}, Remote={count_pg}")
                         all_synced = False
                         break
                 except:
-                    logger.warning(f"    Table {table} missing in Remote")
+                    if db_path not in self.failed_files:
+                         logger.warning(f"    Table {table} missing in Remote")
                     all_synced = False
                     break
             
