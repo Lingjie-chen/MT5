@@ -283,15 +283,20 @@ class DBSyncManager:
 
     def get_dbs(self):
         """Find all relevant DB files"""
+        # Ensure we cover all possible locations
         patterns = [
-            os.path.join(self.base_dir, 'src', 'trading_bot', 'data', 'trading_data_*.db'),
-            os.path.join(self.base_dir, 'crypto', '*.db'), # Legacy path support?
-            os.path.join(self.base_dir, 'src', 'trading_bot', 'data', 'trading_data.db')
+            os.path.join(self.base_dir, 'src', 'trading_bot', 'data', 'trading_data_*.db'), # Per-symbol DBs
+            os.path.join(self.base_dir, 'src', 'trading_bot', 'data', 'trading_data.db'),   # Legacy/Main DB
+            os.path.join(self.base_dir, 'src', 'trading_bot', 'trading_data_*.db'),         # Root of trading_bot (sometimes files are created here)
+            os.path.join(self.base_dir, 'src', 'trading_bot', 'trading_data.db'),           # Root of trading_bot main DB
+            os.path.join(self.base_dir, 'crypto', '*.db')                                   # Legacy
         ]
         files = []
         for p in patterns:
             files.extend(glob.glob(p))
-        return list(set([f for f in files if os.path.exists(f)]))
+        
+        # Deduplicate and verify existence
+        return list(set([os.path.abspath(f) for f in files if os.path.exists(f)]))
 
     def checkpoint_wal(self, db_path):
         """Force WAL checkpoint to merge data into main DB file"""
