@@ -1105,7 +1105,28 @@ class SymbolTrader:
                 
                 calc_sl, calc_tp = self.calculate_optimized_sl_tp(trade_type, price, atr, ai_exit_conds=sl_tp_params)
                 
-                # [USER REQ] 强制回写：如果计算成功，将其作为 Explicit SL/TP 使用
+            # [NEW] Pre-Market Check Enforcement (盘前 8 问)
+            if self.latest_strategy and 'pre_market_check' in self.latest_strategy:
+                pm_check = self.latest_strategy['pre_market_check']
+                if isinstance(pm_check, dict):
+                    q8_exec = pm_check.get('q8_execution', '').lower()
+                    if q8_exec in ['no', 'wait', 'false']:
+                        logger.warning(f"🛑 盘前8问拦截 (Pre-Market Check): q8_execution={q8_exec} -> 强制 HOLD")
+                        return
+                    
+                    # 额外检查 Q1-Q7 一致性 (可选，若 q8 已经是综合结论)
+                    q1_trend = pm_check.get('q1_trend', '')
+                    q5_bias = pm_check.get('q5_bias', '')
+                    
+                    # 简单的方向一致性检查
+                    if 'buy' in llm_action.lower() and ('空' in q1_trend or '空' in q5_bias):
+                         logger.warning(f"🛑 逻辑冲突拦截: Action=BUY 但 Q1/Q5 倾向做空 -> 强制 HOLD")
+                         return
+                    if 'sell' in llm_action.lower() and ('多' in q1_trend or '多' in q5_bias):
+                         logger.warning(f"🛑 逻辑冲突拦截: Action=SELL 但 Q1/Q5 倾向做多 -> 强制 HOLD")
+                         return
+
+            # [USER REQ] 强制回写：如果计算成功，将其作为 Explicit SL/TP 使用
                 # 这样下方的日志 "Explicit SL=..." 就会显示正确的值，且后续逻辑也会使用它
                 if calc_sl > 0: 
                     explicit_sl = calc_sl
