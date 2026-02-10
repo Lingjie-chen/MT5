@@ -4051,5 +4051,5 @@ if __name__ == "__main__":
     
     logger.info(f"Starting Bot with Account {args.account} for symbols: {symbols}")
             
-    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M3)
+    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M1)
     bot.start(account_index=args.account)
