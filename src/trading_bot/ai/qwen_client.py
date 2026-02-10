@@ -53,6 +53,23 @@ class QwenClient:
     使用硅基流动API服务，遵循ValueCell的API调用模式
     """
     
+    def _load_strategy_rules(self) -> str:
+        """从 docs/strategy_rules.md 加载最新的盘前交易规则"""
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            # src/trading_bot/ai/ -> ../../../docs/strategy_rules.md
+            rules_path = os.path.join(current_dir, "..", "..", "..", "docs", "strategy_rules.md")
+            
+            if os.path.exists(rules_path):
+                with open(rules_path, "r", encoding="utf-8") as f:
+                    return f.read()
+            else:
+                logger.warning(f"Strategy rules file not found at: {rules_path}")
+                return ""
+        except Exception as e:
+            logger.error(f"Error loading strategy rules: {e}")
+            return ""
+
     def _get_system_prompt(self, symbol: str) -> str:
         """
         根据交易品种生成特定的系统提示词 (System Prompt)
@@ -814,6 +831,9 @@ class QwenClient:
         # Select Configs
         martingale_config = martingale_configs.get(symbol, martingale_configs["DEFAULT"])
         market_spec = market_specs.get(symbol, market_specs["DEFAULT"])
+        
+        # Load Strategy Rules from file
+        strategy_rules_content = self._load_strategy_rules()
         
         # Reflection Skills (Synced from CLAUDE.local.md)
         reflection_skills = """
