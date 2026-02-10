@@ -103,11 +103,13 @@ class HybridOptimizer:
         return final_signal, final_score, self.weights
 
 class SymbolTrader:
-    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M15):
+    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M1):
         self.symbol = symbol
         self.timeframe = timeframe
-        self.tf_name = "M15"
-        if timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
+        self.tf_name = "M1"
+        if timeframe == mt5.TIMEFRAME_M1: self.tf_name = "M1"
+        elif timeframe == mt5.TIMEFRAME_M5: self.tf_name = "M5"
+        elif timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
         elif timeframe == mt5.TIMEFRAME_M3: self.tf_name = "M3"
         elif timeframe == mt5.TIMEFRAME_H1: self.tf_name = "H1"
         elif timeframe == mt5.TIMEFRAME_H4: self.tf_name = "H4"
