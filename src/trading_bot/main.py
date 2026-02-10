@@ -15,6 +15,7 @@ if current_dir not in sys.path:
     sys.path.append(current_dir)
 
 from utils.file_watcher import FileWatcher
+from position_engine.mt5_adapter import MT5RiskManager
 
 # Try importing MetaTrader5
 try:
