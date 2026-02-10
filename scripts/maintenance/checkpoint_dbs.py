@@ -17,15 +17,27 @@ import importlib.util
 current_dir = os.path.dirname(os.path.abspath(__file__))
 scripts_dir = os.path.dirname(current_dir) # scripts/
 project_root = os.path.dirname(scripts_dir) # root
+src_dir = os.path.join(project_root, 'src', 'trading_bot') # src/trading_bot
 
 if project_root not in sys.path:
     sys.path.append(project_root)
+if src_dir not in sys.path:
+    sys.path.append(src_dir)
 
-# Try to import git_auto_resolve
+# Try to import git_auto_resolve and FileWatcher
 try:
     from scripts.maintenance import git_auto_resolve
 except ImportError:
     git_auto_resolve = None
+
+try:
+    from utils.file_watcher import FileWatcher
+except ImportError:
+    # Try to import from src.trading_bot.utils if path is set
+    try:
+        from src.trading_bot.utils.file_watcher import FileWatcher
+    except ImportError:
+        FileWatcher = None
 
 # Configure Logging
 logging.basicConfig(
@@ -404,6 +416,18 @@ def main():
     # Detect base dir dynamically
     base_dir = project_root
     logger.info(f"Base Directory: {base_dir}")
+    
+    # --- NEW: Start FileWatcher (if available) ---
+    if FileWatcher:
+        logger.info("Starting FileWatcher for auto-restart...")
+        watcher = FileWatcher(directories=[
+            os.path.join(base_dir, "scripts"),
+            os.path.join(base_dir, "src"),
+        ])
+        watcher.start()
+    else:
+        logger.warning("FileWatcher not found. Auto-restart on file change disabled.")
+    # ---------------------------------------------
     
     # --- NEW: Consolidate DBs (Run at startup) ---
     try:

@@ -84,5 +84,11 @@ python3 scripts/maintenance/clean_backup_data.py
 python3 scripts/maintenance/clean_postgres_db.py
 
 # Run the engine (Enable Safe Cleanup by default)
-python3 scripts/maintenance/checkpoint_dbs.py --cleanup
+# Wrap in a loop to support auto-restart by FileWatcher
+while true; do
+    echo "🔄 Starting Checkpoint Engine..."
+    python3 scripts/maintenance/checkpoint_dbs.py --cleanup
+    echo "⚠️ Engine stopped. Restarting in 3 seconds..."
+    sleep 3
+done
 
