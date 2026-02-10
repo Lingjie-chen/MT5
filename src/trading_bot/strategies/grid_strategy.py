@@ -44,18 +44,28 @@ class KalmanGridStrategy:
         self.bb_period = 100
         self.bb_deviation = 2.0
         
-        # [NEW] Unified Basket TP/SL (Absolute Value in USD)
-        self.basket_tp = None
-        self.basket_sl = None
+        self.dynamic_global_tp = None # Deprecated, use specific ones
+        self.dynamic_tp_long = None
+        self.dynamic_tp_short = None
+        
+        # [NEW] Basket SL (From AI)
+        self.dynamic_sl_long = None
+        self.dynamic_sl_short = None
         
         self.lock_profit_trigger = None # Store AI recommended Lock Trigger
         self.trailing_stop_config = None # Store AI recommended Trailing Config
         
-        # [MODIFIED] Separate State for Long and Short Baskets (Still needed for tracking max profit)
+        # [MODIFIED] Separate State for Long and Short Baskets
         self.basket_lock_level_long = None 
         self.max_basket_profit_long = 0.0 
         self.basket_lock_level_short = None
         self.max_basket_profit_short = 0.0
+
+        # [SNAPSHOT] Effective TP/SL Snapshot (from Preview)
+        self.effective_dynamic_sl_long = None
+        self.effective_dynamic_tp_long = None
+        self.effective_dynamic_sl_short = None
+        self.effective_dynamic_tp_short = None
         
         # Deprecated mixed state (kept for safety if referenced elsewhere)
         self.basket_lock_level = None 
@@ -576,9 +586,10 @@ class KalmanGridStrategy:
     # ... (Rest of existing methods: check_basket_tp, update_config, _update_positions_state) ...
     def check_grid_exit(self, positions, current_price, current_atr=None):
         """
-        Basket Exit Logic (Unified TP/SL)
+        Basket Exit Logic:
+        Close all positions if Total Profit > Dynamic Basket TP (calculated by AI + Algo).
         """
-        # Update internal state
+        # Update internal state (counts, last prices)
         self._update_positions_state(positions)
         
         should_close_long = False
@@ -587,75 +598,225 @@ class KalmanGridStrategy:
         # --- Long Basket ---
         if self.long_pos_count > 0:
             total_profit_long = 0.0
+            total_volume_long = 0.0
             for pos in positions:
                 if pos.magic == self.magic_number and pos.type == mt5.POSITION_TYPE_BUY:
                     total_profit_long += (pos.profit + pos.swap)
+                    total_volume_long += pos.volume
             
-            # Unified Basket TP Check
-            target_tp = self.basket_tp if (self.basket_tp is not None and self.basket_tp > 0) else self.global_tp
-            if total_profit_long >= target_tp:
-                logger.info(f"✅ Long Basket TP Hit! Profit: ${total_profit_long:.2f} >= Target: ${target_tp:.2f}")
+            # Calculate Spread Cost
+            symbol_info = mt5.symbol_info(self.symbol)
+            spread_cost_long = 0.0
+            if symbol_info:
+                # spread is in points. trade_tick_value is value of 1 point per lot.
+                # Cost = Spread * TickValue * Volume
+                spread_cost_long = symbol_info.spread * symbol_info.trade_tick_value * total_volume_long
+            
+            # [CHECK] Dynamic Basket TP (Enhanced)
+            # Calculate Tiered TP Target
+            base_tp_long = self.dynamic_tp_long if (self.dynamic_tp_long is not None and self.dynamic_tp_long > 0) else self.global_tp
+            
+            # Use [SNAPSHOT] Effective TP if available, otherwise calculate fallback
+            if self.effective_dynamic_tp_long is not None:
+                target_tp_long = self.effective_dynamic_tp_long
+                log_details_tp = "Using Snapshot"
+            else:
+                # Fallback to realtime calculation if snapshot missing
+                target_tp_long, log_details_tp = self.risk_manager.calculate_dynamic_basket_tp(
+                    base_tp_amount=base_tp_long,
+                    direction='long',
+                    market_analysis=self.market_status,
+                    ai_confidence=self.ai_confidence,
+                    mae_stats=self.mae_stats,
+                    current_atr=current_atr if current_atr else 0,
+                    current_profit=total_profit_long
+                )
+            
+            if total_profit_long >= target_tp_long:
+                logger.info(f"✅ Long Basket TP Hit! Profit: ${total_profit_long:.2f} >= Target: ${target_tp_long:.2f} (Snapshot/Base: {base_tp_long})")
+                # logger.info(f"Dynamic TP Logic: {log_details_tp}") # Reduce spam for snapshot
                 should_close_long = True
 
-            # Unified Basket SL Check
-            if self.basket_sl is not None and self.basket_sl > 0:
-                limit_sl = -abs(self.basket_sl)
-                if total_profit_long <= limit_sl:
-                    logger.warning(f"🛑 Long Basket SL Reached! Profit: ${total_profit_long:.2f} <= Limit: ${limit_sl:.2f}")
+            # [CHECK] Dynamic Basket SL (Enhanced)
+            if self.dynamic_sl_long is not None and self.dynamic_sl_long < 0:
+                base_sl = abs(self.dynamic_sl_long)
+                
+                # Calculate Volume Scaling Factor
+                # If Initial Lot is 0.01 and Total is 0.03 -> Factor = 3.0
+                # We use a dampener to prevent explosion? No, user wants price distance.
+                # Factor = Total / Initial
+                # But 'initial_lot' is self.lot.
+                volume_factor = 1.0
+                if self.lot > 0:
+                    volume_factor = total_volume_long / self.lot
+                
+                # Use [SNAPSHOT] Effective SL if available
+                if self.effective_dynamic_sl_long is not None:
+                    effective_sl = self.effective_dynamic_sl_long
+                    log_details = "Using Snapshot"
+                    
+                    # Apply Volume Scaling to Snapshot (because Snapshot was likely based on Volume=1 or Base)
+                    # Wait, if snapshot is taken at update_dynamic_params, does it know volume?
+                    # No, update_dynamic_params is called from main loop, usually when positions might change or market changes.
+                    # But the 'effective_dynamic_sl_long' stored there might be raw.
+                    # Actually, better to apply scaling inside risk manager every tick.
+                    
+                    # Re-calculate or Apply Scaling to Snapshot?
+                    # If we scale snapshot, we risk double counting if snapshot already had volume.
+                    # Let's assume snapshot is BASE per lot unit? No, AI gives Total Risk $.
+                    
+                    # ISSUE: AI gives "Basket SL = $100". Does AI mean "Fixed $100 Risk" or "Distance based $100"?
+                    # Qwen prompt says: "Basket SL = Balance * 1.5%". This is FIXED RISK.
+                    # If it is Fixed Risk, then as Volume increases, Price Distance decreases.
+                    # User complains this is bad.
+                    # So we MUST scale it to maintain distance.
+                    
+                    # So, effective_sl (from snapshot) is likely the FIXED $ amount.
+                    # We should scale it.
+                    if volume_factor > 1.0:
+                         effective_sl = effective_sl * volume_factor
+                    
+                    # Apply Real-Time Spread Adjustment
+                    if spread_cost_long > 0:
+                        effective_sl -= spread_cost_long
+                else:
+                    effective_sl, log_details = self.risk_manager.calculate_dynamic_basket_sl(
+                        base_sl_amount=base_sl,
+                        direction='long',
+                        market_analysis=self.market_status,
+                        ai_confidence=self.ai_confidence,
+                        mae_stats=self.mae_stats,
+                        current_drawdown=abs(total_profit_long) if total_profit_long < 0 else 0,
+                        spread_cost=spread_cost_long,
+                        volume_scaling=volume_factor
+                    )
+                
+                if total_profit_long <= effective_sl:
+                    logger.warning(f"🛑 Long Basket Dynamic SL Reached! Profit: ${total_profit_long:.2f} <= Limit: ${effective_sl:.2f} (Snapshot/Base: -{base_sl}, VolFactor: {volume_factor:.1f})")
+                    # logger.info(f"Dynamic SL Logic: {log_details}")
                     should_close_long = True
                 
-            # [CHECK] Lock Profit / Trailing Logic
+            # [CHECK] Lock Profit / Trailing Logic (Enhanced)
             if not should_close_long and self.lock_profit_trigger and self.lock_profit_trigger > 0:
+                # 触发逻辑: 只要浮盈超过 trigger (例如 10)，就启动保本/追踪
                 if total_profit_long >= self.lock_profit_trigger:
+                    # 记录最大浮盈
                     if total_profit_long > self.max_basket_profit_long:
                         self.max_basket_profit_long = total_profit_long
+                        
+                    # 计算锁定线: 默认锁定 50% 的最大浮盈，或者至少保本 (+1.0)
+                    # 比如 Trigger=10, Max=20 -> Lock=10
+                    # Trigger=10, Max=10 -> Lock=5
                     
-                    # Lock 60% of Max Profit, min $10
+                    # 简单逻辑: 启动后，锁定利润 = Max * 0.5 (可配置)
                     current_lock = max(10.0, self.max_basket_profit_long * 0.6) 
                     
                     if self.basket_lock_level_long is None or current_lock > self.basket_lock_level_long:
                         self.basket_lock_level_long = current_lock
+                        # Log only on update
+                        # logger.info(f"Long Basket Lock Updated: ${self.basket_lock_level_long:.2f} (Max: ${self.max_basket_profit_long:.2f})")
                 
+                # 检查是否触及锁定线 (且当前必须为盈利状态，亏损则不触发 Trailing Close，依靠 SL)
                 if self.basket_lock_level_long is not None and total_profit_long < self.basket_lock_level_long:
+                     # if total_profit_long > 0: # [USER REQ] 允许亏损时也触发 Trailing Hit (保护已到手的利润，即使回撤到亏损)
                      logger.info(f"🛑 Long Basket Trailing Hit! Profit ${total_profit_long:.2f} dropped below Lock ${self.basket_lock_level_long:.2f}")
                      should_close_long = True
 
         # --- Short Basket ---
         if self.short_pos_count > 0:
             total_profit_short = 0.0
+            total_volume_short = 0.0
             for pos in positions:
                 if pos.magic == self.magic_number and pos.type == mt5.POSITION_TYPE_SELL:
                     total_profit_short += (pos.profit + pos.swap)
+                    total_volume_short += pos.volume
             
-            # Unified Basket TP Check
-            target_tp = self.basket_tp if (self.basket_tp is not None and self.basket_tp > 0) else self.global_tp
-            if total_profit_short >= target_tp:
-                logger.info(f"✅ Short Basket TP Hit! Profit: ${total_profit_short:.2f} >= Target: ${target_tp:.2f}")
+            # Calculate Spread Cost
+            symbol_info = mt5.symbol_info(self.symbol)
+            spread_cost_short = 0.0
+            if symbol_info:
+                spread_cost_short = symbol_info.spread * symbol_info.trade_tick_value * total_volume_short
+            
+            # [CHECK] Dynamic Basket TP (Enhanced)
+            base_tp_short = self.dynamic_tp_short if (self.dynamic_tp_short is not None and self.dynamic_tp_short > 0) else self.global_tp
+            
+            # Use [SNAPSHOT] Effective TP if available
+            if self.effective_dynamic_tp_short is not None:
+                target_tp_short = self.effective_dynamic_tp_short
+                log_details_tp = "Using Snapshot"
+            else:
+                target_tp_short, log_details_tp = self.risk_manager.calculate_dynamic_basket_tp(
+                    base_tp_amount=base_tp_short,
+                    direction='short',
+                    market_analysis=self.market_status,
+                    ai_confidence=self.ai_confidence,
+                    mae_stats=self.mae_stats,
+                    current_atr=current_atr if current_atr else 0,
+                    current_profit=total_profit_short
+                )
+            
+            if total_profit_short >= target_tp_short:
+                logger.info(f"✅ Short Basket TP Hit! Profit: ${total_profit_short:.2f} >= Target: ${target_tp_short:.2f} (Snapshot/Base: {base_tp_short})")
+                # logger.info(f"Dynamic TP Logic: {log_details_tp}")
                 should_close_short = True
 
-            # Unified Basket SL Check
-            if self.basket_sl is not None and self.basket_sl > 0:
-                limit_sl = -abs(self.basket_sl)
-                if total_profit_short <= limit_sl:
-                    logger.warning(f"🛑 Short Basket SL Reached! Profit: ${total_profit_short:.2f} <= Limit: ${limit_sl:.2f}")
+            # [CHECK] Dynamic Basket SL (Enhanced)
+            if self.dynamic_sl_short is not None and self.dynamic_sl_short < 0:
+                base_sl = abs(self.dynamic_sl_short)
+                
+                # Volume Scaling
+                volume_factor = 1.0
+                if self.lot > 0:
+                    volume_factor = total_volume_short / self.lot
+                
+                # Use [SNAPSHOT] Effective SL if available
+                if self.effective_dynamic_sl_short is not None:
+                    effective_sl = self.effective_dynamic_sl_short
+                    log_details = "Using Snapshot"
+                    
+                    if volume_factor > 1.0:
+                         effective_sl = effective_sl * volume_factor
+                    
+                    # Apply Real-Time Spread Adjustment to Snapshot
+                    if spread_cost_short > 0:
+                        effective_sl -= spread_cost_short
+                else:
+                    effective_sl, log_details = self.risk_manager.calculate_dynamic_basket_sl(
+                        base_sl_amount=base_sl,
+                        direction='short',
+                        market_analysis=self.market_status,
+                        ai_confidence=self.ai_confidence,
+                        mae_stats=self.mae_stats,
+                        current_drawdown=abs(total_profit_short) if total_profit_short < 0 else 0,
+                        spread_cost=spread_cost_short,
+                        volume_scaling=volume_factor
+                    )
+                
+                if total_profit_short <= effective_sl:
+                    logger.warning(f"🛑 Short Basket Dynamic SL Reached! Profit: ${total_profit_short:.2f} <= Limit: ${effective_sl:.2f} (Snapshot/Base: -{base_sl}, VolFactor: {volume_factor:.1f})")
+                    # logger.info(f"Dynamic SL Logic: {log_details}")
                     should_close_short = True
             
-            # [CHECK] Lock Profit / Trailing Logic
+            # [CHECK] Lock Profit / Trailing Logic (Enhanced)
             if not should_close_short and self.lock_profit_trigger and self.lock_profit_trigger > 0:
                 if total_profit_short >= self.lock_profit_trigger:
                     if total_profit_short > self.max_basket_profit_short:
                         self.max_basket_profit_short = total_profit_short
                         
+                        # 计算锁定线: 默认锁定 50% 的最大浮盈，或者至少保本 (+1.0)
+                    # 比如 Trigger=10, Max=20 -> Lock=10
+                    # Trigger=10, Max=10 -> Lock=5
+                    
+                    # 简单逻辑: 启动后，锁定利润 = Max * 0.6 (可配置)
                     current_lock = max(10.0, self.max_basket_profit_short * 0.6) 
                     
                     if self.basket_lock_level_short is None or current_lock > self.basket_lock_level_short:
                         self.basket_lock_level_short = current_lock
                 
                 if self.basket_lock_level_short is not None and total_profit_short < self.basket_lock_level_short:
+                     # if total_profit_short > 0: # [USER REQ] Enable trailing close even if profit drops to negative
                      logger.info(f"🛑 Short Basket Trailing Hit! Profit ${total_profit_short:.2f} dropped below Lock ${self.basket_lock_level_short:.2f}")
                      should_close_short = True
-        
-        return should_close_long, should_close_short
 
         
         return should_close_long, should_close_short
@@ -770,44 +931,135 @@ class KalmanGridStrategy:
                 
         return False
 
-    def update_dynamic_params(self, basket_tp=None, basket_sl=None, lock_trigger=None, trailing_config=None, **kwargs):
-        """
-        Update Dynamic Basket TP/SL from AI (Unified)
-        """
+    def update_dynamic_params(self, basket_tp=None, basket_tp_long=None, basket_tp_short=None, 
+                              basket_sl_long=None, basket_sl_short=None,
+                              lock_trigger=None, trailing_config=None):
+        """Update dynamic parameters from AI analysis"""
         updated_any = False
         
-        # Unified Basket TP
         try:
-            # Handle legacy args via kwargs
-            val_tp = basket_tp
-            if val_tp is None:
-                val_tp = kwargs.get('basket_tp_long') or kwargs.get('basket_tp_short')
-                
-            if val_tp is not None:
-                val = float(val_tp)
+            if basket_tp is not None:
+                val = float(basket_tp)
                 if val > 0:
-                    self.basket_tp = val
-                    logger.info(f"Updated Unified Basket TP: ${self.basket_tp:.2f}")
+                    self.dynamic_global_tp = val
+                    # If specific ones are not provided, apply global to both
+                    if basket_tp_long is None: self.dynamic_tp_long = val
+                    if basket_tp_short is None: self.dynamic_tp_short = val
+                    logger.info(f"Updated Dynamic Basket TP (Global): {self.dynamic_global_tp}")
                     updated_any = True
         except (ValueError, TypeError):
              logger.warning(f"Invalid basket_tp value: {basket_tp}")
             
-        # Unified Basket SL
         try:
-            val_sl = basket_sl
-            if val_sl is None:
-                val_sl = kwargs.get('basket_sl_long') or kwargs.get('basket_sl_short')
-                
-            if val_sl is not None:
-                val = float(val_sl)
-                if val < 0: val = abs(val) # ensure positive magnitude
+            if basket_tp_long is not None:
+                val = float(basket_tp_long)
                 if val > 0:
-                    self.basket_sl = val 
-                    logger.info(f"Updated Unified Basket SL: -${self.basket_sl:.2f}")
+                    self.dynamic_tp_long = val
+                    logger.info(f"Updated Dynamic Basket TP (Long): {self.dynamic_tp_long}")
                     updated_any = True
         except (ValueError, TypeError):
-             logger.warning(f"Invalid basket_sl value: {basket_sl}")
+             logger.warning(f"Invalid basket_tp_long value: {basket_tp_long}")
+            
+        try:
+            if basket_tp_short is not None:
+                val = float(basket_tp_short)
+                if val > 0:
+                    self.dynamic_tp_short = val
+                    logger.info(f"Updated Dynamic Basket TP (Short): {self.dynamic_tp_short}")
+                    updated_any = True
+        except (ValueError, TypeError):
+             logger.warning(f"Invalid basket_tp_short value: {basket_tp_short}")
 
+        # [NEW] Basket SL Updates
+        try:
+            if basket_sl_long is not None:
+                val = float(basket_sl_long)
+                if val < 0: val = abs(val) # ensure positive magnitude
+                if val > 0:
+                    self.dynamic_sl_long = -val
+                    logger.info(f"Updated Dynamic Basket SL (Long): {self.dynamic_sl_long}")
+                    updated_any = True
+        except: pass
+        
+        try:
+            if basket_sl_short is not None:
+                val = float(basket_sl_short)
+                if val < 0: val = abs(val)
+                if val > 0:
+                    self.dynamic_sl_short = -val
+                    logger.info(f"Updated Dynamic Basket SL (Short): {self.dynamic_sl_short}")
+                    updated_any = True
+        except: pass
+
+        # [IMMEDIATE FEEDBACK] Pre-calculate effective SL to show user the real dynamic limit
+        if updated_any and self.market_status:
+            try:
+                # Preview Long SL/TP
+                if self.dynamic_sl_long:
+                    eff_sl_long, log_sl_long = self.risk_manager.calculate_dynamic_basket_sl(
+                        base_sl_amount=abs(self.dynamic_sl_long),
+                        direction='long',
+                        market_analysis=self.market_status,
+                        ai_confidence=self.ai_confidence,
+                        mae_stats=self.mae_stats,
+                        current_drawdown=0, # Preview only
+                        spread_cost=0.0 # Preview only (Realtime will add spread)
+                    )
+                    mult_sl = log_sl_long.get('multiplier', 0)
+                    self.effective_dynamic_sl_long = eff_sl_long
+                    logger.info(f" >> [SNAPSHOT] Effective Dynamic SL (Long): {eff_sl_long:.2f} (Base: {self.dynamic_sl_long}, x{mult_sl:.2f})")
+                else:
+                    self.effective_dynamic_sl_long = None
+                
+                if self.dynamic_tp_long:
+                    eff_tp_long, log_tp_long = self.risk_manager.calculate_dynamic_basket_tp(
+                        base_tp_amount=self.dynamic_tp_long,
+                        direction='long',
+                        market_analysis=self.market_status,
+                        ai_confidence=self.ai_confidence,
+                        mae_stats=self.mae_stats
+                    )
+                    mult_tp = log_tp_long.get('multiplier', 0)
+                    self.effective_dynamic_tp_long = eff_tp_long
+                    logger.info(f" >> [SNAPSHOT] Effective Dynamic TP (Long): {eff_tp_long:.2f} (Base: {self.dynamic_tp_long}, x{mult_tp:.2f})")
+                else:
+                    self.effective_dynamic_tp_long = None
+
+                # Preview Short SL/TP
+                if self.dynamic_sl_short:
+                    eff_sl_short, log_sl_short = self.risk_manager.calculate_dynamic_basket_sl(
+                        base_sl_amount=abs(self.dynamic_sl_short),
+                        direction='short',
+                        market_analysis=self.market_status,
+                        ai_confidence=self.ai_confidence,
+                        mae_stats=self.mae_stats,
+                        current_drawdown=0,
+                        spread_cost=0.0 # Preview only
+                    )
+                    mult_sl = log_sl_short.get('multiplier', 0)
+                    self.effective_dynamic_sl_short = eff_sl_short
+                    logger.info(f" >> [SNAPSHOT] Effective Dynamic SL (Short): {eff_sl_short:.2f} (Base: {self.dynamic_sl_short}, x{mult_sl:.2f})")
+                else:
+                    self.effective_dynamic_sl_short = None
+                
+                if self.dynamic_tp_short:
+                    eff_tp_short, log_tp_short = self.risk_manager.calculate_dynamic_basket_tp(
+                        base_tp_amount=self.dynamic_tp_short,
+                        direction='short',
+                        market_analysis=self.market_status,
+                        ai_confidence=self.ai_confidence,
+                        mae_stats=self.mae_stats
+                    )
+                    mult_tp = log_tp_short.get('multiplier', 0)
+                    self.effective_dynamic_tp_short = eff_tp_short
+                    logger.info(f" >> [SNAPSHOT] Effective Dynamic TP (Short): {eff_tp_short:.2f} (Base: {self.dynamic_tp_short}, x{mult_tp:.2f})")
+                else:
+                    self.effective_dynamic_tp_short = None
+
+            except Exception as e:
+                logger.warning(f"Failed to generate dynamic SL/TP preview: {e}")
+
+            
         if lock_trigger is not None:
             if lock_trigger > 0:
                 self.lock_profit_trigger = float(lock_trigger)

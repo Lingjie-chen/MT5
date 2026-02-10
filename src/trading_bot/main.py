@@ -4,7 +4,6 @@ import os
 import json
 import logging
 import threading
-from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
@@ -49,8 +48,6 @@ try:
         CRTAnalyzer, MTFAnalyzer
     )
     from analysis.trade_performance_analyzer import TradePerformanceAnalyzer # [NEW]
-    from analysis.stress_tester import StrategyStressTester # [NEW]
-    from analysis.rl_weight_optimizer import RLWeightOptimizer # [NEW]
     from strategies.grid_strategy import KalmanGridStrategy
 except ImportError as e:
     logger.error(f"Failed to import modules: {e}")
@@ -58,7 +55,6 @@ except ImportError as e:
 
 class HybridOptimizer:
     def __init__(self):
-        # Initial static weights, will be overridden by RL
         self.weights = {
             "qwen": 1.5, 
             "crt": 0.8,
@@ -66,13 +62,7 @@ class HybridOptimizer:
             "rvgi_cci": 0.6,
             "ema_ha": 0.9
         }
-        self.rl_optimizer = RLWeightOptimizer() # Initialize RL Engine
         self.history = []
-
-    def update_from_trade(self, trade_result):
-        """Bridge to RL Optimizer"""
-        self.rl_optimizer.update_weights(trade_result)
-        self.weights = self.rl_optimizer.get_weights()
 
     def combine_signals(self, signals):
         weighted_sum = 0
@@ -148,14 +138,11 @@ class SymbolTrader:
         # [NEW] Trade Performance Analyzer
         self.perf_analyzer = TradePerformanceAnalyzer(lookback_window=50)
         
-        # [NEW] Stress Tester
-        self.stress_tester = StrategyStressTester()
-        
         # Grid Strategy Integration
         self.grid_strategy = KalmanGridStrategy(self.symbol, self.magic_number)
         
         self.optimizer = HybridOptimizer()
-
+        
         self.last_bar_time = 0
         self.last_analysis_time = 0
         self.last_llm_time = 0 
@@ -172,13 +159,6 @@ class SymbolTrader:
             "TETA": TETA()
         }
         self.active_optimizer_name = "WOAm"
-
-    def optimize_weights(self):
-        """Called during optimization cycle to tune hybrid weights"""
-        # In a real scenario, this would re-train the RL model or adjust base weights
-        # Here we just log that we are keeping RL updated
-        logger.info("Maintaining RL Weights (Online Learning Active)")
-
 
     def initialize(self):
         """
@@ -2063,18 +2043,8 @@ class SymbolTrader:
                         }
                         recently_closed_trades.append(trade_review_data)
 
-                        # [NEW] RL Weight Update
-                        self.on_trade_closed(trade_review_data)
-
                         # Trigger AI Review if there are closed trades
                         if recently_closed_trades:
-                             # [NEW] Run Performance Analysis immediately for next tick
-                             try:
-                                 all_trades = self.db_manager.get_trades(limit=50).to_dict('records')
-                                 self.performance_context = self.perf_analyzer.analyze_trades(all_trades)
-                             except Exception as e_perf:
-                                 logger.error(f"Performance Analysis Error: {e_perf}")
-
                              logger.info(f"Triggering AI Trade Review for {len(recently_closed_trades)} trades...")
                              # Run in a separate thread to avoid blocking main loop
                              import threading
@@ -2598,43 +2568,6 @@ class SymbolTrader:
 
 
 
-    def apply_self_repair(self, repair_config: Dict[str, Any]):
-        """
-        [NEW] Execute Strategy Self-Repair based on Health Diagnosis.
-        Dynamically adjusts risk parameters and triggers re-optimization without human intervention.
-        """
-        logger.warning(f"🔧 TRIGGERING STRATEGY SELF-REPAIR: {json.dumps(repair_config)}")
-        
-        # 1. Adjust Risk Scale
-        if "reduce_risk_scale" in repair_config:
-            new_scale = float(repair_config["reduce_risk_scale"])
-            if new_scale < self.risk_scale:
-                self.risk_scale = new_scale
-                logger.info(f"Risk Scale reduced to {self.risk_scale:.2f} (Defensive Mode)")
-        
-        # 2. Adjust Confidence Threshold
-        pass 
-            
-        # 3. Trigger Re-optimization (with Backtest Validation)
-        if repair_config.get("reset_indicators", False):
-            logger.info("Critical Failure Detected: Running Deep Optimization & Validation...")
-            
-            # Run Optimization and get result (Assuming it returns a score or metrics)
-            # For simplicity, we assume optimize_strategy_parameters updates internal state if successful
-            prev_params = self.short_term_params.copy() if hasattr(self, 'short_term_params') else {}
-            
-            self.optimize_strategy_parameters()
-            self.optimize_weights()
-            
-            # Validation: Compare Sharpe/Drawdown (Simulated)
-            # In a real engine, we would run a backtest on recent data with new params vs old params.
-            # Here we assume the optimizer (WOA) inherently maximizes the objective function (Profit/Sharpe).
-            # We log the event.
-            logger.info("Self-Repair Optimization Complete. New parameters applied.")
-            
-        # 4. Notify User
-        self.send_telegram_message(f"⚠️ **Strategy Self-Repair Executed**\nRisk Scale: {self.risk_scale}\nAction: {repair_config}")
-
     def analyze_ema_ha_strategy(self, df):
         """
         CandleSmoothing EMA Engine Strategy Implementation
@@ -2971,34 +2904,16 @@ class SymbolTrader:
                 # [NEW] Strategy Health Check & Self-Repair (Every 15 mins)
                 if int(time.time()) % 900 == 0:
                     try:
-                        trades_df = self.db_manager.get_trades(limit=100) # Need more for stress test
+                        trades_df = self.db_manager.get_trades(limit=50)
                         if not trades_df.empty:
                             trades_list = trades_df.to_dict('records')
-                            
-                            # 1. Basic Health Score
                             health_report = self.perf_analyzer.calculate_strategy_health_score(trades_list)
                             
-                            # 2. Monte Carlo Stress Test
-                            stress_report = self.stress_tester.run_stress_test(trades_list)
-                            health_report['stress_score'] = stress_report['score']
-                            
-                            # Combine Scores (Health 70%, Stress 30%)
-                            combined_score = (health_report['score'] * 0.7) + (stress_report['score'] * 0.3)
-                            
-                            logger.info(f"Diagnostics: Health={health_report['score']}, Stress={stress_report['score']}, Final={combined_score:.1f}")
-                            
-                            if combined_score < 40: # Critical Threshold
-                                logger.warning(f"CRITICAL STRATEGY FAILURE (Score {combined_score:.1f}). Initiating Self-Repair Protocol...")
-                                
-                                # Trigger Repair
-                                repair_config = health_report['repair_config']
-                                repair_config['reset_indicators'] = True # Force re-opt
-                                self.apply_self_repair(repair_config)
-                                
-                            elif combined_score < 60:
-                                logger.info(f"Strategy Underperforming (Score {combined_score:.1f}). Tuning parameters.")
+                            if health_report['status'] in ['Unhealthy', 'Critical']:
+                                logger.warning(f"Strategy Health: {health_report['status']} (Score: {health_report['score']})")
                                 self.apply_self_repair(health_report['repair_config'])
-                                
+                            else:
+                                logger.info(f"Strategy Health Check: {health_report['status']} (Score: {health_report['score']})")
                     except Exception as e:
                         logger.error(f"Health Check Failed: {e}")
                     
@@ -3479,10 +3394,25 @@ class SymbolTrader:
                                 try:
                                     self.grid_strategy.update_dynamic_params(
                                         basket_tp=basket_tp,
-                                        basket_sl=basket_sl, 
+                                        basket_sl_long=basket_sl, 
+                                        basket_sl_short=basket_sl,
                                         lock_trigger=None # [USER REQ] Disable Lock Profit Trigger
                                     )
-                                    logger.info(f"Applied Unified Basket Params: TP=${basket_tp}, SL=-${basket_sl}")
+                                    
+                                    # [ENHANCED LOGGING] Retrieve Effective Snapshot values
+                                    eff_sl_long = getattr(self.grid_strategy, 'effective_dynamic_sl_long', None)
+                                    eff_tp_long = getattr(self.grid_strategy, 'effective_dynamic_tp_long', None)
+                                    eff_sl_short = getattr(self.grid_strategy, 'effective_dynamic_sl_short', None)
+                                    eff_tp_short = getattr(self.grid_strategy, 'effective_dynamic_tp_short', None)
+                                    
+                                    log_msg = f"Applied AI Dynamic Basket Params: Base TP={basket_tp}, Base SL={basket_sl}, Lock=Disabled"
+                                    
+                                    if eff_sl_long is not None or eff_tp_long is not None:
+                                        log_msg += f"\n   >> [SNAPSHOT] Effective Long: TP={eff_tp_long}, SL={eff_sl_long}"
+                                    if eff_sl_short is not None or eff_tp_short is not None:
+                                        log_msg += f"\n   >> [SNAPSHOT] Effective Short: TP={eff_tp_short}, SL={eff_sl_short}"
+                                        
+                                    logger.info(log_msg)
                                 except Exception as e:
                                     logger.error(f"Failed to update dynamic basket params: {e}")
 
@@ -3703,19 +3633,20 @@ class SymbolTrader:
                             current_model_name = self.qwen_client.model # Fallback to default
 
                         if telegram_report and len(telegram_report) > 50:
-                            # [NEW] Extract Unified Basket TP/SL Info
-                            unified_tp = getattr(self.grid_strategy, 'basket_tp', None)
-                            unified_sl = getattr(self.grid_strategy, 'basket_sl', None)
+                            # [NEW] Extract Basket TP/SL Info
+                            grid_tp_long = getattr(self.grid_strategy, 'dynamic_tp_long', None)
+                            grid_tp_short = getattr(self.grid_strategy, 'dynamic_tp_short', None)
+                            grid_sl_long = getattr(self.grid_strategy, 'dynamic_sl_long', None)
+                            grid_sl_short = getattr(self.grid_strategy, 'dynamic_sl_short', None)
                             global_tp = getattr(self.grid_strategy, 'global_tp', 0.0)
 
                             basket_info_lines = []
-                            if unified_tp and unified_tp > 0: 
-                                basket_info_lines.append(f"• Basket TP: `${unified_tp:.2f}`")
-                            elif global_tp > 0:
-                                basket_info_lines.append(f"• Basket TP: `${global_tp:.2f}` (Global)")
+                            if grid_tp_long and grid_tp_long > 0: basket_info_lines.append(f"• TP Long: `${grid_tp_long:.2f}`")
+                            if grid_tp_short and grid_tp_short > 0: basket_info_lines.append(f"• TP Short: `${grid_tp_short:.2f}`")
+                            if not grid_tp_long and not grid_tp_short and global_tp > 0: basket_info_lines.append(f"• TP Global: `${global_tp:.2f}`")
                             
-                            if unified_sl and unified_sl > 0: 
-                                basket_info_lines.append(f"• Basket SL: `-${unified_sl:.2f}`")
+                            if grid_sl_long and grid_sl_long < 0: basket_info_lines.append(f"• SL Long: `${grid_sl_long:.2f}`")
+                            if grid_sl_short and grid_sl_short < 0: basket_info_lines.append(f"• SL Short: `${grid_sl_short:.2f}`")
                             
                             basket_info_str = ""
                             if basket_info_lines:
@@ -3743,13 +3674,18 @@ class SymbolTrader:
                             )
                         else:
                             # 备用：手动构建结构化消息
-                            # [NEW] Extract Unified Basket TP/SL Info
-                            unified_tp = getattr(self.grid_strategy, 'basket_tp', None)
-                            unified_sl = getattr(self.grid_strategy, 'basket_sl', None)
+                            # [NEW] Extract Basket TP/SL Info (Duplicate logic for fallback branch)
+                            grid_tp_long = getattr(self.grid_strategy, 'dynamic_tp_long', None)
+                            grid_tp_short = getattr(self.grid_strategy, 'dynamic_tp_short', None)
+                            grid_sl_long = getattr(self.grid_strategy, 'dynamic_sl_long', None)
+                            grid_sl_short = getattr(self.grid_strategy, 'dynamic_sl_short', None)
                             
                             basket_info_lines = []
-                            if unified_tp and unified_tp > 0: basket_info_lines.append(f"• Basket TP: `${unified_tp:.2f}`")
-                            if unified_sl and unified_sl > 0: basket_info_lines.append(f"• Basket SL: `-${unified_sl:.2f}`")
+                            if grid_tp_long and grid_tp_long > 0: basket_info_lines.append(f"• TP Long: `${grid_tp_long:.2f}`")
+                            if grid_tp_short and grid_tp_short > 0: basket_info_lines.append(f"• TP Short: `${grid_tp_short:.2f}`")
+                            
+                            if grid_sl_long and grid_sl_long < 0: basket_info_lines.append(f"• SL Long: `${grid_sl_long:.2f}`")
+                            if grid_sl_short and grid_sl_short < 0: basket_info_lines.append(f"• SL Short: `${grid_sl_short:.2f}`")
                             
                             basket_info_str = ""
                             if basket_info_lines:
@@ -3789,16 +3725,6 @@ class SymbolTrader:
                         elif final_signal != 'hold' and final_signal != 'neutral':
                             logger.info(f">>> 执行 Qwen 决策: {final_signal.upper()} <<<")
                             
-                            # [NEW] Record Signal Snapshot for RL Attribution
-                            signal_snapshot = {
-                                "qwen": qw_signal,
-                                "smc": smc_result['signal'],
-                                "crt": crt_result['signal'],
-                                "rvgi_cci": rvgi_cci_result['signal'],
-                                "ema_ha": ema_ha_result['signal']
-                            }
-                            self.latest_signal_snapshot = signal_snapshot
-
                             # 传入 Qwen 参数
                             entry_params = strategy.get('entry_conditions')
                             exit_params = strategy.get('exit_conditions')
