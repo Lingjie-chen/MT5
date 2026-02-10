@@ -3743,18 +3743,13 @@ class SymbolTrader:
                             )
                         else:
                             # 备用：手动构建结构化消息
-                            # [NEW] Extract Basket TP/SL Info (Duplicate logic for fallback branch)
-                            grid_tp_long = getattr(self.grid_strategy, 'dynamic_tp_long', None)
-                            grid_tp_short = getattr(self.grid_strategy, 'dynamic_tp_short', None)
-                            grid_sl_long = getattr(self.grid_strategy, 'dynamic_sl_long', None)
-                            grid_sl_short = getattr(self.grid_strategy, 'dynamic_sl_short', None)
+                            # [NEW] Extract Unified Basket TP/SL Info
+                            unified_tp = getattr(self.grid_strategy, 'basket_tp', None)
+                            unified_sl = getattr(self.grid_strategy, 'basket_sl', None)
                             
                             basket_info_lines = []
-                            if grid_tp_long and grid_tp_long > 0: basket_info_lines.append(f"• TP Long: `${grid_tp_long:.2f}`")
-                            if grid_tp_short and grid_tp_short > 0: basket_info_lines.append(f"• TP Short: `${grid_tp_short:.2f}`")
-                            
-                            if grid_sl_long and grid_sl_long < 0: basket_info_lines.append(f"• SL Long: `${grid_sl_long:.2f}`")
-                            if grid_sl_short and grid_sl_short < 0: basket_info_lines.append(f"• SL Short: `${grid_sl_short:.2f}`")
+                            if unified_tp and unified_tp > 0: basket_info_lines.append(f"• Basket TP: `${unified_tp:.2f}`")
+                            if unified_sl and unified_sl > 0: basket_info_lines.append(f"• Basket SL: `-${unified_sl:.2f}`")
                             
                             basket_info_str = ""
                             if basket_info_lines:
