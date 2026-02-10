@@ -103,13 +103,13 @@ class HybridOptimizer:
         return final_signal, final_score, self.weights
 
 class SymbolTrader:
-    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M15):
+    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M1):
         self.symbol = symbol
         self.timeframe = timeframe
-        self.tf_name = "M15"
-        if timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
-        elif timeframe == mt5.TIMEFRAME_M1: self.tf_name = "M1"
+        self.tf_name = "M1"
+        if timeframe == mt5.TIMEFRAME_M1: self.tf_name = "M1"
         elif timeframe == mt5.TIMEFRAME_M5: self.tf_name = "M5"
+        elif timeframe == mt5.TIMEFRAME_M15: self.tf_name = "M15"
         elif timeframe == mt5.TIMEFRAME_M3: self.tf_name = "M3"
         elif timeframe == mt5.TIMEFRAME_H1: self.tf_name = "H1"
         elif timeframe == mt5.TIMEFRAME_H4: self.tf_name = "H4"
@@ -140,10 +140,10 @@ class SymbolTrader:
         
         # Advanced Models: SMC, CRT, CCI (via Adapter)
         # MTF kept for context structure
-        # [MODIFIED] CRT HTF adjusted to H1 for M15 execution
-        self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_H1)
-        # [MODIFIED] MTF H1/H4 are suitable HTFs for M15 execution
-        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_H1, htf2=mt5.TIMEFRAME_H4) 
+        # [MODIFIED] CRT HTF adjusted to M15 for M1 execution
+        self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_M15)
+        # [MODIFIED] MTF M5/M15 are suitable HTFs for M1 execution
+        self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_M5, htf2=mt5.TIMEFRAME_M15) 
         self.advanced_adapter = AdvancedMarketAnalysisAdapter()
         self.smc_analyzer = SMCAnalyzer()
         
@@ -3123,7 +3123,7 @@ class SymbolTrader:
                     
                     if df is not None:
                         # Fetch Multi-Timeframe Data (M1, M5, M15) for Analysis
-                        # [MODIFIED] M1, M5, M15 for Trend Consistency
+                        # [MODIFIED] Core: M1 (Base), Aux: M5, M15
                         rates_m1 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_M1, 0, 200)
                         rates_m5 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_M5, 0, 200)
                         rates_m15 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_M15, 0, 200)
@@ -3147,8 +3147,7 @@ class SymbolTrader:
                         processor = MT5DataProcessor()
                         df_features = processor.generate_features(df)
                         
-                        # Calculate features for M1/M5/M15
-                        df_features_m1 = processor.generate_features(df_m1) if not df_m1.empty else pd.DataFrame()
+                        # Calculate features for M5/M15
                         df_features_m5 = processor.generate_features(df_m5) if not df_m5.empty else pd.DataFrame()
                         df_features_m15 = processor.generate_features(df_m15) if not df_m15.empty else pd.DataFrame()
                         
@@ -3157,7 +3156,6 @@ class SymbolTrader:
                             if dframe.empty: return {}
                             return dframe.iloc[-1].to_dict()
 
-                        feat_m1 = get_latest_safe(df_features_m1)
                         feat_m5 = get_latest_safe(df_features_m5)
                         feat_m15 = get_latest_safe(df_features_m15)
 
@@ -3167,31 +3165,6 @@ class SymbolTrader:
                         sr_m15 = self.advanced_adapter.detect_valid_sr_levels(df_m15)
                         sr_resonance = self.advanced_adapter.check_sr_resonance(sr_m1, sr_m5, sr_m15)
                         logger.info(f"S/R Resonance: {sr_resonance}")
-
-                        # [NEW] Multi-Timeframe Trend Consistency Check
-                        def determine_trend(feat):
-                            # Algorithm: EMA Alignment + Close Price Position
-                            # Bullish: Close > EMA_FAST > EMA_SLOW
-                            # Bearish: Close < EMA_FAST < EMA_SLOW
-                            # Ranging: Else
-                            close = feat.get('close', 0)
-                            fast = feat.get('ema_fast', 0)
-                            slow = feat.get('ema_slow', 0)
-                            if close > fast > slow: return "bullish"
-                            if close < fast < slow: return "bearish"
-                            return "ranging"
-
-                        trend_m1 = determine_trend(feat_m1)
-                        trend_m5 = determine_trend(feat_m5)
-                        trend_m15 = determine_trend(feat_m15)
-                        
-                        trend_consistent = (trend_m1 == trend_m5 == trend_m15) and (trend_m1 in ['bullish', 'bearish'])
-                        trend_status_msg = f"M1:{trend_m1} | M5:{trend_m5} | M15:{trend_m15}"
-                        
-                        if trend_consistent:
-                            logger.info(f"✅ Trend Consistent: {trend_m1.upper()} ({trend_status_msg})")
-                        else:
-                            logger.warning(f"❌ Trend Inconsistent: {trend_status_msg}")
 
                         # 3. 调用 AI 与高级分析
                         # 构建市场快照
@@ -3287,32 +3260,20 @@ class SymbolTrader:
                                 "volatility": float(latest_features.get('volatility', 0))
                             },
                             "multi_tf_data": {
-                                "M1": {
-                                    "close": float(feat_m1.get('close', 0)),
-                                    "rsi": float(feat_m1.get('rsi', 50)),
-                                    "ema_fast": float(feat_m1.get('ema_fast', 0)),
-                                    "ema_slow": float(feat_m1.get('ema_slow', 0)),
-                                    "trend": trend_m1
-                                },
                                 "M5": {
                                     "close": float(feat_m5.get('close', 0)),
                                     "rsi": float(feat_m5.get('rsi', 50)),
                                     "ema_fast": float(feat_m5.get('ema_fast', 0)),
                                     "ema_slow": float(feat_m5.get('ema_slow', 0)),
-                                    "trend": trend_m5
+                                    "volatility": float(feat_m5.get('volatility', 0))
                                 },
                                 "M15": {
                                     "close": float(feat_m15.get('close', 0)),
                                     "rsi": float(feat_m15.get('rsi', 50)),
                                     "ema_fast": float(feat_m15.get('ema_fast', 0)),
                                     "ema_slow": float(feat_m15.get('ema_slow', 0)),
-                                    "trend": trend_m15
+                                    "trend": "bullish" if feat_m15.get('ema_fast', 0) > feat_m15.get('ema_slow', 0) else "bearish"
                                 }
-                            },
-                            "trend_consistency": {
-                                "consistent": trend_consistent,
-                                "direction": trend_m1 if trend_consistent else "mixed",
-                                "details": trend_status_msg
                             },
                             "sr_resonance": sr_resonance # [NEW] Inject Resonance Data
                         }
@@ -3568,12 +3529,7 @@ class SymbolTrader:
                         # Qwen 信号转换
                         qw_action = strategy.get('action', 'neutral').lower()
                         
-                        # [NEW] Strict Filters
-                        # 0. Trend Consistency Hard Filter
-                        if not trend_consistent and qw_action in ['buy', 'sell']:
-                            logger.warning(f"⛔ Trade Blocked: Trend Inconsistency ({trend_status_msg}). Action forced to HOLD.")
-                            qw_action = 'hold'
-
+                        # [NEW] Strict Filters (Quality Score & R:R)
                         # 1. Quality Score >= 80
                         q_score = int(strategy.get('quality_score', 0))
                         if q_score < 80 and qw_action in ['buy', 'sell']:
@@ -4110,5 +4066,5 @@ if __name__ == "__main__":
     
     logger.info(f"Starting Bot with Account {args.account} for symbols: {symbols}")
             
-    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M15)
+    bot = MultiSymbolBot(symbols=symbols, timeframe=mt5.TIMEFRAME_M1)
     bot.start(account_index=args.account)
