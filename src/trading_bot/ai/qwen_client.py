@@ -475,6 +475,15 @@ class QwenClient:
           - 用户要求移除 Basket SL，只保留 Basket TP。
           - 风险控制完全依赖单单止损 (SL) 和 仓位控制。
 
+    5. **入场验证 (Entry Validation - CRITICAL)**:
+       - **拒绝左侧盲猜**: 禁止仅因为价格触及支撑/阻力位就直接开仓。
+       - **必须验证有效性**:
+           1. **K线形态**: 必须等待当前时间周期 (M15) 收盘，出现明显的**反转信号** (Pinbar/Hammer/Engulfing)。
+           2. **动能衰竭**: 价格接近关键位时必须出现动能减弱 (小K线、长影线)。
+           3. **二次测试 (Retest)**: 优选在二次回踩不破时入场，而非第一次触碰。
+       - **Failure Case**: 如果价格以大阴线/大阳线直接击穿关键位，视为**突破**，禁止逆势开仓，应转为观望或顺势。
+
+
     5. **CandleSmoothing EMA 策略 (Strategy B)**:
        - **核心逻辑**: 基于 EMA50 趋势过滤，结合 EMA20 High/Low 通道突破和 Heiken Ashi 蜡烛形态。
        - **做多信号 (Buy)**: HA收盘价 > EMA20 High AND HA阳线 AND HA收盘价 > EMA50 AND EMA50上升趋势 AND 前一HA收盘价 < EMA50 (金叉)。
