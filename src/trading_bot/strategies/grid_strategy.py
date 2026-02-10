@@ -826,8 +826,6 @@ class KalmanGridStrategy:
                               basket_sl_long=None, basket_sl_short=None,
                               lock_trigger=None, trailing_config=None):
         """Update dynamic parameters from AI analysis"""
-        updated_any = False
-        
         try:
             if basket_tp is not None:
                 val = float(basket_tp)
@@ -837,7 +835,6 @@ class KalmanGridStrategy:
                     if basket_tp_long is None: self.dynamic_tp_long = val
                     if basket_tp_short is None: self.dynamic_tp_short = val
                     logger.info(f"Updated Dynamic Basket TP (Global): {self.dynamic_global_tp}")
-                    updated_any = True
         except (ValueError, TypeError):
              logger.warning(f"Invalid basket_tp value: {basket_tp}")
             
@@ -847,7 +844,6 @@ class KalmanGridStrategy:
                 if val > 0:
                     self.dynamic_tp_long = val
                     logger.info(f"Updated Dynamic Basket TP (Long): {self.dynamic_tp_long}")
-                    updated_any = True
         except (ValueError, TypeError):
              logger.warning(f"Invalid basket_tp_long value: {basket_tp_long}")
             
@@ -857,7 +853,6 @@ class KalmanGridStrategy:
                 if val > 0:
                     self.dynamic_tp_short = val
                     logger.info(f"Updated Dynamic Basket TP (Short): {self.dynamic_tp_short}")
-                    updated_any = True
         except (ValueError, TypeError):
              logger.warning(f"Invalid basket_tp_short value: {basket_tp_short}")
 
@@ -865,51 +860,22 @@ class KalmanGridStrategy:
         try:
             if basket_sl_long is not None:
                 val = float(basket_sl_long)
-                if val < 0: val = abs(val) # ensure positive magnitude
+                if val < 0: val = abs(val) # Store as positive value representing loss amount
                 if val > 0:
-                    self.dynamic_sl_long = -val
+                    self.dynamic_sl_long = -val # Store as negative number
                     logger.info(f"Updated Dynamic Basket SL (Long): {self.dynamic_sl_long}")
-                    updated_any = True
-        except: pass
-        
+        except (ValueError, TypeError):
+             logger.warning(f"Invalid basket_sl_long value: {basket_sl_long}")
+
         try:
             if basket_sl_short is not None:
                 val = float(basket_sl_short)
                 if val < 0: val = abs(val)
                 if val > 0:
-                    self.dynamic_sl_short = -val
+                    self.dynamic_sl_short = -val # Store as negative number
                     logger.info(f"Updated Dynamic Basket SL (Short): {self.dynamic_sl_short}")
-                    updated_any = True
-        except: pass
-
-        # [IMMEDIATE FEEDBACK] Pre-calculate effective SL to show user the real dynamic limit
-        if updated_any and self.market_status:
-            try:
-                # Preview Long SL
-                if self.dynamic_sl_long:
-                    eff_sl_long, _ = self.risk_manager.calculate_dynamic_basket_sl(
-                        base_sl_amount=abs(self.dynamic_sl_long),
-                        direction='long',
-                        market_analysis=self.market_status,
-                        ai_confidence=self.ai_confidence,
-                        mae_stats=self.mae_stats,
-                        current_drawdown=0 # Preview only
-                    )
-                    logger.info(f" >> [PREVIEW] Effective Dynamic SL (Long): {eff_sl_long:.2f} (Base: {self.dynamic_sl_long})")
-                
-                # Preview Short SL
-                if self.dynamic_sl_short:
-                    eff_sl_short, _ = self.risk_manager.calculate_dynamic_basket_sl(
-                        base_sl_amount=abs(self.dynamic_sl_short),
-                        direction='short',
-                        market_analysis=self.market_status,
-                        ai_confidence=self.ai_confidence,
-                        mae_stats=self.mae_stats,
-                        current_drawdown=0
-                    )
-                    logger.info(f" >> [PREVIEW] Effective Dynamic SL (Short): {eff_sl_short:.2f} (Base: {self.dynamic_sl_short})")
-            except Exception as e:
-                logger.warning(f"Failed to generate dynamic SL preview: {e}")
+        except (ValueError, TypeError):
+             logger.warning(f"Invalid basket_sl_short value: {basket_sl_short}")
 
             
         if lock_trigger is not None:
