@@ -807,12 +807,7 @@ class QwenClient:
         """
         
         # Combine Analysis Framework
-        analysis_framework = (
-            f"{analysis_framework_part1}\n\n"
-            "### 核心规则：盘前交易计划 (Strategy Rules)\n"
-            f"{strategy_rules_content}\n\n"
-            f"{analysis_framework_part2}"
-        )
+        analysis_framework = f"{analysis_framework_part1}\n\n### 核心规则：盘前交易计划 (Strategy Rules)\n{strategy_rules_content}\n\n{analysis_framework_part2}"
         
         # Select Configs
         martingale_config = martingale_configs.get(symbol, martingale_configs["DEFAULT"])
