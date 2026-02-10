@@ -336,6 +336,114 @@ class AdvancedMarketAnalysis:
                 
         return {"signal": signal, "reason": reason, "active_zones": active_zones}
 
+    def detect_valid_sr_levels(self, df: pd.DataFrame, lookback: int = 20, tolerance_ratio: float = 0.0005) -> Dict[str, List[float]]:
+        """
+        Identify Valid Support/Resistance levels based on:
+        - Past 20 candles (default)
+        - At least 2 tests (Fractal/Swing points clustering)
+        - Clear reversal (implied by being a local extremum that was tested)
+        """
+        if len(df) < lookback: return {"support": [], "resistance": []}
+        
+        subset = df.tail(lookback)
+        highs = subset['high'].values
+        lows = subset['low'].values
+        
+        # Simple clustering algorithm
+        # 1. Collect all local maxima and minima (Swings)
+        potential_resistance = []
+        potential_support = []
+        
+        # Identify fractals or simple swing points in the subset
+        # We need at least 3 points to define a swing (High[i-1] < High[i] > High[i+1])
+        # Subset indices 0 to len-1
+        for i in range(1, len(subset)-1):
+            # Swing High
+            if highs[i] > highs[i-1] and highs[i] > highs[i+1]:
+                potential_resistance.append(highs[i])
+            # Swing Low
+            if lows[i] < lows[i-1] and lows[i] < lows[i+1]:
+                potential_support.append(lows[i])
+                
+        # 2. Cluster them
+        def get_clusters(levels):
+            if not levels: return []
+            levels.sort()
+            clusters = []
+            current_cluster = [levels[0]]
+            
+            final_levels = []
+            
+            for i in range(1, len(levels)):
+                # Tolerance check
+                if abs(levels[i] - levels[i-1]) / levels[i-1] <= tolerance_ratio:
+                    current_cluster.append(levels[i])
+                else:
+                    # End of cluster
+                    if len(current_cluster) >= 2: # At least 2 tests
+                        avg_level = sum(current_cluster) / len(current_cluster)
+                        final_levels.append(avg_level)
+                    current_cluster = [levels[i]]
+            
+            if len(current_cluster) >= 2:
+                avg_level = sum(current_cluster) / len(current_cluster)
+                final_levels.append(avg_level)
+                
+            return final_levels
+
+        valid_resistance = get_clusters(potential_resistance)
+        valid_support = get_clusters(potential_support)
+        
+        return {"support": valid_support, "resistance": valid_resistance}
+
+    def check_sr_resonance(self, sr_m1: Dict, sr_m5: Dict, sr_m15: Dict, tolerance_ratio: float = 0.001) -> Dict[str, List[float]]:
+        """
+        Check for resonance (overlap) between S/R levels of 3 timeframes (M1, M5, M15).
+        Returns levels that exist in ALL three timeframes.
+        """
+        resonant_support = []
+        resonant_resistance = []
+        
+        # Check Support Resonance (Base on M15 levels as they are strongest, or M1 for precision?)
+        # Let's base on M1 levels to ensure strict M1 entry precision as requested, confirmed by M5/M15.
+        
+        for s1 in sr_m1['support']:
+            matched_m5 = False
+            for s5 in sr_m5['support']:
+                if abs(s1 - s5) / s5 <= tolerance_ratio:
+                    matched_m5 = True
+                    break
+            
+            if matched_m5:
+                matched_m15 = False
+                for s15 in sr_m15['support']:
+                    if abs(s1 - s15) / s15 <= tolerance_ratio:
+                        matched_m15 = True
+                        break
+                
+                if matched_m15:
+                    resonant_support.append(s1)
+
+        # Check Resistance Resonance
+        for r1 in sr_m1['resistance']:
+            matched_m5 = False
+            for r5 in sr_m5['resistance']:
+                if abs(r1 - r5) / r5 <= tolerance_ratio:
+                    matched_m5 = True
+                    break
+            
+            if matched_m5:
+                matched_m15 = False
+                for r15 in sr_m15['resistance']:
+                    if abs(r1 - r15) / r15 <= tolerance_ratio:
+                        matched_m15 = True
+                        break
+                
+                if matched_m15:
+                    resonant_resistance.append(r1)
+                    
+        return {"support": resonant_support, "resistance": resonant_resistance}
+
     def generate_support_resistance(self, df: pd.DataFrame, lookback_period: int = 100) -> Dict[str, List[float]]:
         if len(df) < lookback_period: lookback_period = len(df)
         recent_data = df.tail(lookback_period)
