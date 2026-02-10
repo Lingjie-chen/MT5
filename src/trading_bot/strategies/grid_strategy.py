@@ -579,10 +579,10 @@ class KalmanGridStrategy:
                 logger.info(f"✅ Long Basket TP Hit! Profit: ${total_profit_long:.2f} >= Target: ${self.dynamic_tp_long:.2f}")
                 should_close_long = True
 
-            # [CHECK] Dynamic Basket SL
-            if self.dynamic_sl_long is not None and self.dynamic_sl_long < 0 and total_profit_long <= self.dynamic_sl_long:
-                logger.warning(f"🛑 Long Basket SL Hit! Profit: ${total_profit_long:.2f} <= Limit: ${self.dynamic_sl_long:.2f}")
-                should_close_long = True
+            # [CHECK] Dynamic Basket SL - [DISABLED BY USER REQUEST]
+            # if self.dynamic_sl_long is not None and self.dynamic_sl_long < 0 and total_profit_long <= self.dynamic_sl_long:
+            #     logger.warning(f"🛑 Long Basket SL Hit! Profit: ${total_profit_long:.2f} <= Limit: ${self.dynamic_sl_long:.2f}")
+            #     should_close_long = True
                 
             # [CHECK] Lock Profit / Trailing Logic (Enhanced)
             if not should_close_long and self.lock_profit_trigger and self.lock_profit_trigger > 0:
@@ -623,10 +623,10 @@ class KalmanGridStrategy:
                 logger.info(f"✅ Short Basket TP Hit! Profit: ${total_profit_short:.2f} >= Target: ${self.dynamic_tp_short:.2f}")
                 should_close_short = True
 
-            # [CHECK] Dynamic Basket SL
-            if self.dynamic_sl_short is not None and self.dynamic_sl_short < 0 and total_profit_short <= self.dynamic_sl_short:
-                logger.warning(f"🛑 Short Basket SL Hit! Profit: ${total_profit_short:.2f} <= Limit: ${self.dynamic_sl_short:.2f}")
-                should_close_short = True
+            # [CHECK] Dynamic Basket SL - [DISABLED BY USER REQUEST]
+            # if self.dynamic_sl_short is not None and self.dynamic_sl_short < 0 and total_profit_short <= self.dynamic_sl_short:
+            #     logger.warning(f"🛑 Short Basket SL Hit! Profit: ${total_profit_short:.2f} <= Limit: ${self.dynamic_sl_short:.2f}")
+            #     should_close_short = True
             
             # [CHECK] Lock Profit / Trailing Logic (Enhanced)
             if not should_close_short and self.lock_profit_trigger and self.lock_profit_trigger > 0:
