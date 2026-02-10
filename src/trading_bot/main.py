@@ -3527,6 +3527,19 @@ class SymbolTrader:
                         # Qwen 信号转换
                         qw_action = strategy.get('action', 'neutral').lower()
                         
+                        # [NEW] Strict Filters (Quality Score & R:R)
+                        # 1. Quality Score >= 80
+                        q_score = int(strategy.get('quality_score', 0))
+                        if q_score < 80 and qw_action in ['buy', 'sell']:
+                            logger.warning(f"⚠️ Signal Filtered: Quality Score {q_score} < 80. Action forced to HOLD.")
+                            qw_action = 'hold'
+                        
+                        # 2. RR Ratio >= 1.5
+                        rr_val = float(strategy.get('rr_ratio', 0.0))
+                        if rr_val < 1.5 and qw_action in ['buy', 'sell']:
+                             logger.warning(f"⚠️ Signal Filtered: R:R {rr_val} < 1.5. Action forced to HOLD.")
+                             qw_action = 'hold'
+                        
                         final_signal = "neutral"
                         if qw_action in ['buy', 'add_buy']:
                             final_signal = "buy"
