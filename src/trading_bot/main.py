@@ -14,6 +14,11 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
+# Add src directory to sys.path to allow importing position_engine
+src_dir = os.path.dirname(current_dir)
+if src_dir not in sys.path:
+    sys.path.append(src_dir)
+
 from utils.file_watcher import FileWatcher
 from position_engine.mt5_adapter import MT5RiskManager
 
