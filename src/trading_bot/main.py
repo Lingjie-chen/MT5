@@ -2996,28 +2996,11 @@ class SymbolTrader:
                         contract_size = 100.0 # Default fallback
                         
                         try:
-                            # Get Symbol Info for Contract Size & Spread
+                            # Get Symbol Info for Contract Size
                             sym_info = mt5.symbol_info(self.symbol)
-                            spread_points = 0
-                            spread_cost = 0.0
-                            
                             if sym_info:
                                 contract_size = float(sym_info.trade_contract_size)
-                                spread_points = sym_info.spread
-                                # Spread Cost (Approx) per lot = SpreadPoints * PointValue * ContractSize ?
-                                # Or simpler: (Ask-Bid) * ContractSize
-                                # Point value is not always reliable for cost calc, but spread is in points.
-                                # Let's use tick value if available or estimate.
-                                # Spread in price = Ask - Bid.
-                                # Let's capture the real-time spread in price units.
-                                tick = mt5.symbol_info_tick(self.symbol)
-                                if tick:
-                                     spread_price = tick.ask - tick.bid
-                                     spread_cost = spread_price * contract_size
-                                else:
-                                     spread_price = spread_points * sym_info.point
-                                     spread_cost = spread_price * contract_size
-                                     
+                            
                             acc = mt5.account_info()
                             if acc:
                                 account_info_dict = {
@@ -3056,11 +3039,6 @@ class SymbolTrader:
                         market_snapshot = {
                             "symbol": self.symbol,
                             "contract_size": contract_size, # [NEW] Pass contract size for position sizing
-                            "spread_info": { # [NEW] Real-time Spread Data
-                                "points": spread_points,
-                                "price_diff": spread_price,
-                                "cost_per_lot": spread_cost
-                            },
                             "account_info": account_info_dict,
                             "recent_trade_history": recent_history, # [NEW] 注入最近交易历史
                             "timeframe": self.tf_name,
@@ -3184,9 +3162,8 @@ class SymbolTrader:
                         try:
                             # 尝试从远程获取 (Remote Storage is initialized in DatabaseManager)
                             if self.db_manager.remote_storage.enabled:
-                                logger.info(f"Fetching full trade history for {self.symbol} from Remote SQL for Self-Learning...")
-                                # [USER REQ] Fetch ALL data (Limit increased to 1000 to cover substantial history)
-                                remote_trades = self.db_manager.remote_storage.get_trades(limit=1000, symbol=self.symbol)
+                                logger.info("Fetching trade history from Remote PostgreSQL for Self-Learning...")
+                                remote_trades = self.db_manager.remote_storage.get_trades(limit=100)
                                 if remote_trades:
                                     trade_stats = remote_trades
                                     logger.info(f"Successfully loaded {len(trade_stats)} trades from Remote DB.")
@@ -3195,7 +3172,7 @@ class SymbolTrader:
 
                         if not trade_stats:
                             # Fallback to local Master DB
-                            trade_stats = self.master_db_manager.get_trade_performance_stats(limit=200)
+                            trade_stats = self.master_db_manager.get_trade_performance_stats(limit=100)
                         
                         if not trade_stats:
                              # Fallback to local Symbol DB
@@ -3581,14 +3558,13 @@ class SymbolTrader:
                             
                             # 如果 opt_sl/opt_tp 在上方被 fallback 逻辑计算过，这里强制覆盖无效的 0.0
                             # [USER REQ Update] 直接使用 opt_sl/opt_tp 覆盖，确保一致性
-                            # if opt_sl and opt_sl > 0:
-                            #    exit_params['sl_price'] = opt_sl
-                            #    logger.info(f"Auto-Injecting Optimized SL: {opt_sl}")
+                            if opt_sl and opt_sl > 0:
+                                exit_params['sl_price'] = opt_sl
+                                logger.info(f"Auto-Injecting Optimized SL: {opt_sl}")
 
-                            # [USER REQ] Disable Individual SL & TP (Rely on Basket Risk Management)
-                            exit_params['sl_price'] = 0.0
+                            # [USER REQ] Disable Individual TP (Rely on Basket TP)
                             exit_params['tp_price'] = 0.0
-                            logger.info(f"Forcing SL/TP to 0.0 (Basket Risk Mode)")
+                            logger.info(f"Forcing TP to 0.0 (Basket TP Mode)")
                             
                             # if opt_tp and opt_tp > 0:
                             #    exit_params['tp_price'] = opt_tp
