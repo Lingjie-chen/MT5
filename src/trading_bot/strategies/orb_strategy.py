@@ -216,7 +216,17 @@ class GoldORBStrategy:
                 self.trades_today_count += 1
                 self.last_signal_candle_time = candle_time
                 logger.info(f"ORB BUY Signal Confirmed (Candle {candle_time})")
-                return 'buy'
+                
+                sl_dist = self.fixed_sl_points * point
+                tp_dist = self.fixed_tp_points * point
+                
+                return {
+                    'signal': 'buy',
+                    'sl_dist': sl_dist,
+                    'tp_dist': tp_dist,
+                    'price': c_close,
+                    'sl_points': self.fixed_sl_points # For risk calc
+                }
             
         # Sell Signal
         if c_close < c_open and c_close < self.final_range_low:
@@ -225,6 +235,16 @@ class GoldORBStrategy:
                 self.trades_today_count += 1
                 self.last_signal_candle_time = candle_time
                 logger.info(f"ORB SELL Signal Confirmed (Candle {candle_time})")
-                return 'sell'
+                
+                sl_dist = self.fixed_sl_points * point
+                tp_dist = self.fixed_tp_points * point
+                
+                return {
+                    'signal': 'sell',
+                    'sl_dist': sl_dist,
+                    'tp_dist': tp_dist,
+                    'price': c_close,
+                    'sl_points': self.fixed_sl_points
+                }
             
         return None
