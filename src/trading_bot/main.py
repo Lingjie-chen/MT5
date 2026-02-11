@@ -2260,6 +2260,7 @@ class SymbolTrader:
             return score
             
         except Exception as e:
+            logger.error(f"Optimization Error: {e}", exc_info=True)
             return -9999
 
     def optimize_strategy_parameters(self):
