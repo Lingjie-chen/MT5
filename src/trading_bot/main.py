@@ -2360,9 +2360,9 @@ class WindowsBot: # Context for replacement
         
         steps = [1, 1, 50, 10.0, 50, 100, 0.1]
         
-        # 3. Objective
+        # 3. Objective (Standalone Wrapper)
         def objective(params):
-            return self.evaluate_comprehensive_params(params, df, df_h1)
+            return run_orb_simulation(params, df_h1)
             
         # 4. Optimizer
         import random
