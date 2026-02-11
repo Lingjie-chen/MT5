@@ -848,12 +848,20 @@ class KalmanGridStrategy:
         if 'max_grid_steps' in params: self.max_grid_steps = int(params['max_grid_steps'])
         if 'global_tp' in params: self.global_tp = float(params['global_tp'])
         if 'tp_steps' in params: self.tp_steps.update(params['tp_steps'])
+        
+        # ORB Params
+        if self.orb_strategy:
+            open_hour = params.get('orb_open_hour')
+            consolidation_candles = params.get('orb_consolidation_candles')
+            if open_hour is not None or consolidation_candles is not None:
+                self.orb_strategy.update_params(open_hour, consolidation_candles)
+                logger.info(f"Updated ORB Params: Hour={open_hour}, Candles={consolidation_candles}")
 
     def get_config(self):
         """
         Return current configuration state for optimization/reporting
         """
-        return {
+        config = {
             'grid_step_points': self.grid_step_points,
             'max_grid_steps': self.max_grid_steps,
             'lot_type': self.lot_type,
@@ -862,6 +870,10 @@ class KalmanGridStrategy:
             'kalman_measurement_variance': self.kalman_measurement_variance,
             'kalman_process_variance': self.kalman_process_variance
         }
+        if self.orb_strategy:
+            config['orb_open_hour'] = self.orb_strategy.open_hour
+            config['orb_consolidation_candles'] = self.orb_strategy.consolidation_candles
+        return config
 
     def _update_positions_state(self, positions):
         self.long_pos_count = 0
