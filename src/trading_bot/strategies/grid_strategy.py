@@ -155,11 +155,16 @@ class KalmanGridStrategy:
             ]
         logger.info(f"Updated SMC Levels: {len(self.smc_levels['ob_bullish'])} Bullish OBs")
 
-    def update_market_data(self, df):
+    def update_market_data(self, df, df_h1=None):
         """
         Update indicators based on latest dataframe.
         Expects df with 'close' column.
+        df_h1: Optional H1 dataframe for ORB Strategy
         """
+        # Update ORB Strategy if active and H1 data provided
+        if self.orb_strategy and df_h1 is not None and not df_h1.empty:
+            self.orb_strategy.calculate_orb_levels(df_h1)
+
         if df is None or len(df) < self.bb_period:
             return
 
