@@ -3751,7 +3751,7 @@ class SymbolTrader:
                             analysis_msg = (
                                 f"🤖 *AI Strategy Report ({current_model_name})*\n"
                                 f"Symbol: `{self.symbol}` | TF: `{self.tf_name}`\n"
-                                f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
+                                f"Time: {datetime.now().strftime('%H:%M:%S')} | Status: *24/7 Active*\n\n"
                                 
                                 f"🧙‍♂️ *Qwen Analysis*\n"
                                 f"• Action: *{qw_action.upper()}*\n"
@@ -3762,6 +3762,7 @@ class SymbolTrader:
                                 f"🏆 *Decision: {final_signal.upper()}*\n"
                                 f"• Strength: {strength:.0f}%\n"
                                 f"• SL: `{opt_sl:.2f}` | TP: `{opt_tp:.2f}`\n\n"
+                                f"{orb_stats_str}"
                                 f"{basket_info_str}"
                                 f"💼 *Positions*\n"
                                 f"{self.escape_markdown(pos_summary)}"
