@@ -727,9 +727,15 @@ class SymbolTrader:
         # 如果启用了 Basket TP，强制将单笔 TP 设为 0，交由 manage_positions 的 Basket 逻辑处理
         is_basket_mode = False
         if self.latest_strategy:
-            grid_settings = self.latest_strategy.get('grid_settings', {})
-            # Check if basket TP is active (value > 0)
-            basket_tp_val = grid_settings.get('basket_tp_amount', 0)
+            # Check Position Management (Dynamic)
+            pos_mgmt = self.latest_strategy.get('position_management', {})
+            basket_tp_val = pos_mgmt.get('dynamic_basket_tp', 0)
+            
+            # Check Grid Config (Static/Config)
+            if basket_tp_val <= 0:
+                grid_config = self.latest_strategy.get('grid_config', {})
+                basket_tp_val = grid_config.get('basket_tp_usd', 0)
+                
             if basket_tp_val > 0:
                  is_basket_mode = True
                  logger.info(f"Basket Mode Active (TP={basket_tp_val}). Forcing individual TP to 0.")
