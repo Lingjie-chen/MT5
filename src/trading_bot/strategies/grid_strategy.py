@@ -16,11 +16,9 @@ class KalmanGridStrategy:
         # --- Load Symbol Specific Config ---
         self._load_config()
         
-        # ORB Strategy for Gold
-        self.orb_strategy = None
-        if "XAU" in symbol.upper() or "GOLD" in symbol.upper():
-            self.orb_strategy = GoldORBStrategy(symbol)
-            logger.info("GoldORB Strategy Activated for XAUUSD")
+        # ORB Strategy for ALL Symbols
+        self.orb_strategy = GoldORBStrategy(symbol)
+        logger.info(f"GoldORB Strategy Activated for {symbol}")
         
         # SMC Parameters
         self.smc_levels = {
@@ -218,23 +216,23 @@ class KalmanGridStrategy:
         Returns: 'buy', 'sell', or None
         
         [Optimized] Hybrid Logic:
-        0. Gold ORB Strategy (Priority High)
-        1. Mean Reversion (Standard): Buy Low (BB Lower), Sell High (BB Upper).
-        2. Trend Following (Aggressive): If trend is strong, enter on shallow pullbacks (Mid Band).
+        0. Gold ORB Strategy (Priority High & Exclusive)
         """
         signal = None
         
-        # 0. Check ORB Signal (XAUUSD only)
+        # 0. Check ORB Signal (Exclusive for all symbols)
         if self.orb_strategy:
             orb_signal = self.orb_strategy.check_signal(current_price)
             if orb_signal:
-                logger.info(f"Gold ORB Signal Triggered: {orb_signal.upper()} (Price: {current_price})")
+                logger.info(f"ORB Signal Triggered: {orb_signal.upper()} (Price: {current_price})")
                 return orb_signal
             else:
-                # If ORB is active but no signal (inside range or not final), 
-                # we strictly wait for ORB breakout. Ignore other logics.
+                # Strictly wait for ORB breakout.
                 return None
         
+        return None
+        
+        # REMOVED: Old Mean Reversion / Kalman Logic
         # Calculate Trend Strength (Simple Slope of Kalman Filter)
         # We need history of kalman values to calculate slope properly, 
         # but here we can compare current price vs MA vs Kalman
