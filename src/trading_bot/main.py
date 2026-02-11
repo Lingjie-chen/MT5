@@ -2023,20 +2023,6 @@ class SymbolTrader:
             # 策略调整: 恢复 AI 驱动的持仓参数更新逻辑
             # 但不使用机械式的 Trailing Stop，而是依赖 LLM 的 MFE/MAE 分析给出的新点位
             
-            # [Manual Override Protection]
-            # 检查用户是否手动修改了 SL/TP
-            # 我们假设机器人上次设置的 SL/TP 应该与当前持仓的一致
-            # 如果差异很大且不是 0，说明用户手动干预了
-            # 为了简化，我们设定规则: 只有当 AI 建议的新 SL/TP 明显优于当前设置，或者当前设置明显偏离风险控制时才强制更新
-            
-            # [Optimization] Disabled block below to avoid double updating SL
-            # The 'Smart SL' block above already handles LLM-based SL updates.
-            # This block might conflict or be redundant.
-            
-            # allow_update = True 
-            # if allow_update and has_new_params:
-            #    ... (Logic moved/superseded by Smart SL block)
-            
             pass
                         
                         if valid_sl and (diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5)):
