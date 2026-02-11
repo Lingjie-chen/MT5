@@ -2301,14 +2301,27 @@ class SymbolTrader:
                         # No future data
                         pass
             
-            if trades_count == 0: return -100
+            if trades_count == 0: return 0.0
             
             # Simple Profit Metric
-            score = (balance - 10000.0)
+            total_profit = (balance - 10000.0)
             
-            # Penalty for high drawdown could be added here
+            # [MODIFIED] Normalize Score to 0-100 Range
+            # Formula: 40% WinRate + 60% ProfitScore (Scaled to target $2000 profit)
+            win_rate = (wins / trades_count) * 100.0
             
-            return score
+            # Profit Score: $2000 profit = 100 points. Cap at 100.
+            # Handle negative profit: map to 0.
+            profit_score = max(0.0, min(100.0, (total_profit / 2000.0) * 100.0))
+            
+            normalized_score = (win_rate * 0.4) + (profit_score * 0.6)
+            
+            # Add small bonus for more trades (statistical significance), up to 5 points
+            trade_count_bonus = min(5.0, trades_count * 0.1)
+            
+            final_score = min(100.0, normalized_score + trade_count_bonus)
+            
+            return final_score
             
         except Exception as e:
             logger.error(f"Optimization Error: {e}", exc_info=True)
