@@ -1526,13 +1526,14 @@ class QwenClient:
              - **空单 (Sell)**: SL 应置于最近的 Swing High (强阻力) 或 Order Block 上边界之上。
            - **Take Profit (TP)**: 必须指向下一个流动性池 (Liquidity Pool) 或未回补的 FVG。
         
-        2. **ORB 集成与信号验证 (ORB Integration & Analysis)**:
+        2. **ORB 集成与信号验证 (ORB Integration & Analysis - High Priority)**:
            - **多维验证**: ORB 突破信号必须经过以下维度的交叉验证：
              - **市场趋势 (Trend)**: 突破方向是否与 H1/M15 主趋势一致？(顺势突破信心加倍，逆势突破需谨慎)。
              - **市场情绪 (Sentiment)**: 当前市场情绪 (Bullish/Bearish) 是否支持该突破？
              - **SMC 结构**: 突破点是否位于关键支撑/阻力位？上方/下方是否有清晰的流动性池 (Liquidity Pool) 吸引价格？
            - **开仓指示 (Signal Action)**: 
-             - 如果 ORB Score > 80 且 趋势/情绪/SMC 共振 -> **STRONG BUY/SELL** (可适当重仓)。
+             - **强制通行证 (Green Light)**: 如果 ORB Score > 80 且 趋势一致 (Trend Aligned)，这构成了 **极强的入场信号**。
+             - **盘前8问豁免 (Q8 Override)**: 在 ORB 强信号下，即使 Q8 的部分条件（如"等待回调"）未完全满足，也应判定 Q8 Execution 为 **Yes**，并果断入场 (BUY/SELL)，避免错过突破行情。
              - 如果 ORB Score 高但 趋势/情绪 矛盾 -> **WEAK SIGNAL** (轻仓或观望)。
 
         3. **Basket TP 深度分析与动态配置 (Advanced Basket TP Analysis)**:
