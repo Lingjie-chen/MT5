@@ -14,44 +14,64 @@ class GoldORBStrategy:
         self.is_range_final = False
         self.current_consolidation_count = 0
         self.last_processed_time = None
+        
+        # State for Signal Logic
+        self.last_h1_df = None
+        self.trades_per_day = 2
+        self.trades_today_count = 0
+        self.last_trade_date = None
+        self.long_signal_taken_today = False
+        self.short_signal_taken_today = False
+        self.last_signal_candle_time = None
 
     def update_params(self, open_hour=None, consolidation_candles=None):
         if open_hour is not None:
             self.open_hour = int(open_hour)
         if consolidation_candles is not None:
             self.consolidation_candles = int(consolidation_candles)
-        # Reset state on param change
+        # Reset calculation state
         self.final_range_high = None
         self.final_range_low = None
         self.is_range_final = False
         self.current_consolidation_count = 0
         self.last_processed_time = None
+        # Do not reset trade counts
 
     def calculate_orb_levels(self, df_h1, point=0.01):
         """
         Calculate ORB levels based on H1 data.
-        Should be called on every new candle close or tick.
-        
-        Logic:
-        1. Find the first candle of the current day (defined by open_hour).
-        2. Set initial range (High/Low, but handle Long Wick filtering).
-        3. Check subsequent candles for consolidation.
-        4. Finalize range.
         """
         if df_h1 is None or len(df_h1) < 1:
             return None, None, False
+            
+        # Store for check_signal usage
+        self.last_h1_df = df_h1
 
         # Ensure index is datetime
         if not isinstance(df_h1.index, pd.DatetimeIndex):
             df_h1.index = pd.to_datetime(df_h1.index)
 
-        # Get today's date from the last candle
-        last_candle_time = df_h1.index[-1]
+        # Use Completed Candles Only (Exclude current open candle at -1)
+        # Assuming df_h1 includes current candle.
+        completed_df = df_h1.iloc[:-1]
+        
+        if len(completed_df) < 1:
+             return None, None, False
+
+        # Get today's date from the last COMPLETED candle
+        last_candle_time = completed_df.index[-1]
         today = last_candle_time.date()
         
-        # Find the "Open Candle" for today (e.g., 01:00)
-        # We need the candle that OPENS at self.open_hour
-        today_data = df_h1[df_h1.index.date == today]
+        # Reset Daily Counters if new day
+        if self.last_trade_date != today:
+            self.last_trade_date = today
+            self.trades_today_count = 0
+            self.long_signal_taken_today = False
+            self.short_signal_taken_today = False
+            self.last_signal_candle_time = None
+        
+        # Find the "Open Candle" for today
+        today_data = completed_df[completed_df.index.date == today]
         
         open_candle = today_data[today_data.index.hour == self.open_hour]
         
@@ -72,7 +92,6 @@ class GoldORBStrategy:
             c_body_low = min(c_open, c_close)
             
             # 500 points logic
-            # Assuming 'point' is provided. For Gold (2 digits), point=0.01. 500 points = 5.0.
             limit = 500 * point 
             
             eff_high = c_high
@@ -97,7 +116,7 @@ class GoldORBStrategy:
         
         current_high = initial_high
         current_low = initial_low
-        current_body_high = max(open_row['open'], open_row['close']) # Track body for strict expansion check
+        current_body_high = max(open_row['open'], open_row['close']) 
         current_body_low = min(open_row['open'], open_row['close'])
         
         consolidation_count = 0
@@ -107,19 +126,13 @@ class GoldORBStrategy:
             c_high, c_low, c_body_high, c_body_low = get_effective_range(row)
             
             # Check if this candle is inside the current range
-            # Note: Repo logic expands if wick > range AND body > range body (significant move)
-            # Simplified: If candle is inside, increment count.
             if c_high <= current_high and c_low >= current_low:
                 consolidation_count += 1
             else:
-                # Range expansion logic from repo:
-                # if(previous_candle.wick_high > range.wick_high && ... && previous_candle.body_high > range.body_high ...)
-                
+                # Range expansion logic
                 is_expansion = False
                 
                 if c_high > current_high:
-                    # Check significance (body must also be higher to confirm strength?)
-                    # Repo: previous_candle.body_high > range.body_high
                     if c_body_high > current_body_high:
                         current_high = c_high
                         current_body_high = c_body_high
@@ -134,18 +147,6 @@ class GoldORBStrategy:
                 if is_expansion:
                     consolidation_count = 0
                 else:
-                    # If it broke wick but not body (weak breakout), maybe we don't reset?
-                    # Repo resets on valid expansion.
-                    # If we are here, it means it is NOT fully inside.
-                    # But if we didn't expand (because body check failed), what do we do?
-                    # The repo code logic is:
-                    # if (inside) -> count++
-                    # else -> check expansion.
-                    # if (expansion conditions met) -> update & reset.
-                    # what if neither? (e.g. wick broke out but body didn't).
-                    # It falls through. Count does NOT increment. Count stays same?
-                    # Repo: "else" of expansion check is implicit fallthrough.
-                    # So if not inside, and not valid expansion -> count pauses?
                     pass 
             
             if consolidation_count >= self.consolidation_candles:
@@ -166,48 +167,54 @@ class GoldORBStrategy:
         """
         Check for Breakout/Breakdown signal.
         Strictly follows 'Confirmed Candle Breakout' logic from Repo.
+        Checks limits (Max Trades Per Day).
         """
+        # If df_h1 provided, update levels (and store df)
         if df_h1 is not None:
             self.calculate_orb_levels(df_h1, point=point)
+        
+        # Use stored DF if argument is None
+        target_df = df_h1 if df_h1 is not None else self.last_h1_df
         
         if not self.is_range_final or self.final_range_high is None or self.final_range_low is None:
             return None
             
-        # Repo Logic: Signal triggers if *Previous Candle* broke out.
-        # We need to check the last CLOSED candle in df_h1.
-        if df_h1 is None or len(df_h1) < 1:
+        if target_df is None or len(target_df) < 2:
             return None
             
-        last_candle = df_h1.iloc[-1]
+        # Check Max Trades Per Day
+        if self.trades_today_count >= self.trades_per_day:
+            return None
+
+        # Last CLOSED candle is at -2 (assuming -1 is current open)
+        # Verify assumption: Check if index[-1] is current hour.
+        # But safest is -2.
+        last_closed_candle = target_df.iloc[-2]
+        candle_time = last_closed_candle.name
         
-        # Check if last candle is strictly AFTER the consolidation phase?
-        # The calculate_orb_levels runs up to the last candle.
-        # If is_range_final is True, it means we have a range.
-        # We need to check if the *last* candle broke it.
+        # Avoid double signaling on the same candle
+        if self.last_signal_candle_time == candle_time:
+            return None
         
-        c_close = last_candle['close']
-        c_open = last_candle['open']
-        c_high = last_candle['high']
-        c_low = last_candle['low']
+        c_close = last_closed_candle['close']
+        c_open = last_closed_candle['open']
         
-        # Buy Signal:
-        # 1. Bullish Candle (Close > Open)
-        # 2. Body High (Close) > Range High
+        # Buy Signal
         if c_close > c_open and c_close > self.final_range_high:
-            return 'buy'
+            if not self.long_signal_taken_today:
+                self.long_signal_taken_today = True
+                self.trades_today_count += 1
+                self.last_signal_candle_time = candle_time
+                logger.info(f"ORB BUY Signal Confirmed (Candle {candle_time})")
+                return 'buy'
             
-        # Sell Signal:
-        # 1. Bearish Candle (Close < Open)
-        # 2. Body Low (Close) < Range Low
+        # Sell Signal
         if c_close < c_open and c_close < self.final_range_low:
-            return 'sell'
+            if not self.short_signal_taken_today:
+                self.short_signal_taken_today = True
+                self.trades_today_count += 1
+                self.last_signal_candle_time = candle_time
+                logger.info(f"ORB SELL Signal Confirmed (Candle {candle_time})")
+                return 'sell'
             
         return None
-
-    def get_state(self):
-        return {
-            "final_high": self.final_range_high,
-            "final_low": self.final_range_low,
-            "is_final": self.is_range_final,
-            "consolidation_count": self.current_consolidation_count
-        }
