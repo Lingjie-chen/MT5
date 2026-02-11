@@ -1300,6 +1300,32 @@ class QwenClient:
         else:
             prev_context = "\n上一次分析结果: 无 (首次运行)\n"
         
+        # [NEW] Grid/ORB 策略参数上下文 (注入优化器状态)
+        grid_config_context = ""
+        if technical_signals and 'grid_strategy' in technical_signals:
+            grid_config = technical_signals['grid_strategy'].get('config', {})
+            orb_data = technical_signals['grid_strategy'].get('orb_data', {})
+            
+            # Extract ORB Stats
+            orb_stats_str = ""
+            if orb_data and orb_data.get('stats'):
+                stats = orb_data['stats']
+                orb_stats_str = f"\n  - ORB Stats: Z-Score={stats.get('z_score', 0):.2f}, Breakout Score={stats.get('breakout_score', 0):.1f}"
+            
+            grid_config_context = (
+                f"\n当前策略优化状态 (Self-Optimized Params):\n"
+                f"- ORB Open Hour: {grid_config.get('orb_open_hour', 'N/A')}\n"
+                f"- ORB Consolidation: {grid_config.get('orb_consolidation_candles', 'N/A')} Candles\n"
+                f"- ORB SL Points: {grid_config.get('orb_sl_points', 'N/A')}\n"
+                f"- ORB TP Points: {grid_config.get('orb_tp_points', 'N/A')}\n"
+                f"- Risk Per Trade: {grid_config.get('max_risk_per_trade_percent', 'N/A')}%\n"
+                f"- Grid Step: {grid_config.get('grid_step_points', 'N/A')} points\n"
+                f"- Global Grid TP: ${grid_config.get('global_tp', 'N/A')}\n"
+                f"{orb_stats_str}\n"
+            )
+        else:
+             grid_config_context = "\n当前策略优化状态: 暂无数据\n"
+
         # 3. 当前持仓状态上下文
         if current_positions:
             pos_context = f"\n当前持仓状态 (包含实时 MFE/MAE 和 R-Multiple):\n{json.dumps(current_positions, indent=2, cls=CustomJSONEncoder)}\n"
