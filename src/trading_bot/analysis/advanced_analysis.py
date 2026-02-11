@@ -1091,7 +1091,7 @@ class TimeframeVisualAnalyzer:
         return {"signal": signal, "strength": strength, "reason": reason, "details": trends}
 
 class MTFAnalyzer:
-    def __init__(self, htf1=mt5.TIMEFRAME_M15, htf2=mt5.TIMEFRAME_H1, swing_length=20):
+    def __init__(self, htf1=mt5.TIMEFRAME_M5, htf2=mt5.TIMEFRAME_M15, swing_length=20):
         self.htf1 = htf1; self.htf2 = htf2; self.swing_length = swing_length
         self.demand_zones = []; self.supply_zones = []; self.last_zone_update = 0
     def analyze(self, symbol, current_price, current_time):
@@ -1110,14 +1110,14 @@ class MTFAnalyzer:
         signal = "neutral"; strength = 0; reason = ""
         if confirmed_dir > 0:
             if in_supply: reason = "Bullish MTF but in Supply Zone (Risk)"
-            else: signal = "buy"; strength = 85 if in_demand else 70; reason = f"MTF Strong Bullish (M15+H1). {'In Demand Zone' if in_demand else ''}"
+            else: signal = "buy"; strength = 85 if in_demand else 70; reason = f"MTF Strong Bullish (M5+M15). {'In Demand Zone' if in_demand else ''}"
         elif confirmed_dir < 0:
             if in_demand: reason = "Bearish MTF but in Demand Zone (Risk)"
-            else: signal = "sell"; strength = 85 if in_supply else 70; reason = f"MTF Strong Bearish (M15+H1). {'In Supply Zone' if in_supply else ''}"
+            else: signal = "sell"; strength = 85 if in_supply else 70; reason = f"MTF Strong Bearish (M5+M15). {'In Supply Zone' if in_supply else ''}"
         else:
-            if dir_htf1 == dir_curr and dir_htf1 != 0: signal = "buy" if dir_htf1 > 0 else "sell"; strength = 50; reason = f"MTF Weak {signal.capitalize()} (M15 aligned only)"
-            elif dir_htf2 == dir_curr and dir_htf2 != 0: signal = "buy" if dir_htf2 > 0 else "sell"; strength = 50; reason = f"MTF Weak {signal.capitalize()} (H1 aligned only)"
-            else: reason = f"MTF Misaligned (M15:{dir_htf1}, H1:{dir_htf2}, Curr:{dir_curr})"
+            if dir_htf1 == dir_curr and dir_htf1 != 0: signal = "buy" if dir_htf1 > 0 else "sell"; strength = 50; reason = f"MTF Weak {signal.capitalize()} (M5 aligned only)"
+            elif dir_htf2 == dir_curr and dir_htf2 != 0: signal = "buy" if dir_htf2 > 0 else "sell"; strength = 50; reason = f"MTF Weak {signal.capitalize()} (M15 aligned only)"
+            else: reason = f"MTF Misaligned (M5:{dir_htf1}, M15:{dir_htf2}, Curr:{dir_curr})"
         return {"signal": signal, "strength": float(strength), "reason": reason, "htf1_dir": dir_htf1, "htf2_dir": dir_htf2}
     def get_candle_direction(self, symbol, timeframe, index=0):
         try:
