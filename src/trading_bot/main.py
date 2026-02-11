@@ -3473,13 +3473,18 @@ class SymbolTrader:
                             strategy['action'] = orb_signal_data['signal']
                             strategy['position_size'] = orb_signal_data['lot']
                             
-                            # Update Exit Conditions
-                            exit_cond = strategy.get('exit_conditions', {})
-                            if not isinstance(exit_cond, dict): exit_cond = {}
+                            # [USER REQUEST] TP and SL should follow LLM/Basket analysis, NOT ORB fixed levels.
+                            # We check if LLM provided valid SL/TP.
                             
-                            exit_cond['sl'] = orb_signal_data['sl']
-                            exit_cond['tp'] = orb_signal_data['tp']
-                            strategy['exit_conditions'] = exit_cond
+                            current_exit = strategy.get('exit_conditions', {})
+                            if not current_exit.get('tp') or not current_exit.get('sl'):
+                                # Fallback to ORB levels ONLY if LLM failed to provide any
+                                current_exit['sl'] = orb_signal_data['sl']
+                                current_exit['tp'] = orb_signal_data['tp']
+                                strategy['exit_conditions'] = current_exit
+                                logger.info("Using ORB Fixed TP/SL as Fallback (LLM provided none)")
+                            else:
+                                logger.info(f"Using LLM/Basket TP/SL: TP={current_exit.get('tp')}, SL={current_exit.get('sl')}")
                             
                             strategy['reason'] = f"Gold ORB Breakout Signal ({orb_signal_data['reason']})"
                             
