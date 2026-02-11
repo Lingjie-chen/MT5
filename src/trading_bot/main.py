@@ -2106,7 +2106,7 @@ class SymbolTrader:
     def evaluate_comprehensive_params(self, params, df, df_h1):
         """
         Comprehensive Objective Function: Evaluates ORB Strategy parameters.
-        params: [open_hour, consolidation_candles, grid_step, grid_tp]
+        params: [orb_open_hour, orb_consolidation_candles, grid_step, grid_tp]
         """
         # Global counter for progress logging
         if not hasattr(self, '_opt_counter'): self._opt_counter = 0
@@ -2116,87 +2116,103 @@ class SymbolTrader:
 
         # 1. Decode Parameters
         try:
-            # Revised for SMC, CCI/RVGI, Grid
-            p_smc_ma = int(params[0])
-            p_smc_atr = params[1]
-            p_rvgi_sma = int(params[2])
-            p_rvgi_cci = int(params[3])
-            p_ifvg_gap = int(params[4])
+            # Revised for ORB and Grid
+            p_open_hour = int(params[0])
+            p_consolidation = int(params[1])
+            p_grid_step = int(params[2])
+            p_grid_tp = float(params[3])
             
-            # Extract Grid Params
-            p_grid_step = int(params[5]) if len(params) > 5 else 300
-            p_grid_tp = float(params[6]) if len(params) > 6 else 100.0
-            
-            # 2. Initialize Temporary Analyzers (Fresh State)
-            tmp_smc = SMCAnalyzer()
-            tmp_smc.ma_period = p_smc_ma
-            tmp_smc.atr_threshold = p_smc_atr
-            
-            tmp_adapter = AdvancedMarketAnalysisAdapter()
-            
+            if df_h1 is None or len(df_h1) < 50:
+                return -9999
+
             # 3. Run Simulation
-            start_idx = max(p_smc_ma, 50) + 10
-            if len(df) < start_idx + 50: return -9999
-            
             balance = 10000.0
-            closes = df['close'].values
-            
             trades_count = 0
             wins = 0
             
-            # OPTIMIZATION: Vectorized Pre-calculation
-            # 1. RVGI Series (Vectorized)
-            rvgi_series = tmp_adapter.calculate_rvgi_cci_series(df, sma_period=p_rvgi_sma, cci_period=p_rvgi_cci)
-            
-            # 3. Step Skipping
-            # Evaluate trade signals every 4 candles (1 hour) to speed up
-            eval_step = 4 
-            
-            for i in range(start_idx, len(df)-1):
-                curr_price = closes[i]
-                next_price = closes[i+1]
+            # Simple ORB Backtest Logic
+            # Ensure 'time' column is datetime
+            import pandas as pd
+            if not pd.api.types.is_datetime64_any_dtype(df_h1['time']):
+                df_h1['time'] = pd.to_datetime(df_h1['time'])
                 
-                # Check Trade Condition (Skipping steps for speed)
-                if i % eval_step == 0:
-                    sub_df = df.iloc[:i+1] # Still slicing, but 4x less often
+            # Group by date
+            df_h1['date'] = df_h1['time'].dt.date
+            days = df_h1['date'].unique()
+            
+            # Skip first few days to have enough history
+            for day in days[5:]:
+                day_data = df_h1[df_h1['date'] == day].copy()
+                if len(day_data) < 12: continue # Skip incomplete days
+                
+                # Find Open Candle
+                open_candle_mask = day_data['time'].dt.hour == p_open_hour
+                if not open_candle_mask.any(): continue
+                
+                open_idx = day_data.index[open_candle_mask][0]
+                
+                # Initial Range
+                open_candle = day_data.loc[open_idx]
+                range_high = open_candle['high']
+                range_low = open_candle['low']
+                
+                # Check Consolidation & Breakout
+                subsequent_data = day_data.loc[open_idx:].iloc[1:]
+                
+                if len(subsequent_data) < p_consolidation: continue
+                
+                is_breakout = False
+                direction = 0 # 1 Buy, -1 Sell
+                entry_price = 0.0
+                
+                # Check subsequent candles for breakout
+                for i in range(len(subsequent_data)):
+                    candle = subsequent_data.iloc[i]
+                    c_close = candle['close']
                     
-                    # Signals
-                    # 1. SMC
-                    smc_sig = tmp_smc.analyze(sub_df)['signal']
+                    # Simplified Breakout Logic
+                    if c_close > range_high:
+                        direction = 1
+                        is_breakout = True
+                        entry_price = c_close
+                        break
+                    elif c_close < range_low:
+                        direction = -1
+                        is_breakout = True
+                        entry_price = c_close
+                        break
+                
+                if is_breakout:
+                    trades_count += 1
+                    # Look at remaining data for the day
+                    future_data = subsequent_data.loc[candle.name:].iloc[1:]
                     
-                    # 2. IFVG
-                    ifvg_sig = tmp_adapter.analyze_ifvg(sub_df, min_gap_points=p_ifvg_gap)['signal']
-                    
-                    # 3. RVGI (Fast Lookup)
-                    rvgi_sig_val = rvgi_series.iloc[i]
-                    rvgi_sig = 'buy' if rvgi_sig_val == 1 else 'sell' if rvgi_sig_val == -1 else 'neutral'
-                    
-                    # Combine
-                    votes = 0
-                    for s in [smc_sig, ifvg_sig, rvgi_sig]:
-                        if s == 'buy': votes += 1
-                        elif s == 'sell': votes -= 1
-                    
-                    final_sig = "neutral"
-                    if votes >= 2: final_sig = "buy"
-                    elif votes <= -2: final_sig = "sell"
-                    
-                    if final_sig == "buy":
-                        trades_count += 1
-                        diff = next_price - curr_price
-                        balance += diff
-                        if diff > 0: wins += 1
-                        
-                        # Grid Penalty (Simplified)
-                        if p_grid_step < 100: balance -= 10 
-                        
-                    elif final_sig == "sell":
-                        trades_count += 1
-                        diff = curr_price - next_price
-                        balance += diff
-                        if diff > 0: wins += 1
-                        
-                        if p_grid_step < 100: balance -= 10
+                    if len(future_data) > 0:
+                        # Calculate potential profit
+                        if direction == 1:
+                            max_price = future_data['high'].max()
+                            profit_potential = max_price - entry_price
+                            if profit_potential >= p_grid_tp:
+                                wins += 1
+                                balance += p_grid_tp
+                            else:
+                                close_p = future_data.iloc[-1]['close']
+                                diff = close_p - entry_price
+                                balance += diff
+                                
+                        elif direction == -1:
+                            min_price = future_data['low'].min()
+                            profit_potential = entry_price - min_price
+                            if profit_potential >= p_grid_tp:
+                                wins += 1
+                                balance += p_grid_tp
+                            else:
+                                close_p = future_data.iloc[-1]['close']
+                                diff = entry_price - close_p
+                                balance += diff
+                    else:
+                        # No future data, break even
+                        pass
             
             if trades_count == 0: return -100
             
@@ -2209,45 +2225,49 @@ class SymbolTrader:
 
     def optimize_strategy_parameters(self):
         """
-        Comprehensive Optimization: Tunes ALL strategy parameters using Auto-AO.
+        Comprehensive Optimization: Tunes ORB & Grid parameters using Auto-AO.
         """
-        logger.info("开始执行全策略参数优化 (Comprehensive Auto-AO)...")
+        logger.info("开始执行全策略参数优化 (Comprehensive Auto-AO for ORB)...")
         
         # Reset progress counter
         self._opt_counter = 0
         
         # 1. 获取历史数据
         df = self.get_market_data(1000) 
-        if df is None or len(df) < 500:
+        import MetaTrader5 as mt5
+        df_h1 = self.mt5_interface.get_historical_data(self.symbol, mt5.TIMEFRAME_H1, 2000)
+        
+        if df is None or df_h1 is None or len(df_h1) < 100:
             logger.warning("数据不足，跳过优化")
             return
             
         # 2. Define Search Space
-        # smc_ma, smc_atr, rvgi_sma, rvgi_cci, ifvg_gap, grid_step, grid_tp
+        # orb_open_hour, orb_consolidation_candles, grid_step, grid_tp
         bounds = [
-            (100, 300),     # smc_ma
-            (0.001, 0.005), # smc_atr
-            (10, 50),       # rvgi_sma
-            (10, 30),       # rvgi_cci
-            (10, 100),      # ifvg_gap
+            (0, 23),        # orb_open_hour
+            (2, 10),        # orb_consolidation_candles
             (200, 600),     # grid_step (points)
-            (50.0, 200.0)   # grid_tp (global TP USD)
+            (50.0, 300.0)   # grid_tp (global TP USD)
         ]
         
-        steps = [10, 0.0005, 2, 2, 5, 50, 10.0]
+        steps = [1, 1, 50, 10.0]
         
         # 3. Objective
         def objective(params):
-            return self.evaluate_comprehensive_params(params, df)
+            return self.evaluate_comprehensive_params(params, df, df_h1)
             
         # 4. Optimizer
         import random
+        if not self.optimizers:
+             logger.error("No optimizers available.")
+             return
+             
         algo_name = random.choice(list(self.optimizers.keys()))
         optimizer = self.optimizers[algo_name]
         
         # Adjust population size for realtime performance
         if hasattr(optimizer, 'pop_size'):
-            optimizer.pop_size = 20
+            optimizer.pop_size = 15
             
         logger.info(f"本次选择的优化算法: {algo_name} (Pop: {optimizer.pop_size})")
         
@@ -2256,7 +2276,7 @@ class SymbolTrader:
             objective, 
             bounds, 
             steps=steps, 
-            epochs=4
+            epochs=3
         )
         
         # 6. Apply Results
@@ -2264,33 +2284,23 @@ class SymbolTrader:
             logger.info(f"全策略优化完成! Best Score: {best_score:.2f}")
             
             # Extract
-            p_smc_ma = int(best_params[0])
-            p_smc_atr = best_params[1]
-            p_rvgi_sma = int(best_params[2])
-            p_rvgi_cci = int(best_params[3])
-            p_ifvg_gap = int(best_params[4])
-            p_grid_step = int(best_params[5])
-            p_grid_tp = float(best_params[6])
+            p_open_hour = int(best_params[0])
+            p_consolidation = int(best_params[1])
+            p_grid_step = int(best_params[2])
+            p_grid_tp = float(best_params[3])
             
-            # Apply
-            self.smc_analyzer.ma_period = p_smc_ma
-            self.smc_analyzer.atr_threshold = p_smc_atr
-            
-            self.short_term_params = {
-                'rvgi_sma': p_rvgi_sma,
-                'rvgi_cci': p_rvgi_cci,
-                'ifvg_gap': p_ifvg_gap
-            }
-
-            # Apply Grid Params
-            self.grid_strategy.grid_step_points = p_grid_step
-            self.grid_strategy.global_tp = p_grid_tp
+            # Apply to Grid Strategy
+            self.grid_strategy.update_config({
+                'orb_open_hour': p_open_hour,
+                'orb_consolidation_candles': p_consolidation,
+                'grid_step': p_grid_step,
+                'global_tp': p_grid_tp
+            })
             
             msg = (
-                f"🧬 *Comprehensive Optimization ({algo_name})*\n"
+                f"🧬 *ORB Strategy Optimization ({algo_name})*\n"
                 f"Score: {best_score:.2f}\n"
-                f"• SMC: MA={p_smc_ma}, ATR={p_smc_atr:.4f}\n"
-                f"• ST: RVGI({p_rvgi_sma},{p_rvgi_cci}), IFVG({p_ifvg_gap})\n"
+                f"• ORB: OpenHour={p_open_hour}, Consolidation={p_consolidation}\n"
                 f"• Grid: Step={p_grid_step}, GlobalTP={p_grid_tp:.1f}"
             )
             self.send_telegram_message(msg)
