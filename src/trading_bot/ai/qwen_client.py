@@ -528,6 +528,7 @@ class QwenClient:
        - **Q7 防守 (Defense)**: 明确的失效位 (Invalidation Point)。
        - **Q8 执行 (Execution) [CRITICAL]**:
           - **Yes**: 仅当当前 tick 价格**已经满足**所有入场条件（趋势共振+结构确认+信号触发），**无需等待**任何后续确认时。
+          - **ORB Exception**: 如果 `ORB Breakout Score > 80` 且方向与 H1 趋势一致，即使稍微有些偏离或回调未到位，也应判定为 **Yes**，因为突破行情不等人。
           - **No**: 需要等待突破、等待回调、等待K线收盘确认、或条件不满足。 -> **Action 必须为 HOLD 或 WAIT**。
     """
 
