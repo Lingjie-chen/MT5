@@ -2546,7 +2546,10 @@ class SymbolTrader:
                 bounds=bounds,
                 epochs=20
              )
-            
+        except Exception as e:
+            logger.error(f"权重优化失败: {e}")
+            return
+
         # 4. 应用最佳权重
         if best_score > 0: # 确保结果有效
             for i, k in enumerate(strategy_keys):
@@ -2557,9 +2560,6 @@ class SymbolTrader:
             self.last_optimization_time = time.time()
         else:
             logger.warning("优化结果得分过低，未更新权重")
-                
-        except Exception as e:
-            logger.error(f"权重优化失败: {e}")
 
     def calculate_optimized_sl_tp(self, trade_type, price, atr, market_context=None, ai_exit_conds=None):
         """
