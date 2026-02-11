@@ -34,6 +34,11 @@ class KalmanGridStrategy:
         self.prev_state = None
         self.prev_covariance = 1.0
         
+        # Risk Management (New)
+        self.use_risk_based_sizing = True
+        self.max_risk_per_trade_percent = 1.0
+        self.account_balance = 0.0 # Will be updated
+        
         # BB Parameters
         self.bb_period = 100
         self.bb_deviation = 2.0
