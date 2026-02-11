@@ -1843,7 +1843,7 @@ class SymbolTrader:
                     opt_tp = self._normalize_price(opt_tp)
                     
                     # [USER REQ] If Basket TP is active, Force Individual TP to 0
-                    basket_tp_active = getattr(self.grid_strategy, 'dynamic_basket_tp', 0.0) > 0
+                    basket_tp_active = getattr(self.grid_strategy, 'dynamic_global_tp', 0.0) > 0
                     if basket_tp_active:
                          opt_tp = 0.0 
                     
