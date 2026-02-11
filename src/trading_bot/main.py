@@ -3596,6 +3596,24 @@ class SymbolTrader:
                             strategy['action'] = orb_signal_data['signal']
                             strategy['position_size'] = orb_signal_data['lot']
                             
+                            # [FIX] Force Pre-Market Checks to Align with ORB (Bypass Logic Gates)
+                            # Ensure Q8 Execution is 'Yes' and Trends are Aligned to prevent 'Logic Conflict' blocking
+                            if 'pre_market_check' not in strategy:
+                                strategy['pre_market_check'] = {}
+                                
+                            strategy['pre_market_check']['q8_execution'] = 'Yes'
+                            
+                            # Align Bias to match signal direction
+                            orb_dir = orb_signal_data['signal'].lower()
+                            if 'buy' in orb_dir:
+                                strategy['pre_market_check']['q1_trend'] = "Bullish (ORB Override)"
+                                strategy['pre_market_check']['q5_bias'] = "Buy (ORB Override)"
+                            elif 'sell' in orb_dir:
+                                strategy['pre_market_check']['q1_trend'] = "Bearish (ORB Override)"
+                                strategy['pre_market_check']['q5_bias'] = "Sell (ORB Override)"
+                                
+                            logger.info(f"Override applied: Q8=Yes, Bias={strategy['pre_market_check']['q5_bias']}")
+
                             # [USER REQUEST] TP and SL should follow LLM/Basket analysis, NOT ORB fixed levels.
                             
                             current_exit = strategy.get('exit_conditions', {})
