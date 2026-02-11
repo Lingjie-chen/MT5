@@ -469,8 +469,46 @@ class SymbolTrader:
             return False
         else:
             logger.info(f"平仓成功 #{position.ticket}")
-            profit = getattr(result, 'profit', 0.0)
-            self.send_telegram_message(f"🔄 *Position Closed*\nTicket: `{position.ticket}`\nReason: {comment}\nProfit: {profit}")
+            
+            # [NEW] Fetch Realized Profit & Send Customized Telegram Message
+            try:
+                time.sleep(0.5) # Wait for deal to be written to history
+                from_date = datetime.now() - timedelta(minutes=2)
+                to_date = datetime.now() + timedelta(minutes=2)
+                deals = mt5.history_deals_get(from_date, to_date)
+                
+                realized_profit = 0.0
+                found_deal = False
+                
+                if deals:
+                    for d in deals:
+                        if d.position_id == position.ticket and d.entry in [mt5.DEAL_ENTRY_OUT, mt5.DEAL_ENTRY_INOUT]:
+                            realized_profit = d.profit + d.swap + d.commission
+                            found_deal = True
+                            break
+                
+                # Determine Message Style
+                title = "Position Closed"
+                icon = "🔒"
+                
+                if "Basket TP" in comment:
+                    title = "Basket TP Reached"
+                    icon = "🧺" # Basket
+                elif "SL" in comment or realized_profit < 0:
+                    title = "SL Reached"
+                    icon = "🛑"
+                elif realized_profit > 0:
+                    title = "TP Reached"
+                    icon = "💰"
+                
+                msg = f"{icon} *{title}*\nTicket: `{position.ticket}`\nSymbol: {self.symbol}\nReason: {comment}\nProfit: `{realized_profit:.2f}` USD"
+                self.send_telegram_message(msg)
+                
+            except Exception as e:
+                logger.error(f"Error sending close notification: {e}")
+                # Fallback message
+                self.send_telegram_message(f"🔄 *Position Closed*\nTicket: `{position.ticket}`\nReason: {comment}\nProfit: Check History")
+
             return True
 
     def close_all_positions(self, direction=None, comment="Close All"):
