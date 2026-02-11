@@ -15,6 +15,11 @@ class GoldORBStrategy:
         self.current_consolidation_count = 0
         self.last_processed_time = None
         
+        # Fixed SL/TP from GOLD_ORB Repo (Default)
+        self.use_fixed_sl_tp = True
+        self.fixed_sl_points = 400
+        self.fixed_tp_points = 1200
+        
         # State for Signal Logic
         self.last_h1_df = None
         self.trades_per_day = 2
@@ -24,11 +29,16 @@ class GoldORBStrategy:
         self.short_signal_taken_today = False
         self.last_signal_candle_time = None
 
-    def update_params(self, open_hour=None, consolidation_candles=None):
+    def update_params(self, open_hour=None, consolidation_candles=None, sl_points=None, tp_points=None):
         if open_hour is not None:
             self.open_hour = int(open_hour)
         if consolidation_candles is not None:
             self.consolidation_candles = int(consolidation_candles)
+        if sl_points is not None:
+            self.fixed_sl_points = int(sl_points)
+        if tp_points is not None:
+            self.fixed_tp_points = int(tp_points)
+            
         # Reset calculation state
         self.final_range_high = None
         self.final_range_low = None
