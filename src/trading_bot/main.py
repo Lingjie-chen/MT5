@@ -3669,6 +3669,20 @@ class SymbolTrader:
                         except Exception:
                             current_model_name = self.qwen_client.model # Fallback to default
 
+                        # [NEW] Extract ORB Stats for Telegram
+                        orb_stats_str = ""
+                        orb_data = technical_signals.get('grid_strategy', {}).get('orb_data')
+                        if orb_data and orb_data.get('stats'):
+                            stats = orb_data['stats']
+                            z_score = stats.get('z_score', 0.0)
+                            breakout_score = stats.get('breakout_score', 0.0)
+                            orb_stats_str = (
+                                f"📊 *ORB Stats*\n"
+                                f"• Z-Score: `{z_score:.2f}`\n"
+                                f"• Breakout Score: `{breakout_score:.1f}/100`\n"
+                                f"• Mode: *Exclusive Entry*\n\n"
+                            )
+
                         if telegram_report and len(telegram_report) > 50:
                             # [NEW] Extract Basket TP/SL Info
                             grid_tp_long = getattr(self.grid_strategy, 'dynamic_tp_long', None)
