@@ -3488,6 +3488,12 @@ class SymbolTrader:
                             
                             strategy['reason'] = f"Gold ORB Breakout Signal ({orb_signal_data['reason']})"
                             
+                            # Add Stats to Reason if available
+                            if orb_signal_data.get('stats'):
+                                stats = orb_signal_data['stats']
+                                score = stats.get('breakout_score', 0)
+                                strategy['reason'] += f" [Stats: Score={score}, Z={stats.get('z_score', 0):.2f}]"
+                            
                             # Force confidence to bypass filters
                             strategy['confidence_score'] = 95
                             
