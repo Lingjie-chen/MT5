@@ -218,7 +218,9 @@ class KalmanGridStrategy:
     def get_entry_signal(self, current_price, trend_direction=None):
         """
         Determine if we should start a grid.
-        Returns: 'buy', 'sell', or None
+        Returns: 
+        - Simple: 'buy', 'sell', or None
+        - Dict (ORB): {'signal': 'buy', 'lot': 0.1, 'sl': 2000.0, 'tp': 2010.0}
         
         [Optimized] Hybrid Logic:
         0. Gold ORB Strategy (Priority High & Exclusive)
@@ -227,10 +229,56 @@ class KalmanGridStrategy:
         
         # 0. Check ORB Signal (Exclusive for all symbols)
         if self.orb_strategy:
-            orb_signal = self.orb_strategy.check_signal(current_price)
-            if orb_signal:
-                logger.info(f"ORB Signal Triggered: {orb_signal.upper()} (Price: {current_price})")
-                return orb_signal
+            # Need point for ORB (default 0.01 for XAUUSD if not passed, but better to get it)
+            sym_info = mt5.symbol_info(self.symbol)
+            point = sym_info.point if sym_info else 0.01
+            
+            orb_result = self.orb_strategy.check_signal(current_price, point=point)
+            
+            if orb_result and isinstance(orb_result, dict):
+                s_type = orb_result['signal']
+                logger.info(f"ORB Signal Triggered: {s_type.upper()} (Price: {current_price})")
+                
+                # Calculate Lot
+                lot = self.lot
+                if self.use_risk_based_sizing:
+                    if self.account_balance <= 0:
+                        # Try to get balance if not set
+                        acc = mt5.account_info()
+                        if acc: self.account_balance = acc.balance
+                        
+                    tick_size = sym_info.trade_tick_size if sym_info else 0.01
+                    tick_value = sym_info.trade_tick_value if sym_info else 1.0
+                    
+                    lot = self.calculate_initial_lot(
+                        orb_result['sl_points'], 
+                        self.account_balance, 
+                        point_value=point,
+                        tick_size=tick_size,
+                        tick_value=tick_value
+                    )
+                
+                # Construct Result Dict
+                sl_price = 0.0
+                tp_price = 0.0
+                if s_type == 'buy':
+                    sl_price = current_price - orb_result['sl_dist']
+                    tp_price = current_price + orb_result['tp_dist']
+                else:
+                    sl_price = current_price + orb_result['sl_dist']
+                    tp_price = current_price - orb_result['tp_dist']
+                    
+                return {
+                    'signal': s_type,
+                    'lot': lot,
+                    'sl': sl_price,
+                    'tp': tp_price,
+                    'reason': 'Gold ORB Breakout'
+                }
+                
+            elif orb_result: # Legacy string return (fallback)
+                logger.info(f"ORB Signal Triggered: {orb_result.upper()}")
+                return orb_result
             else:
                 # Strictly wait for ORB breakout.
                 return None
