@@ -45,10 +45,11 @@ class MT5RiskManager:
             
             # 最小手数检查 
             if float(result.suggested_position_size) < symbol_info.volume_min:
+                logger.warning(f"Calculated lot {result.suggested_position_size} < Min Volume {symbol_info.volume_min}. Risk budget too low for this SL distance.")
                 return 0.0
 
             return float(result.suggested_position_size)
 
         except Exception as e:
-            logger.error(f"Calc Error: {e}")
+            logger.error(f"Calc Error details: {e}", exc_info=True)
             return 0.0
