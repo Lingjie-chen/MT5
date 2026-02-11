@@ -2106,7 +2106,7 @@ class SymbolTrader:
     def evaluate_comprehensive_params(self, params, df, df_h1):
         """
         Comprehensive Objective Function: Evaluates ORB Strategy parameters.
-        params: [orb_open_hour, orb_consolidation_candles, grid_step, grid_tp]
+        params: [orb_open_hour, orb_consolidation_candles, grid_step, grid_tp, orb_sl, orb_tp, risk_pct]
         """
         # Global counter for progress logging
         if not hasattr(self, '_opt_counter'): self._opt_counter = 0
@@ -2116,11 +2116,15 @@ class SymbolTrader:
 
         # 1. Decode Parameters
         try:
-            # Revised for ORB and Grid
             p_open_hour = int(params[0])
             p_consolidation = int(params[1])
             p_grid_step = int(params[2])
             p_grid_tp = float(params[3])
+            
+            # New Params
+            p_sl_points = float(params[4]) if len(params) > 4 else 400.0
+            p_tp_points = float(params[5]) if len(params) > 5 else 1200.0
+            p_risk_pct = float(params[6]) if len(params) > 6 else 1.0
             
             if df_h1 is None or len(df_h1) < 50:
                 return -9999
@@ -2131,7 +2135,6 @@ class SymbolTrader:
             wins = 0
             
             # Simple ORB Backtest Logic
-            # Ensure 'time' column is datetime
             import pandas as pd
             if not pd.api.types.is_datetime64_any_dtype(df_h1['time']):
                 df_h1['time'] = pd.to_datetime(df_h1['time'])
@@ -2139,6 +2142,8 @@ class SymbolTrader:
             # Group by date
             df_h1['date'] = df_h1['time'].dt.date
             days = df_h1['date'].unique()
+            
+            point = 0.01 # Assume Gold
             
             # Skip first few days to have enough history
             for day in days[5:]:
@@ -2164,60 +2169,94 @@ class SymbolTrader:
                 is_breakout = False
                 direction = 0 # 1 Buy, -1 Sell
                 entry_price = 0.0
+                breakout_idx = -1
                 
                 # Check subsequent candles for breakout
                 for i in range(len(subsequent_data)):
                     candle = subsequent_data.iloc[i]
                     c_close = candle['close']
                     
-                    # Simplified Breakout Logic
                     if c_close > range_high:
                         direction = 1
                         is_breakout = True
                         entry_price = c_close
+                        breakout_idx = i
                         break
                     elif c_close < range_low:
                         direction = -1
                         is_breakout = True
                         entry_price = c_close
+                        breakout_idx = i
                         break
                 
                 if is_breakout:
                     trades_count += 1
+                    
+                    # Calculate Lot Size based on Risk
+                    # Loss = Lot * SL_Points * TickValue(1.0)
+                    # RiskAmount = Balance * (Risk% / 100)
+                    # Lot = RiskAmount / (SL_Points * 1.0)
+                    risk_amount = balance * (p_risk_pct / 100.0)
+                    lot_size = risk_amount / (p_sl_points * 1.0) if p_sl_points > 0 else 0.01
+                    lot_size = max(0.01, round(lot_size, 2))
+                    
                     # Look at remaining data for the day
-                    future_data = subsequent_data.loc[candle.name:].iloc[1:]
+                    future_data = subsequent_data.iloc[breakout_idx+1:]
                     
                     if len(future_data) > 0:
-                        # Calculate potential profit
-                        if direction == 1:
-                            max_price = future_data['high'].max()
-                            profit_potential = max_price - entry_price
-                            if profit_potential >= p_grid_tp:
-                                wins += 1
-                                balance += p_grid_tp
+                        sl_price = entry_price - (p_sl_points * point) if direction == 1 else entry_price + (p_sl_points * point)
+                        tp_price = entry_price + (p_tp_points * point) if direction == 1 else entry_price - (p_tp_points * point)
+                        
+                        trade_result = 0.0 # PnL points
+                        
+                        # Simulate Check Loop
+                        for _, row in future_data.iterrows():
+                            # Check SL first (Conservative)
+                            if direction == 1:
+                                if row['low'] <= sl_price:
+                                    trade_result = -p_sl_points
+                                    break
+                                if row['high'] >= tp_price:
+                                    trade_result = p_tp_points
+                                    wins += 1
+                                    break
                             else:
-                                close_p = future_data.iloc[-1]['close']
-                                diff = close_p - entry_price
-                                balance += diff
+                                if row['high'] >= sl_price:
+                                    trade_result = -p_sl_points
+                                    break
+                                if row['low'] <= tp_price:
+                                    trade_result = p_tp_points
+                                    wins += 1
+                                    break
+                        
+                        # If neither hit, close at end of day (or current state)
+                        if trade_result == 0.0:
+                            last_close = future_data.iloc[-1]['close']
+                            if direction == 1:
+                                trade_result = (last_close - entry_price) / point
+                            else:
+                                trade_result = (entry_price - last_close) / point
                                 
-                        elif direction == -1:
-                            min_price = future_data['low'].min()
-                            profit_potential = entry_price - min_price
-                            if profit_potential >= p_grid_tp:
-                                wins += 1
-                                balance += p_grid_tp
-                            else:
-                                close_p = future_data.iloc[-1]['close']
-                                diff = entry_price - close_p
-                                balance += diff
+                        # Update Balance
+                        # Profit = Points * PointValue * Lot / TickSize?
+                        # Gold: 1 Point ($0.01) * 1 Lot = $1 ? No.
+                        # Standard XAUUSD: 1 lot, 1 pip ($0.10) = $10. 1 point ($0.01) = $1.
+                        # So Profit = Points * 1.0 * Lot
+                        
+                        pnl = trade_result * 1.0 * lot_size
+                        balance += pnl
+                        
                     else:
-                        # No future data, break even
+                        # No future data
                         pass
             
             if trades_count == 0: return -100
             
             # Simple Profit Metric
             score = (balance - 10000.0)
+            
+            # Penalty for high drawdown could be added here
+            
             return score
             
         except Exception as e:
