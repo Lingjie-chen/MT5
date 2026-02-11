@@ -2375,8 +2375,9 @@ class SymbolTrader:
         steps = [0, 1, 50, 10.0, 50, 100, 0.1] # Step for orb_open_hour set to 0 as it's fixed
         
         # 3. Objective (Standalone Wrapper)
-        def objective(params):
-            return run_orb_simulation(params, df_h1)
+        # Use partial instead of closure to avoid serialization issues on Windows with joblib
+        from functools import partial
+        objective = partial(run_orb_simulation, df_h1=df_h1)
             
         # 4. Optimizer
         import random
