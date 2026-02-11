@@ -1526,11 +1526,16 @@ class QwenClient:
              - **空单 (Sell)**: SL 应置于最近的 Swing High (强阻力) 或 Order Block 上边界之上。
            - **Take Profit (TP)**: 必须指向下一个流动性池 (Liquidity Pool) 或未回补的 FVG。
         
-        2. **MAE/MFE 统计修正 (Statistical Validation)**:
+        2. **ORB 统计验证 (ORB Validation)**:
+           - 如果 `ORB Stats` 显示高 Breakout Score (>80) 或高 Z-Score (abs > 2.0)，说明突破动能强。
+           - 此时 TP 可以设得更激进（参考 `ORB TP Points`），SL 可以设得更紧凑以保护利润。
+           - **Basket TP**: 请结合 `ORB Stats` 和 `Global Grid TP` 参数，给出一个动态的 `dynamic_basket_tp`。如果 ORB 信号极强，Basket TP 应适当上调。
+
+        3. **MAE/MFE 统计修正 (Statistical Validation)**:
            - 参考历史交易的 MAE (最大浮亏) 数据：如果历史数据显示价格经常在反转前回撤 200 点，则 SL 不应小于 200 点，以免被噪音扫损。
            - 参考 MFE (最大浮盈) 数据：TP 设置不应过度乐观，应在 MFE 统计的合理范围内 (如 80% 分位)。
         
-        3. **综合配置**:
+        4. **综合配置**:
            - 最终 SL/TP 应是 SMC 结构位与 MAE/MFE 统计数据的**交集与验证**。
            - **严禁** 返回 0.0 或 null！必须给出具体数值。
 
