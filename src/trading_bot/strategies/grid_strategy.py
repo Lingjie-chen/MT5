@@ -960,14 +960,18 @@ class KalmanGridStrategy:
         if 'max_grid_steps' in params: self.max_grid_steps = int(params['max_grid_steps'])
         if 'global_tp' in params: self.global_tp = float(params['global_tp'])
         if 'tp_steps' in params: self.tp_steps.update(params['tp_steps'])
+        if 'max_risk_per_trade_percent' in params: self.max_risk_per_trade_percent = float(params['max_risk_per_trade_percent'])
         
         # ORB Params
         if self.orb_strategy:
             open_hour = params.get('orb_open_hour')
             consolidation_candles = params.get('orb_consolidation_candles')
-            if open_hour is not None or consolidation_candles is not None:
-                self.orb_strategy.update_params(open_hour, consolidation_candles)
-                logger.info(f"Updated ORB Params: Hour={open_hour}, Candles={consolidation_candles}")
+            sl_points = params.get('orb_sl_points')
+            tp_points = params.get('orb_tp_points')
+            
+            if any(x is not None for x in [open_hour, consolidation_candles, sl_points, tp_points]):
+                self.orb_strategy.update_params(open_hour, consolidation_candles, sl_points, tp_points)
+                logger.info(f"Updated ORB Params: Hour={open_hour}, Candles={consolidation_candles}, SL={sl_points}, TP={tp_points}")
 
     def get_config(self):
         """
@@ -980,11 +984,14 @@ class KalmanGridStrategy:
             'global_tp': self.global_tp,
             'tp_steps': self.tp_steps,
             'kalman_measurement_variance': self.kalman_measurement_variance,
-            'kalman_process_variance': self.kalman_process_variance
+            'kalman_process_variance': self.kalman_process_variance,
+            'max_risk_per_trade_percent': self.max_risk_per_trade_percent
         }
         if self.orb_strategy:
             config['orb_open_hour'] = self.orb_strategy.open_hour
             config['orb_consolidation_candles'] = self.orb_strategy.consolidation_candles
+            config['orb_sl_points'] = self.orb_strategy.fixed_sl_points
+            config['orb_tp_points'] = self.orb_strategy.fixed_tp_points
         return config
 
     def _update_positions_state(self, positions):
