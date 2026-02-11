@@ -1785,6 +1785,16 @@ class SymbolTrader:
             }
             
             changed = False
+
+            # [NEW] Basket Mode Check for Existing Positions
+            if self.latest_strategy:
+                 grid_settings = self.latest_strategy.get('grid_settings', {})
+                 if grid_settings.get('basket_tp_amount', 0) > 0:
+                      # If Basket Mode is active, force TP to 0
+                      if tp > 0: 
+                           request['tp'] = 0.0
+                           changed = True
+                           logger.info(f"Basket Mode: Removing TP for #{pos.ticket}")
             
             # --- 1. 基于最新策略更新 SL/TP (全量覆盖更新) ---
             # 策略调整: 恢复 AI 驱动的持仓参数更新逻辑
