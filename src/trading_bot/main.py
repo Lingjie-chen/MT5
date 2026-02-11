@@ -2356,7 +2356,7 @@ class SymbolTrader:
         # 2. Define Search Space
         # orb_open_hour, orb_consolidation_candles, grid_step, grid_tp, orb_sl, orb_tp, risk_pct
         bounds = [
-            (0, 23),        # orb_open_hour
+            (1, 1),         # orb_open_hour (Fixed to 1 hour based on user request)
             (2, 10),        # orb_consolidation_candles
             (200, 600),     # grid_step (points)
             (50.0, 300.0),  # grid_tp (global TP USD)
@@ -2365,7 +2365,7 @@ class SymbolTrader:
             (0.5, 3.0)      # max_risk_per_trade_percent
         ]
         
-        steps = [1, 1, 50, 10.0, 50, 100, 0.1]
+        steps = [0, 1, 50, 10.0, 50, 100, 0.1] # Step for orb_open_hour set to 0 as it's fixed
         
         # 3. Objective (Standalone Wrapper)
         def objective(params):
