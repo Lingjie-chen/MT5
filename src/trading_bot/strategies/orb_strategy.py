@@ -257,7 +257,26 @@ class GoldORBStrategy:
                 self.trades_today_count += 1
                 self.last_signal_candle_time = candle_time
                 logger.info(f"ORB BUY Signal Confirmed (Candle {candle_time})")
-                return 'buy'
+                
+                sl_dist = self.fixed_sl_points * point
+                tp_dist = self.fixed_tp_points * point
+                
+                # Calculate Statistical Strength
+                breakout_score = estimate_breakout_strength(c_close, self.range_mean, self.range_std)
+                
+                return {
+                    'signal': 'buy',
+                    'sl_dist': sl_dist,
+                    'tp_dist': tp_dist,
+                    'price': c_close,
+                    'sl_points': self.fixed_sl_points, # For risk calc
+                    'stats': {
+                        'range_mean': self.range_mean,
+                        'range_std': self.range_std,
+                        'breakout_score': breakout_score,
+                        'z_score': (c_close - self.range_mean) / self.range_std if self.range_std > 0 else 0
+                    }
+                }
             
         # Sell Signal
         if c_close < c_open and c_close < self.final_range_low:
@@ -266,6 +285,25 @@ class GoldORBStrategy:
                 self.trades_today_count += 1
                 self.last_signal_candle_time = candle_time
                 logger.info(f"ORB SELL Signal Confirmed (Candle {candle_time})")
-                return 'sell'
+                
+                sl_dist = self.fixed_sl_points * point
+                tp_dist = self.fixed_tp_points * point
+                
+                # Calculate Statistical Strength
+                breakout_score = estimate_breakout_strength(c_close, self.range_mean, self.range_std)
+                
+                return {
+                    'signal': 'sell',
+                    'sl_dist': sl_dist,
+                    'tp_dist': tp_dist,
+                    'price': c_close,
+                    'sl_points': self.fixed_sl_points,
+                    'stats': {
+                        'range_mean': self.range_mean,
+                        'range_std': self.range_std,
+                        'breakout_score': breakout_score,
+                        'z_score': (c_close - self.range_mean) / self.range_std if self.range_std > 0 else 0
+                    }
+                }
             
         return None
