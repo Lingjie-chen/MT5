@@ -1902,30 +1902,72 @@ class SymbolTrader:
                 self._send_order(trade_type, price, 0.0, add_tp, comment=f"Grid: {action}")
                 # Don't return, allow SL/TP update for existing positions
 
-        # 获取 ATR 用于计算移动止损距离 (动态调整)
-        rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 20)
-        atr = 0.0
-        if rates is not None and len(rates) > 14:
-            df_temp = pd.DataFrame(rates)
-            high_low = df_temp['high'] - df_temp['low']
-            atr = high_low.rolling(14).mean().iloc[-1]
-            
-        if atr <= 0:
-            return # 无法计算 ATR，跳过
+        # [NEW] Smart Stop Loss for HOLD (User Request)
+        # Even if HOLD, update SL if LLM provides a specific 'sl' price (and it's better/safer)
+        # This allows "Active Holding" where we tighten risk without closing.
+        
+        # 1. Parse LLM Smart SL
+        llm_smart_sl = 0.0
+        if self.latest_strategy:
+            try:
+                # Direct 'sl' field from JSON root (as per updated prompt)
+                llm_sl_raw = self.latest_strategy.get('sl', 0.0)
+                if llm_sl_raw > 0:
+                     llm_smart_sl = float(llm_sl_raw)
+                     # logger.info(f"LLM Smart SL available: {llm_smart_sl}")
+            except:
+                pass
 
-        trailing_dist = atr * 1.5 # 默认移动止损距离
-        
-        # 如果有策略参数，尝试解析最新的 SL/TP 设置
-        new_sl_multiplier = 1.5
-        new_tp_multiplier = 2.5
-        has_new_params = False
-        
-        if strategy_params:
-            exit_cond = strategy_params.get('exit_conditions')
-            if exit_cond:
-                new_sl_multiplier = exit_cond.get('sl_atr_multiplier', 1.5)
-                new_tp_multiplier = exit_cond.get('tp_atr_multiplier', 2.5)
-                has_new_params = True
+        for pos in positions:
+            if pos.magic != self.magic_number:
+                continue
+
+            current_sl = pos.sl
+            current_tp = pos.tp
+            
+            # --- Smart SL Update Logic ---
+            if llm_smart_sl > 0:
+                # Only update if significant difference (to avoid spamming modify)
+                # And logic check:
+                # Buy: New SL > Current SL (Trailing Up) OR Current SL is 0
+                # Sell: New SL < Current SL (Trailing Down) OR Current SL is 0
+                
+                update_sl = False
+                
+                if pos.type == mt5.POSITION_TYPE_BUY:
+                    if current_sl == 0 or llm_smart_sl > current_sl:
+                        # Safety: SL must be below current price
+                        if llm_smart_sl < tick.bid: 
+                            update_sl = True
+                
+                elif pos.type == mt5.POSITION_TYPE_SELL:
+                    if current_sl == 0 or llm_smart_sl < current_sl:
+                        # Safety: SL must be above current price
+                        if llm_smart_sl > tick.ask:
+                            update_sl = True
+                            
+                if update_sl:
+                    # Check minimum distance
+                    dist_p = abs(pos.price_open - llm_smart_sl) / mt5.symbol_info(self.symbol).point
+                    if dist_p > 50: # Minimum 50 points change to avoid noise
+                        logger.info(f"🔄 Updating Smart SL for #{pos.ticket}: {current_sl} -> {llm_smart_sl} (Source: LLM Hold)")
+                        self.modify_position(pos.ticket, sl=llm_smart_sl, tp=current_tp)
+                        continue # Skip other checks for this pos if updated
+
+            # --- Original Trailing Stop Logic (Optional / Fallback) ---
+            # [USER REQUEST]: "不要动态止损" (Disable dynamic trailing stop)
+            # We keep the code but disable the execution or make it strictly dependent on LLM?
+            # "不要动态止损" likely means "Don't auto-trail based on ATR/Fixed pips, only listen to LLM".
+            
+            # So we COMMENT OUT the old auto-trailing logic below.
+            
+            # dist = 0
+            # if pos.type == mt5.POSITION_TYPE_BUY:
+            #     dist = tick.bid - pos.price_open
+            #     if dist > (atr * 1.0): ...
+            # ...
+            
+            pass # End of loop
 
         symbol_info = mt5.symbol_info(self.symbol)
         if not symbol_info:
