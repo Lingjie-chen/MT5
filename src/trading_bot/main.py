@@ -3499,17 +3499,43 @@ class SymbolTrader:
                             strategy['position_size'] = orb_signal_data['lot']
                             
                             # [USER REQUEST] TP and SL should follow LLM/Basket analysis, NOT ORB fixed levels.
-                            # We check if LLM provided valid SL/TP.
                             
                             current_exit = strategy.get('exit_conditions', {})
-                            if not current_exit.get('tp') or not current_exit.get('sl'):
-                                # Fallback to ORB levels ONLY if LLM failed to provide any
-                                current_exit['sl'] = orb_signal_data['sl']
-                                current_exit['tp'] = orb_signal_data['tp']
-                                strategy['exit_conditions'] = current_exit
-                                logger.info("Using ORB Fixed TP/SL as Fallback (LLM provided none)")
+                            
+                            # Check multiple key variations for SL/TP from LLM
+                            llm_sl = current_exit.get('sl') or current_exit.get('sl_price') or 0.0
+                            llm_tp = current_exit.get('tp') or current_exit.get('tp_price') or 0.0
+                            
+                            # Check if Dynamic Basket TP is active (from Grid Strategy)
+                            basket_tp = getattr(self.grid_strategy, 'dynamic_basket_tp', 0.0)
+                            
+                            if llm_sl > 0:
+                                current_exit['sl'] = llm_sl
+                                current_exit['sl_price'] = llm_sl
                             else:
-                                logger.info(f"Using LLM/Basket TP/SL: TP={current_exit.get('tp')}, SL={current_exit.get('sl')}")
+                                # Fallback SL to ORB
+                                current_exit['sl'] = orb_signal_data['sl']
+                                current_exit['sl_price'] = orb_signal_data['sl']
+                                
+                            if basket_tp > 0:
+                                # If Basket TP is active, we set individual TP to 0
+                                current_exit['tp'] = 0.0
+                                current_exit['tp_price'] = 0.0
+                                logger.info(f"Using Dynamic Basket TP (Global=${basket_tp}), Individual TP=0")
+                            elif llm_tp > 0:
+                                current_exit['tp'] = llm_tp
+                                current_exit['tp_price'] = llm_tp
+                            else:
+                                # Fallback TP to ORB
+                                current_exit['tp'] = orb_signal_data['tp']
+                                current_exit['tp_price'] = orb_signal_data['tp']
+                            
+                            strategy['exit_conditions'] = current_exit
+                            
+                            if llm_sl <= 0 and llm_tp <= 0 and basket_tp <= 0:
+                                 logger.info("Using ORB Fixed TP/SL as Fallback (LLM provided none)")
+                            else:
+                                 logger.info(f"Using LLM/Basket Logic: SL={current_exit.get('sl')}, TP={current_exit.get('tp')} (Basket=${basket_tp})")
                             
                             strategy['reason'] = f"Gold ORB Breakout Signal ({orb_signal_data['reason']})"
                             
