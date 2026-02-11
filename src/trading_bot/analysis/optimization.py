@@ -83,7 +83,8 @@ class WOAm(Optimizer):
 
         # --- Optimization Loop with Resource Management ---
         # Use Parallel context manager to fix resource_tracker warnings on Windows
-        with Parallel(n_jobs=n_jobs) as parallel:
+        # max_nbytes=None disables memory mapping for arguments to avoid file cleanup race conditions
+        with Parallel(n_jobs=n_jobs, max_nbytes=None) as parallel:
             pool = parallel if n_jobs != 1 else None
 
             # --- Initial Evaluation ---
@@ -212,7 +213,8 @@ class TETA(Optimizer):
                 return np.array([objective_function(ind) for ind in pop])
 
         # --- Optimization Loop with Resource Management ---
-        with Parallel(n_jobs=n_jobs) as parallel:
+        # max_nbytes=None disables memory mapping for arguments to avoid file cleanup race conditions
+        with Parallel(n_jobs=n_jobs, max_nbytes=None) as parallel:
             pool = parallel if n_jobs != 1 else None
 
             # Parallel Evaluation
