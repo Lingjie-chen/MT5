@@ -100,29 +100,21 @@ class GoldORBStrategy:
         
         return self.final_range_high, self.final_range_low, self.is_range_final
 
-    def check_signal(self, current_price, df_h1):
+    def check_signal(self, current_price, df_h1=None):
         """
         Check for Breakout/Breakdown signal.
+        If df_h1 is provided, update levels first.
         """
-        high, low, is_final = self.calculate_orb_levels(df_h1)
+        if df_h1 is not None:
+            self.calculate_orb_levels(df_h1)
         
-        if not is_final or high is None or low is None:
+        if not self.is_range_final or self.final_range_high is None or self.final_range_low is None:
             return None
             
         # Breakout Logic
-        # We need to check if price JUST broke out? 
-        # Or if it is currently outside?
-        # Usually we want the MOMENT of breakout.
-        # But for an EA loop, if we are already above, maybe we missed it or we are in trend.
-        # "Buy long for breakouts"
-        
-        # We can return 'buy' if price > high
-        # But we should filter if we are WAY above (chasing).
-        # For now, simple logic:
-        
-        if current_price > high:
+        if current_price > self.final_range_high:
             return 'buy'
-        elif current_price < low:
+        elif current_price < self.final_range_low:
             return 'sell'
             
         return None
