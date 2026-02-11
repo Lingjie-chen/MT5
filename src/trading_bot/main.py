@@ -1583,9 +1583,10 @@ class SymbolTrader:
         # [NEW] Dynamic Lot Size Calculation (Quantum Position Engine)
         # 如果 SL > 0，尝试根据风控模型计算动态手数
         if sl > 0:
-            # 获取当前账户风险配置 (可从 env 或 strategy params 获取，此处暂用默认 1% 或 self.risk_percent)
-            # 假设默认风险为 1.0% (可通过参数传递优化)
-            risk_pct = 1.0 
+            # 获取当前账户风险配置 (从 grid_strategy 获取优化后的参数)
+            risk_pct = 1.0
+            if self.grid_strategy:
+                risk_pct = self.grid_strategy.max_risk_per_trade_percent
             
             calc_lot = self.risk_manager.calculate_lot_size(
                 symbol=self.symbol,
