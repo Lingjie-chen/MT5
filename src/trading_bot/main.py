@@ -1801,7 +1801,11 @@ class SymbolTrader:
                     
                     opt_sl = self._normalize_price(opt_sl)
                     opt_tp = self._normalize_price(opt_tp)
-                    opt_tp = 0.0 # Force TP to 0 for Basket Mode (User Request)
+                    
+                    # [USER REQ] If Basket TP is active, Force Individual TP to 0
+                    basket_tp_active = getattr(self.grid_strategy, 'dynamic_basket_tp', 0.0) > 0
+                    if basket_tp_active:
+                         opt_tp = 0.0 
                     
                     if opt_sl > 0:
                         diff_sl = abs(opt_sl - sl)
@@ -1818,6 +1822,7 @@ class SymbolTrader:
                              changed = True
                              # logger.info(f"AI Updating SL for #{pos.ticket}: {sl} -> {opt_sl}")
 
+                    # Only update TP if not in Basket Mode (or if opting out of basket for some reason)
                     if opt_tp > 0:
                         diff_tp = abs(opt_tp - tp)
                         valid_tp = True
@@ -1828,6 +1833,12 @@ class SymbolTrader:
                             request["tp"] = opt_tp
                             changed = True
                             logger.info(f"AI Updating TP for #{pos.ticket}: {tp} -> {opt_tp}")
+                    elif basket_tp_active and tp > 0:
+                        # If Basket Mode is active but we have a lingering TP, remove it
+                        request["tp"] = 0.0
+                        changed = True
+                        logger.info(f"Removing Individual TP for #{pos.ticket} (Basket Mode Active)")
+
 
             if changed:
                 mt5.order_send(request)
