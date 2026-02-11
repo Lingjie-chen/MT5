@@ -8,6 +8,9 @@ import warnings
 # Suppress joblib resource_tracker warnings on Windows
 warnings.filterwarnings("ignore", message="resource_tracker: ")
 warnings.filterwarnings("ignore", category=UserWarning, module="joblib.externals.loky.backend.resource_tracker")
+# Additional suppression for specific FileNotFoundError in resource_tracker
+warnings.filterwarnings("ignore", message=".*resource_tracker.*FileNotFoundError.*")
+warnings.filterwarnings("ignore", message=".*leaked folder objects.*")
 
 from datetime import datetime, timedelta
 import pandas as pd
