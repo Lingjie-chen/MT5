@@ -752,10 +752,12 @@ class QwenClient:
        - 含义: 启动做多策略 (Market Buy)。
        - 适用场景: SMC 确认看涨趋势 (BOS/CHOCH)，价格位于 M15 关键支撑位 (OB/FVG)。
        - **执行逻辑**: 系统将立即开启首单 BUY。
+       - **[MANDATORY] 必须提供明确的 sl_price 和 tp_price。如果计算困难，请使用 ATR 或 Swing High/Low 进行估算。禁止为 0.0 或 null。**
     2. **SELL**:
        - 含义: 启动做空策略 (Market Sell)。
        - 适用场景: SMC 确认看跌趋势 (BOS/CHOCH)，价格位于 M15 关键阻力位 (OB/FVG)。
        - **执行逻辑**: 系统将立即开启首单 SELL。
+       - **[MANDATORY] 必须提供明确的 sl_price 和 tp_price。如果计算困难，请使用 ATR 或 Swing High/Low 进行估算。禁止为 0.0 或 null。**
     3. **HOLD**:
        - 含义: 暂时观望。
        - 适用场景: 市场方向不明、处于震荡区间中间、或已有持仓。
