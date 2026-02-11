@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 import logging
 import os
+import time
 from utils.remote_storage import RemoteStorage
 
 logger = logging.getLogger("DatabaseManager")
@@ -24,6 +25,9 @@ class DatabaseManager:
         logger.info(f"Database path: {self.db_path}")
         self.conn = None
         self._init_db()
+        
+        # Log suppression state
+        self.last_remote_fetch_ts = 0
 
     def _get_connection(self):
         """Helper to get a database connection with proper timeout and retry"""
