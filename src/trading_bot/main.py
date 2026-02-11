@@ -2284,7 +2284,7 @@ class SymbolTrader:
             
         df_h1 = pd.DataFrame(h1_rates)
         df_h1['time'] = pd.to_datetime(df_h1['time'], unit='s')
-        df_h1.set_index('time', inplace=True)
+        # df_h1.set_index('time', inplace=True) # REMOVED: Keep time as column for backtest logic
         
         if df is None or len(df) < 500:
             logger.warning("数据不足，跳过优化")
