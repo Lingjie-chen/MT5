@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import MetaTrader5 as mt5
 import logging
+from .orb_strategy import GoldORBStrategy
 
 logger = logging.getLogger("KalmanGrid")
 
@@ -14,6 +15,12 @@ class KalmanGridStrategy:
         
         # --- Load Symbol Specific Config ---
         self._load_config()
+        
+        # ORB Strategy for Gold
+        self.orb_strategy = None
+        if "XAU" in symbol.upper() or "GOLD" in symbol.upper():
+            self.orb_strategy = GoldORBStrategy(symbol)
+            logger.info("GoldORB Strategy Activated for XAUUSD")
         
         # SMC Parameters
         self.smc_levels = {
@@ -33,13 +40,8 @@ class KalmanGridStrategy:
         self.bb_period = 100
         self.bb_deviation = 2.0
         
-        self.dynamic_global_tp = None # Deprecated, use specific ones
         self.dynamic_tp_long = None
         self.dynamic_tp_short = None
-        
-        # [NEW] Basket SL (From AI)
-        self.dynamic_sl_long = None
-        self.dynamic_sl_short = None
         
         self.lock_profit_trigger = None # Store AI recommended Lock Trigger
         self.trailing_stop_config = None # Store AI recommended Trailing Config
@@ -49,10 +51,6 @@ class KalmanGridStrategy:
         self.max_basket_profit_long = 0.0 
         self.basket_lock_level_short = None
         self.max_basket_profit_short = 0.0
-        
-        # Deprecated mixed state (kept for safety if referenced elsewhere)
-        self.basket_lock_level = None 
-        self.max_basket_profit = 0.0 
         
         # State
         self.last_long_price = 0.0
