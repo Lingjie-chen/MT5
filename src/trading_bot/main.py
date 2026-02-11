@@ -2387,13 +2387,30 @@ class SymbolTrader:
             
         logger.info(f"本次选择的优化算法: {algo_name} (Pop: {optimizer.pop_size})")
         
-        # 5. Run
-        best_params, best_score = optimizer.optimize(
-            objective, 
-            bounds, 
-            steps=steps, 
-            epochs=3
-        )
+        # 5. Run (With Parallelism)
+        try:
+             # Increase population size slightly due to vectorized speedup
+             if hasattr(optimizer, 'pop_size'):
+                 optimizer.pop_size = 50 
+             
+             logger.info(f"Running Optimization with n_jobs=4, Pop={optimizer.pop_size}")
+             
+             best_params, best_score = optimizer.optimize(
+                objective, 
+                bounds, 
+                steps=steps, 
+                epochs=5,     # Increased from 3 to 5
+                n_jobs=4      # Use 4 cores
+             )
+        except TypeError:
+             # Fallback for old optimizers that don't support n_jobs
+             logger.warning("Optimizer does not support n_jobs, falling back to serial")
+             best_params, best_score = optimizer.optimize(
+                objective, 
+                bounds, 
+                steps=steps, 
+                epochs=3
+             )
         
         # 6. Apply Results
         if best_score > -1000:
