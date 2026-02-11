@@ -1794,13 +1794,22 @@ class SymbolTrader:
 
             # [NEW] Basket Mode Check for Existing Positions
             if self.latest_strategy:
-                 grid_settings = self.latest_strategy.get('grid_settings', {})
-                 if grid_settings.get('basket_tp_amount', 0) > 0:
+                 basket_tp_val = 0
+                 # Check Position Management (Dynamic)
+                 pos_mgmt = self.latest_strategy.get('position_management', {})
+                 basket_tp_val = pos_mgmt.get('dynamic_basket_tp', 0)
+                 
+                 # Check Grid Config (Static/Config)
+                 if basket_tp_val <= 0:
+                     grid_config = self.latest_strategy.get('grid_config', {})
+                     basket_tp_val = grid_config.get('basket_tp_usd', 0)
+
+                 if basket_tp_val > 0:
                       # If Basket Mode is active, force TP to 0
                       if tp > 0: 
                            request['tp'] = 0.0
                            changed = True
-                           logger.info(f"Basket Mode: Removing TP for #{pos.ticket}")
+                           logger.info(f"Basket Mode: Removing TP for #{pos.ticket} (Global TP: {basket_tp_val})")
             
             # --- 1. 基于最新策略更新 SL/TP (全量覆盖更新) ---
             # 策略调整: 恢复 AI 驱动的持仓参数更新逻辑
