@@ -74,124 +74,116 @@ class WOAm(Optimizer):
                         candidate = lb + np.round((candidate - lb) / step_arr) * step_arr
                     X[i] = candidate
 
-        # --- Initial Evaluation (Parallelized) ---
-        if n_jobs != 1:
-             # Joblib parallel evaluation
-             scores = Parallel(n_jobs=n_jobs)(delayed(objective_function)(ind) for ind in X)
-             fitness = np.array(scores)
-        else:
-             # Serial evaluation (using apply_along_axis or list comprehension)
-             fitness = np.array([objective_function(ind) for ind in X])
-        
-        # Initial Best Finding
-        # Note: We are MAXIMIZING score in this project
-        best_idx = np.argmax(fitness)
-        self.best_solution = X[best_idx].copy()
-        self.best_score = fitness[best_idx]
-        
-        # Pre-allocate History
-        self.history = np.zeros(epochs)
-
-        # --- Main Optimization Loop (No Agent Loop!) ---
-        for t in range(epochs):
-            # 1. Update WOA Parameters
-            a = 2.0 - t * (2.0 / epochs)
-            b = 1.0 # Spiral constant
-            
-            # Generate random vectors for ALL agents simultaneously (Batch Entropy)
-            r1 = self.rng.random((self.pop_size, dim))
-            r2 = self.rng.random((self.pop_size, dim))
-            p = self.rng.random((self.pop_size, 1))  # (N, 1) for broadcasting
-            l = self.rng.uniform(-1, 1, (self.pop_size, dim))
-            
-            A = 2.0 * a * r1 - a
-            C = 2.0 * r2
-            
-            # 2. Logic Masking (Branchless Approach)
-            # Spiral Mask
-            spiral_mask = (p >= 0.5)
-            
-            # Exploit vs Explore Mask
-            # Check per-agent (row-wise) if any dimension violates |A| < 1? 
-            # Standard WOA checks |A| per dimension or vector magnitude. 
-            # We use element-wise logic for maximum diversity (broadcasting handles it automatically if we don't reduce)
-            # But to choose "Path A/B/C" per agent, we usually need a per-agent decision.
-            # Let's simplify: Check if the norm of A < 1 for the agent, or just use p < 0.5 condition.
-            # Actually, standard WOA logic: if (p<0.5) { if (|A| < 1) encircle else search }
-            # We can treat A as the deciding factor. Since A is (N, D), let's use the first dimension or mean for the decision to keep agents coherent,
-            # OR better: Apply element-wise updates (independent dimensions). 
-            # Independent dimensions is a powerful feature of vectorized metaheuristics.
-            
-            abs_A = np.abs(A)
-            encircle_mask = (p < 0.5) & (abs_A < 1.0)
-            search_mask = (p < 0.5) & (abs_A >= 1.0)
-            
-            # 3. Calculate Potential Positions (All Paths)
-            
-            # Path A: Shrinking Encircling (Towards Best)
-            D_encircle = np.abs(C * self.best_solution - X)
-            X_encircle = self.best_solution - A * D_encircle
-            
-            # Path B: Spiral Update (Towards Best)
-            D_spiral = np.abs(self.best_solution - X)
-            X_spiral = D_spiral * np.exp(b * l) * np.cos(2 * np.pi * l) + self.best_solution
-            
-            # Path C: Search for Prey (Towards Random Agent)
-            # Efficiently shuffle indices to pick random partners
-            rand_idxs = self.rng.integers(0, self.pop_size, size=self.pop_size)
-            X_rand = X[rand_idxs]
-            D_search = np.abs(C * X_rand - X)
-            X_search = X_rand - A * D_search
-            
-            # 4. Modified WOAm Logic: Migration (PowerDistribution)
-            # 1% probability of migration
-            migration_mask = (self.rng.random((self.pop_size, 1)) < 0.01)
-            # Vectorized Power Law generation
-            u_mig = self.rng.random((self.pop_size, dim))
-            mig_steps = u_mig ** (1.0 / (self.power_dist_coeff + 1))
-            X_migration = lb + mig_steps * (ub - lb)
-
-            # 5. Composite Update (Layering Masks)
-            # Start with Spiral as base (p >= 0.5)
-            X_next = np.where(spiral_mask, X_spiral, X)
-            # Apply Encircle (p < 0.5 & |A| < 1)
-            X_next = np.where(encircle_mask, X_encircle, X_next)
-            # Apply Search (p < 0.5 & |A| >= 1)
-            X_next = np.where(search_mask, X_search, X_next)
-            # Apply Migration (Override)
-            X_next = np.where(migration_mask, X_migration, X_next)
-            
-            # 6. Boundary Handling & Discretization (SeInDiSp)
-            X_next = np.clip(X_next, lb, ub)
-            if step_arr is not None:
-                # Vectorized SeInDiSp
-                # round((x - min) / step) * step + min
-                steps_matrix = (X_next - lb) / step_arr
-                X_next = lb + np.round(steps_matrix) * step_arr
-            
-            X = X_next
-            
-            # 7. Evaluation
-            if n_jobs != 1:
-                 scores = Parallel(n_jobs=n_jobs)(delayed(objective_function)(ind) for ind in X)
-                 fitness = np.array(scores)
+        # Helper for evaluation to avoid code duplication and manage parallel pool
+        def evaluate(population, parallel_pool=None):
+            if parallel_pool:
+                return np.array(parallel_pool(delayed(objective_function)(ind) for ind in population))
             else:
-                 fitness = np.array([objective_function(ind) for ind in X])
+                return np.array([objective_function(ind) for ind in population])
+
+        # --- Optimization Loop with Resource Management ---
+        # Use Parallel context manager to fix resource_tracker warnings on Windows
+        with Parallel(n_jobs=n_jobs) as parallel:
+            pool = parallel if n_jobs != 1 else None
+
+            # --- Initial Evaluation ---
+            fitness = evaluate(X, pool)
             
-            # 8. Update Best
-            current_best_idx = np.argmax(fitness)
-            current_best_val = fitness[current_best_idx]
+            # Initial Best Finding
+            # Note: We are MAXIMIZING score in this project
+            best_idx = np.argmax(fitness)
+            self.best_solution = X[best_idx].copy()
+            self.best_score = fitness[best_idx]
             
-            if current_best_val > self.best_score:
-                self.best_score = current_best_val
-                self.best_solution = X[current_best_idx].copy()
-            
-            self.history[t] = self.best_score
-            
-            # Optional: Logging
-            if t % 10 == 0 or t == epochs - 1:
-                # logger.info(f"WOAm Epoch {t}: Best Score = {self.best_score:.4f}")
-                pass
+            # Pre-allocate History
+            self.history = np.zeros(epochs)
+    
+            # --- Main Optimization Loop (No Agent Loop!) ---
+            for t in range(epochs):
+                # 1. Update WOA Parameters
+                a = 2.0 - t * (2.0 / epochs)
+                b = 1.0 # Spiral constant
+                
+                # Generate random vectors for ALL agents simultaneously (Batch Entropy)
+                r1 = self.rng.random((self.pop_size, dim))
+                r2 = self.rng.random((self.pop_size, dim))
+                p = self.rng.random((self.pop_size, 1))  # (N, 1) for broadcasting
+                l = self.rng.uniform(-1, 1, (self.pop_size, dim))
+                
+                A = 2.0 * a * r1 - a
+                C = 2.0 * r2
+                
+                # 2. Logic Masking (Branchless Approach)
+                # Spiral Mask
+                spiral_mask = (p >= 0.5)
+                
+                # Exploit vs Explore Mask
+                abs_A = np.abs(A)
+                encircle_mask = (p < 0.5) & (abs_A < 1.0)
+                search_mask = (p < 0.5) & (abs_A >= 1.0)
+                
+                # 3. Calculate Potential Positions (All Paths)
+                
+                # Path A: Shrinking Encircling (Towards Best)
+                D_encircle = np.abs(C * self.best_solution - X)
+                X_encircle = self.best_solution - A * D_encircle
+                
+                # Path B: Spiral Update (Towards Best)
+                D_spiral = np.abs(self.best_solution - X)
+                X_spiral = D_spiral * np.exp(b * l) * np.cos(2 * np.pi * l) + self.best_solution
+                
+                # Path C: Search for Prey (Towards Random Agent)
+                # Efficiently shuffle indices to pick random partners
+                rand_idxs = self.rng.integers(0, self.pop_size, size=self.pop_size)
+                X_rand = X[rand_idxs]
+                D_search = np.abs(C * X_rand - X)
+                X_search = X_rand - A * D_search
+                
+                # 4. Modified WOAm Logic: Migration (PowerDistribution)
+                # 1% probability of migration
+                migration_mask = (self.rng.random((self.pop_size, 1)) < 0.01)
+                # Vectorized Power Law generation
+                u_mig = self.rng.random((self.pop_size, dim))
+                mig_steps = u_mig ** (1.0 / (self.power_dist_coeff + 1))
+                X_migration = lb + mig_steps * (ub - lb)
+    
+                # 5. Composite Update (Layering Masks)
+                # Start with Spiral as base (p >= 0.5)
+                X_next = np.where(spiral_mask, X_spiral, X)
+                # Apply Encircle (p < 0.5 & |A| < 1)
+                X_next = np.where(encircle_mask, X_encircle, X_next)
+                # Apply Search (p < 0.5 & |A| >= 1)
+                X_next = np.where(search_mask, X_search, X_next)
+                # Apply Migration (Override)
+                X_next = np.where(migration_mask, X_migration, X_next)
+                
+                # 6. Boundary Handling & Discretization (SeInDiSp)
+                X_next = np.clip(X_next, lb, ub)
+                if step_arr is not None:
+                    # Vectorized SeInDiSp
+                    # round((x - min) / step) * step + min
+                    steps_matrix = (X_next - lb) / step_arr
+                    X_next = lb + np.round(steps_matrix) * step_arr
+                
+                X = X_next
+                
+                # 7. Evaluation
+                fitness = evaluate(X, pool)
+                
+                # 8. Update Best
+                current_best_idx = np.argmax(fitness)
+                current_best_val = fitness[current_best_idx]
+                
+                if current_best_val > self.best_score:
+                    self.best_score = current_best_val
+                    self.best_solution = X[current_best_idx].copy()
+                
+                self.history[t] = self.best_score
+                
+                # Optional: Logging
+                if t % 10 == 0 or t == epochs - 1:
+                    # logger.info(f"WOAm Epoch {t}: Best Score = {self.best_score:.4f}")
+                    pass
             
         return self.best_solution, self.best_score
 
