@@ -786,7 +786,7 @@ class QwenClient:
 
     - **action**: str ("HOLD", "CLOSE_ALL", "BUY", "SELL", "LIMIT_BUY", "LIMIT_SELL")
     - **strategy_mode**: str ("trend") -- 必须明确指定当前策略模式
-    - **sl**: float (设为 0。由 AI 实时监控平仓)
+    - **sl**: float (设为 0。由 AI 实时监控平仓。但必须在 'position_management' 或根节点 'sl' 提供 Smart SL)
     - **tp**: float (设为 0。由 AI 实时监控平仓)
     - **grid_config**: dict (保留字段，设为默认值)
         - "initial_lot": float (首单手数, e.g., 0.01)
@@ -801,7 +801,8 @@ class QwenClient:
         - "max_drawdown_usd": float (网格交易最大允许回撤 USD, e.g., 500.0. 必须基于账户资金和风险偏好由大模型分析得出)
     - **position_management**: dict (新增字段，用于更精细的仓位管理)
         - "dynamic_basket_tp": float (实时最优Basket TP，需综合考虑总持仓量、ATR波动率、SMC阻力位)
-        - "dynamic_basket_sl": float (实时 Basket SL，正数，例如 150.0)
+        - "dynamic_basket_sl": float (实时 Basket SL，正数，例如 150.0。**MANDATORY**: 即使是 HOLD 状态，也必须提供当前最优的止损价格 Smart SL)
+    - **sl**: float (根节点 SL 字段，作为 Smart SL 的另一种返回位置，**MANDATORY**: 必须提供具体数值)
     - **strategy_rationale**: str (中文, 详细解释 SMC 结构、为什么在此处启动网格、ATR 分析等)
     - **pre_market_check**: dict (必须回答 8 问)
         - "q1_trend": str ("多头" / "空头" / "震荡")
