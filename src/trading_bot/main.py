@@ -3466,6 +3466,25 @@ class SymbolTrader:
                             except Exception as e:
                                 logger.error(f"参数动态更新失败: {e}")
                         
+                        # [NEW] ORB Strategy Override
+                        if orb_signal_data:
+                            logger.info(f"🚀 FORCING ORB STRATEGY OVERRIDE: {orb_signal_data['signal'].upper()}")
+                            strategy['action'] = orb_signal_data['signal']
+                            strategy['position_size'] = orb_signal_data['lot']
+                            
+                            # Update Exit Conditions
+                            exit_cond = strategy.get('exit_conditions', {})
+                            if not isinstance(exit_cond, dict): exit_cond = {}
+                            
+                            exit_cond['sl'] = orb_signal_data['sl']
+                            exit_cond['tp'] = orb_signal_data['tp']
+                            strategy['exit_conditions'] = exit_cond
+                            
+                            strategy['reason'] = f"Gold ORB Breakout Signal ({orb_signal_data['reason']})"
+                            
+                            # Force confidence to bypass filters
+                            strategy['confidence_score'] = 95
+                            
                         # Qwen 信号转换
                         qw_action = strategy.get('action', 'neutral').lower()
                         
