@@ -3621,6 +3621,18 @@ class SymbolTrader:
                             # Check multiple key variations for SL/TP from LLM
                             llm_sl = current_exit.get('sl') or current_exit.get('sl_price') or 0.0
                             llm_tp = current_exit.get('tp') or current_exit.get('tp_price') or 0.0
+
+                            # [NEW] Check for Smart SL in position_management (Highest Priority)
+                            # User Requirement: "SL should also be dominated by Smart SL in every analysis"
+                            pos_mgmt = strategy.get('position_management', {})
+                            smart_sl = pos_mgmt.get('dynamic_basket_sl') # Or similar field if defined
+                            # Note: prompt uses 'dynamic_basket_sl' for basket SL. 
+                            # But user said "Smart SL". Let's check 'sl' in root strategy as well.
+                            
+                            root_sl = strategy.get('sl', 0.0)
+                            if root_sl > 0:
+                                llm_sl = float(root_sl)
+                                logger.info(f"Using Root Smart SL from LLM: {llm_sl}")
                             
                             # Check if Dynamic Basket TP is active (from Grid Strategy)
                             basket_tp = getattr(self.grid_strategy, 'dynamic_global_tp', 0.0)
