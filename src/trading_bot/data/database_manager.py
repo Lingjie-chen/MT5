@@ -829,7 +829,8 @@ class DatabaseManager:
                     # or simply return the larger set.
                     if len(remote_stats) > len(stats):
                         stats = remote_stats
-                        logger.info(f"Using Remote DB data as primary source ({len(stats)} trades)")
+                        if should_log:
+                            logger.info(f"Using Remote DB data as primary source ({len(stats)} trades)")
                     
             except Exception as re:
                 logger.error(f"Remote fetch failed: {re}")
