@@ -273,7 +273,8 @@ class KalmanGridStrategy:
                     'lot': lot,
                     'sl': sl_price,
                     'tp': tp_price,
-                    'reason': 'Gold ORB Breakout'
+                    'reason': 'Gold ORB Breakout',
+                    'stats': orb_result.get('stats') # Pass stats up
                 }
                 
             elif orb_result: # Legacy string return (fallback)
