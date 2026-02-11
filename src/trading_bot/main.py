@@ -2290,15 +2290,18 @@ class SymbolTrader:
             return
             
         # 2. Define Search Space
-        # orb_open_hour, orb_consolidation_candles, grid_step, grid_tp
+        # orb_open_hour, orb_consolidation_candles, grid_step, grid_tp, orb_sl, orb_tp, risk_pct
         bounds = [
             (0, 23),        # orb_open_hour
             (2, 10),        # orb_consolidation_candles
             (200, 600),     # grid_step (points)
-            (50.0, 300.0)   # grid_tp (global TP USD)
+            (50.0, 300.0),  # grid_tp (global TP USD)
+            (200, 800),     # orb_sl_points
+            (500, 2000),    # orb_tp_points
+            (0.5, 3.0)      # max_risk_per_trade_percent
         ]
         
-        steps = [1, 1, 50, 10.0]
+        steps = [1, 1, 50, 10.0, 50, 100, 0.1]
         
         # 3. Objective
         def objective(params):
@@ -2336,19 +2339,27 @@ class SymbolTrader:
             p_consolidation = int(best_params[1])
             p_grid_step = int(best_params[2])
             p_grid_tp = float(best_params[3])
+            p_sl_points = float(best_params[4])
+            p_tp_points = float(best_params[5])
+            p_risk_pct = float(best_params[6])
             
             # Apply to Grid Strategy
             self.grid_strategy.update_config({
                 'orb_open_hour': p_open_hour,
                 'orb_consolidation_candles': p_consolidation,
                 'grid_step': p_grid_step,
-                'global_tp': p_grid_tp
+                'global_tp': p_grid_tp,
+                'orb_sl_points': p_sl_points,
+                'orb_tp_points': p_tp_points,
+                'max_risk_per_trade_percent': p_risk_pct
             })
             
             msg = (
                 f"🧬 *ORB Strategy Optimization ({algo_name})*\n"
                 f"Score: {best_score:.2f}\n"
-                f"• ORB: OpenHour={p_open_hour}, Consolidation={p_consolidation}\n"
+                f"• ORB: Hour={p_open_hour}, Candles={p_consolidation}\n"
+                f"• ORB Exit: SL={p_sl_points}, TP={p_tp_points}\n"
+                f"• Risk: {p_risk_pct:.1f}%\n"
                 f"• Grid: Step={p_grid_step}, GlobalTP={p_grid_tp:.1f}"
             )
             self.send_telegram_message(msg)
