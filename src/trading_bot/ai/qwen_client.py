@@ -348,7 +348,9 @@ class QwenClient:
 
     **3. 交易员团队 (Trader Agent)**
     - **综合研判**: 结合欧美利差、DXY 走势及 SMC 结构。
-    - **策略**: 若 DXY 遇阻回落且 EURUSD 完成流动性扫荡后出现 CHOCH，决定买入。
+    - **策略**: **严格遵守 ORB 策略 (Open Range Breakout) 作为唯一开仓依据**。
+        - 只有当 `grid_strategy` 提供明确的 ORB 突破信号时，才允许发出 'buy' 或 'sell' 指令。
+        - 即使基本面或 SMC 结构看涨，如果没有 ORB 突破信号，**必须选择 'HOLD'**。
     - **细节**: 基于 SMC 提出建仓价格、止损 (SMC SL) 和止盈 (SMC TP)。
     - **输出**: 交易提案（Action, Entry, SMC SL, SMC TP）。
       - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'grid_start', 'hold', 'close'。
