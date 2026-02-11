@@ -1526,12 +1526,30 @@ class QwenClient:
              - **空单 (Sell)**: SL 应置于最近的 Swing High (强阻力) 或 Order Block 上边界之上。
            - **Take Profit (TP)**: 必须指向下一个流动性池 (Liquidity Pool) 或未回补的 FVG。
         
-        2. **ORB 统计验证 (ORB Validation)**:
-           - 如果 `ORB Stats` 显示高 Breakout Score (>80) 或高 Z-Score (abs > 2.0)，说明突破动能强。
-           - 此时 TP 可以设得更激进（参考 `ORB TP Points`），SL 可以设得更紧凑以保护利润。
-           - **Basket TP**: 请结合 `ORB Stats` 和 `Global Grid TP` 参数，给出一个动态的 `dynamic_basket_tp`。如果 ORB 信号极强，Basket TP 应适当上调。
+        2. **ORB 集成与信号验证 (ORB Integration & Analysis)**:
+           - **多维验证**: ORB 突破信号必须经过以下维度的交叉验证：
+             - **市场趋势 (Trend)**: 突破方向是否与 H1/M15 主趋势一致？(顺势突破信心加倍，逆势突破需谨慎)。
+             - **市场情绪 (Sentiment)**: 当前市场情绪 (Bullish/Bearish) 是否支持该突破？
+             - **SMC 结构**: 突破点是否位于关键支撑/阻力位？上方/下方是否有清晰的流动性池 (Liquidity Pool) 吸引价格？
+           - **开仓指示 (Signal Action)**: 
+             - 如果 ORB Score > 80 且 趋势/情绪/SMC 共振 -> **STRONG BUY/SELL** (可适当重仓)。
+             - 如果 ORB Score 高但 趋势/情绪 矛盾 -> **WEAK SIGNAL** (轻仓或观望)。
 
-        3. **MAE/MFE 统计修正 (Statistical Validation)**:
+        3. **Basket TP 深度分析与动态配置 (Advanced Basket TP Analysis)**:
+           - 你必须综合以下四大因子来计算最优的 `dynamic_basket_tp` (USD):
+             1. **市场趋势强度 (Trend Strength)**: 
+                - 强趋势 (Strong Trend): 预期价格大幅延伸，应显著 **上调** Basket TP (例如 1.5x - 2.0x 基础值)，博取波段利润。
+                - 震荡/弱趋势: 预期空间有限，应 **下调** Basket TP，快速落袋为安。
+             2. **市场情绪 (Market Sentiment)**:
+                - 情绪极度乐观/悲观往往伴随动能爆发，支持更大的 TP 空间。
+             3. **SMC 目标位 (SMC Targets)**:
+                - **上方/下方最近的 Liquidity Pool 或 未回补 FVG** 是天然的 Basket TP 锚点。
+                - 计算从当前均价到该 SMC 目标的预期盈利金额，作为 Basket TP 的参考上限。
+             4. **ORB 爆发力 (ORB Power)**:
+                - 高 Z-Score (abs > 2.0) 意味着短期爆发力强，Basket TP 可设得更远。
+           - **决策输出**: 请在 `position_management` -> `dynamic_basket_tp` 中输出经过上述综合分析后的具体数值。
+
+        4. **MAE/MFE 统计修正 (Statistical Validation)**:
            - 参考历史交易的 MAE (最大浮亏) 数据：如果历史数据显示价格经常在反转前回撤 200 点，则 SL 不应小于 200 点，以免被噪音扫损。
            - 参考 MFE (最大浮盈) 数据：TP 设置不应过度乐观，应在 MFE 统计的合理范围内 (如 80% 分位)。
         
