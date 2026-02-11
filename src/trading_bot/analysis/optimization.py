@@ -82,9 +82,9 @@ class WOAm(Optimizer):
                 return np.array([objective_function(ind) for ind in population])
 
         # --- Optimization Loop with Resource Management ---
-        # Use Parallel context manager to fix resource_tracker warnings on Windows
-        # max_nbytes=None disables memory mapping for arguments to avoid file cleanup race conditions
-        with Parallel(n_jobs=n_jobs, max_nbytes=None) as parallel:
+        # Use threading backend on Windows to completely avoid resource_tracker/multiprocessing issues
+        # NumPy releases GIL for vector operations, so threading is efficient and safe here.
+        with Parallel(n_jobs=n_jobs, backend="threading") as parallel:
             pool = parallel if n_jobs != 1 else None
 
             # --- Initial Evaluation ---
