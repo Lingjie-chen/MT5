@@ -15,6 +15,18 @@ class GoldORBStrategy:
         self.current_consolidation_count = 0
         self.last_processed_time = None
 
+    def update_params(self, open_hour=None, consolidation_candles=None):
+        if open_hour is not None:
+            self.open_hour = int(open_hour)
+        if consolidation_candles is not None:
+            self.consolidation_candles = int(consolidation_candles)
+        # Reset state on param change
+        self.final_range_high = None
+        self.final_range_low = None
+        self.is_range_final = False
+        self.current_consolidation_count = 0
+        self.last_processed_time = None
+
     def calculate_orb_levels(self, df_h1):
         """
         Calculate ORB levels based on H1 data.
