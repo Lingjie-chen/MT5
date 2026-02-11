@@ -2022,6 +2022,7 @@ class SymbolTrader:
             # --- 1. 基于最新策略更新 SL/TP (全量覆盖更新) ---
             # 策略调整: 恢复 AI 驱动的持仓参数更新逻辑
             # 但不使用机械式的 Trailing Stop，而是依赖 LLM 的 MFE/MAE 分析给出的新点位
+
             
             pass
                         
