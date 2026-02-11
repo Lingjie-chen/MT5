@@ -3558,7 +3558,7 @@ class SymbolTrader:
                             llm_tp = current_exit.get('tp') or current_exit.get('tp_price') or 0.0
                             
                             # Check if Dynamic Basket TP is active (from Grid Strategy)
-                            basket_tp = getattr(self.grid_strategy, 'dynamic_basket_tp', 0.0)
+                            basket_tp = getattr(self.grid_strategy, 'dynamic_global_tp', 0.0)
                             
                             if llm_sl > 0:
                                 current_exit['sl'] = llm_sl
