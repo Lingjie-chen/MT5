@@ -159,12 +159,16 @@ class GoldORBStrategy:
         consolidation_count = 0
         is_final = False
         
+        # Collect data for statistics
+        consolidation_prices = [open_row['close']]
+        
         for time, row in subsequent_candles.iterrows():
             c_high, c_low, c_body_high, c_body_low = get_effective_range(row)
             
             # Check if this candle is inside the current range
             if c_high <= current_high and c_low >= current_low:
                 consolidation_count += 1
+                consolidation_prices.append(row['close'])
             else:
                 # Range expansion logic
                 is_expansion = False
@@ -183,8 +187,12 @@ class GoldORBStrategy:
                 
                 if is_expansion:
                     consolidation_count = 0
+                    consolidation_prices = [row['close']] # Reset stats on expansion? Or keep rolling? 
+                    # Logic: New range definition starts, but volatility context is continuous.
+                    # For simplicity, let's keep recent history or just reset to reflect current tight range.
+                    # Resetting matches the "Consolidation" concept.
                 else:
-                    pass 
+                    consolidation_prices.append(row['close'])
             
             if consolidation_count >= self.consolidation_candles:
                 is_final = True
@@ -194,6 +202,12 @@ class GoldORBStrategy:
         self.final_range_low = current_low
         self.is_range_final = is_final
         self.current_consolidation_count = consolidation_count
+        
+        # Calculate Stats if final
+        if is_final:
+            # Create a mini DF for calc
+            stats_df = pd.DataFrame({'close': consolidation_prices})
+            self.calculate_range_statistics(stats_df)
         
         if is_final and self.last_processed_time != today:
              self.last_processed_time = today
