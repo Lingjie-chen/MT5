@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import logging
+from utils.math_lib import math_moments_normal, estimate_breakout_strength
 
 logger = logging.getLogger("GoldORB")
 
@@ -15,6 +16,11 @@ class GoldORBStrategy:
         self.current_consolidation_count = 0
         self.last_processed_time = None
         
+        # Fixed SL/TP from GOLD_ORB Repo (Default)
+        self.use_fixed_sl_tp = True
+        self.fixed_sl_points = 400
+        self.fixed_tp_points = 1200
+        
         # State for Signal Logic
         self.last_h1_df = None
         self.trades_per_day = 2
@@ -23,12 +29,21 @@ class GoldORBStrategy:
         self.long_signal_taken_today = False
         self.short_signal_taken_today = False
         self.last_signal_candle_time = None
+        
+        # Stats
+        self.range_mean = 0.0
+        self.range_std = 0.0
 
-    def update_params(self, open_hour=None, consolidation_candles=None):
+    def update_params(self, open_hour=None, consolidation_candles=None, sl_points=None, tp_points=None):
         if open_hour is not None:
             self.open_hour = int(open_hour)
         if consolidation_candles is not None:
             self.consolidation_candles = int(consolidation_candles)
+        if sl_points is not None:
+            self.fixed_sl_points = int(sl_points)
+        if tp_points is not None:
+            self.fixed_tp_points = int(tp_points)
+            
         # Reset calculation state
         self.final_range_high = None
         self.final_range_low = None
@@ -36,6 +51,28 @@ class GoldORBStrategy:
         self.current_consolidation_count = 0
         self.last_processed_time = None
         # Do not reset trade counts
+
+    def calculate_range_statistics(self, consolidation_data):
+        """
+        Calculate statistical properties of the consolidation range.
+        Uses MathLib for consistency with strategy requirements.
+        """
+        if consolidation_data is None or len(consolidation_data) < 2:
+            return
+            
+        prices = consolidation_data['close'].values
+        mu = np.mean(prices)
+        sigma = np.std(prices)
+        
+        # Using MathLib wrapper (returns tuple)
+        moments = math_moments_normal(mu, sigma)
+        if moments:
+            self.range_mean = moments[0]
+            # Moment returns variance (sigma^2), we store sigma for Z-score calc
+            self.range_std = np.sqrt(moments[1]) 
+        else:
+            self.range_mean = mu
+            self.range_std = sigma
 
     def calculate_orb_levels(self, df_h1, point=0.01):
         """
