@@ -218,10 +218,18 @@ class KalmanGridStrategy:
         Returns: 'buy', 'sell', or None
         
         [Optimized] Hybrid Logic:
+        0. Gold ORB Strategy (Priority High)
         1. Mean Reversion (Standard): Buy Low (BB Lower), Sell High (BB Upper).
         2. Trend Following (Aggressive): If trend is strong, enter on shallow pullbacks (Mid Band).
         """
         signal = None
+        
+        # 0. Check ORB Signal (XAUUSD only)
+        if self.orb_strategy:
+            orb_signal = self.orb_strategy.check_signal(current_price)
+            if orb_signal:
+                logger.info(f"Gold ORB Signal Triggered: {orb_signal.upper()} (Price: {current_price})")
+                return orb_signal
         
         # Calculate Trend Strength (Simple Slope of Kalman Filter)
         # We need history of kalman values to calculate slope properly, 
