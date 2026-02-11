@@ -100,3 +100,40 @@ def math_moments_normal(mu, sigma):
     except Exception as e:
         logger.error(f"Error in math_moments_normal: {e}")
         return None
+
+def calculate_z_score(value, mean, std_dev):
+    """
+    Calculate Z-Score: (Value - Mean) / StdDev.
+    Useful for determining how extreme a price move is.
+    """
+    if std_dev == 0:
+        return 0.0
+    return (value - mean) / std_dev
+
+def calculate_normal_probability(z_score):
+    """
+    Calculate the probability (CDF) of a Z-Score.
+    Returns value between 0 and 1.
+    """
+    try:
+        return stats.norm.cdf(z_score)
+    except:
+        return 0.5
+
+def estimate_breakout_strength(current_price, range_mean, range_std):
+    """
+    Estimate breakout strength using Normal Distribution properties.
+    Returns a score from 0 to 100 based on statistical significance.
+    """
+    if range_std <= 0: return 50.0
+    
+    z = calculate_z_score(current_price, range_mean, range_std)
+    prob = calculate_normal_probability(abs(z)) # Two-tailed significance roughly
+    
+    # Map probability to 0-100 score
+    # Z=1 (68%) -> Score ~60
+    # Z=2 (95%) -> Score ~90
+    # Z=3 (99%) -> Score ~99
+    
+    score = prob * 100
+    return round(score, 2)
