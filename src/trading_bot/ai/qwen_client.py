@@ -452,8 +452,16 @@ class QwenClient:
         common_rules = """
     ## 共同执行规则 (All Teams Must Follow)
     1. **SMC 核心**: 所有的入场和加仓必须基于 **SMC (Smart Money Concepts)** —— 寻找 订单块(OB)、失衡区(FVG)、结构破坏(BOS) 和 特性改变(CHOCH)。
-    2. **高级算法验证**: 必须结合 **OBV (能量潮)** 确认成交量支持，并关注 **Liquidity Sweep (流动性扫荡)**。
-    3. **趋势控制**: 
+    2. **数学与统计验证 (Math & Stats Validation) [NEW]**:
+       - **Z-Score (标准分数)**: 必须参考提供的 `stats.z_score`。
+         - `Z > 2.0`: 价格显著偏离均值，突破力度极强，但需防范回调风险。
+         - `Z < 1.0`: 突破力度较弱，需等待 K 线实体收盘确认。
+       - **Breakout Score (突破得分)**: 参考 `stats.breakout_score` (0-100)。
+         - `Score > 80`: 极高置信度，可适当放大仓位 (Risk 2-3%)。
+         - `Score < 50`: 弱信号，建议观望或轻仓试错 (Risk 0.5%)。
+       - **Normal Distribution (正态分布)**: 假设价格波动服从正态分布，利用 PDF/CDF 评估当前价格的极端程度。
+    3. **高级算法验证**: 必须结合 **OBV (能量潮)** 确认成交量支持，并关注 **Liquidity Sweep (流动性扫荡)**。
+    4. **趋势控制**: 
        - M15 为执行周期，必须服从 H1 趋势。
        - **量化书籍参考**: 遵循《量化交易策略》中的均值回归与趋势跟踪双重验证原则。
        - 只有在确认趋势反转或SMC结构破坏时才平仓。
