@@ -2103,10 +2103,10 @@ class SymbolTrader:
         except Exception as e:
             logger.error(f"分析历史交易失败: {e}")
 
-    def evaluate_comprehensive_params(self, params, df):
+    def evaluate_comprehensive_params(self, params, df, df_h1):
         """
-        Comprehensive Objective Function: Evaluates strategy parameters together.
-        params: Vector of parameter values corresponding to the defined structure.
+        Comprehensive Objective Function: Evaluates ORB Strategy parameters.
+        params: [open_hour, consolidation_candles, grid_step, grid_tp]
         """
         # Global counter for progress logging
         if not hasattr(self, '_opt_counter'): self._opt_counter = 0
