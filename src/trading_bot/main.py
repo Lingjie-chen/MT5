@@ -3059,8 +3059,8 @@ class SymbolTrader:
                         # 保存市场数据到DB
                         self.db_manager.save_market_data(df, self.symbol, self.tf_name)
                         
-                        # 更新 Grid Strategy 数据
-                        self.grid_strategy.update_market_data(df)
+                        # 更新 Grid Strategy 数据 (Pass H1 for ORB)
+                        self.grid_strategy.update_market_data(df, df_h1=df_h1)
                         
                         # 使用 data_processor 计算指标
                         processor = MT5DataProcessor()
