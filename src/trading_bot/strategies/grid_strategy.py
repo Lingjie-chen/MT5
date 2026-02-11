@@ -378,6 +378,102 @@ class KalmanGridStrategy:
             
         return float(f"{self.lot * multiplier:.2f}")
 
+    def calculate_initial_lot(self, sl_points, account_balance, point_value=1.0, tick_size=0.01, tick_value=1.0):
+        """
+        Calculate initial lot size based on Risk %.
+        Formula: Lot = (Balance * Risk%) / (SL_Points * TickValue)
+        Wait, SL_Points is usually distance in Points.
+        Loss = Lot * SL_Points * PointValue? No.
+        Loss = Lot * (PriceDiff / TickSize) * TickValue
+        PriceDiff = SL_Points * Point
+        """
+        if not self.use_risk_based_sizing or sl_points <= 0 or account_balance <= 0:
+            return self.lot
+            
+        risk_amount = account_balance * (self.max_risk_per_trade_percent / 100.0)
+        
+        # Calculate Loss per Lot for the given SL distance
+        # LossPerLot = (SL_Points * Point) / TickSize * TickValue
+        # Simplified: If Point == TickSize, LossPerLot = SL_Points * TickValue
+        
+        # Standard Forex: 1 Lot, 1 Pip (10 points) = $10.
+        # SL 400 points (40 pips) = $400 loss per lot.
+        # Risk $100 -> 0.25 Lots.
+        
+        # XAUUSD: TickSize=0.01, TickValue=1 (usually for 1 lot?) 
+        # Actually TickValue is usually for 1 lot per tick.
+        
+        # Robust Calc:
+        # price_diff = sl_points * point_value # This might be wrong if point_value is e.g. 0.01
+        # Let's assume sl_points is raw points (integer).
+        # price_dist = sl_points * tick_size # Assuming 1 point = 1 tick size? No.
+        
+        # MT5 Point vs Tick:
+        # XAUUSD: Digits=2, Point=0.01. TickSize=0.01.
+        # SL=400 points -> 4.00 price distance.
+        # Steps = 4.00 / 0.01 = 400 ticks.
+        # Loss = 400 * TickValue * Lot.
+        
+        # So: Lot = RiskAmount / ( (SL_Points * Point / TickSize) * TickValue )
+        
+        try:
+            steps = (sl_points * point_value) / tick_size
+            loss_per_lot = steps * tick_value
+            
+            if loss_per_lot <= 0: return self.lot
+            
+            calc_lot = risk_amount / loss_per_lot
+            
+            # Normalize to 0.01 steps
+            calc_lot = round(calc_lot, 2)
+            
+            # Caps
+            if calc_lot < 0.01: calc_lot = 0.01
+            if calc_lot > 50.0: calc_lot = 50.0
+            
+            logger.info(f"Risk Based Lot: Bal=${account_balance:.0f}, Risk={self.max_risk_per_trade_percent}%, SL={sl_points}pts -> Lot {calc_lot}")
+            return calc_lot
+        except Exception as e:
+            logger.error(f"Error calculating risk lot: {e}")
+            return self.lot
+
+    def check_individual_trailing_stop(self, position, current_price, point=0.01):
+        """
+        Check trailing stop for individual position (Repo Logic: 700/100/10)
+        Returns: New SL Price or None
+        """
+        # Repo Config
+        trail_dist_points = 700
+        min_profit_points = 100
+        step_points = 10
+        
+        trail_dist = trail_dist_points * point
+        min_profit = min_profit_points * point
+        step = step_points * point
+        
+        new_sl = None
+        
+        if position.type == mt5.POSITION_TYPE_BUY:
+            profit = current_price - position.price_open
+            if profit >= min_profit:
+                potential_sl = current_price - trail_dist
+                # Move SL UP only
+                if potential_sl > (position.sl + step):
+                    new_sl = potential_sl
+                    
+        elif position.type == mt5.POSITION_TYPE_SELL:
+            profit = position.price_open - current_price
+            if profit >= min_profit:
+                potential_sl = current_price + trail_dist
+                # Move SL DOWN only
+                # MT5 SL for sell is above price. Lower is better.
+                # If current SL is 0, we can set it.
+                # If current SL > potential_sl + step, we set it.
+                if position.sl == 0 or position.sl > (potential_sl + step):
+                    new_sl = potential_sl
+                    
+        return new_sl
+
     def generate_grid_plan(self, current_price, trend_direction, atr, point=0.01, dynamic_step_pips=None, grid_level_tps=None, override_lot_sequence=None):
         """
         Generate a plan for grid deployment (for limit orders)
