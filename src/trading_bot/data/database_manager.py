@@ -775,7 +775,14 @@ class DatabaseManager:
         # Always try to fetch from remote if local is insufficient OR to sync history
         if len(stats) < limit:
             try:
-                logger.info(f"Fetching full trade history from Remote DB (Limit: {limit})...")
+                # Log suppression
+                now = time.time()
+                should_log = (now - self.last_remote_fetch_ts) > 300
+                
+                if should_log:
+                    logger.info(f"Fetching full trade history from Remote DB (Limit: {limit})...")
+                    self.last_remote_fetch_ts = now
+                    
                 # Request a larger limit from remote to ensure coverage
                 remote_trades = self.remote_storage.get_trades(limit=limit, symbol=symbol)
                 
