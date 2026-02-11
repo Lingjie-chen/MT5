@@ -230,6 +230,10 @@ class KalmanGridStrategy:
             if orb_signal:
                 logger.info(f"Gold ORB Signal Triggered: {orb_signal.upper()} (Price: {current_price})")
                 return orb_signal
+            else:
+                # If ORB is active but no signal (inside range or not final), 
+                # we strictly wait for ORB breakout. Ignore other logics.
+                return None
         
         # Calculate Trend Strength (Simple Slope of Kalman Filter)
         # We need history of kalman values to calculate slope properly, 
