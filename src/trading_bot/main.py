@@ -6,6 +6,7 @@ import logging
 import threading
 import warnings
 # Suppress joblib resource_tracker warnings on Windows
+warnings.filterwarnings("ignore", message="resource_tracker: ")
 warnings.filterwarnings("ignore", category=UserWarning, module="joblib.externals.loky.backend.resource_tracker")
 
 from datetime import datetime, timedelta
