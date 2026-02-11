@@ -2029,41 +2029,15 @@ class SymbolTrader:
             # 如果差异很大且不是 0，说明用户手动干预了
             # 为了简化，我们设定规则: 只有当 AI 建议的新 SL/TP 明显优于当前设置，或者当前设置明显偏离风险控制时才强制更新
             
-            allow_update = True # Enabled per User Request (Dynamic AI Update)
+            # [Optimization] Disabled block below to avoid double updating SL
+            # The 'Smart SL' block above already handles LLM-based SL updates.
+            # This block might conflict or be redundant.
             
-            if allow_update and has_new_params:
-                # 使用 calculate_optimized_sl_tp 进行统一计算和验证
-                ai_exits = strategy_params.get('exit_conditions', {})
-                
-                # Check if Qwen provided explicit SL/TP
-                qwen_sl_provided = ai_exits.get('sl_price', 0) > 0
-                qwen_tp_provided = ai_exits.get('tp_price', 0) > 0
-                
-                # If Qwen didn't provide explicit values, skip dynamic update (User Request)
-                if not qwen_sl_provided and not qwen_tp_provided:
-                    logger.info("Qwen 未提供明确 SL/TP，跳过动态更新 (防止自动移动)")
-                else:
-                    trade_dir = 'buy' if type_pos == mt5.POSITION_TYPE_BUY else 'sell'
-                    
-                    opt_sl, opt_tp = self.calculate_optimized_sl_tp(trade_dir, current_price, atr, market_context=None, ai_exit_conds=ai_exits)
-                    
-                    opt_sl = self._normalize_price(opt_sl)
-                    opt_tp = self._normalize_price(opt_tp)
-                    
-                    # [USER REQ] If Basket TP is active, Force Individual TP to 0
-                    basket_tp_active = getattr(self.grid_strategy, 'dynamic_global_tp', 0.0) > 0
-                    if basket_tp_active:
-                         opt_tp = 0.0 
-                    
-                    if opt_sl > 0:
-                        diff_sl = abs(opt_sl - sl)
-                        is_better_sl = False
-                        if type_pos == mt5.POSITION_TYPE_BUY and opt_sl > sl: is_better_sl = True
-                        if type_pos == mt5.POSITION_TYPE_SELL and opt_sl < sl: is_better_sl = True
-                        
-                        valid_sl = True
-                        if type_pos == mt5.POSITION_TYPE_BUY and (current_price - opt_sl < stop_level_dist): valid_sl = False
-                        if type_pos == mt5.POSITION_TYPE_SELL and (opt_sl - current_price < stop_level_dist): valid_sl = False
+            # allow_update = True 
+            # if allow_update and has_new_params:
+            #    ... (Logic moved/superseded by Smart SL block)
+            
+            pass
                         
                         if valid_sl and (diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5)):
                              request["sl"] = opt_sl
