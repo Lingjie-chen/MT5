@@ -2025,7 +2025,9 @@ class SymbolTrader:
 
             
             pass
-                        
+            
+            # [Fix] Comment out orphaned code block causing IndentationError
+            """
                         if valid_sl and (diff_sl > point * 20 or (is_better_sl and diff_sl > point * 5)):
                              request["sl"] = opt_sl
                              changed = True
@@ -2047,7 +2049,7 @@ class SymbolTrader:
                         request["tp"] = 0.0
                         changed = True
                         logger.info(f"Removing Individual TP for #{pos.ticket} (Basket Mode Active)")
-
+            """
 
             if changed:
                 mt5.order_send(request)
