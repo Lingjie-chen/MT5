@@ -3364,16 +3364,17 @@ class SymbolTrader:
                         # 准备技术信号摘要
                         technical_signals = {
                             "crt": crt_result,
-                            "smc": smc_result, # [MODIFIED] Pass full SMC details (OB/FVG/Structure) for AI validation
+                            "smc": smc_result, 
                             "grid_strategy": {
                                 "signal": grid_signal,
+                                "orb_data": orb_signal_data if orb_signal_data else None,
                                 "status": grid_status,
                                 "config": self.grid_strategy.get_config()
                             },
                             "mtf": mtf_result['signal'], 
                             "ifvg": ifvg_result['signal'],
                             "rvgi_cci": rvgi_cci_result['signal'],
-                            "ema_ha": ema_ha_result, # Pass full result including values
+                            "ema_ha": ema_ha_result,
                             "performance_stats": trade_stats
                         }
                         
