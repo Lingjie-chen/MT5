@@ -3712,8 +3712,9 @@ class SymbolTrader:
                             analysis_msg = (
                                 f"🤖 *AI Strategy Report ({current_model_name})*\n"
                                 f"Symbol: `{self.symbol}` | TF: `{self.tf_name}`\n"
-                                f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
+                                f"Time: {datetime.now().strftime('%H:%M:%S')} | Status: *24/7 Active*\n\n"
                                 f"{telegram_report}\n\n"
+                                f"{orb_stats_str}"
                                 f"{basket_info_str}"
                                 f"📊 *Live Status*\n"
                                 f"• Action: *{final_signal.upper()}*\n"
