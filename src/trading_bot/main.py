@@ -2922,43 +2922,17 @@ class SymbolTrader:
     def is_trading_time(self):
         """
         Check if current time is within allowed trading hours.
-        Target: Gold (XAUUSD), EURUSD, ETHUSD.
-        Schedule: 
-          - Gold/EURUSD: Monday 06:00 to Saturday 06:00 (Weekdays).
-          - ETHUSD: Saturday 06:00 to Monday 05:59 (Weekend Only).
+        [UPDATED] 24/7 Monitoring Enabled for All Symbols.
+        Market closure (e.g., Weekend for Forex) will be handled by MT5 'Market Closed' errors
+        or simply no new ticks/bars being generated.
         """
+        return True
+
+        # Legacy Logic Preserved for Reference:
         # Normalize symbol
-        symbol_upper = self.symbol.upper()
-        
-        now = datetime.now()
-        weekday = now.weekday() # Monday=0, ... Saturday=5, Sunday=6
-        hour = now.hour
+        # symbol_upper = self.symbol.upper()
+        # ... (Previous Day/Hour logic)
 
-        # 1. GOLD / EURUSD (Weekdays)
-        if "GOLD" in symbol_upper or "XAUUSD" in symbol_upper or "EURUSD" in symbol_upper:
-            # Saturday (5) >= 06:00 -> Stop
-            if weekday == 5 and hour >= 6: return False
-            # Sunday (6) -> Stop
-            if weekday == 6: return False
-            # Monday (0) < 06:00 -> Stop
-            if weekday == 0 and hour < 6: return False
-            return True
-
-        # 2. ETHUSD (Weekend Only: Sat 06:00 - Mon 05:59)
-        elif "ETHUSD" in symbol_upper:
-            # Allowed windows:
-            # Sat >= 06:00
-            # Sun (All day)
-            # Mon < 06:00 (i.e., 05:59)
-            
-            is_weekend_session = False
-            if weekday == 5 and hour >= 6: is_weekend_session = True
-            elif weekday == 6: is_weekend_session = True
-            elif weekday == 0 and hour < 6: is_weekend_session = True
-            
-            return is_weekend_session
-
-        return True # Others (e.g. BTCUSD if added later)
 
     def process_tick(self):
         """Single tick processing"""
