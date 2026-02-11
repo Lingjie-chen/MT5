@@ -204,89 +204,92 @@ class TETA(Optimizer):
         # Use vectorized init from base
         population = self._initialize_population(self.pop_size, dim, bounds)
         
-        # Parallel Evaluation
-        if n_jobs != 1:
-             scores = Parallel(n_jobs=n_jobs)(delayed(objective_function)(ind) for ind in population)
-             fitness = np.array(scores)
-        else:
-             fitness = np.array([objective_function(ind) for ind in population])
-
-        local_best_pos = population.copy()
-        local_best_fit = fitness.copy()
-
-        best_idx = np.argmax(fitness)
-        self.best_solution = population[best_idx].copy()
-        self.best_score = fitness[best_idx]
-
-        # Sort population
-        sort_idx = np.argsort(local_best_fit)[::-1] # Descending
-        population = population[sort_idx]
-        fitness = fitness[sort_idx]
-        local_best_pos = local_best_pos[sort_idx]
-        local_best_fit = local_best_fit[sort_idx]
-
-        for epoch in range(epochs):
-            # Moving (Partially vectorized logic)
-            # TETA logic is pairwise, harder to fully vectorize without adjacency matrix.
-            # Keeping loop for now but using numpy arrays for speed.
-            
-            new_pop = population.copy()
-            
-            for i in range(self.pop_size):
-                for j in range(dim):
-                    rnd = self.rng.random()
-                    rnd *= rnd
-                    
-                    pair = int(rnd * (self.pop_size - 1))
-                    pair = max(0, min(self.pop_size - 1, pair))
-                    
-                    val = 0.0
-                    
-                    if i != pair:
-                        if i < pair: # i is better
-                            val = population[i, j] + rnd * (local_best_pos[pair, j] - local_best_pos[i, j])
-                        else: # i is worse
-                            if self.rng.random() > rnd:
-                                val = local_best_pos[i, j] + (1.0 - rnd) * (local_best_pos[pair, j] - local_best_pos[i, j])
-                            else:
-                                val = local_best_pos[pair, j]
-                    else:
-                        # Gaussian
-                        sigma = (bounds[j][1] - bounds[j][0]) / 6.0
-                        val = self.rng.normal(self.best_solution[j], sigma)
-                    
-                    # Bound
-                    val = max(bounds[j][0], min(bounds[j][1], val))
-                    if steps[j] > 0: val = round(val / steps[j]) * steps[j]
-                    new_pop[i, j] = val
-
-            population = new_pop
-            
-            # Evaluation
-            if n_jobs != 1:
-                 scores = Parallel(n_jobs=n_jobs)(delayed(objective_function)(ind) for ind in population)
-                 fitness = np.array(scores)
+        # Helper for evaluation to avoid code duplication and manage parallel pool
+        def evaluate(pop, parallel_pool=None):
+            if parallel_pool:
+                return np.array(parallel_pool(delayed(objective_function)(ind) for ind in pop))
             else:
-                 fitness = np.array([objective_function(ind) for ind in population])
+                return np.array([objective_function(ind) for ind in pop])
 
-            # Update Global
-            curr_best_idx = np.argmax(fitness)
-            if fitness[curr_best_idx] > self.best_score:
-                self.best_score = fitness[curr_best_idx]
-                self.best_solution = population[curr_best_idx].copy()
-            
-            # Update Local
-            improved_mask = fitness > local_best_fit
-            local_best_fit[improved_mask] = fitness[improved_mask]
-            local_best_pos[improved_mask] = population[improved_mask]
-            
-            # Sort
-            sort_idx = np.argsort(local_best_fit)[::-1]
+        # --- Optimization Loop with Resource Management ---
+        with Parallel(n_jobs=n_jobs) as parallel:
+            pool = parallel if n_jobs != 1 else None
+
+            # Parallel Evaluation
+            fitness = evaluate(population, pool)
+    
+            local_best_pos = population.copy()
+            local_best_fit = fitness.copy()
+    
+            best_idx = np.argmax(fitness)
+            self.best_solution = population[best_idx].copy()
+            self.best_score = fitness[best_idx]
+    
+            # Sort population
+            sort_idx = np.argsort(local_best_fit)[::-1] # Descending
             population = population[sort_idx]
             fitness = fitness[sort_idx]
             local_best_pos = local_best_pos[sort_idx]
             local_best_fit = local_best_fit[sort_idx]
-            
+    
+            for epoch in range(epochs):
+                # Moving (Partially vectorized logic)
+                # TETA logic is pairwise, harder to fully vectorize without adjacency matrix.
+                # Keeping loop for now but using numpy arrays for speed.
+                
+                new_pop = population.copy()
+                
+                for i in range(self.pop_size):
+                    for j in range(dim):
+                        rnd = self.rng.random()
+                        rnd *= rnd
+                        
+                        pair = int(rnd * (self.pop_size - 1))
+                        pair = max(0, min(self.pop_size - 1, pair))
+                        
+                        val = 0.0
+                        
+                        if i != pair:
+                            if i < pair: # i is better
+                                val = population[i, j] + rnd * (local_best_pos[pair, j] - local_best_pos[i, j])
+                            else: # i is worse
+                                if self.rng.random() > rnd:
+                                    val = local_best_pos[i, j] + (1.0 - rnd) * (local_best_pos[pair, j] - local_best_pos[i, j])
+                                else:
+                                    val = local_best_pos[pair, j]
+                        else:
+                            # Gaussian
+                            sigma = (bounds[j][1] - bounds[j][0]) / 6.0
+                            val = self.rng.normal(self.best_solution[j], sigma)
+                        
+                        # Bound
+                        val = max(bounds[j][0], min(bounds[j][1], val))
+                        if steps[j] > 0: val = round(val / steps[j]) * steps[j]
+                        new_pop[i, j] = val
+    
+                population = new_pop
+                
+                # Evaluation
+                fitness = evaluate(population, pool)
+    
+                # Update Global
+                curr_best_idx = np.argmax(fitness)
+                if fitness[curr_best_idx] > self.best_score:
+                    self.best_score = fitness[curr_best_idx]
+                    self.best_solution = population[curr_best_idx].copy()
+                
+                # Update Local
+                improved_mask = fitness > local_best_fit
+                local_best_fit[improved_mask] = fitness[improved_mask]
+                local_best_pos[improved_mask] = population[improved_mask]
+                
+                # Sort
+                sort_idx = np.argsort(local_best_fit)[::-1]
+                population = population[sort_idx]
+                fitness = fitness[sort_idx]
+                local_best_pos = local_best_pos[sort_idx]
+                local_best_fit = local_best_fit[sort_idx]
+                
         return self.best_solution, self.best_score
 
 # Compatibility aliases/placeholders for others if needed
