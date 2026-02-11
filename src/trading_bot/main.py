@@ -2530,11 +2530,22 @@ class SymbolTrader:
         bounds = [(0.0, 2.0) for _ in range(len(strategy_keys))]
         
         try:
-            best_weights_vec, best_score = optimizer.optimize(
+             # Use fewer epochs but parallelism for weights optimization
+             n_jobs_weights = 4
+             
+             best_weights_vec, best_score = optimizer.optimize(
                 objective_function=objective,
                 bounds=bounds,
-                epochs=20 # 实时运行不宜过久
-            )
+                epochs=20, # 实时运行不宜过久
+                n_jobs=n_jobs_weights
+             )
+        except TypeError:
+             logger.warning("Optimizer does not support n_jobs, falling back to serial")
+             best_weights_vec, best_score = optimizer.optimize(
+                objective_function=objective,
+                bounds=bounds,
+                epochs=20
+             )
             
             # 4. 应用最佳权重
             if best_score > 0: # 确保结果有效
