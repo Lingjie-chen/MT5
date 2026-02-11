@@ -723,6 +723,17 @@ class SymbolTrader:
              logger.info(f"Applying Signal Override: {llm_action} -> {signal}")
              llm_action = signal
 
+        # [NEW] Check for Basket Mode (Global TP)
+        # 如果启用了 Basket TP，强制将单笔 TP 设为 0，交由 manage_positions 的 Basket 逻辑处理
+        is_basket_mode = False
+        if self.latest_strategy:
+            grid_settings = self.latest_strategy.get('grid_settings', {})
+            # Check if basket TP is active (value > 0)
+            basket_tp_val = grid_settings.get('basket_tp_amount', 0)
+            if basket_tp_val > 0:
+                 is_basket_mode = True
+                 logger.info(f"Basket Mode Active (TP={basket_tp_val}). Forcing individual TP to 0.")
+
         # 显式 MFE/MAE 止损止盈
         # LLM 应该返回具体的 sl_price 和 tp_price，或者 MFE/MAE 的百分比建议
         # 如果 LLM 提供了具体的 SL/TP 价格，优先使用
@@ -742,6 +753,10 @@ class SymbolTrader:
                 exit_conds = self.latest_strategy.get('exit_conditions')
                 if exit_conds:
                     explicit_tp = exit_conds.get('tp_price')
+        
+        # [BASKET MODE OVERRIDE]
+        if is_basket_mode:
+            explicit_tp = 0.0
         
         # 如果没有具体价格，回退到 sl_tp_params (通常也是 LLM 生成的)
         if explicit_sl is None and sl_tp_params:
