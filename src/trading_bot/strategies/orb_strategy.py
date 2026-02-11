@@ -98,6 +98,10 @@ class GoldORBStrategy:
         self.is_range_final = is_final
         self.current_consolidation_count = consolidation_count
         
+        if is_final and self.last_processed_time != today:
+             # logger.info(f"ORB Range Finalized for {today}: High={current_high}, Low={current_low}")
+             self.last_processed_time = today
+        
         return self.final_range_high, self.final_range_low, self.is_range_final
 
     def check_signal(self, current_price, df_h1=None):
