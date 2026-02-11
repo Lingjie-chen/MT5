@@ -2235,9 +2235,18 @@ class SymbolTrader:
         # 1. 获取历史数据
         df = self.get_market_data(1000) 
         import MetaTrader5 as mt5
-        df_h1 = self.mt5_interface.get_historical_data(self.symbol, mt5.TIMEFRAME_H1, 2000)
         
-        if df is None or df_h1 is None or len(df_h1) < 100:
+        # Get H1 Data manually since we don't have mt5_interface
+        h1_rates = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_H1, 0, 2000)
+        if h1_rates is None or len(h1_rates) < 100:
+            logger.warning("H1 数据不足，跳过优化")
+            return
+            
+        df_h1 = pd.DataFrame(h1_rates)
+        df_h1['time'] = pd.to_datetime(df_h1['time'], unit='s')
+        df_h1.set_index('time', inplace=True)
+        
+        if df is None or len(df) < 500:
             logger.warning("数据不足，跳过优化")
             return
             
