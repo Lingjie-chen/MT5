@@ -1000,41 +1000,6 @@ class SymbolTrader:
                     # Close the position
                     close_result = self.close_position(pos, comment=f"AI: {close_reason}")
                     
-                    # Calculate Profit if closed successfully
-                    if close_result:
-                        try:
-                            # 尝试获取刚刚平仓的成交记录以确认盈亏
-                            # 注意: close_position 返回的是 Result 对象，包含 order ticket，不直接包含 profit
-                            # 我们需要查询 Deal 历史
-                            
-                            # 短暂等待以确保 Deal 已写入历史
-                            time.sleep(0.5) 
-                            
-                            from_date = datetime.now() - timedelta(minutes=1)
-                            to_date = datetime.now() + timedelta(minutes=1)
-                            deals = mt5.history_deals_get(from_date, to_date)
-                            
-                            realized_profit = 0.0
-                            found_deal = False
-                            
-                            if deals:
-                                for d in deals:
-                                    if d.position_id == pos.ticket and d.entry in [mt5.DEAL_ENTRY_OUT, mt5.DEAL_ENTRY_INOUT]:
-                                        realized_profit = d.profit + d.swap + d.commission
-                                        found_deal = True
-                                        break
-                            
-                            if found_deal:
-                                profit_msg = f"💰 *Position Closed* (#{pos.ticket})\nSymbol: {self.symbol}\nProfit: `{realized_profit:.2f}` USD\nReason: _{close_reason}_"
-                                self.send_telegram_message(profit_msg)
-                                logger.info(f"Position Closed Profit: {realized_profit}")
-                            else:
-                                # Fallback if deal not found immediately (unlikely but possible)
-                                self.send_telegram_message(f"🔒 *Position Closed* (#{pos.ticket})\nChecking profit details...")
-                                
-                        except Exception as e:
-                            logger.error(f"Error reporting close profit: {e}")
-                    
                     continue 
 
                 # B. 加仓逻辑 (Add Position)
@@ -1877,12 +1842,12 @@ class SymbolTrader:
 
         if should_close_long:
             logger.info("Grid Strategy: Long Basket TP Reached. Closing ALL LONG positions.")
-            self.close_all_positions(direction='long')
+            self.close_all_positions(direction='long', comment="Basket TP (Long)")
             self.grid_strategy._check_single_basket(0, 0, 0, 0, is_long=True)
 
         if should_close_short:
             logger.info("Grid Strategy: Short Basket TP Reached. Closing ALL SHORT positions.")
-            self.close_all_positions(direction='short')
+            self.close_all_positions(direction='short', comment="Basket TP (Short)")
             self.grid_strategy._check_single_basket(0, 0, 0, 0, is_long=False)
 
         if should_close_long or should_close_short:
