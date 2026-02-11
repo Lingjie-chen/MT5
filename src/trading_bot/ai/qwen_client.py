@@ -1542,6 +1542,9 @@ class QwenClient:
         
         市场结构分析结果：
         {market_context}
+
+        策略优化与统计 (Self-Optimization & ORB Stats):
+        {grid_config_context}
         
         持仓状态 (Martingale 核心关注):
         {pos_context}
