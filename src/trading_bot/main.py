@@ -3279,8 +3279,18 @@ class SymbolTrader:
 
                         self.grid_strategy.update_smc_levels(smc_grid_data)
                         
-                        grid_signal = self.grid_strategy.get_entry_signal(float(current_price['close']))
-                        logger.info(f"Grid Kalman Signal: {grid_signal}")
+                        # [MODIFIED] Handle ORB Signal (Dict or String)
+                        grid_signal_raw = self.grid_strategy.get_entry_signal(float(current_price['close']))
+                        orb_signal_data = None
+                        grid_signal = None
+                        
+                        if isinstance(grid_signal_raw, dict):
+                            orb_signal_data = grid_signal_raw
+                            grid_signal = orb_signal_data['signal']
+                            logger.info(f"ORB Signal Active: {grid_signal} (Data: {orb_signal_data})")
+                        else:
+                            grid_signal = grid_signal_raw
+                            logger.info(f"Grid Kalman Signal: {grid_signal}")
                         
                         grid_status = {
                             "active": self.grid_strategy.long_pos_count > 0 or self.grid_strategy.short_pos_count > 0,
