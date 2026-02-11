@@ -2547,16 +2547,16 @@ class SymbolTrader:
                 epochs=20
              )
             
-            # 4. 应用最佳权重
-            if best_score > 0: # 确保结果有效
-                for i, k in enumerate(strategy_keys):
-                    self.optimizer.weights[k] = best_weights_vec[i]
-                
-                logger.info(f"权重优化完成! 最佳准确率: {best_score:.2%}")
-                logger.info(f"新权重: {self.optimizer.weights}")
-                self.last_optimization_time = time.time()
-            else:
-                logger.warning("优化结果得分过低，未更新权重")
+        # 4. 应用最佳权重
+        if best_score > 0: # 确保结果有效
+            for i, k in enumerate(strategy_keys):
+                self.optimizer.weights[k] = best_weights_vec[i]
+            
+            logger.info(f"权重优化完成! 最佳准确率: {best_score:.2%}")
+            logger.info(f"新权重: {self.optimizer.weights}")
+            self.last_optimization_time = time.time()
+        else:
+            logger.warning("优化结果得分过低，未更新权重")
                 
         except Exception as e:
             logger.error(f"权重优化失败: {e}")
