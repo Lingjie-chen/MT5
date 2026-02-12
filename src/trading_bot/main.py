@@ -2577,14 +2577,39 @@ class SymbolTrader:
 
     def calculate_optimized_sl_tp(self, trade_type, price, atr, market_context=None, ai_exit_conds=None):
         """
-        计算基于综合因素的优化止损止盈点
-        结合: 14天 ATR, MFE/MAE 统计, 市场分析(Supply/Demand/FVG), 大模型建议
+        Calculate optimized SL/TP based on comprehensive factors.
+        Combines: 14-day ATR, MFE/MAE stats, Market Analysis (Supply/Demand/FVG), LLM suggestions.
         """
-        # 1. 基础波动率 (14天 ATR)
+        # 1. Base Volatility (14-day ATR)
         if atr <= 0:
             atr = price * 0.005 # Fallback
             
-        # 2. 历史绩效 (MFE/MAE)
+        # Priority 0: AI/LLM Smart SL/TP (Highest Priority)
+        # If AI provides specific price levels (e.g., from SMC analysis), use them directly.
+        if ai_exit_conds:
+            ai_sl_price = ai_exit_conds.get('sl_price') or ai_exit_conds.get('sl')
+            ai_tp_price = ai_exit_conds.get('tp_price') or ai_exit_conds.get('tp')
+            
+            # Validate AI prices
+            if ai_sl_price and ai_sl_price > 0:
+                # Ensure SL is on the correct side
+                if (trade_type == 'buy' and ai_sl_price < price) or \
+                   (trade_type == 'sell' and ai_sl_price > price):
+                    logger.info(f"Using AI Smart SL: {ai_sl_price}")
+                    # Return immediately if AI SL is valid, calculate TP based on R:R or AI TP
+                    final_sl = ai_sl_price
+                    
+                    if ai_tp_price and ai_tp_price > 0:
+                         final_tp = ai_tp_price
+                         logger.info(f"Using AI Smart TP: {final_tp}")
+                    else:
+                         # Default to 1.5R if no TP provided
+                         risk = abs(price - final_sl)
+                         final_tp = price + (risk * 1.5) if trade_type == 'buy' else price - (risk * 1.5)
+                         
+                    return final_sl, final_tp
+
+        # 2. Historical Performance (MFE/MAE) - Only if AI didn't provide valid levels
         mfe_tp_dist = atr * 2.0 
         mae_sl_dist = atr * 1.5 
         
