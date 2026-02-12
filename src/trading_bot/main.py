@@ -3499,6 +3499,7 @@ class SymbolTrader:
                             "grid_strategy": {
                                 "signal": grid_signal,
                                 "orb_data": orb_signal_data if orb_signal_data else None,
+                                "orb_stats": current_orb_stats if current_orb_stats else None, # Pass Stats explicitly
                                 "status": grid_status,
                                 "config": self.grid_strategy.get_config()
                             },
