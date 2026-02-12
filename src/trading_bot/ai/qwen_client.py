@@ -1465,36 +1465,32 @@ class QwenClient:
         prompt = f"""
         {system_prompt}
         
-        **入场执行标准 (Entry Execution - ORB & Grid Focus)**:
-        **你必须优先基于 ORB (Open Range Breakout) 信号和 Grid (网格) 策略进行决策！**
+        **入场执行标准 (Entry Execution - Grid/ORB Trigger with SMC Validation)**:
         
-        **核心原则：信号驱动，顺势而为 (Signal Driven & Trend Following)**
+        **核心逻辑：Grid/ORB 提供触发信号 (Trigger)，SMC/Trend 提供位置验证 (Location Validation)**
         
-        **入场必须满足以下条件之一 (One of the following is Mandatory)**:
-        
-        1. **ORB 突破信号 (Primary Signal - Mode A)**:
-           - **信号源**: 检查 `grid_strategy` 中的 `breakout_score`。
-           - **阈值**: 
-             - `Score > 80`: **强力信号**，立即执行 (Immediate Entry)。
-             - `Score > 60`: **有效信号**，需确认趋势一致性。
-           - **动作**: 如果信号触发且顺势，Action 设为 **BUY** 或 **SELL**。
-           - **无需回踩**: 对于强 ORB 突破，**不需要**等待回踩 (No Retest Needed)，直接跟随动能进场。
+        **1. 信号触发 (Signal Triggers - The "Go" Button)**:
+           - **ORB 突破**: 检查 `breakout_score` (推荐 > 60) 或价格突破开盘区间。
+           - **Grid 震荡**: 价格触及布林带轨道或 ATR 极端位置。
+           - **前提**: 必须首先具备上述 Grid/ORB 明确信号。
            
-        2. **网格震荡信号 (Secondary Signal - Mode B)**:
-           - **适用**: 当无 ORB 突破且市场处于震荡区间 (Range Bound)。
-           - **位置**: 价格接近布林带轨道 (Bollinger Bands) 或 ATR 极端位置。
-           - **动作**: Action 设为 **GRID_START** 或 **LIMIT_BUY/LIMIT_SELL**。
+        **2. 关键验证层 (Critical Validation Layer - Location Filtering)**:
+           - **SMC 位置过滤 (Location Filter)**: 
+             - **验证通过 (Green/Yellow Zone)**: 信号方向前方无紧邻的 HTF (高时间周期) 关键障碍。例如：做多时，上方无紧邻的 Bearish Order Block。
+             - **验证失败 (Red Zone - INVALID)**: 
+               - **做多信号** 发生在强阻力位 (Major Supply / Bearish OB) 正下方 -> **禁止入场 (WAIT)**。
+               - **做空信号** 发生在强支撑位 (Major Demand / Bullish OB) 正上方 -> **禁止入场 (WAIT)**。
+             - **规则**: 即使 ORB 信号极强，如果位置处于“Red Zone”，必须放弃交易或等待突破阻力位并回踩后再介入。
+           - **趋势过滤器 (Trend Filter)**:
+             - **顺势 (With Trend)**: 与 M15/H1 主趋势一致 -> 允许标准风险。
+             - **逆势 (Counter Trend)**: 仅允许在 Grid 极端边界反转时操作，且必须降低风险 (Half Risk)。
 
-        3. **趋势一致性 (Trend Alignment)**:
-           - 确保交易方向与 M15 主趋势一致。
-           - 避免在强趋势逆向操作，除非是网格策略的边界反转。
-
-        **SMC/结构分析仅作参考 (SMC as Reference Only)**:
-        - **不要**因为找不到 FVG 或 Order Block 就放弃明确的 ORB 突破信号。
-        - **不要**强求 K 线形态 (如 Pinbar) 完美，ORB 策略更看重价格突破力度 (Z-Score)。
-        
-        **立即进场 (Immediate Market Entry)**: 
-        - 只要 ORB 或 Grid 信号满足上述条件，**立即行动**。
+        **3. 非强制性 SMC 入场 (SMC Not Mandatory for Trigger)**:
+           - **重要区别**: "位置验证" (Location) **不等于** "等待 SMC 形态" (Setup)。
+           - **执行指令**: 
+             - 只要 **位置验证通过 (Location Validated)**，**不需要** 等待完美的 SMC 入场模型 (如 CHoCH 或回踩 FVG)。
+             - **直接执行**: Grid/ORB 捕捉的是瞬时动能，位置安全即可直接入场。
+             - **不要**: 因为找不到特定的 FVG 就放弃有效的 ORB 突破；但**一定要**因为位置极差而拒绝入场。
 
         **拒绝模糊信号**: 如果 ORB 分数低 (<50) 且未触及网格边界，则**观望 (WAIT)**。
 
