@@ -378,6 +378,7 @@ class QwenClient:
         2. **Mode B: Grid Consolidation (震荡网格)**:
            - **适用场景**: 市场处于盘整震荡 (Range Bound)，ORB 信号微弱，但价格触及关键支撑阻力位 (SMC POI / Bollinger Bands)。
            - **Action**: 'grid_start' (启动自动网格) 或 'limit_buy'/'limit_sell' (边界高抛低吸)。
+           - **Mandate**: **必须使用基于斐波那契回调位 (Fibonacci Levels: 0.382, 0.5, 0.618) 的 Limit 挂单**，禁止在非关键位追单。
            - **条件**: 必须确认市场处于震荡区间，且盈亏比合理。
     - **决策优先级**: 
         - 优先检查 ORB 突破信号。若无突破，则评估震荡网格机会。
