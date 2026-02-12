@@ -495,9 +495,10 @@ class QwenClient:
        - **Z-Score (标准分数)**: 必须参考提供的 `stats.z_score`。
          - `Z > 2.0`: 价格显著偏离均值，突破力度极强，但需防范回调风险。
          - `Z < 1.0`: 突破力度较弱，需等待 K 线实体收盘确认。
+         - **[CRITICAL] Z-Score 约束**: 绝对禁止在 Z-Score < 1.0 的情况下执行 ORB 突破策略 (ORB Breakout)。必须 HOLD 或转为 Grid Consolidation。
        - **Breakout Score (突破得分)**: 参考 `stats.breakout_score` (0-100)。
          - `Score > 80`: 极高置信度，可适当放大仓位 (Risk 2-3%)。
-         - `Score < 50`: 弱信号，建议观望或轻仓试错 (Risk 0.5%)。
+         - `Score <= 60`: 弱信号，**强制观望 (WAIT)**，禁止任何形式的 ORB 突破开仓。允许转为 Grid 模式。
        - **Normal Distribution (正态分布)**: 假设价格波动服从正态分布，利用 PDF/CDF 评估当前价格的极端程度。
     3. **高级算法验证**: 必须结合 **OBV (能量潮)** 确认成交量支持，并关注 **Liquidity Sweep (流动性扫荡)**。
     4. **趋势控制**: 
