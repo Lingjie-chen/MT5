@@ -222,6 +222,9 @@ class GoldORBStrategy:
         Check for Breakout/Breakdown signal.
         Strictly follows 'Confirmed Candle Breakout' logic from Repo.
         Checks limits (Max Trades Per Day).
+        
+        [MODIFIED] If using M5/M15 logic, df_h1 can be M5/M15 dataframe passed by caller.
+        The name 'df_h1' is kept for compatibility but it represents "Trend/Structure Data".
         """
         # If df_h1 provided, update levels (and store df)
         if df_h1 is not None:
