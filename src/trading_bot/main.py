@@ -1958,7 +1958,8 @@ class SymbolTrader:
                     dist_p = abs(pos.price_open - llm_smart_sl) / mt5.symbol_info(self.symbol).point
                     if dist_p > 50: # Minimum 50 points change to avoid noise
                         logger.info(f"🔄 Updating Smart SL for #{pos.ticket}: {current_sl} -> {llm_smart_sl} (Source: LLM Hold)")
-                        self.modify_position(pos.ticket, sl=llm_smart_sl, tp=current_tp)
+                        # Use _modify_position instead of modify_position
+                        self._modify_position(pos.ticket, sl=llm_smart_sl, tp=current_tp)
                         continue # Skip other checks for this pos if updated
 
             # --- Original Trailing Stop Logic (Optional / Fallback) ---
