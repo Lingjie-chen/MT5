@@ -76,7 +76,10 @@ class GoldORBStrategy:
 
     def calculate_orb_levels(self, df_h1, point=0.01):
         """
-        Calculate ORB levels based on H1 data.
+        Calculate ORB levels based on H1 data (Standard logic) 
+        OR M5/M15 logic if user switches timeframe logic.
+        But standard ORB is usually H1-based (Open Hour).
+        We keep H1 as source for the "Hour" logic, but logic handles consolidation.
         """
         if df_h1 is None or len(df_h1) < 1:
             return None, None, False
