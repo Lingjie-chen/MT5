@@ -3414,9 +3414,14 @@ class SymbolTrader:
                         grid_signal_raw = self.grid_strategy.get_entry_signal(float(current_price['close']))
                         orb_signal_data = None
                         grid_signal = None
-                        
+                        current_orb_stats = None # Initialize variable to avoid NameError
+
                         if isinstance(grid_signal_raw, dict):
                             orb_signal_data = grid_signal_raw
+                            # Extract Stats if available
+                            if 'stats' in orb_signal_data:
+                                current_orb_stats = orb_signal_data['stats']
+                            
                             # Check if it is a signal dict or a stats dict
                             if 'signal' in orb_signal_data and orb_signal_data['signal']:
                                 grid_signal = orb_signal_data['signal']
@@ -3424,7 +3429,6 @@ class SymbolTrader:
                             else:
                                 # It's a stats-only dict (No Signal)
                                 grid_signal = None
-                                # We can still use stats from it if needed, but main logic handles current_orb_stats separately
                         elif isinstance(grid_signal_raw, str):
                             grid_signal = grid_signal_raw
                             logger.info(f"Grid Kalman Signal: {grid_signal}")
