@@ -517,6 +517,7 @@ class QwenClient:
        - **Basket TP 动态实时配置 (Real-time Dynamic Basket TP)**:
          - **核心要求**: 对于每个品种的趋势交易，必须根据以下所有维度进行综合分析和自我学习，给出一个**最优的美元数值**：
            1. **当前总持仓量 (Total Lot Size) [CRITICAL]**:
+             - **Hold 状态判断**: 如果当前总持仓量为 0 (无持仓)，则无需调整 Basket TP，可返回 0 或默认值。
              - **正比放大 (Proportional Scaling)**: Basket TP (USD) 必须与总持仓量 (Lot Size) 成正比。
              - **仓位重 (Heavy Position)**: TP 应显著 **增大** (例如 > $100)，因为相同点数下每点价值更高，且高风险应对应高回报。
              - **仓位轻 (Light Position)**: TP 应相对 **减小** (例如 < $20)，因为小仓位即使跑同样距离，产生的美元利润也较少。
