@@ -3638,7 +3638,9 @@ class SymbolTrader:
                         
                         # [NEW] ORB Strategy Override
                         # Only override if we have a valid signal string (not None, not empty)
-                        if orb_signal_data and orb_signal_data.get('signal'):
+                        has_orb_signal = orb_signal_data and orb_signal_data.get('signal')
+                        
+                        if has_orb_signal:
                             logger.info(f"🚀 FORCING ORB STRATEGY OVERRIDE: {str(orb_signal_data['signal']).upper()}")
                             strategy['action'] = orb_signal_data['signal']
                             strategy['position_size'] = orb_signal_data['lot']
@@ -3706,6 +3708,16 @@ class SymbolTrader:
                                 current_exit['tp_price'] = orb_signal_data['tp']
                             
                             strategy['exit_conditions'] = current_exit
+                        else:
+                            # [User Requirement] ONLY ORB Entry. Block SMC/Trend Entries.
+                            # If AI suggests BUY/SELL but no ORB signal, block it.
+                            ai_action = strategy.get('action', 'hold').lower()
+                            if ai_action in ['buy', 'sell']:
+                                logger.info(f"🚫 Blocking AI SMC/Trend Signal ({ai_action}) - ORB Only Mode Active")
+                                strategy['action'] = 'hold'
+                                strategy['reason'] = f"SMC/Trend Signal Blocked (ORB Only Mode) - Original: {ai_action.upper()}"
+                                # Keep position_size as is or set to 0? Better not to execute.
+
                             
                             if llm_sl <= 0 and llm_tp <= 0 and basket_tp <= 0:
                                  logger.info("Using ORB Fixed TP/SL as Fallback (LLM provided none)")
