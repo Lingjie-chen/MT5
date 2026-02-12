@@ -621,7 +621,7 @@ class QwenClient:
     
     1. **时间框架层级分析 (High Frequency Structure)**
        - **M15**: **大趋势框架 (Macro Trend)**。确定主要市场方向 (Bullish/Bearish) 和关键 HTF 支撑阻力。
-       - **M5 (15分钟)**: **执行周期 (Execution)**。作为主要的交易执行周期，确认趋势延续或反转，寻找 BOS/CHOCH 以及精准入场触发信号 (Trigger)。
+       - **M5**: **执行周期 (Execution)**。作为主要的交易执行周期，确认趋势延续或反转，寻找 BOS/CHOCH 以及精准入场触发信号 (Trigger)。
     
     2. **市场结构识别**
        - 明确标注当前更高级别时间框架的趋势方向（牛市、熊市、盘整）
@@ -1476,8 +1476,8 @@ class QwenClient:
             }},
             "telegram_report": "🚀 信号触发...\n\n📊 市场状态: ...\n\n📝 盘前8问:\n1.趋势: 多头\n2.起点: ...\n(列出所有8问)\n\n🔭 观察点: ...\n⚖️ 仓位: ...", // 严禁省略
             "grid_config": {{ // 严禁省略，填默认值即可
-                "initial_lot": 0.01,
-                "basket_tp_usd": 50.0
+                "initial_lot": 0.15,
+                "basket_tp_usd": 100.0
             }}
         }}
         ```
