@@ -523,6 +523,25 @@ class SymbolTrader:
 
             return True
 
+    def modify_position(self, ticket, sl, tp):
+        """修改持仓的止损止盈"""
+        request = {
+            "action": mt5.TRADE_ACTION_SLTP,
+            "position": ticket,
+            "symbol": self.symbol,
+            "sl": sl,
+            "tp": tp,
+            "magic": self.magic_number
+        }
+        
+        result = mt5.order_send(request)
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            logger.error(f"Modify Position Failed #{ticket}: {result.comment} (Ret: {result.retcode})")
+            return False
+        else:
+            logger.info(f"Modify Position Success #{ticket}: SL={sl}, TP={tp}")
+            return True
+
     def close_all_positions(self, direction=None, comment="Close All"):
         """Close all positions for this symbol, optionally filtering by direction ('long' or 'short')"""
         positions = mt5.positions_get(symbol=self.symbol)
