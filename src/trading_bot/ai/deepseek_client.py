@@ -493,8 +493,8 @@ class DeepSeekClient:
     你必须从多时间框架分析整体市场结构 (查看提供的 `multi_tf_data`)：
     
     1. **时间框架层级分析**
-       - **H1 (1小时)**: **大趋势框架 (Macro Trend)**。确定主要市场方向 (Trend Bias) 和主要支撑阻力。
-       - **M15 (15分钟)**: **执行周期 (Execution)**。确定市场结构 (Structure) 和寻找精确的入场触发信号 (Trigger)。
+       - **M15**: **大趋势框架 (Macro Trend)**。确定主要市场方向 (Trend Bias) 和主要支撑阻力。
+       - **M5**: **执行周期 (Execution)**。确定市场结构 (Structure) 和寻找精确的入场触发信号 (Trigger)。
     
     2. **市场结构识别**
        - 明确标注当前更高级别时间框架的趋势方向（牛市、熊市、盘整）
