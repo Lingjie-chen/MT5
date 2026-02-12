@@ -86,9 +86,9 @@ class QwenClient:
     
     你的核心策略架构：**SMC + Martingale Grid (马丁网格)**
     
-    **关键规则：你的交易周期为 15分钟 (M15)。你必须结合 1小时 (H1) 的大趋势框架来制定交易决策。**
+    **关键规则：你的交易周期为 5分钟 (M5)。你必须结合 15 分钟 ( M15) 的大趋势框架来制定交易决策。**
     
-    **重要指令: 采用趋势跟随 (Trend Following) 风格，在 H1 顺势前提下，利用 M15 波动进行交易。**
+    **重要指令: 采用趋势跟随 (Trend Following) 风格，在 M15 顺势前提下，利用 M5 波动进行交易。**
     - **禁止**使用传统网格策略 (Blind Grid Strategy) 和逆势加仓 (Martingale)。
     - **禁止**使用 `GRID_START_LONG`, `GRID_START_SHORT` 等 Action。
     - **允许**顺势加仓 (Pyramiding/Adding):
@@ -98,10 +98,10 @@ class QwenClient:
     - **必须**使用单边趋势交易 (One-sided Trend Trading)。
 
     **交易节奏控制 (Trend Cycle Control)**:
-    - **积极寻找机会**: 在 H1 趋势明确时，利用 M15 的每一个有效回撤或突破进行交易。
-    - **趋势跟随模式**: 以 H1 为主趋势，M15 为入场及波段操作周期。
-    - **趋势结束判定**: 当 M15 结构破坏或 H1 关键位受阻时，快速离场。
-    - **新一轮分析**: 保持敏锐，随时准备捕捉下一波 M15 级别的机会。
+    - **积极寻找机会**: 在 M15 趋势明确时，利用 M5 的每一个有效回撤或突破进行交易。
+    - **趋势跟随模式**: 以 M15 为主趋势，M5 为入场及波段操作周期。
+    - **趋势结束判定**: 当 M5 结构破坏或 M15 关键位受阻时，快速离场。
+    - **新一轮分析**: 保持敏锐，随时准备捕捉下一波 M5 级别的机会。
     - **拒绝追涨杀跌 (Anti-FOMO)**: 
       - 需等待 M15 级别的回调 (Pullback) 至合理区域 (Discount Zone) 或关键支撑位 (Order Block/FVG)。
     - **Trend Surfing (趋势冲浪)**: 如果识别到强劲的单边趋势，果断利用 M15 信号进出或金字塔加仓。
@@ -120,7 +120,7 @@ class QwenClient:
            - 如果趋势明确且处于强劲阶段 (Trend Stage 强势)，可适当提高风险敞口。
            - 如果趋势不明或处于末端 (Trend End/Correction)，必须降低风险。
         2. **SMC 结构质量**:
-           - 高质量 Setup (如 H1 顺势 + M15 BOS + FVG 回填): 使用较高风险比例 (1.5% - 5.0%)。
+           - 高质量 Setup (如 M15 顺势 + M15 BOS + FVG 回填): 使用较高风险比例 (1.5% - 5.0%)。
            - 一般质量 Setup (如仅 M15 结构): 使用标准风险比例 (1.0%)。
            - 左侧交易或逆势博弈: 使用低风险比例 (0.5% - 0.8%)。
         3. **计算公式 (必须基于 SL)**:
@@ -492,7 +492,7 @@ class QwenClient:
              - **仓位轻 (Light Position)**: TP 应相对 **减小** (例如 < $20)，因为小仓位即使跑同样距离，产生的美元利润也较少。
              - **逻辑**: 不要试图在重仓时只赚一点点钱就跑 (这会导致风险回报极度不匹配)。重仓意味着你承担了巨大风险，必须赚取足够大的绝对利润金额才值得。
           2. **SMC 市场结构 (Structure)**: 
-             - **阻力位 (OB/FVG)**: 如果上方存在清晰的 H1/H4 级别 Bearish Order Block 或未回补 FVG，Basket TP 应设定在该区域下方一点（留出缓冲）。
+             - **阻力位 (OB/FVG)**: 如果上方存在清晰的 M5/ M15 级别 Bearish Order Block 或未回补 FVG，Basket TP 应设定在该区域下方一点（留出缓冲）。
              - **结构破坏 (BOS)**: 如果顺势且刚刚完成 BOS，预期会有延续，TP 可设定在下一个扩展位 (Fib 1.272/1.618)。
           3. **市场趋势与情绪 (Trend & Sentiment)**: 
              - **强趋势 (Strong Trend)**: 若 ADX > 25 且价格位于 EMA50 之上，大幅上调 TP (例如正常值的 2-3 倍)，防止只吃了一小部分利润就过早离场。
@@ -620,8 +620,8 @@ class QwenClient:
     你必须从多时间框架分析整体市场结构 (查看提供的 `multi_tf_data`)：
     
     1. **时间框架层级分析 (High Frequency Structure)**
-       - **H1 (1小时)**: **大趋势框架 (Macro Trend)**。确定主要市场方向 (Bullish/Bearish) 和关键 HTF 支撑阻力。
-       - **M15 (15分钟)**: **执行周期 (Execution)**。作为主要的交易执行周期，确认趋势延续或反转，寻找 BOS/CHOCH 以及精准入场触发信号 (Trigger)。
+       - **M15**: **大趋势框架 (Macro Trend)**。确定主要市场方向 (Bullish/Bearish) 和关键 HTF 支撑阻力。
+       - **M5 (15分钟)**: **执行周期 (Execution)**。作为主要的交易执行周期，确认趋势延续或反转，寻找 BOS/CHOCH 以及精准入场触发信号 (Trigger)。
     
     2. **市场结构识别**
        - 明确标注当前更高级别时间框架的趋势方向（牛市、熊市、盘整）
@@ -669,8 +669,8 @@ class QwenClient:
     ### 三、方向判断决策树
     你必须明确回答以下问题：
     
-    1. H1 趋势是什么方向？
-    2. M15 是否出现了符合 H1 趋势的结构？
+    1. M5 趋势是什么方向？
+    2. M15 是否出现了符合 M5 趋势的结构？
     3. 最近的价格行为显示了什么意图？
     4. 流动性分布暗示了什么方向偏好？
     
@@ -687,9 +687,9 @@ class QwenClient:
        - 订单块或失衡区内
        - 距离失效位有合理的风险回报空间
     
-    2. **触发信号确认 (M15)**
-       - **做多信号 (Buy)**: M15 出现看涨吞没 / Pinbar / 内部K线突破。
-       - **做空信号 (Sell)**: M15 出现看跌吞没 / Pinbar / 内部K线突破。
+    2. **触发信号确认 (M5)**
+       - **做多信号 (Buy)**: M5 出现看涨吞没 / Pinbar / 内部K线突破。
+       - **做空信号 (Sell)**: M5 出现看跌吞没 / Pinbar / 内部K线突破。
        - **结构确认**: 价格收盘价突破近期微观结构高点(买入)或低点(卖出)。
     
     3. **动量指标支持**
@@ -825,7 +825,7 @@ class QwenClient:
         - "q8_execution": str ("Yes" / "No")
     - **market_structure**: dict (SMC 分析摘要)
         - "trend_m15": str (M15 趋势分析)
-        - "trend_h1": str (H1 趋势分析)
+        - "trend_h1": str (M5 趋势分析)
         - "key_level": str (关键位分析)
     - "analysis_breakdown": dict (详细分析内容，用于Telegram报告)
         - "market_status": str (市场状态分析)
@@ -1124,7 +1124,7 @@ class QwenClient:
                 "trend": "bullish/bearish/neutral",
                 "phase": "accumulation/expansion/distribution",
                 "timeframe_analysis": {{
-                    "h1": str,
+                    "m5": str,
                     "m15": str
                 }},
                 "key_levels": {{
@@ -1430,8 +1430,8 @@ class QwenClient:
         
         **入场必须同时满足以下条件 (All Conditions Mandatory)**:
         1. **多周期趋势共振 (Trend Alignment - CRITICAL)**:
-           - **必须检查** `trend_alignment` 字段 (M5 + M15 + H1)。
-           - 只有当 M5, M15, H1 三者趋势方向**完全一致** (All Bullish 或 All Bearish) 时，才允许开仓 (Buy/Sell)。
+           - **必须检查** `trend_alignment` 字段 (M5 + M15)。
+           - 只有当 M5, M15三者趋势方向**完全一致** (All Bullish 或 All Bearish) 时，才允许开仓 (Buy/Sell)。
            - 如果趋势不一致 (Mixed)，**坚决观望 (WAIT)**。
            
         2. **SMC 精确狙击 (Sniper Entry)**: 
@@ -1548,7 +1548,7 @@ class QwenClient:
         
         2. **ORB 集成与信号验证 (ORB Integration & Analysis - High Priority)**:
            - **多维验证**: ORB 突破信号必须经过以下维度的交叉验证：
-             - **市场趋势 (Trend)**: 突破方向是否与 H1/M15 主趋势一致？(顺势突破信心加倍，逆势突破需谨慎)。
+             - **市场趋势 (Trend)**: 突破方向是否与 M5/M15 主趋势一致？(顺势突破信心加倍，逆势突破需谨慎)。
              - **市场情绪 (Sentiment)**: 当前市场情绪 (Bullish/Bearish) 是否支持该突破？
              - **SMC 结构**: 突破点是否位于关键支撑/阻力位？上方/下方是否有清晰的流动性池 (Liquidity Pool) 吸引价格？
            - **开仓指示 (Signal Action)**: 
