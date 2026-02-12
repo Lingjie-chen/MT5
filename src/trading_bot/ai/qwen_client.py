@@ -443,7 +443,7 @@ class QwenClient:
 
     **策略模式 (Strategy Mode) - 自适应切换**:
     *   **模式**: 根据市场分析，从 "orb_breakout" (突破) 或 "grid_consolidation" (震荡) 中选择最适合当前行情的模式。
-    *   **Action**: `BUY` (做多) 或 `SELL` (做空) - **必须有 ORB 信号或 Grid 触发**。
+    *   **Action**: `BUY`/`SELL` (趋势), `GRID_START` (震荡), `LIMIT_BUY`/`LIMIT_SELL` (边界) - **必须有 ORB 信号或 Grid 触发**。
     *   **Grid Add**: **允许顺势金字塔加仓 (Pyramiding Allowed)**。禁止逆势死扛。
     *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M5 (执行) 和 M15 (趋势) 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
 
@@ -826,7 +826,7 @@ class QwenClient:
     请以 **JSON 格式** 返回结果，严禁包含 markdown 代码块标记 (如 ```json ... ```)，只返回纯 JSON 字符串。
     JSON 必须包含以下字段：
 
-    - **action**: str ("HOLD", "CLOSE_ALL", "BUY", "SELL", "LIMIT_BUY", "LIMIT_SELL")
+    - **action**: str ("HOLD", "CLOSE_ALL", "BUY", "SELL", "LIMIT_BUY", "LIMIT_SELL", "GRID_START")
     - **strategy_mode**: str ("orb_breakout" / "grid_consolidation") -- 必须明确指定当前策略模式
     - **sl**: float (设为 0。由 AI 实时监控平仓。但必须在 'position_management' 或根节点 'sl' 提供 Smart SL)
     - **tp**: float (设为 0。由 AI 实时监控平仓)
