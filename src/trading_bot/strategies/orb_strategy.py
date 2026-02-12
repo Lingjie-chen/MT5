@@ -205,14 +205,18 @@ class GoldORBStrategy:
         self.is_range_final = is_final
         self.current_consolidation_count = consolidation_count
         
-        # Calculate Stats if final
-        if is_final:
+        # Calculate Stats if final OR if we have enough data to show tentative stats
+        if len(consolidation_prices) >= 2:
             # Create a mini DF for calc
             stats_df = pd.DataFrame({'close': consolidation_prices})
             self.calculate_range_statistics(stats_df)
-        
+            
         if is_final and self.last_processed_time != today:
              self.last_processed_time = today
+             logger.info(f"ORB Range Finalized: High={self.final_range_high}, Low={self.final_range_low}, Mean={self.range_mean:.2f}, Std={self.range_std:.2f}")
+        elif not is_final:
+             # Log periodically or just debug
+             pass
         
         return self.final_range_high, self.final_range_low, self.is_range_final
 
