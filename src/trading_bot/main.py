@@ -3878,6 +3878,7 @@ class SymbolTrader:
                                 f"Time: {datetime.now().strftime('%H:%M:%S')} | Status: *24/7 Active*\n\n"
                                 f"{telegram_report}\n\n"
                                 f"{orb_stats_str}"
+                                f"⏱ *Cycle*: M5(Exec) + M15(Trend)\n"
                                 f"{basket_info_str}"
                                 f"📊 *Live Status*\n"
                                 f"• Action: *{final_signal.upper()}*\n"
