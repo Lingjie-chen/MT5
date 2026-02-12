@@ -3930,9 +3930,6 @@ class SymbolTrader:
                                 f"💼 *Positions*\n"
                                 f"{self.escape_markdown(pos_summary)}"
                             )
-                                f"💼 *Positions*\n"
-                                f"{self.escape_markdown(pos_summary)}"
-                            )
                         self.send_telegram_message(analysis_msg)
 
                         # 4. 执行交易
