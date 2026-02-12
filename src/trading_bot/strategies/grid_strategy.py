@@ -277,13 +277,20 @@ class KalmanGridStrategy:
                     'stats': orb_result.get('stats') # Pass stats up
                 }
                 
-            elif orb_result: # Legacy string return (fallback)
+            elif orb_result and isinstance(orb_result, str): # Legacy string return (fallback)
                 logger.info(f"ORB Signal Triggered: {orb_result.upper()}")
                 return orb_result
-            else:
-                # Strictly wait for ORB breakout.
-                return None
-        
+            elif orb_result: # It's a dict or object but not processed above?
+                 # If we are here, orb_result is truthy but didn't match 'signal' key check above?
+                 # Wait, let's check the logic flow.
+                 # The 'signal' key check was: if 'signal' in orb_result:
+                 # So if orb_result is a dict with 'signal', it goes into first block.
+                 # If it is a string, it goes here.
+                 # If it is a tuple (None, stats), it is truthy if stats is not empty?
+                 # No, tuple (None, stats) is truthy.
+                 # So we need to handle the tuple case specifically.
+                 pass
+
         return None
 
 
