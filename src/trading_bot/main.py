@@ -3924,11 +3924,24 @@ class SymbolTrader:
                         if orb_stats_source:
                             z_score = orb_stats_source.get('z_score', 0.0)
                             breakout_score = orb_stats_source.get('breakout_score', 0.0)
+                            # [FIX] Get Strategy Mode from AI Response if available
+                            ai_mode = strategy.get('strategy_mode', 'Unknown')
+                            
+                            # Clean up mode display
+                            if ai_mode == 'orb_breakout':
+                                mode_display = "ORB Breakout"
+                            elif ai_mode == 'grid_consolidation':
+                                mode_display = "Grid Consolidation"
+                            elif ai_mode == 'trend':
+                                mode_display = "Trend Following"
+                            else:
+                                mode_display = ai_mode.title() # Capitalize first letter
+                                
                             orb_stats_str = (
                                 f"📊 *ORB Stats*\n"
                                 f"• Z-Score: `{z_score:.2f}`\n"
                                 f"• Breakout Score: `{breakout_score:.1f}/100`\n"
-                                f"• Mode: *Exclusive Entry*\n\n"
+                                f"• Mode: *{mode_display}*\n\n"
                             )
 
                         if telegram_report and len(telegram_report) > 50:
