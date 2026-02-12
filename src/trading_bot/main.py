@@ -3718,16 +3718,27 @@ class SymbolTrader:
                                 strategy['reason'] = f"SMC/Trend Signal Blocked (ORB Only Mode) - Original: {ai_action.upper()}"
                                 # Keep position_size as is or set to 0? Better not to execute.
 
+                            # Initialize variables to avoid UnboundLocalError
+                            llm_sl = 0.0
+                            llm_tp = 0.0
+                            basket_tp = getattr(self.grid_strategy, 'dynamic_global_tp', 0.0)
+                            
+                            # Try to get LLM SL/TP just for logging purposes if available
+                            current_exit = strategy.get('exit_conditions', {})
+                            llm_sl = current_exit.get('sl') or current_exit.get('sl_price') or 0.0
+                            llm_tp = current_exit.get('tp') or current_exit.get('tp_price') or 0.0
                             
                             if llm_sl <= 0 and llm_tp <= 0 and basket_tp <= 0:
-                                 logger.info("Using ORB Fixed TP/SL as Fallback (LLM provided none)")
+                                 pass
                             else:
-                                 logger.info(f"Using LLM/Basket Logic: SL={current_exit.get('sl')}, TP={current_exit.get('tp')} (Basket=${basket_tp})")
+                                 logger.info(f"Using LLM/Basket Logic (Monitoring): SL={current_exit.get('sl')}, TP={current_exit.get('tp')} (Basket=${basket_tp})")
                             
-                            strategy['reason'] = f"Gold ORB Breakout Signal ({orb_signal_data['reason']})"
+                            # Handle reason safely
+                            orb_reason = orb_signal_data.get('reason', 'No Signal') if orb_signal_data else 'No Signal'
+                            strategy['reason'] = f"Gold ORB Status: {orb_reason}"
                             
                             # Add Stats to Reason if available
-                            if orb_signal_data.get('stats'):
+                            if orb_signal_data and orb_signal_data.get('stats'):
                                 stats = orb_signal_data['stats']
                                 score = stats.get('breakout_score', 0)
                                 strategy['reason'] += f" [Stats: Score={score}, Z={stats.get('z_score', 0):.2f}]"
