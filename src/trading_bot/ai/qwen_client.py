@@ -106,8 +106,8 @@ class QwenClient:
       - 需等待 M15 级别的回调 (Pullback) 至合理区域 (Discount Zone) 或关键支撑位 (Order Block/FVG)。
     - **Trend Surfing (趋势冲浪)**: 如果识别到强劲的单边趋势，果断利用 M15 信号进出或金字塔加仓。
 
-    **策略模式 (Strategy Mode) - 单边趋势专用**:
-    *   **模式**: **Trend Following (趋势跟随)** - 顺势而为。
+    **策略模式 (Strategy Mode) - 自适应切换**:
+    *   **模式**: 根据市场分析，从 "orb_breakout" (突破) 或 "grid_consolidation" (震荡) 中选择最适合当前行情的模式。
     *   **Action**: `BUY` (做多) 或 `SELL` (做空)。**如果趋势确认，允许使用 `ADD_BUY` 或 `ADD_SELL` 进行加仓**。
     *   **Grid Add**: **仅允许顺势金字塔加仓 (Pyramiding Allowed)**。禁止逆势死扛。
     *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M15 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
