@@ -414,9 +414,9 @@ class QwenClient:
 
     **策略模式 (Strategy Mode) - 单边趋势专用**:
     *   **模式**: **Trend Following (趋势跟随)** - 顺势而为，果断追击。
-    *   **Action**: `BUY` (做多) 或 `SELL` (做空) - **市价单或挂单入场**。
+    *   **Action**: `BUY` (做多) 或 `SELL` (做空) - **必须有 ORB 信号**。
     *   **Grid Add**: **永久禁止 (Disabled)**。
-    *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M15 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
+    *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M5 (执行) 和 M15 (趋势) 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
 
     1. **SMC (Smart Money Concepts) - 核心入场逻辑**:
        - **结构确认 (Structure Mapping)**:
