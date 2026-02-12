@@ -529,7 +529,7 @@ class QwenClient:
        - **权重**: 当此策略发出信号且与 SMC 结构方向一致时，置信度应显著提高。
 
     6. **盘前 8 问严格执行协议 (Pre-Market 8 Questions Protocol)**:
-       - **Q1 趋势 (Trend)**: M15/H1 趋势方向。
+       - **Q1 趋势 (Trend)**: M5/M15 趋势方向。
        - **Q2 起点 (Start)**: 趋势发起的关键低点/高点。
        - **Q3 阶段 (Stage)**: 积累/扩张/分配/回调。
        - **Q4 级别 (Level)**: 当前处于第几浪或什么级别的回踩。
@@ -538,7 +538,7 @@ class QwenClient:
        - **Q7 防守 (Defense)**: 明确的失效位 (Invalidation Point)。
        - **Q8 执行 (Execution) [CRITICAL]**:
           - **Yes**: 仅当当前 tick 价格**已经满足**所有入场条件（趋势共振+结构确认+信号触发），**无需等待**任何后续确认时。
-          - **ORB Exception**: 如果 `ORB Breakout Score > 80` 且方向与 H1 趋势一致，即使稍微有些偏离或回调未到位，也应判定为 **Yes**，因为突破行情不等人。
+          - **ORB Exception**: 如果 `ORB Breakout Score > 80` 且方向与 M15 趋势一致，即使稍微有些偏离或回调未到位，也应判定为 **Yes**，因为突破行情不等人。
           - **No**: 需要等待突破、等待回调、等待K线收盘确认、或条件不满足。 -> **Action 必须为 HOLD 或 WAIT**。
 
        - **Q9 风险预算检查 (Risk Budget Check)**:
