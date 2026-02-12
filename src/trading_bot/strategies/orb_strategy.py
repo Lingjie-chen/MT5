@@ -115,6 +115,10 @@ class GoldORBStrategy:
         open_candle = today_data[today_data.index.hour == self.open_hour]
         
         if open_candle.empty:
+            # Only log once per day/run if missing
+            if self.last_processed_time != today:
+                logger.warning(f"ORB Open Candle not found for {today} (Hour {self.open_hour}). Data range: {completed_df.index[0]} to {completed_df.index[-1]}")
+                self.last_processed_time = today # Mark as processed so we don't spam
             self.final_range_high = None
             self.final_range_low = None
             self.is_range_final = False
