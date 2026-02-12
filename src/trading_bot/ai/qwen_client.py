@@ -826,7 +826,7 @@ class QwenClient:
     JSON 必须包含以下字段：
 
     - **action**: str ("HOLD", "CLOSE_ALL", "BUY", "SELL", "LIMIT_BUY", "LIMIT_SELL")
-    - **strategy_mode**: str ("trend" / "orb_breakout" / "grid_consolidation") -- 必须明确指定当前策略模式
+    - **strategy_mode**: str ("orb_breakout" / "grid_consolidation" / "trend") -- 必须明确指定当前策略模式
     - **sl**: float (设为 0。由 AI 实时监控平仓。但必须在 'position_management' 或根节点 'sl' 提供 Smart SL)
     - **tp**: float (设为 0。由 AI 实时监控平仓)
     - **grid_config**: dict (保留字段，设为默认值)
