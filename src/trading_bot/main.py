@@ -3848,11 +3848,20 @@ class SymbolTrader:
 
                         # [NEW] Extract ORB Stats for Telegram
                         orb_stats_str = ""
-                        orb_data = technical_signals.get('grid_strategy', {}).get('orb_data')
-                        if orb_data and orb_data.get('stats'):
-                            stats = orb_data['stats']
-                            z_score = stats.get('z_score', 0.0)
-                            breakout_score = stats.get('breakout_score', 0.0)
+                        # Try to get stats from signal data OR explicitly passed stats
+                        orb_stats_source = None
+                        
+                        orb_data_in_signals = technical_signals.get('grid_strategy', {}).get('orb_data')
+                        explicit_stats = technical_signals.get('grid_strategy', {}).get('orb_stats')
+                        
+                        if orb_data_in_signals and orb_data_in_signals.get('stats'):
+                            orb_stats_source = orb_data_in_signals['stats']
+                        elif explicit_stats:
+                            orb_stats_source = explicit_stats
+                            
+                        if orb_stats_source:
+                            z_score = orb_stats_source.get('z_score', 0.0)
+                            breakout_score = orb_stats_source.get('breakout_score', 0.0)
                             orb_stats_str = (
                                 f"📊 *ORB Stats*\n"
                                 f"• Z-Score: `{z_score:.2f}`\n"
