@@ -3926,6 +3926,7 @@ class SymbolTrader:
                                 f"• Strength: {strength:.0f}%\n"
                                 f"• SL: `{opt_sl:.2f}` | TP: `{opt_tp:.2f}`\n\n"
                                 f"{orb_stats_str}"
+                                f"⏱ *Cycle*: M5(Exec) + M15(Trend)\n"
                                 f"{basket_info_str}"
                                 f"💼 *Positions*\n"
                                 f"{self.escape_markdown(pos_summary)}"
