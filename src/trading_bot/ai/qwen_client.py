@@ -1465,32 +1465,38 @@ class QwenClient:
         prompt = f"""
         {system_prompt}
         
-        **入场执行标准 (Entry Execution - Strict Validation & Verification)**:
-        **你必须结合 SMC 算法策略仔细分析市场结构，严禁盲目开仓！**
+        **入场执行标准 (Entry Execution - ORB & Grid Focus)**:
+        **你必须优先基于 ORB (Open Range Breakout) 信号和 Grid (网格) 策略进行决策！**
         
-        **核心原则：先验证，后交易 (Verify then Trade)**
+        **核心原则：信号驱动，顺势而为 (Signal Driven & Trend Following)**
         
-        **入场必须同时满足以下条件 (All Conditions Mandatory)**:
-        1. **多周期趋势共振 (Trend Alignment - CRITICAL)**:
-           - **必须检查** `trend_alignment` 字段 (M5 + M15)。
-           - 只有当 M5, M15三者趋势方向**完全一致** (All Bullish 或 All Bearish) 时，才允许开仓 (Buy/Sell)。
-           - 如果趋势不一致 (Mixed)，**坚决观望 (WAIT)**。
+        **入场必须满足以下条件之一 (One of the following is Mandatory)**:
+        
+        1. **ORB 突破信号 (Primary Signal - Mode A)**:
+           - **信号源**: 检查 `grid_strategy` 中的 `breakout_score`。
+           - **阈值**: 
+             - `Score > 80`: **强力信号**，立即执行 (Immediate Entry)。
+             - `Score > 60`: **有效信号**，需确认趋势一致性。
+           - **动作**: 如果信号触发且顺势，Action 设为 **BUY** 或 **SELL**。
+           - **无需回踩**: 对于强 ORB 突破，**不需要**等待回踩 (No Retest Needed)，直接跟随动能进场。
            
-        2. **SMC 精确狙击 (Sniper Entry)**: 
-           - **关键位验证**: 仅仅价格到达阻力/支撑位**不足以**作为入场理由。必须观察到价格在该区域的**有效反应** (如 Pinbar 拒绝)。
-           - **K线确认 (Candle Confirmation)**: 必须等待 M15 K线收盘确认。如果 K 线实体饱满地穿过关键位，说明支撑/阻力失效，**严禁开仓**。
-           - **FVG 回补**: 必须等待价格**完全回补**或**回踩测试有效**后，出现反向 K 线组合才可操作。
-           - **下单方式**: 建议使用 Limit 挂单或在明确反转信号出现后立即进场。拒绝随意市价追单。
+        2. **网格震荡信号 (Secondary Signal - Mode B)**:
+           - **适用**: 当无 ORB 突破且市场处于震荡区间 (Range Bound)。
+           - **位置**: 价格接近布林带轨道 (Bollinger Bands) 或 ATR 极端位置。
+           - **动作**: Action 设为 **GRID_START** 或 **LIMIT_BUY/LIMIT_SELL**。
 
-        3. **价格行为确认 (Price Action)**: 
-           - **回踩确认 (Retest)**: 如果价格突破了关键位，必须等待**回踩不破** (Retest and Hold) 才可进场。
-           - **突破确认 (Breakout)**: 如果价格在关键位盘整，必须等待**有效突破且不跌破** (Breakout and Hold) 才可进场。
+        3. **趋势一致性 (Trend Alignment)**:
+           - 确保交易方向与 M15 主趋势一致。
+           - 避免在强趋势逆向操作，除非是网格策略的边界反转。
 
-        4. **立即进场 (Immediate Market Entry)**: 
-           - 只有当上述条件（趋势共振 + 回踩确认 + FVG 验证有效）完全满足时，才可发出交易指令。
-           - 如果价格只是接近区域但未出现验证信号，**坚决观望 (WAIT)**。
+        **SMC/结构分析仅作参考 (SMC as Reference Only)**:
+        - **不要**因为找不到 FVG 或 Order Block 就放弃明确的 ORB 突破信号。
+        - **不要**强求 K 线形态 (如 Pinbar) 完美，ORB 策略更看重价格突破力度 (Z-Score)。
+        
+        **立即进场 (Immediate Market Entry)**: 
+        - 只要 ORB 或 Grid 信号满足上述条件，**立即行动**。
 
-        **拒绝模糊信号**: 如果价格只是接近关键位但没有明确的 K 线确认 (如 Pinbar, Engulfing)，或者 FVG 未经测试，**坚决观望 (WAIT)**。
+        **拒绝模糊信号**: 如果 ORB 分数低 (<50) 且未触及网格边界，则**观望 (WAIT)**。
 
         ## 强制输出格式要求 (Format Enforcement)
         你必须返回一个严格符合 JSON 格式的响应，并确保包含以下所有顶层字段（严禁遗漏）：
