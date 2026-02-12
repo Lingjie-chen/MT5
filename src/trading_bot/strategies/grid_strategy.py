@@ -290,6 +290,57 @@ class KalmanGridStrategy:
                 return signal_data
             
             elif stats_data:
+                # ------------------------------------------------------------------
+                # [NEW] Consolidation Grid Logic (Super Grid)
+                # ------------------------------------------------------------------
+                # Trigger Grid Trading when ORB is in consolidation phase (Range Final & Inside Range)
+                if stats_data.get('is_range_final', False):
+                    r_high = stats_data['range_high']
+                    r_low = stats_data['range_low']
+                    r_mean = stats_data.get('range_mean', (r_high + r_low) / 2)
+                    z_score = stats_data.get('z_score', 0)
+                    
+                    # Ensure price is strictly inside the range (no potential breakout pending)
+                    if r_low <= current_price <= r_high:
+                        cons_signal = None
+                        sl_price = 0.0
+                        tp_price = 0.0
+                        
+                        # Thresholds: Z-Score > 1.0 (1 Std Dev) - Mean Reversion Logic
+                        # Use tighter grid step for consolidation
+                        
+                        # Buy Low (Undervalued in Range)
+                        if z_score < -1.0: 
+                            cons_signal = 'buy'
+                            tp_price = r_mean # Target Mean
+                            # SL: Fixed points below range low (Safety)
+                            sl_dist = self.orb_strategy.fixed_sl_points * point
+                            sl_price = r_low - sl_dist
+                            
+                        # Sell High (Overvalued in Range)
+                        elif z_score > 1.0: 
+                            cons_signal = 'sell'
+                            tp_price = r_mean # Target Mean
+                            sl_dist = self.orb_strategy.fixed_sl_points * point
+                            sl_price = r_high + sl_dist
+                            
+                        if cons_signal:
+                             logger.info(f"ORB Consolidation SuperGrid Trigger: {cons_signal.upper()} (Z: {z_score:.2f}, Price: {current_price:.2f}, Mean: {r_mean:.2f})")
+                             
+                             # Calculate Lot (Standard Risk or Min Lot for Grid)
+                             lot = self.lot
+                             
+                             return {
+                                'signal': cons_signal,
+                                'lot': lot, 
+                                'sl': sl_price,
+                                'tp': tp_price,
+                                'reason': 'ORB Consolidation SuperGrid',
+                                'stats': stats_data,
+                                'is_grid_trigger': True # Mark as grid starter
+                             }
+                # ------------------------------------------------------------------
+
                 # Return a 'no_signal' dict with stats so main.py can use it
                 return {
                     'signal': None,
