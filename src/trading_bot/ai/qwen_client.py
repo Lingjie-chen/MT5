@@ -1330,7 +1330,20 @@ class QwenClient:
             orb_stats_str = ""
             if orb_data and orb_data.get('stats'):
                 stats = orb_data['stats']
-                orb_stats_str = f"\n  - ORB Stats: Z-Score={stats.get('z_score', 0):.2f}, Breakout Score={stats.get('breakout_score', 0):.1f}"
+                # [UPDATE] Add High/Low/Mean to support SuperGrid logic
+                range_high = stats.get('range_high')
+                range_low = stats.get('range_low')
+                range_mean = stats.get('range_mean')
+                
+                stats_details = []
+                if range_high is not None: stats_details.append(f"Range High={range_high:.2f}")
+                if range_low is not None: stats_details.append(f"Range Low={range_low:.2f}")
+                if range_mean is not None: stats_details.append(f"Range Mean={range_mean:.2f}")
+                
+                stats_details.append(f"Z-Score={stats.get('z_score', 0):.2f}")
+                stats_details.append(f"Breakout Score={stats.get('breakout_score', 0):.1f}")
+                
+                orb_stats_str = f"\n  - ORB Stats: {', '.join(stats_details)}"
             
             grid_config_context = (
                 f"\n当前策略优化状态 (Self-Optimized Params):\n"
