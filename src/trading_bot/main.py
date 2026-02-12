@@ -3612,8 +3612,9 @@ class SymbolTrader:
                                 logger.error(f"参数动态更新失败: {e}")
                         
                         # [NEW] ORB Strategy Override
-                        if orb_signal_data:
-                            logger.info(f"🚀 FORCING ORB STRATEGY OVERRIDE: {orb_signal_data['signal'].upper()}")
+                        # Only override if we have a valid signal string (not None, not empty)
+                        if orb_signal_data and orb_signal_data.get('signal'):
+                            logger.info(f"🚀 FORCING ORB STRATEGY OVERRIDE: {str(orb_signal_data['signal']).upper()}")
                             strategy['action'] = orb_signal_data['signal']
                             strategy['position_size'] = orb_signal_data['lot']
                             
