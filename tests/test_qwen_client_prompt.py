@@ -111,4 +111,11 @@ if __name__ == "__main__":
     t = TestQwenClient()
     t.setup_method()
     with patch('requests.Session.post') as mock:
-        t.test_optimize_strategy_logic_prompt_generation(mock)
+        t.test_optimize_strategy_logic_prompt_generation() # mock is patched via decorator logic but manually calling needs handling or just rely on decorator if using pytest runner
+        # But here we are calling manually. The decorator @patch passes the mock object as argument.
+        # When calling manually, the decorator wrapper expects to inject it.
+        # Let's simplify manual run.
+    
+    # Correct manual execution with patch context manager instead of decorator for main block
+    with patch('requests.Session.post') as mock_post:
+        t.test_optimize_strategy_logic_prompt_generation(mock_post)
