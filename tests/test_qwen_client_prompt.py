@@ -74,7 +74,7 @@ class TestQwenClient:
         self.client.optimize_strategy_logic(
             market_structure_analysis=market_structure_analysis,
             current_market_data=self.market_data,
-            existing_positions=[],
+            # existing_positions=[], # Not used in signature if not updated
             grid_config_context=grid_config_context
         )
 
@@ -110,12 +110,9 @@ if __name__ == "__main__":
     # Manually run if executed as script
     t = TestQwenClient()
     t.setup_method()
-    with patch('requests.Session.post') as mock:
-        t.test_optimize_strategy_logic_prompt_generation() # mock is patched via decorator logic but manually calling needs handling or just rely on decorator if using pytest runner
-        # But here we are calling manually. The decorator @patch passes the mock object as argument.
-        # When calling manually, the decorator wrapper expects to inject it.
-        # Let's simplify manual run.
-    
-    # Correct manual execution with patch context manager instead of decorator for main block
-    with patch('requests.Session.post') as mock_post:
-        t.test_optimize_strategy_logic_prompt_generation(mock_post)
+    # Remove the decorator for manual execution to avoid double injection issues in this simple script
+    # or just unwrap it.
+    pass
+
+    # Actually, simpler to just run with pytest
+
