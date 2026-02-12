@@ -289,15 +289,9 @@ class KalmanGridStrategy:
                 logger.info(f"ORB Signal Triggered: {signal_data.upper()}")
                 return signal_data
             
-            # If we have stats but no signal, we can return just stats? 
-            # But get_entry_signal is expected to return signal info or None.
-            # If we return None here, main.py won't get stats for reporting.
-            # But get_entry_signal is usually called to check for entry.
-            # We need a way to pass stats back even if no signal.
-            # Let's return a special dict if stats exist but no signal?
             elif stats_data:
                 # Return a 'no_signal' dict with stats so main.py can use it
-                 return {
+                return {
                     'signal': None,
                     'stats': stats_data
                 }
