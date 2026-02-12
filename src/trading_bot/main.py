@@ -1341,25 +1341,25 @@ class SymbolTrader:
                          return
 
             # [USER REQ] 强制回写：如果计算成功，将其作为 Explicit SL/TP 使用
-                # 这样下方的日志 "Explicit SL=..." 就会显示正确的值，且后续逻辑也会使用它
-                if calc_sl > 0: 
-                    explicit_sl = calc_sl
-                    # 同时尝试更新 strategy 字典以保持一致性 (Optional but good for debug)
-                    if self.latest_strategy:
-                        if 'exit_conditions' not in self.latest_strategy or self.latest_strategy['exit_conditions'] is None:
-                            self.latest_strategy['exit_conditions'] = {}
-                        self.latest_strategy['exit_conditions']['sl_price'] = calc_sl
+            # 这样下方的日志 "Explicit SL=..." 就会显示正确的值，且后续逻辑也会使用它
+            if 'calc_sl' in locals() and calc_sl > 0: 
+                explicit_sl = calc_sl
+                # 同时尝试更新 strategy 字典以保持一致性 (Optional but good for debug)
+                if self.latest_strategy:
+                    if 'exit_conditions' not in self.latest_strategy or self.latest_strategy['exit_conditions'] is None:
+                        self.latest_strategy['exit_conditions'] = {}
+                    self.latest_strategy['exit_conditions']['sl_price'] = calc_sl
 
-                if calc_tp > 0: 
-                    explicit_tp = calc_tp
-                    if self.latest_strategy:
-                        if 'exit_conditions' not in self.latest_strategy or self.latest_strategy['exit_conditions'] is None:
-                            self.latest_strategy['exit_conditions'] = {}
-                        self.latest_strategy['exit_conditions']['tp_price'] = calc_tp
-                
-                if explicit_sl == 0:
-                     logger.error("无法计算优化 SL，放弃交易")
-                     return 
+            if 'calc_tp' in locals() and calc_tp > 0: 
+                explicit_tp = calc_tp
+                if self.latest_strategy:
+                    if 'exit_conditions' not in self.latest_strategy or self.latest_strategy['exit_conditions'] is None:
+                        self.latest_strategy['exit_conditions'] = {}
+                    self.latest_strategy['exit_conditions']['tp_price'] = calc_tp
+            
+            if explicit_sl == 0:
+                 logger.error("无法计算优化 SL，放弃交易")
+                 return 
 
             # 再次确认 R:R (针对 Limit 单的最终确认)
             # [USER REQ] Skip RR check if TP is 0 (Basket Mode)
