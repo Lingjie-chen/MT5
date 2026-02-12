@@ -298,7 +298,7 @@ class SymbolTrader:
         
         # Advanced Models: SMC, CRT, CCI (via Adapter)
         # MTF kept for context structure
-        self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_H1)
+        self.crt_analyzer = CRTAnalyzer(timeframe_htf=mt5.TIMEFRAME_M15)
         # [MODIFIED] 只关注 M5 (执行) 和 M15 (趋势)
         self.mtf_analyzer = MTFAnalyzer(htf1=mt5.TIMEFRAME_M5, htf2=mt5.TIMEFRAME_M15) 
         self.advanced_adapter = AdvancedMarketAnalysisAdapter()
