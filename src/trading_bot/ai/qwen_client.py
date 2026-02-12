@@ -183,7 +183,7 @@ class QwenClient:
             4. **流动性分析**: 识别上方/下方的 Liquidity Sweep (流动性扫荡) 区域。
             5. **传统指标辅助**: 结合 RSI (背离)、MACD 和布林带作为辅助确认。
             6. **输出**: 包含 SMC 结构、FVG/OB 位置及 OBV 状态的综合技术信号报告。
-            7. **周期聚焦**: 重点分析 M15 (入场) 和 H1 (趋势) 结构。
+            7. **周期聚焦**: 重点分析 M5 (入场) 和 M15 (趋势) 结构。
 
     **2. 研究员团队 (The Researcher Team)**
     - **看多研究员（Bullish）**:
@@ -331,7 +331,7 @@ class QwenClient:
     - **技术分析师**:
         - **角色**: 运用 SMC 和经典图表形态分析 EURUSD 走势。
         - **指令**:
-            1. **SMC 结构分析**: 识别 M15 的 BOS (结构破坏) 和 CHOCH (特性改变)。
+            1. **SMC 结构分析**: 识别 M5 的 BOS (结构破坏) 和 CHOCH (特性改变)。
             2. **流动性识别**: 标注亚洲盘高低点 (Asian Range High/Low) 及午夜开盘价 (Midnight Open) 的流动性掠夺。
             3. **关键时段**: 重点关注伦敦开盘 (London Open) 和纽约开盘 (NY Open) 的 Judas Swing (诱多/诱空)。
             4. **输出**: 包含 SMC 结构、FVG、OB 及关键时段行为的技术分析报告。
