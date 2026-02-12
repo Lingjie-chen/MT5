@@ -376,7 +376,7 @@ class QwenClient:
            - **Action**: 'buy' 或 'sell' (顺势突破)。
            - **条件**: 必须有明确的 ORB 突破信号且与 M15 趋势一致。
         2. **Mode B: Grid Consolidation (震荡网格)**:
-           - **适用场景**: 市场处于盘整震荡 (Range Bound)，ORB 信号微弱，但价格触及关键支撑阻力位 (SMC POI / Bollinger Bands)。
+           - **适用场景**: **仅当 ORB 突破条件未满足 (Score <= 60 或 Z <= 1.0)**，且大模型分析确认当前市场处于震荡/盘整行情 (Consolidation/Range) 时启动。
            - **Action**: 'grid_start' (启动自动网格) 或 'limit_buy'/'limit_sell' (边界高抛低吸)。
            - **Mandate**: **必须使用基于斐波那契回调位 (Fibonacci Levels: 0.382, 0.5, 0.618) 的 Limit 挂单**，禁止在非关键位追单。
            - **条件**: 必须确认市场处于震荡区间，且盈亏比合理。
