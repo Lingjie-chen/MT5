@@ -1130,7 +1130,7 @@ class MTFAnalyzer:
         except: return 0
     def update_zones(self, symbol):
         try:
-            # Use htf2 (H1) for zone update as per user request
+            # Use htf2 (M15) for zone update as per user request
             rates = mt5.copy_rates_from_pos(symbol, self.htf2, 0, 500)
             if rates is None or len(rates) < 50: return
             self.demand_zones = []; self.supply_zones = []
