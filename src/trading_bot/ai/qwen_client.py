@@ -585,11 +585,11 @@ class QwenClient:
        - **Q6 周期 (Cycle)**: 顺势还是逆势。
        - **Q7 防守 (Defense)**: 明确的失效位 (Invalidation Point)。
        - **Q8 执行 (Execution) [CRITICAL]**:
-          - **Yes (立即执行)**: 满足以下任一情况：
-             1. **完美趋势**: 当前价格满足所有趋势入场条件。
-             2. **ORB 强突破**: `ORB Breakout Score > 80` 且 `Z-Score > 2.0` 且顺势。
-             3. **Grid 触发**: 市场处于震荡区间，价格触及网格边界或关键 SMC 支撑/阻力位，适合启动网格或左侧挂单。
-          - **No (等待)**: 条件未完全满足，需等待突破或回调。 -> **Action 必须为 HOLD 或 WAIT**。
+          - **Yes (立即执行)**: 必须满足以下 **优先级** 条件之一：
+             1. **ORB 强突破**: `ORB Breakout Score > 60` 且 `Z-Score > 1.0` (Abs) 且顺势。
+             2. **Grid 触发**: ORB 条件不满足，市场处于震荡区间，且价格触及网格边界或关键 SMC 支撑/阻力位。
+             3. **(注意)**: 即使是"完美趋势"，如果 ORB 分数不足，也禁止开仓 (Wait for Signal)。
+          - **No (等待)**: 条件未完全满足。 -> **Action 必须为 HOLD 或 WAIT**。
 
        - **Q9 风险预算检查 (Risk Budget Check)**:
           - **检查**: 根据当前账户资金、风险偏好(%)和建议的止损距离(SL Distance)，估算开仓手数。
