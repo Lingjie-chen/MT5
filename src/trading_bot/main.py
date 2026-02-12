@@ -3721,15 +3721,17 @@ class SymbolTrader:
                             
                             strategy['exit_conditions'] = current_exit
                         else:
-                            # [User Requirement] ONLY ORB Entry. Block SMC/Trend Entries.
-                            # If AI suggests BUY/SELL but no ORB signal, block it.
+                            # [User Requirement] Dual-Mode: Allow Grid/SMC Entries if conditions met
+                            # Previously blocked SMC/Trend signals here. Now we allow them.
+                            # But we still log what's happening.
                             ai_action = strategy.get('action', 'hold').lower()
+                            
+                            # Log the action but do NOT block it
                             if ai_action in ['buy', 'sell']:
-                                logger.info(f"🚫 Blocking AI SMC/Trend Signal ({ai_action}) - ORB Only Mode Active")
-                                strategy['action'] = 'hold'
-                                strategy['reason'] = f"SMC/Trend Signal Blocked (ORB Only Mode) - Original: {ai_action.upper()}"
-                                # Keep position_size as is or set to 0? Better not to execute.
-
+                                logger.info(f"✅ Allowing AI SMC/Trend Signal ({ai_action}) - Dual Mode Active")
+                            elif ai_action in ['grid_start', 'limit_buy', 'limit_sell']:
+                                logger.info(f"✅ Allowing AI Grid Signal ({ai_action}) - Dual Mode Active")
+                                
                             # Initialize variables to avoid UnboundLocalError
                             llm_sl = 0.0
                             llm_tp = 0.0
