@@ -3288,14 +3288,13 @@ class SymbolTrader:
 
                         trend_m5 = get_trend_status(df_m5)
                         trend_m15 = get_trend_status(df_m15)
-                        trend_h1 = get_trend_status(df_h1)
+                        # trend_h1 = get_trend_status(df_h1) # Removed as per user request (Only M5/M15)
                         
-                        trend_aligned = (trend_m5 == trend_m15 == trend_h1) and (trend_m5 != "neutral")
+                        trend_aligned = (trend_m5 == trend_m15) and (trend_m5 != "neutral")
                         
                         trend_alignment_info = {
                             "m5": trend_m5,
                             "m15": trend_m15,
-                            "h1": trend_h1,
                             "is_aligned": trend_aligned,
                             "direction": trend_m15 if trend_aligned else "mixed"
                         }
@@ -3357,7 +3356,7 @@ class SymbolTrader:
                             "account_info": account_info_dict,
                             "recent_trade_history": recent_history, # [NEW] 注入最近交易历史
                             "timeframe": self.tf_name,
-                            "trend_alignment": trend_alignment_info, # [NEW] M5+M15+H1 Trend Status
+                            "trend_alignment": trend_alignment_info, # [NEW] M5+M15 Trend Status
                             "prices": {
                                 "open": float(current_price['open']),
                                 "high": float(current_price['high']),
@@ -3385,13 +3384,6 @@ class SymbolTrader:
                                     "ema_fast": float(feat_m15.get('ema_fast', 0)),
                                     "ema_slow": float(feat_m15.get('ema_slow', 0)),
                                     "volatility": float(feat_m15.get('volatility', 0))
-                                },
-                                "H1": {
-                                    "close": float(feat_h1.get('close', 0)),
-                                    "rsi": float(feat_h1.get('rsi', 50)),
-                                    "ema_fast": float(feat_h1.get('ema_fast', 0)),
-                                    "ema_slow": float(feat_h1.get('ema_slow', 0)),
-                                    "trend": "bullish" if feat_h1.get('ema_fast', 0) > feat_h1.get('ema_slow', 0) else "bearish"
                                 }
                             }
                         }
