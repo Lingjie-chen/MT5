@@ -299,9 +299,13 @@ class QwenClient:
            - **Action**: 'grid_start' (启动自动网格) 或 'limit_buy'/'limit_sell' (边界高抛低吸)。
            - **Mandate**: **必须使用基于斐波那契回调位 (Fibonacci Levels: 0.382, 0.5, 0.618) 的 Limit 挂单**，禁止在非关键位追单。
            - **条件**: 必须确认市场处于震荡区间，且盈亏比合理。
-    - **决策优先级**: 
-        - 优先检查 ORB 突破信号。若无突破，则评估震荡网格机会。
-        - 若两者皆不满足，则 **HOLD**。
+    - **决策优先级 (Decision Logic)**: 
+        1. **Check ORB**: 是否满足 `Score > 60` AND `Z > 1.0`?
+           - YES -> 执行 **Mode A (ORB Breakout)**。
+           - NO -> 进入下一步。
+        2. **Check Grid**: 市场是否处于震荡区间 (Range) 且触及边界?
+           - YES -> 执行 **Mode B (Grid Consolidation)**。
+           - NO -> **WAIT/HOLD**。
     - **细节**: 基于 SMC 结构提出 **初步** 的建仓价格、止损位 (SMC SL) 和目标价 (SMC TP)。
     - **输出**: 交易提案（Action, Entry, SMC SL, SMC TP）。
       - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'grid_start', 'hold', 'close'。
@@ -384,9 +388,13 @@ class QwenClient:
            - **Action**: 'grid_start' (启动自动网格) 或 'limit_buy'/'limit_sell' (边界高抛低吸)。
            - **Mandate**: **必须使用基于斐波那契回调位 (Fibonacci Levels: 0.382, 0.5, 0.618) 的 Limit 挂单**，禁止在非关键位追单。
            - **条件**: 必须确认市场处于震荡区间，且盈亏比合理。
-    - **决策优先级**: 
-        - 优先检查 ORB 突破信号。若无突破，则评估震荡网格机会。
-        - 若两者皆不满足，则 **HOLD**。
+    - **决策优先级 (Decision Logic)**: 
+        1. **Check ORB**: 是否满足 `Score > 60` AND `Z > 1.0`?
+           - YES -> 执行 **Mode A (ORB Breakout)**。
+           - NO -> 进入下一步。
+        2. **Check Grid**: 市场是否处于震荡区间 (Range) 且触及边界?
+           - YES -> 执行 **Mode B (Grid Consolidation)**。
+           - NO -> **WAIT/HOLD**。
     - **细节**: 基于 SMC 提出建仓价格、止损 (SMC SL) 和止盈 (SMC TP)。
     - **输出**: 交易提案（Action, Entry, SMC SL, SMC TP）。
       - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'grid_start', 'hold', 'close'。
