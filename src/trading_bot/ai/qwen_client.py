@@ -573,7 +573,7 @@ class QwenClient:
        - **Q8 执行 (Execution) [CRITICAL]**:
           - **Yes (立即执行)**: 满足以下任一情况：
              1. **完美趋势**: 当前价格满足所有趋势入场条件。
-             2. **ORB 强突破**: `ORB Breakout Score > 80` 且顺势。
+             2. **ORB 强突破**: `ORB Breakout Score > 80` 且 `Z-Score > 2.0` 且顺势。
              3. **Grid 触发**: 市场处于震荡区间，价格触及网格边界或关键 SMC 支撑/阻力位，适合启动网格或左侧挂单。
           - **No (等待)**: 条件未完全满足，需等待突破或回调。 -> **Action 必须为 HOLD 或 WAIT**。
 
