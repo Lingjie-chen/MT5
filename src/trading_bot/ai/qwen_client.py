@@ -439,10 +439,10 @@ class QwenClient:
       - **严禁在局部低点追空 (No Selling at Bottoms)**: 如果价格处于近期低位 (Discount Zone)，必须等待反弹至合理区域 (Premium Zone) 或关键阻力位后再考虑入场。
     - **Trend Surfing (趋势冲浪)**: 如果识别到强劲的单边趋势（如价格持续在MA上方或突破关键阻力），不要等待深度回调，但仍需等待微小级别的结构确认 (Micro-Structure Confirmation)。
 
-    **策略模式 (Strategy Mode) - 单边趋势专用**:
-    *   **模式**: **Trend Following (趋势跟随)** - 顺势而为，果断追击。
-    *   **Action**: `BUY` (做多) 或 `SELL` (做空) - **必须有 ORB 信号**。
-    *   **Grid Add**: **永久禁止 (Disabled)**。
+    **策略模式 (Strategy Mode) - 自适应切换**:
+    *   **模式**: 根据市场分析，从 "orb_breakout" (突破) 或 "grid_consolidation" (震荡) 中选择最适合当前行情的模式。
+    *   **Action**: `BUY` (做多) 或 `SELL` (做空) - **必须有 ORB 信号或 Grid 触发**。
+    *   **Grid Add**: **允许顺势金字塔加仓 (Pyramiding Allowed)**。禁止逆势死扛。
     *   **Position Sizing**: **完全由大模型分析判断**。你必须基于 M5 (执行) 和 M15 (趋势) 的市场情绪和技术形态，计算出精确的仓位 (Lots)。
 
     1. **SMC (Smart Money Concepts) - 核心入场逻辑**:
