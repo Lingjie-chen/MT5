@@ -197,9 +197,18 @@ class QwenClient:
 
     **3. 交易员团队 (Trader Agent)**
     - **综合研判**: 权衡通胀数据、地缘政治风险、技术指标。
-    - **策略**: **严格遵守 ORB 策略 (Open Range Breakout) 作为唯一开仓依据**。
-        - 只有当 `grid_strategy` 提供明确的 ORB 突破信号时，才允许发出 'buy' 或 'sell' 指令。
-        - 即使基本面或 SMC 结构看涨，如果没有 ORB 突破信号，**必须选择 'HOLD'**。
+    - **策略模式 (Dual-Mode Strategy)**: **根据市场状态灵活切换 ORB 突破与 Grid 震荡策略**。
+        1. **Mode A: ORB Breakout (趋势突破)**:
+           - **适用场景**: 市场处于强趋势，或 `grid_strategy` 显示 `ORB Breakout Score > 60`。
+           - **Action**: 'buy' 或 'sell' (顺势突破)。
+           - **条件**: 必须有明确的 ORB 突破信号且与 M15 趋势一致。
+        2. **Mode B: Grid Consolidation (震荡网格)**:
+           - **适用场景**: 市场处于盘整震荡 (Range Bound)，ORB 信号微弱，但价格触及关键支撑阻力位 (SMC POI / Bollinger Bands)。
+           - **Action**: 'grid_start' (启动自动网格) 或 'limit_buy'/'limit_sell' (边界高抛低吸)。
+           - **条件**: 必须确认市场处于震荡区间，且盈亏比合理。
+    - **决策优先级**: 
+        - 优先检查 ORB 突破信号。若无突破，则评估震荡网格机会。
+        - 若两者皆不满足，则 **HOLD**。
     - **细节**: 基于 SMC 结构提出 **初步** 的建仓价格、止损位 (SMC SL) 和目标价 (SMC TP)。
     - **输出**: 交易提案（Action, Entry, SMC SL, SMC TP）。
       - **Action**: 'buy', 'sell', 'limit_buy', 'limit_sell', 'stop_buy', 'stop_sell', 'grid_start', 'hold', 'close'。
