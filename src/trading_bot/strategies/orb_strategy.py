@@ -233,15 +233,26 @@ class GoldORBStrategy:
         # Use stored DF if argument is None
         target_df = df_h1 if df_h1 is not None else self.last_h1_df
         
+        # Return Stats even if NO Signal (For Reporting)
+        current_stats = {
+            'range_high': self.final_range_high,
+            'range_low': self.final_range_low,
+            'is_range_final': self.is_range_final,
+            'range_mean': self.range_mean,
+            'range_std': self.range_std,
+            'z_score': (current_price - self.range_mean) / self.range_std if self.range_std > 0 else 0,
+            'breakout_score': estimate_breakout_strength(current_price, self.range_mean, self.range_std)
+        }
+        
         if not self.is_range_final or self.final_range_high is None or self.final_range_low is None:
-            return None
+            return None, current_stats
             
         if target_df is None or len(target_df) < 2:
-            return None
+            return None, current_stats
             
         # Check Max Trades Per Day
         if self.trades_today_count >= self.trades_per_day:
-            return None
+            return None, current_stats
 
         # Last CLOSED candle is at -2 (assuming -1 is current open)
         # Verify assumption: Check if index[-1] is current hour.
@@ -251,7 +262,7 @@ class GoldORBStrategy:
         
         # Avoid double signaling on the same candle
         if self.last_signal_candle_time == candle_time:
-            return None
+            return None, current_stats
         
         c_close = last_closed_candle['close']
         c_open = last_closed_candle['open']
@@ -282,7 +293,7 @@ class GoldORBStrategy:
                         'breakout_score': breakout_score,
                         'z_score': (c_close - self.range_mean) / self.range_std if self.range_std > 0 else 0
                     }
-                }
+                }, current_stats
             
         # Sell Signal
         if c_close < c_open and c_close < self.final_range_low:
@@ -310,6 +321,6 @@ class GoldORBStrategy:
                         'breakout_score': breakout_score,
                         'z_score': (c_close - self.range_mean) / self.range_std if self.range_std > 0 else 0
                     }
-                }
+                }, current_stats
             
-        return None
+        return None, current_stats
