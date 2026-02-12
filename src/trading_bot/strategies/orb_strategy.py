@@ -188,6 +188,9 @@ class GoldORBStrategy:
                         is_expansion = True
                 
                 if is_expansion:
+                    # Log expansion for debugging why range is not finalizing
+                    if consolidation_count > 0:
+                        logger.debug(f"ORB Range Expansion at {time}: High={current_high}, Low={current_low}. Resetting count from {consolidation_count}.")
                     consolidation_count = 0
                     consolidation_prices = [row['close']] # Reset stats on expansion? Or keep rolling? 
                     # Logic: New range definition starts, but volatility context is continuous.
