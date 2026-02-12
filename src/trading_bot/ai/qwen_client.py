@@ -1477,7 +1477,7 @@ class QwenClient:
         **核心逻辑：Grid/ORB 提供触发信号 (Trigger)，SMC/Trend 提供位置验证 (Location Validation)**
         
         **1. 信号触发 (Signal Triggers - The "Go" Button)**:
-           - **ORB 突破**: 检查 `breakout_score` (推荐 > 60) 或价格突破开盘区间。
+           - **ORB 突破**: 必须检查 `breakout_score` (必须 > 60) 且 `z_score` (abs > 1.0)。禁止仅凭“价格突破开盘区间”这一单一现象开仓，必须有统计分值支持。
            - **Grid 震荡**: 价格触及布林带轨道或 ATR 极端位置。
            - **前提**: 必须首先具备上述 Grid/ORB 明确信号。
            
