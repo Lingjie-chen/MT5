@@ -1271,13 +1271,13 @@ class DeepSeekClient:
         
         **入场必须同时满足以下条件 (Mandatory)**:
         1. **多周期趋势共振 (Trend Alignment - CRITICAL)**:
-           - **必须检查** `trend_alignment` 字段 (M5 + M15 + H1)。
-           - 只有当 M5, M15, H1 三者趋势方向**完全一致** (All Bullish 或 All Bearish) 时，才允许开仓 (Buy/Sell)。
+           - **必须检查** `trend_alignment` 字段 (M5 + M15)。
+           - 只有当 M5, M15 二者趋势方向**完全一致** (All Bullish 或 All Bearish) 时，才允许开仓 (Buy/Sell)。
            - 如果趋势不一致 (Mixed)，**坚决观望 (WAIT)**。
 
         2. **SMC 精确狙击 (Sniper Entry)**:
            - **关键位验证**: 仅仅价格到达阻力/支撑位**不足以**作为入场理由。必须观察到价格在该区域的**有效反应** (如 Pinbar 拒绝)。
-           - **K线确认 (Candle Confirmation)**: 必须等待 M15 K线收盘确认。如果 K 线实体饱满地穿过关键位，说明支撑/阻力失效，**严禁开仓**。
+           - **K线确认 (Candle Confirmation)**: 必须等待 M5 K线收盘确认。如果 K 线实体饱满地穿过关键位，说明支撑/阻力失效，**严禁开仓**。
 
            - **FVG 回补**: 必须等待价格**完全回补**或**回踩测试有效**后，出现反向 K 线组合才可操作。
            - **下单方式**: 建议使用 Limit 挂单或在明确反转信号出现后立即进场。拒绝随意市价追单。
