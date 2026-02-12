@@ -14,13 +14,14 @@ mt5.copy_rates_from_pos.return_value = None # Default
 
 # Add src to path
 sys.path.append(os.path.abspath("src"))
+sys.path.append(os.path.abspath("src/trading_bot")) # Fix import path for utils
 
-from trading_bot.strategies.orb_strategy import ORBStrategy
+from trading_bot.strategies.orb_strategy import GoldORBStrategy
 from trading_bot.analysis.advanced_analysis import SMCAnalyzer
 
 def test_orb_strategy():
     print("Testing ORBStrategy...")
-    strategy = ORBStrategy(symbol="EURUSD", start_hour=8, end_hour=9, exchange_hour_offset=0)
+    strategy = GoldORBStrategy(symbol="EURUSD", open_hour=8)
     
     # Create Mock M15 Data (Trend/Structure)
     dates = pd.date_range(start="2024-01-01 07:00", periods=20, freq="15min")
