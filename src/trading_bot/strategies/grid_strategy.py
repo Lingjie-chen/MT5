@@ -235,8 +235,16 @@ class KalmanGridStrategy:
             
             orb_result = self.orb_strategy.check_signal(current_price, point=point)
             
-            if orb_result and isinstance(orb_result, dict):
-                s_type = orb_result['signal']
+            # Check return type: (signal_dict, stats_dict)
+            if isinstance(orb_result, tuple):
+                signal_data, stats_data = orb_result
+            else:
+                # Fallback for legacy single return
+                signal_data = orb_result
+                stats_data = None
+            
+            if signal_data and isinstance(signal_data, dict):
+                s_type = signal_data['signal']
                 logger.info(f"ORB Signal Triggered: {s_type.upper()} (Price: {current_price})")
                 
                 # Calculate Lot
@@ -251,7 +259,7 @@ class KalmanGridStrategy:
                     tick_value = sym_info.trade_tick_value if sym_info else 1.0
                     
                     lot = self.calculate_initial_lot(
-                        orb_result['sl_points'], 
+                        signal_data['sl_points'], 
                         self.account_balance, 
                         point_value=point,
                         tick_size=tick_size,
@@ -262,11 +270,11 @@ class KalmanGridStrategy:
                 sl_price = 0.0
                 tp_price = 0.0
                 if s_type == 'buy':
-                    sl_price = current_price - orb_result['sl_dist']
-                    tp_price = current_price + orb_result['tp_dist']
+                    sl_price = current_price - signal_data['sl_dist']
+                    tp_price = current_price + signal_data['tp_dist']
                 else:
-                    sl_price = current_price + orb_result['sl_dist']
-                    tp_price = current_price - orb_result['tp_dist']
+                    sl_price = current_price + signal_data['sl_dist']
+                    tp_price = current_price - signal_data['tp_dist']
                     
                 return {
                     'signal': s_type,
@@ -274,22 +282,25 @@ class KalmanGridStrategy:
                     'sl': sl_price,
                     'tp': tp_price,
                     'reason': 'Gold ORB Breakout',
-                    'stats': orb_result.get('stats') # Pass stats up
+                    'stats': stats_data # Pass stats up
                 }
                 
-            elif orb_result and isinstance(orb_result, str): # Legacy string return (fallback)
-                logger.info(f"ORB Signal Triggered: {orb_result.upper()}")
-                return orb_result
-            elif orb_result: # It's a dict or object but not processed above?
-                 # If we are here, orb_result is truthy but didn't match 'signal' key check above?
-                 # Wait, let's check the logic flow.
-                 # The 'signal' key check was: if 'signal' in orb_result:
-                 # So if orb_result is a dict with 'signal', it goes into first block.
-                 # If it is a string, it goes here.
-                 # If it is a tuple (None, stats), it is truthy if stats is not empty?
-                 # No, tuple (None, stats) is truthy.
-                 # So we need to handle the tuple case specifically.
-                 pass
+            elif signal_data and isinstance(signal_data, str): # Legacy string return (fallback)
+                logger.info(f"ORB Signal Triggered: {signal_data.upper()}")
+                return signal_data
+            
+            # If we have stats but no signal, we can return just stats? 
+            # But get_entry_signal is expected to return signal info or None.
+            # If we return None here, main.py won't get stats for reporting.
+            # But get_entry_signal is usually called to check for entry.
+            # We need a way to pass stats back even if no signal.
+            # Let's return a special dict if stats exist but no signal?
+            elif stats_data:
+                # Return a 'no_signal' dict with stats so main.py can use it
+                 return {
+                    'signal': None,
+                    'stats': stats_data
+                }
 
         return None
 
