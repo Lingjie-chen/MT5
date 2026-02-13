@@ -78,18 +78,29 @@ def test_orb_fixes():
         print(f"   Step 2.1 Failed: Warning not triggered. Last warning: {orb.last_warning_date}")
 
     # 2.2 Now send Full Data (Success)
-    # 00:00, 01:00 (Open), 02:00 (Consolidation)
+    # We need enough candles for consolidation (default 3) + 1 buffer (slicing)
+    # 01:00 (Open)
+    # 02:00 (C1)
+    # 03:00 (C2)
+    # 04:00 (C3) -> Range Finalized here
+    # 05:00 (Buffer)
+    
+    dates = [
+        "2026-02-13 00:00:00",
+        "2026-02-13 01:00:00", # Open
+        "2026-02-13 02:00:00",
+        "2026-02-13 03:00:00",
+        "2026-02-13 04:00:00",
+        "2026-02-13 05:00:00"
+    ]
+    
     df_full = pd.DataFrame({
-        'time': [
-            pd.to_datetime("2026-02-13 00:00:00"),
-            pd.to_datetime("2026-02-13 01:00:00"), # Open Candle
-            pd.to_datetime("2026-02-13 02:00:00")
-        ],
-        'open': [2000, 2000, 2005],
-        'high': [2005, 2010, 2015], # High 2010
-        'low':  [1995, 1990, 2000], # Low 1990
-        'close':[2000, 2005, 2010],
-        'tick_volume': [100, 100, 100]
+        'time': [pd.to_datetime(d) for d in dates],
+        'open': [2000] * 6,
+        'high': [2010] * 6, # High 2010
+        'low':  [1990] * 6, # Low 1990
+        'close':[2005] * 6, # Close inside range
+        'tick_volume': [100] * 6
     })
     
     orb.calculate_orb_levels(df_full)
