@@ -213,8 +213,8 @@ class QwenClient:
         1. **Check ORB**: 是否满足 `Score > 60` AND `Z > 1.0`?
            - YES -> 执行 **Mode A (ORB Breakout)**。
            - NO -> 进入下一步。
-        2. **Check Grid**: 市场是否处于震荡区间 (Range) 且触及边界?
-           - YES -> 执行 **Mode B (Grid Consolidation)**。
+        2. **Check Grid**: 市场是否处于震荡区间 (Range)?
+           - YES -> **立即执行 Mode B (Grid Consolidation)**，输出 `GRID_START`。不要等待触及边界，因为 Grid 策略会自动处理挂单。
            - NO -> **WAIT/HOLD**。
     - **细节**: 基于 SMC 结构提出 **初步** 的建仓价格、止损位 (SMC SL) 和目标价 (SMC TP)。
     - **输出**: 交易提案（Action, Entry, SMC SL, SMC TP）。
