@@ -3250,7 +3250,7 @@ class SymbolTrader:
                             if not dframe.empty: 
                                 dframe['time'] = pd.to_datetime(dframe['time'], unit='s')
                                 if 'tick_volume' in dframe: dframe.rename(columns={'tick_volume': 'volume'}, inplace=True)
-
+                                
                         # 保存市场数据到DB
                         self.db_manager.save_market_data(df, self.symbol, self.tf_name)
                         
