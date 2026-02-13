@@ -61,11 +61,11 @@ class AIBacktester:
         # 初始化AI客户端 - 使用硅基流动API服务，基于ValueCell的模型工厂模式
         ai_clients = initialize_ai_clients()
         
-        self.deepseek_client = ai_clients.get('deepseek')
+        # 仅使用 Qwen 客户端
         self.qwen_client = ai_clients.get('qwen')
         
         # 验证客户端初始化成功
-        if not self.deepseek_client or not self.qwen_client:
+        if not self.qwen_client:
             logger.error("AI客户端初始化失败，使用模拟数据进行回测")
         
         logger.info(f"AIBacktester初始化完成，初始资金: {initial_capital}, 每笔风险: {risk_per_trade}%")
