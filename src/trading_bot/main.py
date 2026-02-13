@@ -545,7 +545,20 @@ class SymbolTrader:
                     "type_time": mt5.ORDER_TIME_GTC,
                     "type_filling": mt5.ORDER_FILLING_IOC,
                 }
-                mt5.order_send(request)
+                
+                result = mt5.order_send(request)
+                if result is None:
+                    logger.error(f"Order Send Failed (None result) for Position #{pos.ticket}")
+                    continue
+                    
+                if result.retcode != mt5.TRADE_RETCODE_DONE:
+                    logger.error(f"Failed to Close Position #{pos.ticket}: {result.comment} ({result.retcode})")
+                    # Try to notify via Telegram if critical failure
+                    try:
+                        self.telegram.notify_error(f"Close Fail #{pos.ticket}", f"{result.comment} ({result.retcode})")
+                    except: pass
+                else:
+                    logger.info(f"Position #{pos.ticket} Closed: {reason}")
 
     def get_dataframe(self, timeframe, count):
         rates = mt5.copy_rates_from_pos(self.symbol, timeframe, 0, count)
