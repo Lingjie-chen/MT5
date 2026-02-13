@@ -29,6 +29,8 @@ class GoldORBStrategy:
         self.long_signal_taken_today = False
         self.short_signal_taken_today = False
         self.last_signal_candle_time = None
+        self.last_warning_date = None
+        self.last_success_date = None
         
         # Stats
         self.range_mean = 0.0
