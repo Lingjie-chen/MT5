@@ -298,7 +298,13 @@ class SymbolTrader:
             smart_sl = llm_decision.get('exit_conditions', {}).get('sl_price', 0)
             
             # Extract Basket TP (Layered Take Profit for the Basket)
-            basket_tp = llm_decision.get('position_management', {}).get('dynamic_basket_tp', 0)
+            # Prioritize 'position_management' -> 'dynamic_basket_tp', fallback to 'grid_config' -> 'basket_tp_usd'
+            pos_mgmt = llm_decision.get('position_management', {})
+            grid_conf = llm_decision.get('grid_config', {})
+            
+            basket_tp = pos_mgmt.get('dynamic_basket_tp', 0)
+            if not basket_tp:
+                basket_tp = grid_conf.get('basket_tp_usd', 0)
             
             # Extract Reasoning for Telegram
             reasoning = llm_decision.get('reasoning', f"SMC Score: {score}")
@@ -312,12 +318,15 @@ class SymbolTrader:
             
             # Update Grid Strategy with Basket Params for Global Management
             # CRITICAL: This must be updated BEFORE execution to ensure the Basket Logic picks it up immediately
-            self.grid_strategy.update_dynamic_params(
-                basket_tp=basket_tp, 
-                basket_tp_long=basket_tp, # Assuming ORB direction dictates primary basket
-                basket_tp_short=basket_tp
-            )
-            logger.info(f"Updated Dynamic Basket TP: ${basket_tp}")
+            if basket_tp > 0:
+                self.grid_strategy.update_dynamic_params(
+                    basket_tp=basket_tp, 
+                    basket_tp_long=basket_tp, # Assuming ORB direction dictates primary basket
+                    basket_tp_short=basket_tp
+                )
+                logger.info(f"Updated Dynamic Basket TP: ${basket_tp}")
+            else:
+                logger.warning("LLM returned 0 or missing Basket TP, keeping existing config.")
 
             # 3. Execute Trade (Millisecond Response)
             lot_size = llm_decision.get('position_size', 0.01)
