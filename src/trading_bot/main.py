@@ -245,8 +245,21 @@ class SymbolTrader:
         2. Get LLM Confirmation (Smart SL & Basket TP)
         3. Execute with Millisecond Response
         """
+        # 0. Regime Filter (Advanced Analysis)
+        df_m15 = self.get_dataframe(self.timeframe, 200)
+        regime_info = self.advanced_analysis.analyze_full(df_m15)
+        
+        if regime_info:
+            regime = regime_info.get('regime', {}).get('regime', 'unknown')
+            confidence = regime_info.get('regime', {}).get('confidence', 0)
+            
+            # ORB works best in Trending or High Volatility
+            if regime == "ranging" and confidence > 0.7:
+                logger.warning(f"ORB Signal Filtered: Market is Ranging (Conf: {confidence})")
+                return
+
         # 1. SMC Validation - Integrated SMC Data Interface
-        df_m15 = self.get_dataframe(self.timeframe, 100)
+        # df_m15 already fetched above
         
         # Calculate Quality Score: Liquidity, Order Flow, Institutional Participation
         is_valid, score, details = self.smc_validator.validate_signal(
