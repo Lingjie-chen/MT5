@@ -1,80 +1,95 @@
 import sys
 import os
 import logging
+import pandas as pd
 import numpy as np
+from datetime import datetime, timedelta
 
 # Add src to path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 src_dir = os.path.join(current_dir, '..', 'src')
 if src_dir not in sys.path: sys.path.append(src_dir)
 
-from trading_bot.analysis.optimization import WOAm, TETA
+# Import Modules
+from trading_bot.analysis.optimization import WOAm
+from trading_bot.analysis.fast_grid_backtest import run_fast_grid_backtest
+from trading_bot.data.mt5_data_processor import MT5DataProcessor
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("OptimizationScript")
 
-def mock_objective_function(params):
+def real_objective_function(params, df):
     """
-    Mock objective function for demonstration.
-    In a real scenario, this would run a backtest with the given parameters.
-    
-    Params:
-    [0]: grid_step_points (100 - 500)
-    [1]: lot_multiplier (1.0 - 2.0)
-    [2]: tp_pips (10 - 100)
+    Real Objective Function using Fast Backtest.
     """
-    grid_step = params[0]
-    lot_mult = params[1]
-    tp_pips = params[2]
-    
-    # Simulate a fitness landscape
-    # Assume optimal is around: Step=250, Mult=1.5, TP=50
-    
-    score = 0
-    score -= abs(grid_step - 250) * 0.5
-    score -= abs(lot_mult - 1.5) * 100
-    score -= abs(tp_pips - 50) * 2
-    
-    # Add some noise
-    noise = np.random.normal(0, 5)
-    
-    return score + 1000 + noise
+    # Run backtest
+    score = run_fast_grid_backtest(df, params)
+    return score
 
 def main():
-    logger.info("Starting Strategy Parameter Optimization using WOAm...")
+    logger.info("Starting REAL Strategy Parameter Optimization...")
     
-    # Define Search Space
+    # 1. Fetch Historical Data
+    processor = MT5DataProcessor()
+    symbol = "GOLD" # Or XAUUSD based on availability
+    
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=30) # Last 30 Days
+    
+    logger.info(f"Fetching {symbol} data from {start_date} to {end_date}...")
+    df = processor.get_historical_data(symbol, None, start_date, end_date) # Default M15
+    
+    if df is None or df.empty:
+        # Fallback for symbol name
+        symbol = "XAUUSD"
+        logger.info(f"Retrying with {symbol}...")
+        df = processor.get_historical_data(symbol, None, start_date, end_date)
+        
+    if df is None or df.empty:
+        logger.error("Failed to fetch data. Aborting.")
+        return
+
+    logger.info(f"Data fetched: {len(df)} candles.")
+    
+    # 2. Define Search Space
     # (Min, Max) for each parameter
     bounds = [
-        (100.0, 500.0), # Grid Step
-        (1.0, 2.0),     # Lot Multiplier
-        (10.0, 100.0)   # TP Pips
+        (100.0, 500.0), # Grid Step (Points)
+        (1.1, 2.0),     # Lot Multiplier
+        (10.0, 100.0)   # Global TP ($ or Points, backtest assumes PnL sum)
     ]
     
-    # Define Discretization Steps (SeInDiSp)
-    # Step size for each parameter
+    # Define Discretization Steps
     steps = [
-        10.0, # Grid step in 10 point increments
-        0.1,  # Multiplier in 0.1 increments
-        5.0   # TP in 5 pip increments
+        10.0, # Grid step
+        0.1,  # Multiplier
+        5.0   # TP
     ]
     
-    # Initialize Optimizer
-    optimizer = WOAm(pop_size=50, power_dist_coeff=20.0)
+    # 3. Initialize Optimizer
+    optimizer = WOAm(pop_size=30, power_dist_coeff=20.0)
     
-    # Run Optimization
-    logger.info(f"Optimizing {len(bounds)} parameters over 50 epochs...")
+    # 4. Run Optimization
+    # Use lambda/partial to pass df
+    logger.info(f"Optimizing parameters over 30 epochs (Population: 30)...")
+    
+    # Wrapper for joblib serialization compatibility
+    # We define it here to capture 'df'
+    def obj_func_wrapper(p):
+        return real_objective_function(p, df)
+    
     best_params, best_score = optimizer.optimize(
-        objective_function=mock_objective_function,
+        objective_function=obj_func_wrapper,
         bounds=bounds,
         steps=steps,
-        epochs=50,
-        n_jobs=4 # Use parallel processing
+        epochs=30,
+        n_jobs=1 # Use 1 job for debugging/simplicity, or higher if stable
     )
     
+    # 5. Output Results
     logger.info("Optimization Complete!")
-    logger.info(f"Best Score: {best_score:.4f}")
+    logger.info(f"Best Score (Net Profit - Drawdown Penalty): {best_score:.2f}")
     logger.info("Best Parameters:")
     logger.info(f"  Grid Step: {best_params[0]:.1f}")
     logger.info(f"  Lot Multiplier: {best_params[1]:.1f}")
@@ -84,6 +99,8 @@ def main():
     print(f"grid_step_points = {int(best_params[0])}")
     print(f"lot_multiplier = {best_params[1]:.1f}")
     print(f"global_tp = {best_params[2]:.1f}")
+    
+    processor.close()
 
 if __name__ == "__main__":
     main()
