@@ -100,7 +100,7 @@ class AIBacktester:
             int: 信号强度 (0-100)
         """
         # 检查AI客户端是否初始化成功
-        if not self.deepseek_client or not self.qwen_client:
+        if not self.qwen_client:
             logger.error("AI客户端未初始化，无法生成交易信号")
             return "none", 50
         
@@ -124,11 +124,11 @@ class AIBacktester:
         }
         
         try:
-            # 使用DeepSeek分析市场结构
-            deepseek_analysis = self.deepseek_client.analyze_market_structure(market_data_input)
+            # 使用Qwen分析市场结构
+            market_analysis = self.qwen_client.analyze_market_structure(market_data_input)
             
-            # 使用Qwen3优化策略
-            optimized_strategy = self.qwen_client.optimize_strategy_logic(deepseek_analysis, market_data_input)
+            # 使用Qwen优化策略
+            optimized_strategy = self.qwen_client.optimize_strategy_logic(market_analysis, market_data_input)
             
             # 解析AI信号
             action = optimized_strategy.get("action", "hold").lower()
