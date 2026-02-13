@@ -212,6 +212,10 @@ class KalmanGridStrategy:
                 # If price is below this level, it might be a resistance (Sell Limit candidate if above current)
                 # If price is above this level, it is a support (Buy Limit candidate if below current)
                 
+                # To ensure we deploy ALL grid levels (batch deployment), we don't strictly filter by current price proximity for execution NOW,
+                # but we filter for Validity (Buy Limit must be < Current, Sell Limit must be > Current).
+                # The user requested "Deploy all at once", which we are doing.
+                
                 if price_level_from_top < current_price:
                     levels_buy.append(price_level_from_top)
                 elif price_level_from_top > current_price:
@@ -221,7 +225,9 @@ class KalmanGridStrategy:
             levels_buy.sort(reverse=True) # Closest to price first
             levels_sell.sort() # Closest to price first
             
-            # Generate Orders
+            # Generate Orders - BATCH DEPLOYMENT
+            # We deploy ALL valid levels found above
+            
             # Buy Limits
             for i, price in enumerate(levels_buy):
                 lot = self.calculate_next_lot(i + 1)
