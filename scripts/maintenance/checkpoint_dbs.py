@@ -180,13 +180,16 @@ class GitSyncManager:
         Syncs to Postgres, Verifies, and THEN Deletes local SQLite files.
         Using DBSyncManager for DB operations.
         """
-        logger.info("\n🧹 Starting Secure Cleanup (Sync -> Verify -> Delete)...")
+        # Only log if there's actually something to do or it's a significant event
+        # logger.info("\n🧹 Starting Secure Cleanup (Sync -> Verify -> Delete)...")
         
         dbs = db_manager.get_dbs()
         if not dbs:
-            logger.info("  (No local DB files found to clean)")
+            # logger.info("  (No local DB files found to clean)")
             return
 
+        logger.info(f"🧹 Starting Secure Cleanup for {len(dbs)} files...")
+        
         for db_file in dbs:
             if not os.path.exists(db_file): continue
             
