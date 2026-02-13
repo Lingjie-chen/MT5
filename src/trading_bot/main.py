@@ -85,12 +85,15 @@ class SymbolTrader:
             return False
         
         # Start File Watcher
-        try:
-            watcher = FileWatcher([src_dir])
-            watcher.start()
-            logger.info("FileWatcher started successfully")
-        except Exception as e:
-            logger.error(f"Failed to start FileWatcher: {e}")
+        if FileWatcher:
+            try:
+                self.watcher = FileWatcher([src_dir]) # Keep reference to prevent GC
+                self.watcher.start()
+                logger.info("FileWatcher started successfully")
+            except Exception as e:
+                logger.error(f"Failed to start FileWatcher: {e}")
+        else:
+             logger.warning("FileWatcher unavailable - Auto-reload disabled")
             
         logger.info(f"Bot Initialized for {self.symbol}")
         return True
