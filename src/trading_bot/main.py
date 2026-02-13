@@ -256,7 +256,18 @@ class SymbolTrader:
             
             # ORB works best in Trending or High Volatility
             if regime == "ranging" and confidence > 0.7:
-                logger.warning(f"ORB Signal Filtered: Market is Ranging (Conf: {confidence})")
+                if time.time() - self.last_orb_filter_time > 60:
+                     logger.warning(f"ORB Signal Filtered: Market is Ranging (Conf: {confidence})")
+                     self.last_orb_filter_time = time.time()
+                
+                # RESET FLAGS so we don't kill ORB for the day just because of a filter
+                # and importantly, so we don't fall through to Grid Logic next tick
+                if orb_signal['signal'] == 'buy':
+                    self.orb_strategy.long_signal_taken_today = False
+                    self.orb_strategy.trades_today_count = max(0, self.orb_strategy.trades_today_count - 1)
+                else:
+                    self.orb_strategy.short_signal_taken_today = False
+                    self.orb_strategy.trades_today_count = max(0, self.orb_strategy.trades_today_count - 1)
                 return
 
         # 1. SMC Validation - Integrated SMC Data Interface
@@ -272,7 +283,17 @@ class SymbolTrader:
         
         # Quality Threshold Filter: Score >= 75
         if score < 75:
-            logger.warning(f"ORB Signal Ignored: SMC Score {score} < 75. Details: {details}")
+            if time.time() - self.last_orb_filter_time > 60:
+                logger.warning(f"ORB Signal Ignored: SMC Score {score} < 75. Details: {details}")
+                self.last_orb_filter_time = time.time()
+            
+            # RESET FLAGS
+            if orb_signal['signal'] == 'buy':
+                self.orb_strategy.long_signal_taken_today = False
+                self.orb_strategy.trades_today_count = max(0, self.orb_strategy.trades_today_count - 1)
+            else:
+                self.orb_strategy.short_signal_taken_today = False
+                self.orb_strategy.trades_today_count = max(0, self.orb_strategy.trades_today_count - 1)
             return
 
         # 2. LLM Integrated Analysis System
