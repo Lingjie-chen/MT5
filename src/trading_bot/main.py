@@ -285,6 +285,9 @@ class SymbolTrader:
             # Extract Basket TP (Layered Take Profit for the Basket)
             basket_tp = llm_decision.get('position_management', {}).get('dynamic_basket_tp', 0)
             
+            # Extract Reasoning for Telegram
+            reasoning = llm_decision.get('reasoning', f"SMC Score: {score}")
+
             # Fallback Logic if LLM returns invalid SL
             if smart_sl == 0:
                 if orb_signal['signal'] == 'buy':
@@ -297,7 +300,7 @@ class SymbolTrader:
             
             logger.info(f"Executing ORB Trade: {orb_signal['signal'].upper()} | Lot: {lot_size} | Smart SL: {smart_sl} | Basket TP: ${basket_tp}")
             
-            # Notify Telegram
+            # Notify Telegram with LLM Reasoning
             self.telegram.notify_trade(
                 self.symbol, 
                 orb_signal['signal'], 
@@ -305,7 +308,7 @@ class SymbolTrader:
                 smart_sl, 
                 basket_tp, 
                 lot_size, 
-                reason=f"ORB Breakout (SMC: {score})"
+                reason=reasoning
             )
             
             self.execute_trade(
