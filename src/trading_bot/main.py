@@ -395,6 +395,10 @@ class SymbolTrader:
         order_type = mt5.ORDER_TYPE_BUY if signal == 'buy' else mt5.ORDER_TYPE_SELL
         price = mt5.symbol_info_tick(self.symbol).ask if signal == 'buy' else mt5.symbol_info_tick(self.symbol).bid
         
+    def place_limit_order(self, order_dict):
+        """
+        Execute a Pending Limit Order for Grid Strategy
+        """
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": self.symbol,
