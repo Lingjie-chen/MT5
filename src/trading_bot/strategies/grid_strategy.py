@@ -137,26 +137,43 @@ class KalmanGridStrategy:
         true_range = np.max(ranges, axis=1)
         self.atr_value = true_range.rolling(14).mean().iloc[-1]
         
-        # 4. Detect Ranging State (Volatility Contraction)
-        # BB Bandwidth
+        # 4. Detect Ranging State (Volatility Contraction & Market Profile)
+        # Enhanced detection logic for LLM input preparation
+        
+        # A. BB Bandwidth Squeeze
         bb_width = (self.bb_upper - self.bb_lower) / self.ma_value
-        # If BB Width is low, market is squeezing/ranging
-        if bb_width < 0.002: # Threshold depends on asset
-            self.is_ranging = True
-        else:
-            # Check ADX or simple price action
-            # Simple PA: Price bouncing between recent High/Low
-            self.swing_high = df['high'].iloc[-50:].max()
-            self.swing_low = df['low'].iloc[-50:].min()
-            
-            # If price is within the middle 50% of the recent range for a while
-            range_mid_high = self.swing_low + 0.75 * (self.swing_high - self.swing_low)
-            range_mid_low = self.swing_low + 0.25 * (self.swing_high - self.swing_low)
-            
-            if range_mid_low <= current_price <= range_mid_high:
-                 self.is_ranging = True
-            else:
-                 self.is_ranging = False
+        is_bb_squeeze = bb_width < 0.002
+        
+        # B. Price Action Range
+        self.swing_high = df['high'].iloc[-50:].max()
+        self.swing_low = df['low'].iloc[-50:].min()
+        
+        range_mid_high = self.swing_low + 0.75 * (self.swing_high - self.swing_low)
+        range_mid_low = self.swing_low + 0.25 * (self.swing_high - self.swing_low)
+        is_price_in_range = range_mid_low <= current_price <= range_mid_high
+        
+        # C. Volume Profile (Simple)
+        # Check if recent volume is below average (consolidation often has lower volume)
+        avg_volume = df['tick_volume'].rolling(20).mean().iloc[-1]
+        current_vol = df['tick_volume'].iloc[-1]
+        is_low_volume = current_vol < avg_volume
+        
+        # Combine Signals
+        # We consider it ranging if BB is squeezing OR price is stuck in middle 50%
+        # The LLM will do the final confirmation
+        self.is_ranging = is_bb_squeeze or is_price_in_range
+        
+        # Store detailed state for LLM
+        self.market_state_details = {
+            "bb_width": bb_width,
+            "is_bb_squeeze": is_bb_squeeze,
+            "swing_high": self.swing_high,
+            "swing_low": self.swing_low,
+            "is_price_in_range": is_price_in_range,
+            "atr": self.atr_value,
+            "is_low_volume": is_low_volume,
+            "trend_ma": "bullish" if current_price > self.ma_value else "bearish"
+        }
 
     def generate_fibonacci_grid(self, current_price, trend_direction, point=0.01):
         """
