@@ -89,6 +89,61 @@ class SymbolTrader:
         if not mt5.initialize():
             logger.error("MT5 Initialize Failed")
             return False
+
+        # --- Auto Login Logic ---
+        # Try to login to the specific account based on account_index
+        acc_id = os.getenv(f"MT5_ACCOUNT_{self.account_index}")
+        acc_pass = os.getenv(f"MT5_PASSWORD_{self.account_index}")
+        acc_server = os.getenv(f"MT5_SERVER_{self.account_index}")
+        
+        if acc_id and acc_pass and acc_server:
+            try:
+                authorized = mt5.login(int(acc_id), password=acc_pass, server=acc_server)
+                if authorized:
+                    logger.info(f"Automatically logged into Account {self.account_index} ({acc_id}) on {acc_server}")
+                else:
+                    logger.error(f"Failed to login to Account {self.account_index} ({acc_id}): {mt5.last_error()}")
+                    # Don't return False here, maybe user is already logged in manually to another account
+                    # But warn them
+            except Exception as e:
+                logger.error(f"Login exception: {e}")
+        else:
+            logger.info(f"No credentials found for Account {self.account_index}, using current terminal login.")
+
+        # Check Symbol Availability & Auto-Switch
+        # Some brokers use GOLD, some XAUUSD, some XAUUSD.m
+        # We try to find the best match if the default fails
+        symbol_info = mt5.symbol_info(self.symbol)
+        if symbol_info is None:
+            logger.warning(f"Symbol {self.symbol} not found. Attempting auto-discovery for Gold...")
+            # Try common gold variants
+            candidates = ["GOLD", "XAUUSD", "XAUUSD.m", "Gold", "XAUUSD_i"]
+            found = False
+            for cand in candidates:
+                if mt5.symbol_info(cand):
+                    self.symbol = cand
+                    logger.info(f"Auto-switched to available symbol: {self.symbol}")
+                    found = True
+                    break
+            
+            if not found:
+                 # Try searching all symbols
+                 symbols = mt5.symbols_get()
+                 for s in symbols:
+                     if "XAU" in s.name.upper() or "GOLD" in s.name.upper():
+                         self.symbol = s.name
+                         logger.info(f"Auto-discovered Gold symbol: {self.symbol}")
+                         found = True
+                         break
+            
+            if not found:
+                logger.error("Critical: Could not find any Gold/XAU trading pair.")
+                return False
+                
+        # Enable Market Watch for the symbol
+        if not mt5.symbol_select(self.symbol, True):
+             logger.error(f"Failed to select symbol {self.symbol} in Market Watch")
+             return False
         
         # Start File Watcher
         if FileWatcher:
@@ -331,6 +386,5 @@ class SymbolTrader:
         return df
 
 if __name__ == "__main__":
-    bot = SymbolTrader("GOLD")
-    if bot.initialize():
-        bot.run()
+    # Support command line args for symbol and account index
+    # Usage: 
