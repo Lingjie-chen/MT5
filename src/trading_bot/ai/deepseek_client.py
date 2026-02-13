@@ -748,7 +748,7 @@ class DeepSeekClient:
         full_prompt = f"{core_strategy}\n{martingale_config}\n{market_spec}\n{common_rules}\n{analysis_framework}"
         return full_prompt
 
-    def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "Qwen/Qwen3-VL-235B-A22B-Thinking"):
+    def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "deepseek-ai/DeepSeek-V3.1-Terminus"):
         """
         初始化DeepSeek客户端
         
