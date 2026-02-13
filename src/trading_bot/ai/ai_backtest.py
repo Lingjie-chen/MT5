@@ -65,7 +65,7 @@ class AIBacktester:
         self.qwen_client = ai_clients.get('qwen')
         
         # 验证客户端初始化成功
-        if not self.qwen_client:
+        if not self.deepseek_client or not self.qwen_client:
             logger.error("AI客户端初始化失败，使用模拟数据进行回测")
         
         logger.info(f"AIBacktester初始化完成，初始资金: {initial_capital}, 每笔风险: {risk_per_trade}%")
