@@ -306,8 +306,8 @@ class SymbolTrader:
             if not basket_tp:
                 basket_tp = grid_conf.get('basket_tp_usd', 0)
             
-            # Extract Reasoning for Telegram
-            reasoning = llm_decision.get('reasoning', f"SMC Score: {score}")
+            # Extract Reason for Telegram
+            reason = llm_decision.get('reason', f"SMC Score: {score}")
 
             # Fallback Logic if LLM returns invalid SL
             if smart_sl == 0:
@@ -341,7 +341,7 @@ class SymbolTrader:
                 smart_sl, 
                 basket_tp, 
                 lot_size, 
-                reason=reasoning
+                reason=reason
             )
             
             # Execute with Smart SL
