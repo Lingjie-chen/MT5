@@ -412,6 +412,21 @@ class SymbolTrader:
             reason = llm_decision.get('reason', 'Market conditions not optimal')
             trend = llm_decision.get('direction', 'neutral')
             
+            # Extract and Apply Basket TP from Grid Analysis as well
+            pos_mgmt = llm_decision.get('position_management', {})
+            grid_conf = llm_decision.get('grid_config', {})
+            basket_tp = pos_mgmt.get('dynamic_basket_tp', 0)
+            if not basket_tp:
+                basket_tp = grid_conf.get('basket_tp_usd', 0)
+                
+            if basket_tp > 0:
+                self.grid_strategy.update_dynamic_params(
+                    basket_tp=basket_tp,
+                    basket_tp_long=basket_tp,
+                    basket_tp_short=basket_tp
+                )
+                logger.info(f"LLM Grid Analysis: Updated Basket TP to ${basket_tp}")
+            
             # Send Analysis to Telegram - ONLY if Action is DEPLOY/EXECUTE
             # context_summary = f"Ranging:{grid_context.get('is_ranging')} | Vol:{grid_context.get('is_low_volume')} | Trend:{trend}"
             # self.telegram.notify_llm_analysis(self.symbol, "GRID_DEPLOYMENT", action, reason, context_summary)
