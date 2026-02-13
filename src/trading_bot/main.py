@@ -31,8 +31,17 @@ try:
     from position_engine.mt5_adapter import MT5RiskManager
     from utils.file_watcher import FileWatcher # Restore FileWatcher
 except ImportError as e:
-    print(f"Critical Import Error: {e}")
-    sys.exit(1)
+    # Try to adjust path if utils is not found
+    try:
+        sys.path.append(os.path.join(src_dir, 'utils'))
+        from file_watcher import FileWatcher
+    except ImportError:
+        print("Warning: FileWatcher not found, auto-reload disabled.")
+        FileWatcher = None
+    
+    if "FileWatcher" not in str(e):
+        print(f"Critical Import Error: {e}")
+        sys.exit(1)
 
 # Logging
 logging.basicConfig(
