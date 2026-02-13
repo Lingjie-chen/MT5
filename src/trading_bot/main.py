@@ -79,6 +79,7 @@ class SymbolTrader:
         self.last_analysis_time = 0
         self.current_strategy_mode = "ORB_MONITOR" # ORB_MONITOR, GRID_RANGING
         self.last_grid_update = 0
+        self.watcher = None # Initialize watcher attribute
         
         # 4. Data Buffers
         self.tick_buffer = []
