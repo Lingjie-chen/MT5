@@ -291,7 +291,7 @@ class QwenClient:
     - **综合研判**: 技术突破+DeFi锁仓量上升+监管利好传闻。
     - **策略模式 (Dual-Mode Strategy)**: **根据市场状态灵活切换 ORB 突破与 Grid 震荡策略**。
         1. **Mode A: ORB Breakout (趋势突破)**:
-           - **适用场景**: `grid_strategy` 显示 `ORB Breakout Score > 60` 且 `Z-Score` 绝对值 > 1.0。严禁仅凭趋势分析而无统计分值支持时使用此模式。
+           - **适用场景**: `grid_strategy` 显示 `ORB Breakout Score > 60` 且 `Z-Score` 绝对值 > 1.0 (正数做多/负数做空)。严禁仅凭趋势分析而无统计分值支持时使用此模式。
            - **Action**: 'buy' 或 'sell' (顺势突破)。
            - **条件**: 必须有明确的 ORB 突破信号且与 M15 趋势一致。
         2. **Mode B: Grid Consolidation (震荡网格)**:
@@ -389,7 +389,7 @@ class QwenClient:
            - **Mandate**: **必须使用基于斐波那契回调位 (Fibonacci Levels: 0.382, 0.5, 0.618) 的 Limit 挂单**，禁止在非关键位追单。
            - **条件**: 必须确认市场处于震荡区间，且盈亏比合理。
     - **决策优先级 (Decision Logic)**: 
-        1. **Check ORB**: 是否满足 `Score > 60` AND `Z > 1.0`?
+        1. **Check ORB**: 是否满足 `Score > 60` AND (`Z > 1.0` OR `Z < -1.0`)?
            - YES -> 执行 **Mode A (ORB Breakout)**。
            - NO -> 进入下一步。
         2. **Check Grid**: 市场是否处于震荡区间 (Range)?
