@@ -443,7 +443,7 @@ class SymbolTrader:
                     logger.info(f"LLM Confirmed Grid Deployment ({len(orders)} orders, {trend}). Executing...")
                     
                     # Notify Telegram
-                    self.telegram.notify_grid_deployment(self.symbol, len(orders), trend, current_price)
+                    self.telegram.notify_grid_deployment(self.symbol, len(orders), trend, current_price, basket_tp=basket_tp)
                     
                     # Safety: Cancel old grid orders before placing new ones
                     logger.info("Cancelling existing Pending Orders before deploying new Grid...")
