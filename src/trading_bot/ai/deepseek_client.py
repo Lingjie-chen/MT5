@@ -774,12 +774,12 @@ class DeepSeekClient:
         # 加载环境变量中的 EURUSD 配置
         eurusd_key = os.getenv("EURUSD_API_KEY", api_key)
         eurusd_url = os.getenv("EURUSD_API_URL", "https://api.siliconflow.cn/v1")
-        eurusd_model = os.getenv("EURUSD_MODEL", "Qwen/Qwen3-VL-235B-A22B-Thinking")
+        eurusd_model = os.getenv("EURUSD_MODEL", "deepseek-ai/DeepSeek-V3.1-Terminus")
         
         # 加载环境变量中的 ETHUSD 配置
         ethusd_key = os.getenv("ETHUSD_API_KEY", api_key)
         ethusd_url = os.getenv("ETHUSD_API_URL", "https://api.siliconflow.cn/v1")
-        ethusd_model = os.getenv("ETHUSD_MODEL", "Qwen/Qwen3-VL-235B-A22B-Thinking")
+        ethusd_model = os.getenv("ETHUSD_MODEL", "deepseek-ai/DeepSeek-V3.1-Terminus")
         
         # 默认配置
         default_config = {
