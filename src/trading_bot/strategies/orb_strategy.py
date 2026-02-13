@@ -78,33 +78,33 @@ class GoldORBStrategy:
             self.range_mean = mu
             self.range_std = sigma
 
-    def calculate_orb_levels(self, df_h1, point=0.01):
+    def calculate_orb_levels(self, df_m15, point=0.01):
         """
-        Calculate ORB levels based on H1 data (Standard logic)
+        Calculate ORB levels based on M15 data
         """
-        if df_h1 is None or len(df_h1) < 1:
+        if df_m15 is None or len(df_m15) < 1:
             return None, None, False
             
-        self.last_h1_df = df_h1
+        self.last_h1_df = df_m15 # Keep name for compatibility but it's M15
 
-        if 'time' in df_h1.columns:
-            time_col = df_h1['time']
+        if 'time' in df_m15.columns:
+            time_col = df_m15['time']
             if not isinstance(time_col.dtype, np.dtype) or str(time_col.dtype) != 'datetime64[ns]':
                 try:
                     if np.issubdtype(time_col.dtype, np.integer):
-                        df_h1['time'] = pd.to_datetime(df_h1['time'], unit='s')
+                        df_m15['time'] = pd.to_datetime(df_m15['time'], unit='s')
                     else:
-                        df_h1['time'] = pd.to_datetime(df_h1['time'])
+                        df_m15['time'] = pd.to_datetime(df_m15['time'])
                 except Exception:
-                    df_h1['time'] = pd.to_datetime(df_h1['time'], errors='coerce')
-            df_h1 = df_h1.set_index('time')
-        elif not isinstance(df_h1.index, pd.DatetimeIndex):
-            df_h1.index = pd.to_datetime(df_h1.index, errors='coerce')
+                    df_m15['time'] = pd.to_datetime(df_m15['time'], errors='coerce')
+            df_m15 = df_m15.set_index('time')
+        elif not isinstance(df_m15.index, pd.DatetimeIndex):
+            df_m15.index = pd.to_datetime(df_m15.index, errors='coerce')
 
         # Use Completed Candles Only
-        completed_df = df_h1
-        if len(df_h1) > 1:
-            completed_df = df_h1.iloc[:-1]
+        completed_df = df_m15
+        if len(df_m15) > 1:
+            completed_df = df_m15.iloc[:-1]
         
         if len(completed_df) < 1:
              return None, None, False
@@ -121,90 +121,57 @@ class GoldORBStrategy:
             self.last_signal_candle_time = None
         
         today_data = completed_df[completed_df.index.date == today]
-        open_candle = today_data[today_data.index.hour == self.open_hour]
         
-        if open_candle.empty:
+        # Find Open Candle (Based on Hour)
+        # For M15, we need the first M15 candle of that hour (e.g. 01:00)
+        # Or should we consider the whole hour range? Usually ORB is defined by the first hour range.
+        # If "based on 15 min", it usually means the "Opening Range" is the first 15 mins (or N candles of 15m).
+        # Let's assume standard "Open Range" is defined by the FIRST N candles of the session.
+        
+        # Logic: Find the candle at self.open_hour:00
+        # Then take 'consolidation_candles' starting from there.
+        
+        target_time = dtime(self.open_hour, 0)
+        start_candle = today_data[today_data.index.time == target_time]
+        
+        if start_candle.empty:
             if self.last_warning_date != today:
-                logger.warning(f"ORB Open Candle not found for {today} (Hour {self.open_hour}). Data range: {completed_df.index[0]} to {completed_df.index[-1]}")
+                logger.warning(f"ORB Open M15 Candle not found for {today} (Time {target_time}).")
                 self.last_warning_date = today 
             self.final_range_high = None
             self.final_range_low = None
             self.is_range_final = False
             return None, None, False
 
-        def get_effective_range(row):
-            c_high = row['high']
-            c_low = row['low']
-            c_open = row['open']
-            c_close = row['close']
-            c_body_high = max(c_open, c_close)
-            c_body_low = min(c_open, c_close)
-            
-            limit = 500 * point 
-            eff_high = c_high
-            eff_low = c_low
-            
-            if (c_high - c_body_high) > limit:
-                eff_high = c_body_high
-            if (c_body_low - c_low) > limit:
-                eff_low = c_body_low
-            return eff_high, eff_low, c_body_high, c_body_low
-
-        open_row = open_candle.iloc[0]
-        initial_high, initial_low, _, _ = get_effective_range(open_row)
+        # Get the sequence of consolidation candles
+        start_idx = today_data.index.get_loc(start_candle.index[0])
+        end_idx = start_idx + self.consolidation_candles
         
-        subsequent_candles = today_data[today_data.index > open_candle.index[0]]
-        
-        current_high = initial_high
-        current_low = initial_low
-        current_body_high = max(open_row['open'], open_row['close']) 
-        current_body_low = min(open_row['open'], open_row['close'])
-        
-        consolidation_count = 0
-        is_final = False
-        consolidation_prices = [open_row['close']]
-        
-        for time_idx, row in subsequent_candles.iterrows():
-            c_high, c_low, c_body_high, c_body_low = get_effective_range(row)
+        if end_idx > len(today_data):
+            # Not enough candles yet to form the range
+            self.is_range_final = False
+            return None, None, False
             
-            if c_high <= current_high and c_low >= current_low:
-                consolidation_count += 1
-                consolidation_prices.append(row['close'])
-            else:
-                is_expansion = False
-                if c_high > current_high:
-                    if c_body_high > current_body_high:
-                        current_high = c_high
-                        current_body_high = c_body_high
-                        is_expansion = True
-                if c_low < current_low:
-                    if c_body_low < current_body_low:
-                        current_low = c_low
-                        current_body_low = c_body_low
-                        is_expansion = True
-                
-                if is_expansion:
-                    consolidation_count = 0
-                    consolidation_prices = [row['close']] 
-                else:
-                    consolidation_prices.append(row['close'])
-            
-            if consolidation_count >= self.consolidation_candles:
-                is_final = True
-                break
+        consolidation_range = today_data.iloc[start_idx:end_idx]
+        
+        # Calculate Range from these M15 candles
+        current_high = consolidation_range['high'].max()
+        current_low = consolidation_range['low'].min()
+        
+        # Effective Range Logic (Optional: Filter wicks)
+        # For now, stick to High/Low as standard ORB
         
         self.final_range_high = current_high
         self.final_range_low = current_low
-        self.is_range_final = is_final
-        self.current_consolidation_count = consolidation_count
+        self.is_range_final = True
+        self.current_consolidation_count = len(consolidation_range)
         
-        if len(consolidation_prices) >= 2:
-            stats_df = pd.DataFrame({'close': consolidation_prices})
-            self.calculate_range_statistics(stats_df)
+        # Calculate Stats
+        self.calculate_range_statistics(consolidation_range)
             
-        if is_final and self.last_success_date != today:
+        if self.is_range_final and self.last_success_date != today:
             self.last_success_date = today
-            logger.info(f"ORB Range Finalized: High={self.final_range_high}, Low={self.final_range_low}, Consolidation Count={consolidation_count}")
+            logger.info(f"ORB (M15) Range Finalized: High={self.final_range_high}, Low={self.final_range_low} (Time: {start_candle.index[0]} + {self.consolidation_candles} candles)")
         
         return self.final_range_high, self.final_range_low, self.is_range_final
 
