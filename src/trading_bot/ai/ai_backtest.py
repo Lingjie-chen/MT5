@@ -59,9 +59,10 @@ class AIBacktester:
         self.data_processor = MT5DataProcessor()
         
         # 初始化AI客户端 - 使用硅基流动API服务，基于ValueCell的模型工厂模式
-        # 仅初始化 Qwen 客户端，避免初始化不需要的 DeepSeek 客户端
-        self.ai_factory = AIClientFactory()
-        self.qwen_client = self.ai_factory.create_client('qwen')
+        ai_clients = initialize_ai_clients()
+        
+        self.deepseek_client = ai_clients.get('deepseek')
+        self.qwen_client = ai_clients.get('qwen')
         
         # 验证客户端初始化成功
         if not self.qwen_client:
