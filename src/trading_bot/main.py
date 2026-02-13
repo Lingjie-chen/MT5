@@ -111,36 +111,38 @@ class SymbolTrader:
             logger.info(f"No credentials found for Account {self.account_index}, using current terminal login.")
 
         # Check Symbol Availability & Auto-Switch
-        # Some brokers use GOLD, some XAUUSD, some XAUUSD.m
-        # We try to find the best match if the default fails
-        symbol_info = mt5.symbol_info(self.symbol)
-        if symbol_info is None:
-            logger.warning(f"Symbol {self.symbol} not found. Attempting auto-discovery for Gold...")
-            # Try common gold variants
-            candidates = ["GOLD", "XAUUSD", "XAUUSD.m", "Gold", "XAUUSD_i"]
-            found = False
-            for cand in candidates:
-                if mt5.symbol_info(cand):
-                    self.symbol = cand
-                    logger.info(f"Auto-switched to available symbol: {self.symbol}")
-                    found = True
-                    break
+         # Some brokers use GOLD, some XAUUSD, some XAUUSD.m
+         # We try to find the best match if the default fails
+         symbol_info = mt5.symbol_info(self.symbol)
+         if symbol_info is None:
+             logger.warning(f"Symbol {self.symbol} not found. Attempting auto-discovery...")
+             
+             # 1. Try common suffixes
+             suffixes = [".m", ".pro", "_i", ".c", ".ecn"]
+             found = False
+             for suffix in suffixes:
+                 cand = f"{self.symbol}{suffix}"
+                 if mt5.symbol_info(cand):
+                     self.symbol = cand
+                     logger.info(f"Auto-switched to available symbol: {self.symbol}")
+                     found = True
+                     break
             
-            if not found:
-                 # Try searching all symbols
-                 symbols = mt5.symbols_get()
-                 for s in symbols:
-                     if "XAU" in s.name.upper() or "GOLD" in s.name.upper():
-                         self.symbol = s.name
-                         logger.info(f"Auto-discovered Gold symbol: {self.symbol}")
+             # 2. If still not found, and it looks like Gold, try Gold variants
+             if not found and self.symbol.upper() in ["GOLD", "XAUUSD"]:
+                 candidates = ["GOLD", "XAUUSD", "XAUUSD.m", "Gold", "XAUUSD_i"]
+                 for cand in candidates:
+                     if mt5.symbol_info(cand):
+                         self.symbol = cand
+                         logger.info(f"Auto-switched to available Gold symbol: {self.symbol}")
                          found = True
                          break
-            
-            if not found:
-                logger.error("Critical: Could not find any Gold/XAU trading pair.")
-                return False
-                
-        # Enable Market Watch for the symbol
+             
+             if not found:
+                 logger.error(f"Critical: Could not find symbol {self.symbol} or variants.")
+                 return False
+                 
+         # Enable Market Watch for the symbol
         if not mt5.symbol_select(self.symbol, True):
              logger.error(f"Failed to select symbol {self.symbol} in Market Watch")
              return False
