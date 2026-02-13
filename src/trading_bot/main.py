@@ -395,10 +395,6 @@ class SymbolTrader:
         order_type = mt5.ORDER_TYPE_BUY if signal == 'buy' else mt5.ORDER_TYPE_SELL
         price = mt5.symbol_info_tick(self.symbol).ask if signal == 'buy' else mt5.symbol_info_tick(self.symbol).bid
         
-    def place_limit_order(self, order_dict):
-        """
-        Execute a Pending Limit Order for Grid Strategy
-        """
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": self.symbol,
@@ -419,6 +415,31 @@ class SymbolTrader:
             logger.error(f"Trade Failed: {result.comment}")
         else:
             logger.info(f"Trade Executed: {result.order}")
+
+    def place_limit_order(self, order_dict):
+        """
+        Execute a Pending Limit Order for Grid Strategy
+        """
+        request = {
+            "action": mt5.TRADE_ACTION_PENDING,
+            "symbol": self.symbol,
+            "volume": float(order_dict.get('volume', 0.01)),
+            "type": mt5.ORDER_TYPE_BUY_LIMIT if order_dict['type'] == 'buy_limit' else mt5.ORDER_TYPE_SELL_LIMIT,
+            "price": float(order_dict['price']),
+            "sl": float(order_dict.get('sl', 0)),
+            "tp": float(order_dict.get('tp', 0)),
+            "deviation": 20,
+            "magic": self.magic_number,
+            "comment": order_dict.get('comment', 'Grid Order'),
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": mt5.ORDER_FILLING_RETURN,
+        }
+        
+        result = mt5.order_send(request)
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            logger.error(f"Grid Order Failed: {result.comment} ({result.retcode}) - Price: {order_dict['price']}")
+        else:
+            logger.info(f"Grid Order Placed: {order_dict['type']} @ {order_dict['price']} | Ticket: {result.order}")
 
     def cancel_all_pending(self):
         """
@@ -441,26 +462,6 @@ class SymbolTrader:
                         logger.warning(f"Failed to cancel Order #{order.ticket}: {result.comment}")
         else:
             logger.info("No pending orders to cancel.")
-        request = {
-            "action": mt5.TRADE_ACTION_PENDING,
-            "symbol": self.symbol,
-            "volume": float(order_dict.get('volume', 0.01)),
-            "type": mt5.ORDER_TYPE_BUY_LIMIT if order_dict['type'] == 'buy_limit' else mt5.ORDER_TYPE_SELL_LIMIT,
-            "price": float(order_dict['price']),
-            "sl": float(order_dict.get('sl', 0)),
-            "tp": float(order_dict.get('tp', 0)),
-            "deviation": 20,
-            "magic": self.magic_number,
-            "comment": order_dict.get('comment', 'Grid Order'),
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_RETURN,
-        }
-        
-        result = mt5.order_send(request)
-        if result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(f"Grid Order Failed: {result.comment} ({result.retcode}) - Price: {order_dict['price']}")
-        else:
-            logger.info(f"Grid Order Placed: {order_dict['type']} @ {order_dict['price']} | Ticket: {result.order}")
 
     def close_positions(self, positions, type_filter, reason):
         for pos in positions:
