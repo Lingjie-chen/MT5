@@ -353,6 +353,22 @@ class SymbolTrader:
         """
         Deploy Fibonacci Grid if in Ranging Mode with LLM Confirmation
         """
+        # 0. Regime Filter (Advanced Analysis)
+        df_m15 = self.get_dataframe(self.timeframe, 200)
+        regime_info = self.advanced_analysis.analyze_full(df_m15)
+        
+        if regime_info:
+            regime = regime_info.get('regime', {}).get('regime', 'unknown')
+            confidence = regime_info.get('regime', {}).get('confidence', 0)
+            
+            # Grid works best in Ranging. Avoid Strong Trends unless pulling back.
+            if regime == "high_volatility" and confidence > 0.8:
+                logger.info(f"Grid Deployment Skipped: Market is High Volatility (Conf: {confidence})")
+                return
+            if regime == "trending" and confidence > 0.85:
+                logger.info(f"Grid Deployment Skipped: Market is Strong Trending (Conf: {confidence})")
+                return
+
         # 1. Prepare Market State Context
         grid_context = getattr(self.grid_strategy, 'market_state_details', {})
         if not grid_context:
