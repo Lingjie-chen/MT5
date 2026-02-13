@@ -235,9 +235,10 @@ class GoldORBStrategy:
             stats_df = pd.DataFrame({'close': consolidation_prices})
             self.calculate_range_statistics(stats_df)
             
-        if is_final and self.last_processed_time != today:
-             self.last_processed_time = today
-             logger.info(f"ORB Range Finalized: High={self.final_range_high}, Low={self.final_range_low}, Mean={self.range_mean:.2f}, Std={self.range_std:.2f}")
+        # Log only if finalized for the first time today
+        if is_final and self.last_success_date != today:
+            self.last_success_date = today
+            logger.info(f"ORB Range Finalized: High={self.final_range_high}, Low={self.final_range_low}, Consolidation Count={consolidation_count}")
         elif not is_final:
              # Log periodically or just debug
              pass
