@@ -358,6 +358,13 @@ class SymbolTrader:
             
             logger.info(f"Executing ORB Trade: {orb_signal['signal'].upper()} | Lot: {lot_size} | Smart SL: {smart_sl} | Basket TP: ${basket_tp}")
             
+            # --- FORCE STOP GRID STRATEGY ---
+            if self.current_strategy_mode == "GRID_RANGING" or self.grid_strategy.is_ranging:
+                logger.warning("ORB Breakout Confirmed: STOPPING Grid Strategy & Cancelling Pending Orders.")
+                self.current_strategy_mode = "ORB_BREAKOUT" # Switch mode
+                self.grid_strategy.is_ranging = False # Disable ranging flag
+                self.cancel_all_pending() # Cancel all grid limit orders immediately
+            
             # Notify Telegram with LLM Reasoning
             self.telegram.notify_trade(
                 self.symbol, 
