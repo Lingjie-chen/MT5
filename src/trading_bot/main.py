@@ -58,7 +58,7 @@ logger = logging.getLogger("TradingBot")
 load_dotenv()
 
 class SymbolTrader:
-    def __init__(self, symbol="XAUUSD", timeframe=mt5.TIMEFRAME_M15):
+    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M15):
         self.symbol = symbol
         self.timeframe = timeframe
         self.magic_number = 888888
@@ -330,6 +330,6 @@ class SymbolTrader:
         return df
 
 if __name__ == "__main__":
-    bot = SymbolTrader("XAUUSD")
+    bot = SymbolTrader("GOLD")
     if bot.initialize():
         bot.run()
