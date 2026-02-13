@@ -681,7 +681,7 @@ class SymbolTrader:
                             "price": float(price),
                             "deviation": 100, # Increased deviation for closing
                             "magic": self.magic_number,
-                            "comment": str(reason)[:31], # Truncate to avoid length errors
+                            "comment": "Basket Close", # Force simple comment to avoid -2 Invalid Argument
                             "type_time": mt5.ORDER_TIME_GTC,
                             "type_filling": f_mode,
                         }
