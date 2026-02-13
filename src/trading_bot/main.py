@@ -568,10 +568,25 @@ class SymbolTrader:
             "magic": self.magic_number,
             "comment": comment,
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_filling": mt5.ORDER_FILLING_FOK, # Default fallback
         }
         
+        # Determine correct filling mode dynamically
+        symbol_info = mt5.symbol_info(self.symbol)
+        if symbol_info:
+             if symbol_info.filling_mode & 1: # FOK
+                 request['type_filling'] = mt5.ORDER_FILLING_FOK
+             elif symbol_info.filling_mode & 2: # IOC
+                 request['type_filling'] = mt5.ORDER_FILLING_IOC
+        
         result = mt5.order_send(request)
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+             # Retry with RETURN if FOK/IOC failed
+             if result.retcode == 10030:
+                 logger.warning(f"Filling mode failed, retrying with RETURN...")
+                 request['type_filling'] = mt5.ORDER_FILLING_RETURN
+                 result = mt5.order_send(request)
+
         if result.retcode != mt5.TRADE_RETCODE_DONE:
             logger.error(f"Trade Failed: {result.comment} ({result.retcode})")
             self.telegram.notify_error(f"Trade Execution ({signal})", f"{result.comment} ({result.retcode})")
