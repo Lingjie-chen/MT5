@@ -300,7 +300,7 @@ class QwenClient:
            - **Mandate**: **必须使用基于斐波那契回调位 (Fibonacci Levels: 0.382, 0.5, 0.618) 的 Limit 挂单**，禁止在非关键位追单。
            - **条件**: 必须确认市场处于震荡区间，且盈亏比合理。
     - **决策优先级 (Decision Logic)**: 
-        1. **Check ORB**: 是否满足 `Score > 60` AND `Z > 1.0`?
+        1. **Check ORB**: 是否满足 `Score > 60` AND (`Z > 1.0` OR `Z < -1.0`)?
            - YES -> 执行 **Mode A (ORB Breakout)**。
            - NO -> 进入下一步。
         2. **Check Grid**: 市场是否处于震荡区间 (Range)?
