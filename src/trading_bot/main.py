@@ -310,14 +310,14 @@ class SymbolTrader:
                 else:
                     smart_sl = orb_signal['price'] + orb_signal['sl_dist']
             
-            # Notify Telegram about Analysis - ONLY if Trade is Executed
-            # self.telegram.notify_llm_analysis(
-            #     self.symbol, 
-            #     "ORB_OPTIMIZATION", 
-            #     "EXECUTE", 
-            #     reasoning, 
-            #     f"SMC:{score} | SL:{smart_sl} | BasketTP:{basket_tp}"
-            # )
+            # Update Grid Strategy with Basket Params for Global Management
+            # CRITICAL: This must be updated BEFORE execution to ensure the Basket Logic picks it up immediately
+            self.grid_strategy.update_dynamic_params(
+                basket_tp=basket_tp, 
+                basket_tp_long=basket_tp, # Assuming ORB direction dictates primary basket
+                basket_tp_short=basket_tp
+            )
+            logger.info(f"Updated Dynamic Basket TP: ${basket_tp}")
 
             # 3. Execute Trade (Millisecond Response)
             lot_size = llm_decision.get('position_size', 0.01)
@@ -342,9 +342,6 @@ class SymbolTrader:
                 tp=0.0, # TP is managed by Basket Logic
                 comment=f"ORB_SMC_{score}"
             )
-            
-            # Update Grid Strategy with Basket Params for Global Management
-            self.grid_strategy.update_dynamic_params(basket_tp=basket_tp)
             
         except Exception as e:
             logger.error(f"LLM/Execution Error: {e}")
