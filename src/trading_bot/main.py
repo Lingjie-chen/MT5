@@ -58,9 +58,10 @@ logger = logging.getLogger("TradingBot")
 load_dotenv()
 
 class SymbolTrader:
-    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M15):
+    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M15, account_index=1):
         self.symbol = symbol
         self.timeframe = timeframe
+        self.account_index = account_index
         self.magic_number = 888888
         
         # 1. Initialize Strategies & Analyzers
