@@ -294,13 +294,13 @@ class SymbolTrader:
             signal_type = orb_signal['signal']
             if time.time() - self.orb_cooldowns.get(signal_type, 0) < 60: # 60s cooldown
                 # Reset flags in strategy to allow future check, but skip processing NOW
-            if signal_type == 'buy':
-                self.orb_strategy.long_signal_taken_today = False
-                self.orb_strategy.trades_today_count = max(0, self.orb_strategy.trades_today_count - 1)
-            else:
-                self.orb_strategy.short_signal_taken_today = False
-                self.orb_strategy.trades_today_count = max(0, self.orb_strategy.trades_today_count - 1)
-            return
+                if signal_type == 'buy':
+                    self.orb_strategy.long_signal_taken_today = False
+                    self.orb_strategy.trades_today_count = max(0, self.orb_strategy.trades_today_count - 1)
+                else:
+                    self.orb_strategy.short_signal_taken_today = False
+                    self.orb_strategy.trades_today_count = max(0, self.orb_strategy.trades_today_count - 1)
+                return
 
         logger.debug(f"ORB Trigger Detected: {orb_signal['signal']}")
         self.handle_orb_signal(orb_signal)
