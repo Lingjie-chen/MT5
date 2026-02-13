@@ -66,7 +66,7 @@ def open_grid_positions(symbol, count=2):
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
-            "volume": 0.01,
+            "volume": 0.02, # Changed to 0.02
             "type": mt5.ORDER_TYPE_BUY,
             "price": tick.ask,
             "sl": 0.0,
