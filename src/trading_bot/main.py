@@ -303,21 +303,72 @@ class SymbolTrader:
 
     def handle_grid_logic(self, current_price):
         """
-        Deploy Fibonacci Grid if in Ranging Mode
+        Deploy Fibonacci Grid if in Ranging Mode with LLM Confirmation
         """
-        # Check Trend Direction (Simple MA check or from Grid Strategy)
-        trend = "bullish" if self.grid_strategy.ma_value < current_price else "bearish"
+        # 1. Prepare Market State Context
+        grid_context = getattr(self.grid_strategy, 'market_state_details', {})
+        if not grid_context:
+            return
+
+        # 2. Ask LLM to Analyze Market State
+        # Only ask if we haven't asked recently (cooldown)
+        if time.time() - self.last_grid_update < 300: # 5 min cooldown
+             return
+
+        logger.info(f"Analyzing Market State for Grid Deployment... (Context: {grid_context})")
         
-        # Generate Orders
-        orders = self.grid_strategy.generate_fibonacci_grid(current_price, trend)
-        
-        if orders:
-            logger.info(f"Deploying {len(orders)} Fibonacci Grid Orders ({trend})")
-            # Cancel existing pending orders first?
-            # self.cancel_all_pending() 
+        try:
+            # We reuse optimize_strategy_logic but with a specific flag or prompt structure
+            # For now, we simulate a specific call or extend the prompt
             
-            for order in orders:
-                self.place_limit_order(order)
+            # Construct a prompt-friendly context
+            market_data_input = {
+                "symbol": self.symbol,
+                "current_price": current_price,
+                "strategy_mode": "GRID_ANALYSIS", # Signal to LLM
+                "technical_indicators": grid_context
+            }
+            
+            # Call LLM
+            llm_decision = self.llm_client.optimize_strategy_logic(
+                market_structure_analysis={"summary": "Checking for Ranging Market"},
+                current_market_data=market_data_input
+            )
+            
+            # 3. Parse Decision
+            # We expect LLM to return "action": "deploy_grid" or "hold"
+            action = llm_decision.get('action', 'hold')
+            
+            if action == 'deploy_grid' or self.grid_strategy.is_ranging: # Fallback to local logic if LLM is ambiguous but local is strong
+                
+                trend = llm_decision.get('direction', 'neutral')
+                if trend == 'neutral':
+                    trend = grid_context.get('trend_ma', 'bullish')
+                
+                # 4. Generate Orders
+                orders = self.grid_strategy.generate_fibonacci_grid(current_price, trend)
+                
+                if orders:
+                    logger.info(f"LLM Confirmed Grid Deployment ({len(orders)} orders, {trend}). Executing...")
+                    
+                    # Safety: Cancel old grid orders before placing new ones?
+                    # For now, we just append, but ideally we should manage the grid set.
+                    
+                    for order in orders:
+                        self.place_limit_order(order)
+                        
+                    self.last_grid_update = time.time()
+            else:
+                logger.info(f"LLM Grid Analysis: {action} (Market not suitable for grid)")
+                
+        except Exception as e:
+            logger.error(f"LLM Grid Analysis Failed: {e}")
+            # Fallback to local logic if critical
+            if self.grid_strategy.is_ranging:
+                 orders = self.grid_strategy.generate_fibonacci_grid(current_price, "neutral")
+                 for order in orders:
+                        self.place_limit_order(order)
+                 self.last_grid_update = time.time()
 
     def manage_positions(self, current_price):
         """
