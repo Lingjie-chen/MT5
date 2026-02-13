@@ -19,7 +19,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from data_processor import MT5DataProcessor
-from ai_client_factory import initialize_ai_clients
+from ai_client_factory import AIClientFactory
 from dotenv import load_dotenv
 
 # 加载环境变量
