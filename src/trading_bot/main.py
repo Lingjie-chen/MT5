@@ -335,10 +335,11 @@ class SymbolTrader:
                 reason=reasoning
             )
             
+            # Execute with Smart SL
             self.execute_trade(
                 signal=orb_signal['signal'],
                 lot=lot_size,
-                sl=smart_sl,
+                sl=smart_sl, # <--- Smart SL is passed here
                 tp=0.0, # TP is managed by Basket Logic
                 comment=f"ORB_SMC_{score}"
             )
