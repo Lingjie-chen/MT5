@@ -201,7 +201,7 @@ class QwenClient:
     - **综合研判**: 权衡通胀数据、地缘政治风险、技术指标。
     - **策略模式 (Dual-Mode Strategy)**: **根据市场状态灵活切换 ORB 突破与 Grid 震荡策略**。
         1. **Mode A: ORB Breakout (趋势突破)**:
-           - **适用场景**: `grid_strategy` 显示 `ORB Breakout Score > 60` 且 `Z-Score` 绝对值 > 1.0。严禁仅凭趋势分析而无统计分值支持时使用此模式。
+           - **适用场景**: `grid_strategy` 显示 `ORB Breakout Score > 60` 且 `Z-Score` 绝对值 > 1.0 (正数做多/负数做空)。严禁仅凭趋势分析而无统计分值支持时使用此模式。
            - **Action**: 'buy' 或 'sell' (顺势突破)。
            - **条件**: 必须有明确的 ORB 突破信号且与 M15 趋势一致。
         2. **Mode B: Grid Consolidation (震荡网格)**:
