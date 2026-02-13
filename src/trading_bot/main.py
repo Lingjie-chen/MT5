@@ -32,10 +32,14 @@ try:
     from utils.file_watcher import FileWatcher # Restore FileWatcher
 except ImportError as e:
     # Handle FileWatcher Import separately
-    if "FileWatcher" in str(e) or "utils.file_watcher" in str(e):
+    if "FileWatcher" in str(e) or "utils.file_watcher" in str(e) or "utils" in str(e):
         try:
-            sys.path.append(os.path.join(src_dir, 'utils'))
-            from file_watcher import FileWatcher
+            # Add utils directory to path directly
+            utils_path = os.path.join(src_dir, 'utils')
+            if utils_path not in sys.path: sys.path.append(utils_path)
+            # Try importing directly
+            import file_watcher
+            FileWatcher = file_watcher.FileWatcher
         except ImportError:
             print("Warning: FileWatcher not found, auto-reload disabled.")
             FileWatcher = None
