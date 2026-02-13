@@ -441,9 +441,13 @@ class SymbolTrader:
         price = mt5.symbol_info_tick(self.symbol).ask if signal == 'buy' else mt5.symbol_info_tick(self.symbol).bid
         
         # Normalize Prices
-        if symbol_info.trade_tick_size > 0:
-            sl = round(sl / symbol_info.trade_tick_size) * symbol_info.trade_tick_size
-            tp = round(tp / symbol_info.trade_tick_size) * symbol_info.trade_tick_size
+        tick_size = symbol_info.trade_tick_size
+        if tick_size <= 0:
+            tick_size = symbol_info.point
+
+        if tick_size > 0:
+            if sl > 0: sl = round(sl / tick_size) * tick_size
+            if tp > 0: tp = round(tp / tick_size) * tick_size
             
         sl = round(sl, symbol_info.digits)
         tp = round(tp, symbol_info.digits)
