@@ -58,7 +58,7 @@ class SymbolTrader:
         
         # 2. AI Client
         self.ai_factory = AIClientFactory()
-        self.llm_client = self.ai_factory.create_client("deepseek") # Use DeepSeek for logic
+        self.llm_client = self.ai_factory.create_client("qwen") # Use Qwen for logic
         
         # 3. State
         self.last_tick_time = 0
