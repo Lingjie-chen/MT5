@@ -76,7 +76,10 @@ class SymbolTrader:
         self.ai_factory = AIClientFactory()
         self.llm_client = self.ai_factory.create_client("qwen") # Use Qwen for logic
         
-        # 3. State
+        # 3. Notifiers
+        self.telegram = TelegramNotifier()
+        
+        # 4. State
         self.last_tick_time = 0
         self.last_analysis_time = 0
         self.current_strategy_mode = "ORB_MONITOR" # ORB_MONITOR, GRID_RANGING
@@ -294,6 +297,17 @@ class SymbolTrader:
             
             logger.info(f"Executing ORB Trade: {orb_signal['signal'].upper()} | Lot: {lot_size} | Smart SL: {smart_sl} | Basket TP: ${basket_tp}")
             
+            # Notify Telegram
+            self.telegram.notify_trade(
+                self.symbol, 
+                orb_signal['signal'], 
+                orb_signal['price'], 
+                smart_sl, 
+                basket_tp, 
+                lot_size, 
+                reason=f"ORB Breakout (SMC: {score})"
+            )
+            
             self.execute_trade(
                 signal=orb_signal['signal'],
                 lot=lot_size,
@@ -357,6 +371,9 @@ class SymbolTrader:
                 
                 if orders:
                     logger.info(f"LLM Confirmed Grid Deployment ({len(orders)} orders, {trend}). Executing...")
+                    
+                    # Notify Telegram
+                    self.telegram.notify_grid_deployment(self.symbol, len(orders), trend, current_price)
                     
                     # Safety: Cancel old grid orders before placing new ones
                     logger.info("Cancelling existing Pending Orders before deploying new Grid...")
