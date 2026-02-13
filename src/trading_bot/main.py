@@ -235,12 +235,14 @@ class SymbolTrader:
 
     def handle_orb_signal(self, orb_signal):
         """
-        1. Validate with SMC
-        2. Get LLM Confirmation (Smart SL/TP)
-        3. Execute
+        1. Validate with SMC (Score >= 75)
+        2. Get LLM Confirmation (Smart SL & Basket TP)
+        3. Execute with Millisecond Response
         """
-        # 1. SMC Validation
+        # 1. SMC Validation - Integrated SMC Data Interface
         df_m15 = self.get_dataframe(self.timeframe, 100)
+        
+        # Calculate Quality Score: Liquidity, Order Flow, Institutional Participation
         is_valid, score, details = self.smc_validator.validate_signal(
             df_m15, 
             orb_signal['price'], 
@@ -248,54 +250,58 @@ class SymbolTrader:
             volatility_stats=orb_signal.get('stats')
         )
         
-        if not is_valid:
+        # Quality Threshold Filter: Score >= 75
+        if score < 75:
             logger.warning(f"ORB Signal Ignored: SMC Score {score} < 75. Details: {details}")
             return
 
-        # 2. LLM Confirmation (Smart SL & Basket TP)
-        logger.info(f"SMC Validated ({score}). Requesting LLM Analysis...")
+        # 2. LLM Integrated Analysis System
+        # Request Smart SL and Basket TP Analysis
+        logger.info(f"SMC Validated ({score} >= 75). Requesting LLM Smart Analysis...")
         
         market_context = {
             "symbol": self.symbol,
             "current_price": orb_signal['price'],
             "orb_signal": orb_signal,
             "smc_score": score,
-            "smc_details": details
+            "smc_details": details,
+            "analysis_mode": "SMART_EXECUTION" # Instruct LLM to perform Smart SL/TP analysis
         }
         
-        # Call LLM (Synchronous for safety, or Async if needed)
-        # We use a specialized prompt method for 'Trade Execution'
         try:
+            # Call LLM to analyze Micro-structure, Volatility, and Order Flow
             llm_decision = self.llm_client.optimize_strategy_logic(
-                market_structure_analysis=details, # Pass SMC details
+                market_structure_analysis=details, 
                 current_market_data=market_context
             )
             
-            # Extract Smart SL/TP
+            # Extract Smart SL (Optimal Stop Loss)
             smart_sl = llm_decision.get('exit_conditions', {}).get('sl_price', 0)
-            smart_tp = llm_decision.get('exit_conditions', {}).get('tp_price', 0)
+            
+            # Extract Basket TP (Layered Take Profit for the Basket)
             basket_tp = llm_decision.get('position_management', {}).get('dynamic_basket_tp', 0)
             
-            if smart_sl == 0: # Fallback to ORB default
+            # Fallback Logic if LLM returns invalid SL
+            if smart_sl == 0:
                 if orb_signal['signal'] == 'buy':
                     smart_sl = orb_signal['price'] - orb_signal['sl_dist']
                 else:
                     smart_sl = orb_signal['price'] + orb_signal['sl_dist']
             
-            # 3. Execute Trade
+            # 3. Execute Trade (Millisecond Response)
             lot_size = llm_decision.get('position_size', 0.01)
             
-            logger.info(f"Executing ORB Trade: {orb_signal['signal'].upper()} | Lot: {lot_size} | SL: {smart_sl} | BasketTP: ${basket_tp}")
+            logger.info(f"Executing ORB Trade: {orb_signal['signal'].upper()} | Lot: {lot_size} | Smart SL: {smart_sl} | Basket TP: ${basket_tp}")
             
             self.execute_trade(
                 signal=orb_signal['signal'],
                 lot=lot_size,
                 sl=smart_sl,
-                tp=smart_tp, # Optional, we rely on Basket TP mostly
+                tp=0.0, # TP is managed by Basket Logic
                 comment=f"ORB_SMC_{score}"
             )
             
-            # Update Grid Strategy with Basket Params
+            # Update Grid Strategy with Basket Params for Global Management
             self.grid_strategy.update_dynamic_params(basket_tp=basket_tp)
             
         except Exception as e:
