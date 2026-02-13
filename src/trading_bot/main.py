@@ -276,6 +276,9 @@ class SymbolTrader:
                      logger.warning(f"ORB Signal Filtered: Market is Ranging (Conf: {confidence})")
                      self.last_orb_filter_time = time.time()
                 
+                # Set Cooldown
+                self.orb_cooldowns[orb_signal['signal']] = time.time()
+
                 # RESET FLAGS so we don't kill ORB for the day just because of a filter
                 # and importantly, so we don't fall through to Grid Logic next tick
                 if orb_signal['signal'] == 'buy':
@@ -303,6 +306,9 @@ class SymbolTrader:
                 logger.warning(f"ORB Signal Ignored: SMC Score {score} < 75. Details: {details}")
                 self.last_orb_filter_time = time.time()
             
+            # Set Cooldown
+            self.orb_cooldowns[orb_signal['signal']] = time.time()
+
             # RESET FLAGS
             if orb_signal['signal'] == 'buy':
                 self.orb_strategy.long_signal_taken_today = False
