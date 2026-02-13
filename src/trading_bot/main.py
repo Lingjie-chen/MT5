@@ -481,10 +481,27 @@ class SymbolTrader:
             return
 
         price = float(order_dict['price'])
+        
         # Normalize price to tick size
-        if symbol_info.trade_tick_size > 0:
-            price = round(price / symbol_info.trade_tick_size) * symbol_info.trade_tick_size
-            price = round(price, symbol_info.digits)
+        tick_size = symbol_info.trade_tick_size
+        if tick_size <= 0:
+            tick_size = symbol_info.point # Fallback to point
+            
+        if tick_size > 0:
+            price = round(price / tick_size) * tick_size
+            
+        price = round(price, symbol_info.digits)
+
+        # Check against current market to prevent 10015 (Limit vs Stop confusion)
+        # Buy Limit must be < Ask, Sell Limit must be > Bid
+        tick = mt5.symbol_info_tick(self.symbol)
+        if tick:
+            if order_dict['type'] == 'buy_limit' and price >= tick.ask:
+                logger.warning(f"Skipping Buy Limit @ {price} >= Ask {tick.ask} (Would fail 10015/10016)")
+                return
+            if order_dict['type'] == 'sell_limit' and price <= tick.bid:
+                logger.warning(f"Skipping Sell Limit @ {price} <= Bid {tick.bid} (Would fail 10015/10016)")
+                return
 
         request = {
             "action": mt5.TRADE_ACTION_PENDING,
@@ -503,7 +520,7 @@ class SymbolTrader:
         
         result = mt5.order_send(request)
         if result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(f"Grid Order Failed: {result.comment} ({result.retcode}) - Price: {price}")
+            logger.error(f"Grid Order Failed: {result.comment} ({result.retcode}) - Price: {price} | TickSize: {tick_size} | Digits: {symbol_info.digits}")
         else:
             logger.info(f"Grid Order Placed: {order_dict['type']} @ {price} | Ticket: {result.order}")
 
