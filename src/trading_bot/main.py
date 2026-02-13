@@ -451,12 +451,24 @@ class SymbolTrader:
         """
         Execute a Pending Limit Order for Grid Strategy
         """
+        # Ensure Price is Normalized to tick size
+        symbol_info = mt5.symbol_info(self.symbol)
+        if symbol_info is None:
+            logger.error(f"Cannot place order: Symbol {self.symbol} not found")
+            return
+
+        price = float(order_dict['price'])
+        # Normalize price to tick size
+        if symbol_info.trade_tick_size > 0:
+            price = round(price / symbol_info.trade_tick_size) * symbol_info.trade_tick_size
+            price = round(price, symbol_info.digits)
+
         request = {
             "action": mt5.TRADE_ACTION_PENDING,
             "symbol": self.symbol,
             "volume": float(order_dict.get('volume', 0.01)),
             "type": mt5.ORDER_TYPE_BUY_LIMIT if order_dict['type'] == 'buy_limit' else mt5.ORDER_TYPE_SELL_LIMIT,
-            "price": float(order_dict['price']),
+            "price": price,
             "sl": float(order_dict.get('sl', 0)),
             "tp": float(order_dict.get('tp', 0)),
             "deviation": 20,
@@ -468,9 +480,9 @@ class SymbolTrader:
         
         result = mt5.order_send(request)
         if result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(f"Grid Order Failed: {result.comment} ({result.retcode}) - Price: {order_dict['price']}")
+            logger.error(f"Grid Order Failed: {result.comment} ({result.retcode}) - Price: {price}")
         else:
-            logger.info(f"Grid Order Placed: {order_dict['type']} @ {order_dict['price']} | Ticket: {result.order}")
+            logger.info(f"Grid Order Placed: {order_dict['type']} @ {price} | Ticket: {result.order}")
 
     def cancel_all_pending(self):
         """
