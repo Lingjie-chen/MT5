@@ -164,14 +164,16 @@ class KalmanGridStrategy:
         self.is_ranging = is_bb_squeeze or is_price_in_range
         
         # Store detailed state for LLM
+        # Convert bools to native Python types (True/False) which are generally serializable,
+        # but numpy bools are NOT. Ensure explicit conversion.
         self.market_state_details = {
-            "bb_width": bb_width,
-            "is_bb_squeeze": is_bb_squeeze,
-            "swing_high": self.swing_high,
-            "swing_low": self.swing_low,
-            "is_price_in_range": is_price_in_range,
-            "atr": self.atr_value,
-            "is_low_volume": is_low_volume,
+            "bb_width": float(bb_width),
+            "is_bb_squeeze": bool(is_bb_squeeze),
+            "swing_high": float(self.swing_high),
+            "swing_low": float(self.swing_low),
+            "is_price_in_range": bool(is_price_in_range),
+            "atr": float(self.atr_value),
+            "is_low_volume": bool(is_low_volume),
             "trend_ma": "bullish" if current_price > self.ma_value else "bearish"
         }
 
