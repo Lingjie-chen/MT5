@@ -105,9 +105,11 @@ class GoldORBStrategy:
             # Fallback: attempt to interpret index as datetime
             df_h1.index = pd.to_datetime(df_h1.index, errors='coerce')
 
-        # Use Completed Candles Only (Exclude current open candle at -1)
-        # Assuming df_h1 includes current candle.
-        completed_df = df_h1.iloc[:-1]
+        # Use Completed Candles Only
+        # Only slice if we have at least 2 candles, otherwise we might remove the only available candle.
+        completed_df = df_h1
+        if len(df_h1) > 1:
+            completed_df = df_h1.iloc[:-1]
         
         if len(completed_df) < 1:
              return None, None, False
