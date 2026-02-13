@@ -14,7 +14,7 @@ class SMCQualityValidator:
     def __init__(self):
         self.smc_analyzer = SMCAnalyzer()
         self.advanced_analyzer = AdvancedMarketAnalysisAdapter()
-        self.min_score_threshold = 75
+        self.min_score_threshold = 70
         
     def calculate_trade_quality_score(self, signal_type, current_price, smc_data, sentiment_score, volatility_context):
         """
