@@ -11,14 +11,13 @@ class KalmanGridStrategy:
         self.symbol = symbol
         self.magic_number = magic_number
         self.lot = initial_lot
-        logger.info(f"KalmanGridStrategy Initialized for {symbol} (v2026.01.12.1)")
+        logger.info(f"KalmanGridStrategy Initialized for {symbol} (v2026.02.13.1)")
         
         # --- Load Symbol Specific Config ---
         self._load_config()
         
-        # ORB Strategy for ALL Symbols
+        # ORB Strategy Instance (Managed by Main Controller mostly, but kept here for reference)
         self.orb_strategy = GoldORBStrategy(symbol)
-        logger.info(f"GoldORB Strategy Activated for {symbol}")
         
         # SMC Parameters
         self.smc_levels = {
@@ -34,141 +33,76 @@ class KalmanGridStrategy:
         self.prev_state = None
         self.prev_covariance = 1.0
         
-        # Risk Management (New)
+        # Risk Management
         self.use_risk_based_sizing = True
         self.max_risk_per_trade_percent = 1.0
-        self.account_balance = 0.0 # Will be updated
-        
-        # BB Parameters
-        self.bb_period = 100
-        self.bb_deviation = 2.0
-        
-        self.dynamic_tp_long = None
-        self.dynamic_tp_short = None
-        
-        self.lock_profit_trigger = None # Store AI recommended Lock Trigger
-        self.trailing_stop_config = None # Store AI recommended Trailing Config
-        
-        # [MODIFIED] Separate State for Long and Short Baskets
-        self.basket_lock_level_long = None 
-        self.max_basket_profit_long = 0.0 
-        self.basket_lock_level_short = None
-        self.max_basket_profit_short = 0.0
-        
-        # State
-        self.last_long_price = 0.0
-        self.last_short_price = 0.0
-        self.long_pos_count = 0
-        self.short_pos_count = 0
+        self.account_balance = 0.0 
         
         # Indicators state
         self.kalman_value = 0.0
         self.bb_upper = 0.0
         self.bb_lower = 0.0
         self.ma_value = 0.0
+        self.atr_value = 0.0
+        
+        # Market State
+        self.is_ranging = False
+        self.swing_high = 0.0
+        self.swing_low = 0.0
+        
+        # Dynamic Params (from LLM)
+        self.dynamic_tp_long = None
+        self.dynamic_tp_short = None
+        self.lock_profit_trigger = None
+        self.trailing_stop_config = None
+        
+        # Basket State
+        self.basket_lock_level_long = None 
+        self.max_basket_profit_long = 0.0 
+        self.basket_lock_level_short = None
+        self.max_basket_profit_short = 0.0
+        
+        self.long_pos_count = 0
+        self.short_pos_count = 0
 
     def _load_config(self):
         """Load configuration based on symbol"""
         # Default Configs - High Frequency Scalping Mode
-        # [User Request]: "Grid Basket TP can be small (5-10 USD), High Lot Size, High Frequency"
         default_config = {
-            "grid_step_points": 300, # 300 points = $3 (Gold)
+            "grid_step_points": 300, 
             "max_grid_steps": 10,
-            "lot_type": 'GEOMETRIC',
+            "lot_type": 'FIBONACCI', # Default to Fibonacci as requested
             "lot_multiplier": 1.5,
-            # TP Steps - Reduced for Scalping
-            "tp_steps": {
-                1: 5.0, 2: 8.0, 3: 12.0, 4: 18.0, 5: 25.0,
-                6: 35.0, 7: 45.0, 8: 55.0, 9: 65.0
-            },
-            # Global Basket TP - Reduced for Scalping
-            "global_tp": 10.0 # Default fallback, LLM can override
+            "tp_steps": { 1: 5.0, 2: 8.0, 3: 12.0 },
+            "global_tp": 10.0 
         }
         
-        # ETHUSD Config
-        eth_config = {
-            "grid_step_points": 2000, 
-            "max_grid_steps": 5,
-            "lot_type": 'GEOMETRIC',
-            "lot_multiplier": 1.2,
-            "tp_steps": {
-                1: 10.0, 2: 25.0, 3: 45.0, 4: 75.0, 5: 120.0
-            },
-            "global_tp": 20.0
-        }
-        
-        # XAUUSD Config (Trend Following - Optimized for M15)
+        # XAUUSD Config
         xau_config = {
-            "grid_step_points": 250, # [Optimized] Wider grid (250 pts = $2.5) for M15 Trend Following
-            "max_grid_steps": 20,    # [Optimized] Wide coverage for trend corrections
-            "lot_type": 'GEOMETRIC',
-            "lot_multiplier": 1.3,   # [Optimized] Slowly increasing (1.3x)
-            "tp_steps": {
-                # [Optimized] Trend Targets: $5, $8, $12...
-                1: 5.0, 2: 8.0, 3: 12.0, 4: 18.0, 5: 25.0,
-                6: 35.0, 7: 45.0, 8: 55.0, 9: 65.0, 10: 80.0,
-                11: 100.0, 12: 120.0, 13: 140.0, 14: 160.0, 15: 180.0
-            },
-            "global_tp": 15.0 # [Optimized] Target $15 profit (Trend Following)
+            "grid_step_points": 250, 
+            "max_grid_steps": 20,    
+            "lot_type": 'FIBONACCI',
+            "lot_multiplier": 1.3,   
+            "tp_steps": { 1: 5.0, 2: 8.0, 3: 12.0 },
+            "global_tp": 15.0 
         }
         
-        # Select Config
         config = default_config
-        if "ETH" in self.symbol.upper():
-            config = eth_config
-        elif "XAU" in self.symbol.upper() or "GOLD" in self.symbol.upper():
+        if "XAU" in self.symbol.upper() or "GOLD" in self.symbol.upper():
             config = xau_config
             
-        # Apply Config
         self.grid_step_points = config["grid_step_points"]
         self.max_grid_steps = config["max_grid_steps"]
         self.lot_type = config["lot_type"]
         self.lot_multiplier = config["lot_multiplier"]
         self.tp_steps = config["tp_steps"]
         self.global_tp = config["global_tp"]
-        
-        logger.info(f"[{self.symbol}] Grid Config Loaded: Step={self.grid_step_points}, Max={self.max_grid_steps}, Mult={self.lot_multiplier}")
-
-    def update_smc_levels(self, smc_data):
-        """
-        Update SMC levels from DeepSeek/SMC Analyzer for intelligent grid placement
-        """
-        if not smc_data: return
-
-        # Expected format: {'ob': [{'top': x, 'bottom': y, 'type': 'bullish'}], ...}
-        
-        if 'ob' in smc_data:
-            self.smc_levels['ob_bullish'] = [
-                (zone['top'] + zone['bottom'])/2 
-                for zone in smc_data['ob'] if zone.get('type') == 'bullish'
-            ]
-            self.smc_levels['ob_bearish'] = [
-                (zone['top'] + zone['bottom'])/2 
-                for zone in smc_data['ob'] if zone.get('type') == 'bearish'
-            ]
-            
-        if 'fvg' in smc_data:
-            self.smc_levels['fvg_bullish'] = [
-                (zone['top'] + zone['bottom'])/2 
-                for zone in smc_data['fvg'] if zone.get('type') == 'bullish'
-            ]
-            self.smc_levels['fvg_bearish'] = [
-                (zone['top'] + zone['bottom'])/2 
-                for zone in smc_data['fvg'] if zone.get('type') == 'bearish'
-            ]
-        logger.info(f"Updated SMC Levels: {len(self.smc_levels['ob_bullish'])} Bullish OBs")
 
     def update_market_data(self, df, df_h1=None):
         """
         Update indicators based on latest dataframe.
-        Expects df with 'close' column.
-        df_h1: Optional H1 dataframe for ORB Strategy
         """
-        # Update ORB Strategy if active and H1 data provided
-        if self.orb_strategy and df_h1 is not None and not df_h1.empty:
-            self.orb_strategy.calculate_orb_levels(df_h1)
-
-        if df is None or len(df) < self.bb_period:
+        if df is None or len(df) < 100:
             return
 
         current_price = df['close'].iloc[-1]
@@ -179,9 +113,7 @@ class KalmanGridStrategy:
             
         predicted_state = self.prev_state
         predicted_covariance = self.prev_covariance + self.kalman_process_variance
-        
         kalman_gain = predicted_covariance / (predicted_covariance + self.kalman_measurement_variance)
-        
         updated_state = predicted_state + kalman_gain * (current_price - predicted_state)
         updated_covariance = (1 - kalman_gain) * predicted_covariance
         
@@ -189,207 +121,132 @@ class KalmanGridStrategy:
         self.prev_covariance = updated_covariance
         self.kalman_value = updated_state
         
-        # 2. Update Bollinger Bands
-        rolling_mean = df['close'].rolling(window=self.bb_period).mean()
-        rolling_std = df['close'].rolling(window=self.bb_period).std()
+        # 2. Update Bollinger Bands & MA
+        rolling_mean = df['close'].rolling(window=100).mean()
+        rolling_std = df['close'].rolling(window=100).std()
         
-        self.bb_upper = rolling_mean.iloc[-1] + (rolling_std.iloc[-1] * self.bb_deviation)
-        self.bb_lower = rolling_mean.iloc[-1] - (rolling_std.iloc[-1] * self.bb_deviation)
+        self.bb_upper = rolling_mean.iloc[-1] + (rolling_std.iloc[-1] * 2.0)
+        self.bb_lower = rolling_mean.iloc[-1] - (rolling_std.iloc[-1] * 2.0)
         self.ma_value = rolling_mean.iloc[-1]
         
-        # 3. Calculate Swing High/Low (for Fibonacci)
-        # Lookback 50 bars (Default) -> M15 requires shorter lookback? 
-        # Actually, if we run on M15/H1 timeframe, 'df' is M15/H1.
-        # But User requested "Analysis Fibonacci structure based on 15-minute structure".
-        # Since 'update_market_data' receives 'df' which comes from main loop's timeframe (M15 or H1),
-        # we cannot see M5 structure here directly unless main loop passes M5 data.
+        # 3. Calculate ATR
+        high_low = df['high'] - df['low']
+        high_close = np.abs(df['high'] - df['close'].shift())
+        low_close = np.abs(df['low'] - df['close'].shift())
+        ranges = pd.concat([high_low, high_close, low_close], axis=1)
+        true_range = np.max(ranges, axis=1)
+        self.atr_value = true_range.rolling(14).mean().iloc[-1]
         
-        # However, we can approximate "Micro Structure" by using a shorter lookback on current timeframe
-        # or rely on the LLM (who sees multi-tf data) to guide the direction/levels via 'grid_config'.
-        
-        # For this function, we stick to calculating local swings.
-        if len(df) >= 50:
-             self.swing_high = df['high'].iloc[-50:].max()
-             self.swing_low = df['low'].iloc[-50:].min()
+        # 4. Detect Ranging State (Volatility Contraction)
+        # BB Bandwidth
+        bb_width = (self.bb_upper - self.bb_lower) / self.ma_value
+        # If BB Width is low, market is squeezing/ranging
+        if bb_width < 0.002: # Threshold depends on asset
+            self.is_ranging = True
         else:
-             self.swing_high = df['high'].max()
-             self.swing_low = df['low'].min()
-
-    def get_entry_signal(self, current_price, trend_direction=None):
-        """
-        Determine if we should start a grid.
-        Returns: 
-        - Simple: 'buy', 'sell', or None
-        - Dict (ORB): {'signal': 'buy', 'lot': 0.1, 'sl': 2000.0, 'tp': 2010.0}
-        
-        [Optimized] Hybrid Logic:
-        0. Gold ORB Strategy (Priority High & Exclusive)
-        """
-        signal = None
-        
-        # 0. Check ORB Signal (Exclusive for all symbols)
-        if self.orb_strategy:
-            # Need point for ORB (default 0.01 for XAUUSD if not passed, but better to get it)
-            sym_info = mt5.symbol_info(self.symbol)
-            point = sym_info.point if sym_info else 0.01
+            # Check ADX or simple price action
+            # Simple PA: Price bouncing between recent High/Low
+            self.swing_high = df['high'].iloc[-50:].max()
+            self.swing_low = df['low'].iloc[-50:].min()
             
-            orb_result = self.orb_strategy.check_signal(current_price, point=point)
+            # If price is within the middle 50% of the recent range for a while
+            range_mid_high = self.swing_low + 0.75 * (self.swing_high - self.swing_low)
+            range_mid_low = self.swing_low + 0.25 * (self.swing_high - self.swing_low)
             
-            # Check return type: (signal_dict, stats_dict)
-            if isinstance(orb_result, tuple):
-                signal_data, stats_data = orb_result
+            if range_mid_low <= current_price <= range_mid_high:
+                 self.is_ranging = True
             else:
-                # Fallback for legacy single return
-                signal_data = orb_result
-                stats_data = None
+                 self.is_ranging = False
+
+    def generate_fibonacci_grid(self, current_price, trend_direction, point=0.01):
+        """
+        Generate Fibonacci Grid Levels based on recent Swing High/Low.
+        Ratios: 0.236, 0.382, 0.5, 0.618, 0.786
+        """
+        orders = []
+        
+        # Ensure we have valid swings
+        if self.swing_high <= self.swing_low:
+             # Fallback to local 50 bars
+             return self.generate_simple_grid(current_price, trend_direction, point)
+             
+        swing_range = self.swing_high - self.swing_low
+        ratios = [0.236, 0.382, 0.5, 0.618, 0.786]
+        
+        # Grid deployment logic:
+        # If Ranging/Neutral: Place Limit Buys at lower Fibs, Limit Sells at upper Fibs.
+        # If Trend Following (Bullish): Buy Dips at Fib levels.
+        
+        # Assuming we use this for "Grid Strategy" in Ranging Market (Switching Logic)
+        
+        if self.is_ranging or True: # Force Fib Grid if called
             
-            if signal_data and isinstance(signal_data, dict):
-                s_type = signal_data['signal']
-                logger.info(f"ORB Signal Triggered: {s_type.upper()} (Price: {current_price})")
-                
-                # Calculate Lot
-                lot = self.lot
-                if self.use_risk_based_sizing:
-                    if self.account_balance <= 0:
-                        # Try to get balance if not set
-                        acc = mt5.account_info()
-                        if acc: self.account_balance = acc.balance
-                        
-                    tick_size = sym_info.trade_tick_size if sym_info else 0.01
-                    tick_value = sym_info.trade_tick_value if sym_info else 1.0
-                    
-                    lot = self.calculate_initial_lot(
-                        signal_data['sl_points'], 
-                        self.account_balance, 
-                        point_value=point,
-                        tick_size=tick_size,
-                        tick_value=tick_value
-                    )
-                
-                # Construct Result Dict
-                sl_price = 0.0
-                tp_price = 0.0
-                if s_type == 'buy':
-                    sl_price = current_price - signal_data['sl_dist']
-                    tp_price = current_price + signal_data['tp_dist']
-                else:
-                    sl_price = current_price + signal_data['sl_dist']
-                    tp_price = current_price - signal_data['tp_dist']
-                    
-                return {
-                    'signal': s_type,
-                    'lot': lot,
-                    'sl': sl_price,
-                    'tp': tp_price,
-                    'reason': 'Gold ORB Breakout',
-                    'stats': stats_data # Pass stats up
-                }
-                
-            elif signal_data and isinstance(signal_data, str): # Legacy string return (fallback)
-                logger.info(f"ORB Signal Triggered: {signal_data.upper()}")
-                return signal_data
+            # Calculate levels
+            levels_buy = []
+            levels_sell = []
             
-            elif stats_data:
-                # ------------------------------------------------------------------
-                # [NEW] Consolidation Grid Logic (Super Grid)
-                # ------------------------------------------------------------------
-                # Trigger Grid Trading when ORB is in consolidation phase (Range Final & Inside Range)
-                if stats_data.get('is_range_final', False):
-                    r_high = stats_data['range_high']
-                    r_low = stats_data['range_low']
-                    r_mean = stats_data.get('range_mean', (r_high + r_low) / 2)
-                    z_score = stats_data.get('z_score', 0)
-                    
-                    # Ensure price is strictly inside the range (no potential breakout pending)
-                    if r_low <= current_price <= r_high:
-                        cons_signal = None
-                        sl_price = 0.0
-                        tp_price = 0.0
-                        
-                        # Thresholds: Z-Score > 1.0 (1 Std Dev) - Mean Reversion Logic
-                        # Use tighter grid step for consolidation
-                        
-                        # Buy Low (Undervalued in Range)
-                        if z_score < -1.0: 
-                            cons_signal = 'buy'
-                            tp_price = r_mean # Target Mean
-                            # SL: Fixed points below range low (Safety)
-                            sl_dist = self.orb_strategy.fixed_sl_points * point
-                            sl_price = r_low - sl_dist
-                            
-                        # Sell High (Overvalued in Range)
-                        elif z_score > 1.0: 
-                            cons_signal = 'sell'
-                            tp_price = r_mean # Target Mean
-                            sl_dist = self.orb_strategy.fixed_sl_points * point
-                            sl_price = r_high + sl_dist
-                            
-                        if cons_signal:
-                             logger.info(f"ORB Consolidation SuperGrid Trigger: {cons_signal.upper()} (Z: {z_score:.2f}, Price: {current_price:.2f}, Mean: {r_mean:.2f})")
-                             
-                             # Calculate Lot (Standard Risk or Min Lot for Grid)
-                             lot = self.lot
-                             
-                             return {
-                                'signal': cons_signal,
-                                'lot': lot, 
-                                'sl': sl_price,
-                                'tp': tp_price,
-                                'reason': 'ORB Consolidation SuperGrid',
-                                'stats': stats_data,
-                                'is_grid_trigger': True # Mark as grid starter
-                             }
-                # ------------------------------------------------------------------
+            # Retracements from Low to High
+            # 0.236 from Top is High - 0.236*Range
+            
+            for r in ratios:
+                price_level_from_top = self.swing_high - (swing_range * r)
+                # If price is below this level, it might be a resistance (Sell Limit candidate if above current)
+                # If price is above this level, it is a support (Buy Limit candidate if below current)
+                
+                if price_level_from_top < current_price:
+                    levels_buy.append(price_level_from_top)
+                elif price_level_from_top > current_price:
+                    levels_sell.append(price_level_from_top)
+            
+            # Sort levels
+            levels_buy.sort(reverse=True) # Closest to price first
+            levels_sell.sort() # Closest to price first
+            
+            # Generate Orders
+            # Buy Limits
+            for i, price in enumerate(levels_buy):
+                lot = self.calculate_next_lot(i + 1)
+                orders.append({
+                    'type': 'limit_buy',
+                    'price': price,
+                    'tp': 0.0, # Managed by Basket
+                    'volume': lot,
+                    'comment': f'Fib Grid {ratios[i]}'
+                })
+                
+            # Sell Limits
+            for i, price in enumerate(levels_sell):
+                lot = self.calculate_next_lot(i + 1)
+                orders.append({
+                    'type': 'limit_sell',
+                    'price': price,
+                    'tp': 0.0,
+                    'volume': lot,
+                    'comment': f'Fib Grid {ratios[i]}' # Ratio logic might be inverted index-wise
+                })
+                
+        return orders
 
-                # Return a 'no_signal' dict with stats so main.py can use it
-                return {
-                    'signal': None,
-                    'stats': stats_data
-                }
+    def generate_simple_grid(self, current_price, trend_direction, point=0.01):
+        # Fallback simple grid
+        step = self.grid_step_points * point
+        orders = []
+        for i in range(1, 6):
+            if trend_direction == 'bullish':
+                price = current_price - (step * i)
+                orders.append({'type': 'limit_buy', 'price': price, 'volume': self.calculate_next_lot(i), 'tp': 0.0})
+            else:
+                price = current_price + (step * i)
+                orders.append({'type': 'limit_sell', 'price': price, 'volume': self.calculate_next_lot(i), 'tp': 0.0})
+        return orders
 
-        return None
-
-
-    def check_grid_add(self, positions, current_price, point=0.01, current_atr=None):
+    def calculate_next_lot(self, current_count):
         """
-        Check if we need to add a position to the grid.
-        Returns: ('add_buy', lot) or ('add_sell', lot) or (None, 0)
+        Calculate next lot size.
+        Defaults to Fibonacci Sequence if lot_type is FIBONACCI.
         """
-        # User Requirement: Disable autonomous grid adding. Rely on LLM/Grid Plan (Limit Orders).
-        # "Grid Add BUY Signal... cancel this module, completely judge based on the big model"
-        
-        # [NEW POLICY]
-        # Autonomous Grid Adding is PERMANENTLY DISABLED.
-        # Adding positions is only allowed via LLM explicit signals (Pyramiding) or Limit Orders.
-        
-        return None, 0.0
-
-    def calculate_next_lot(self, current_count, ai_override_multiplier=None):
-        """
-        Calculate next lot size based on strategy.
-        Uses Martingale, Pyramid, or Fibonacci logic.
-        """
-        multiplier = 1.0
-        
-        # Priority 1: AI Override Multiplier
-        if ai_override_multiplier and ai_override_multiplier > 0:
-             # Treat as Geometric with custom multiplier
-             multiplier = ai_override_multiplier ** current_count
-             return float(f"{self.lot * multiplier:.2f}")
-
-        # Priority 2: Fibonacci Sequence
-        # User Requirement: Grid strategy requires matching Fibonacci sequence for callback adding positions
-        # [MODIFIED] To ensure we use Fibonacci even if 'lot_type' wasn't explicitly set by legacy config
-        # We default to FIBONACCI if no specific type or if type is GEOMETRIC/ARITHMETIC but we want to enforce User Rule.
-        
-        # Let's enforce Fibonacci if lot_type is not specifically set to something else strict,
-        # or we can just make it the default logic as per user request.
-        
-        # For now, let's respect the flag but ensure it defaults to FIBONACCI in main.py initialization
-        # (which we did in previous step: self.grid_strategy.lot_type = 'FIBONACCI')
-        
-        if getattr(self, 'lot_type', 'FIBONACCI') == 'FIBONACCI':
-            # Fibonacci Sequence: 1, 1, 2, 3, 5, 8, 13...
+        # Fibonacci: 1, 1, 2, 3, 5, 8...
+        if self.lot_type == 'FIBONACCI':
             def fib(n):
                 if n <= 1: return 1
                 a, b = 1, 1
@@ -397,683 +254,99 @@ class KalmanGridStrategy:
                     a, b = b, a + b
                 return b
             
-            # current_count starts from 1 for the first add? 
-            # Usually base position is count=0 (or 1).
-            # If current_count represents the "nth grid level" (1, 2, 3...),
-            # Level 1 (1st Add) -> Fib(1) = 1 (Same as Base)
-            # Level 2 (2nd Add) -> Fib(2) = 1 (Same as Base)
-            # Level 3 (3rd Add) -> Fib(3) = 2 (Double)
-            # This is a safe progression.
-            
-            fib_mult = fib(current_count) 
-            # Note: If current_count=0 (Base), fib(0)=1.
-            # If current_count=1 (1st Grid Order), fib(1)=1.
-            
+            fib_mult = fib(current_count)
             return float(f"{self.lot * fib_mult:.2f}")
-
-        if self.lot_type == 'GEOMETRIC':
-            # Aggressive scaling for capital utilization
             
-            # [Advanced Martingale] 
-            # If lot_multiplier is customized (e.g. by AI or config > 1.0 but not matching hardcoded logic assumptions),
-            # we respect the configured multiplier strictly.
-            
-            # Simple Heuristic: If lot_multiplier is significantly different from 1.0, use Standard Geometric
-            
-            if self.lot_multiplier > 1.0:
-                 # Standard Geometric: Base * (Mult ^ Count)
-                 multiplier = self.lot_multiplier ** current_count
-            else:
-                # Soft/Tiered Multiplier (Fallback) - Slowly Increasing Logic
-                # Level 1-2: 1.0x
-                # Level 3-5: 1.3x
-                # Level 6+: 1.5x
-                
-                accum_mult = 1.0
-                for i in range(1, current_count + 1):
-                    if i <= 2: m = 1.0
-                    elif i <= 5: m = 1.3
-                    else: m = 1.5
-                    accum_mult *= m
-                multiplier = accum_mult
-            
-            # Override for safety if result is too huge
-            if multiplier > 20.0: multiplier = 20.0
-            
-            # Use rounding to ensure 0.01 * 1.3 becomes 0.01 or 0.02 appropriately
-            # Standard float logic: 0.013 -> 0.01. 0.0169 -> 0.02.
-            # If user wants "slowly increase", we rely on the multiplier being large enough eventually.
-            
-            return float(f"{self.lot * multiplier:.2f}")
-
-        elif self.lot_type == 'ARITHMETIC':
-            multiplier = current_count + 1
+        elif self.lot_type == 'GEOMETRIC':
+            multiplier = self.lot_multiplier ** current_count
             return float(f"{self.lot * multiplier:.2f}")
             
-        return float(f"{self.lot * multiplier:.2f}")
+        return self.lot
 
     def calculate_initial_lot(self, sl_points, account_balance, point_value=1.0, tick_size=0.01, tick_value=1.0):
-        """
-        Calculate initial lot size based on Risk %.
-        Formula: Lot = (Balance * Risk%) / (SL_Points * TickValue)
-        Wait, SL_Points is usually distance in Points.
-        Loss = Lot * SL_Points * PointValue? No.
-        Loss = Lot * (PriceDiff / TickSize) * TickValue
-        PriceDiff = SL_Points * Point
-        """
         if not self.use_risk_based_sizing or sl_points <= 0 or account_balance <= 0:
             return self.lot
-            
         risk_amount = account_balance * (self.max_risk_per_trade_percent / 100.0)
-        
-        # Calculate Loss per Lot for the given SL distance
-        # LossPerLot = (SL_Points * Point) / TickSize * TickValue
-        # Simplified: If Point == TickSize, LossPerLot = SL_Points * TickValue
-        
-        # Standard Forex: 1 Lot, 1 Pip (10 points) = $10.
-        # SL 400 points (40 pips) = $400 loss per lot.
-        # Risk $100 -> 0.25 Lots.
-        
-        # XAUUSD: TickSize=0.01, TickValue=1 (usually for 1 lot?) 
-        # Actually TickValue is usually for 1 lot per tick.
-        
-        # Robust Calc:
-        # price_diff = sl_points * point_value # This might be wrong if point_value is e.g. 0.01
-        # Let's assume sl_points is raw points (integer).
-        # price_dist = sl_points * tick_size # Assuming 1 point = 1 tick size? No.
-        
-        # MT5 Point vs Tick:
-        # XAUUSD: Digits=2, Point=0.01. TickSize=0.01.
-        # SL=400 points -> 4.00 price distance.
-        # Steps = 4.00 / 0.01 = 400 ticks.
-        # Loss = 400 * TickValue * Lot.
-        
-        # So: Lot = RiskAmount / ( (SL_Points * Point / TickSize) * TickValue )
-        
         try:
             steps = (sl_points * point_value) / tick_size
             loss_per_lot = steps * tick_value
-            
             if loss_per_lot <= 0: return self.lot
-            
             calc_lot = risk_amount / loss_per_lot
-            
-            # Normalize to 0.01 steps
             calc_lot = round(calc_lot, 2)
-            
-            # Caps
             if calc_lot < 0.01: calc_lot = 0.01
             if calc_lot > 50.0: calc_lot = 50.0
-            
-            logger.info(f"Risk Based Lot: Bal=${account_balance:.0f}, Risk={self.max_risk_per_trade_percent}%, SL={sl_points}pts -> Lot {calc_lot}")
             return calc_lot
-        except Exception as e:
-            logger.error(f"Error calculating risk lot: {e}")
+        except:
             return self.lot
 
-    def check_individual_trailing_stop(self, position, current_price, point=0.01):
-        """
-        Check trailing stop for individual position (Repo Logic: 700/100/10)
-        Returns: New SL Price or None
-        """
-        # Repo Config
-        trail_dist_points = 700
-        min_profit_points = 100
-        step_points = 10
-        
-        trail_dist = trail_dist_points * point
-        min_profit = min_profit_points * point
-        step = step_points * point
-        
-        new_sl = None
-        
-        if position.type == mt5.POSITION_TYPE_BUY:
-            profit = current_price - position.price_open
-            if profit >= min_profit:
-                potential_sl = current_price - trail_dist
-                # Move SL UP only
-                if potential_sl > (position.sl + step):
-                    new_sl = potential_sl
-                    
-        elif position.type == mt5.POSITION_TYPE_SELL:
-            profit = position.price_open - current_price
-            if profit >= min_profit:
-                potential_sl = current_price + trail_dist
-                # Move SL DOWN only
-                # MT5 SL for sell is above price. Lower is better.
-                # If current SL is 0, we can set it.
-                # If current SL > potential_sl + step, we set it.
-                if position.sl == 0 or position.sl > (potential_sl + step):
-                    new_sl = potential_sl
-                    
-        return new_sl
+    def update_dynamic_params(self, basket_tp=None, basket_tp_long=None, basket_tp_short=None, 
+                              lock_trigger=None, trailing_config=None):
+        """Update dynamic parameters from AI analysis"""
+        if basket_tp: self.global_tp = float(basket_tp) # Fallback global
+        if basket_tp_long: self.dynamic_tp_long = float(basket_tp_long)
+        if basket_tp_short: self.dynamic_tp_short = float(basket_tp_short)
+        if lock_trigger: self.lock_profit_trigger = float(lock_trigger)
+        if trailing_config: self.trailing_stop_config = trailing_config
 
-    def generate_grid_plan(self, current_price, trend_direction, atr, point=0.01, dynamic_step_pips=None, grid_level_tps=None, override_lot_sequence=None):
-        """
-        Generate a plan for grid deployment (for limit orders)
-        Uses Fibonacci Retracement Levels for placement if applicable.
-        override_lot_sequence: Optional list of lot sizes for each grid level [lot_1, lot_2, ...]
-        """
-        orders = []
-        
-        # Range
-        upper_bound = current_price + (atr * 5)
-        lower_bound = current_price - (atr * 5)
-        
-        # [User Requirement] Fibonacci Retracement Levels
-        # Use Swing High/Low calculated in update_market_data
-        fibo_levels = []
-        use_fibo = True
-        
-        # Validate Swing
-        swing_dist = 0
-        if hasattr(self, 'swing_high') and hasattr(self, 'swing_low'):
-             swing_dist = self.swing_high - self.swing_low
-        
-        # Minimum swing requirement (e.g. > 100 pips)
-        if swing_dist < (1000 * point): 
-            use_fibo = False
-            
-        if use_fibo:
-            # Calculate Retracement Levels based on Trend Direction
-            # If Bullish, we look to buy at retracements from Low to High? 
-            # Or if trend is Bullish, we assume we are in an uptrend, so we buy dips.
-            # Dips are measured from Swing Low to Swing High range.
-            # Retracements: 0.236, 0.382, 0.5, 0.618, 0.786 from High down.
-            
-            # Standard Fibo Ratios
-            ratios = [0.236, 0.382, 0.5, 0.618, 0.786]
-            
-            if trend_direction == 'bullish':
-                # Buy Limit Orders below current price
-                # Levels = High - Range * Ratio
-                # Only keep levels < current_price
-                for r in ratios:
-                    lvl = self.swing_high - (swing_dist * r)
-                    if lvl < current_price:
-                        fibo_levels.append(lvl)
-                fibo_levels.sort(reverse=True) # Descending (closest to price first)
-                
-            elif trend_direction == 'bearish':
-                # Sell Limit Orders above current price
-                # Levels = Low + Range * Ratio
-                # Only keep levels > current_price
-                for r in ratios:
-                    lvl = self.swing_low + (swing_dist * r)
-                    if lvl > current_price:
-                        fibo_levels.append(lvl)
-                fibo_levels.sort() # Ascending (closest to price first)
-        
-        # Find SMC Levels
-        resistances = [p for p in self.smc_levels['ob_bearish'] if p > current_price]
-        supports = [p for p in self.smc_levels['ob_bullish'] if p < current_price]
-        
-        # [Optimized] Trend Strength Calculation (Internal)
-        trend_strength = 0.0
-        if self.ma_value > 0:
-            trend_strength = (self.kalman_value - self.ma_value) / self.ma_value * 10000 
-            
-        is_strong_uptrend = trend_strength > 5.0
-        is_strong_downtrend = trend_strength < -5.0
-
-        # [Optimized] Dynamic Step Adjustment for Trends
-        # If trend is strong, tighten the grid to catch shallow pullbacks (Trend Surfing)
-        step_modifier = 1.0
-        if (trend_direction == 'bullish' and is_strong_uptrend) or (trend_direction == 'bearish' and is_strong_downtrend):
-            step_modifier = 0.6 # Reduce step by 40% in strong trends
-            logger.info(f"Strong Trend Detected (Strength {trend_strength:.2f}). Tightening grid step by 40%.")
-
-        # Calculate fixed step based on config or dynamic override
-        if dynamic_step_pips and dynamic_step_pips > 0:
-            fixed_step = dynamic_step_pips * 10 * point * step_modifier
-            logger.info(f"Using Dynamic Grid Step: {dynamic_step_pips} pips * {step_modifier} = {fixed_step:.1f} points")
-        else:
-            fixed_step = self.grid_step_points * point * step_modifier
-            
-        # Ensure minimum safe step (e.g. 50 points or 0.2 ATR)
-        min_safe_step = 50 * point
-        if atr > 0:
-             min_safe_step = max(min_safe_step, atr * 0.15)
-        
-        # In strong trend, allow slightly tighter minimum (Aggressive)
-        if step_modifier < 1.0:
-            min_safe_step *= 0.8
-        
-        if fixed_step < min_safe_step:
-            logger.warning(f"Grid Step {fixed_step} too small, adjusting to safe minimum {min_safe_step}")
-            fixed_step = min_safe_step
-        
-        # Determine active existing levels to prevent overlap
-        # We need pending orders (limits) and open positions to check against
-        # But here we generate a plan. The caller (start.py) should ideally check against pending.
-        # However, we can at least ensure our generated levels don't overlap with themselves (handled by loop)
-        # and don't overlap with current price too much (handled by range).
-        
-        if trend_direction == 'bullish':
-            # Buy Grid
-            # [Logic] Prioritize Fibo Levels, then SMC, then Fixed
-            levels = []
-            if use_fibo and fibo_levels:
-                levels = fibo_levels
-                logger.info(f"Using Fibonacci Levels for Grid: {levels}")
-            elif supports:
-                levels = sorted([p for p in supports if p > lower_bound], reverse=True)
-            
-            if not levels: # Fallback to arithmetic
-                step = fixed_step if fixed_step > 0 else (atr * 0.5)
-                # Ensure step is valid
-                if step < min_safe_step: step = min_safe_step
-                levels = [current_price - step*i for i in range(1, 6)]
-            
-            # Base count for lot calculation (Assume at least 1 exists if starting grid)
-            base_count = self.long_pos_count if self.long_pos_count > 0 else 1
-            
-            # Filter levels that are too close to each other or current price
-            valid_levels = []
-            last_lvl = current_price
-            
-            for lvl in levels:
-                if abs(last_lvl - lvl) >= min_safe_step:
-                    valid_levels.append(lvl)
-                    last_lvl = lvl
-            
-            # Cap at max grid steps (considering existing)
-            remaining_slots = max(0, self.max_grid_steps - self.long_pos_count)
-            valid_levels = valid_levels[:remaining_slots]
-
-            for i, lvl in enumerate(valid_levels):
-                # Calculate TP for this level
-                # [Requirement] Remove all TP/SL settings, fully rely on LLM for exits
-                tp_price = 0.0
-                
-                # Calculate Lot
-                # Use Fibonacci logic if specified or default, OR use override sequence
-                lot = 0.01
-                if override_lot_sequence and i < len(override_lot_sequence):
-                    lot = float(override_lot_sequence[i])
-                else:
-                    lot = self.calculate_next_lot(base_count + i)
-                
-                orders.append({'type': 'limit_buy', 'price': lvl, 'tp': tp_price, 'volume': lot})
-                
-        elif trend_direction == 'bearish':
-            # Sell Grid
-            levels = []
-            if use_fibo and fibo_levels:
-                levels = fibo_levels
-                logger.info(f"Using Fibonacci Levels for Grid: {levels}")
-            elif resistances:
-                levels = sorted([p for p in resistances if p < upper_bound])
-            
-            if not levels:
-                step = fixed_step if fixed_step > 0 else (atr * 0.5)
-                # Ensure step is valid
-                if step < min_safe_step: step = min_safe_step
-                levels = [current_price + step*i for i in range(1, 6)]
-                
-            # Base count for lot calculation
-            base_count = self.short_pos_count if self.short_pos_count > 0 else 1
-
-            # Filter levels
-            valid_levels = []
-            last_lvl = current_price
-            
-            for lvl in levels:
-                if abs(lvl - last_lvl) >= min_safe_step:
-                    valid_levels.append(lvl)
-                    last_lvl = lvl
-            
-            # Cap at max grid steps
-            remaining_slots = max(0, self.max_grid_steps - self.short_pos_count)
-            valid_levels = valid_levels[:remaining_slots]
-
-            for i, lvl in enumerate(valid_levels):
-                # Calculate TP for this level
-                # [Requirement] Remove all TP/SL settings, fully rely on LLM for exits
-                tp_price = 0.0
-                
-                # Calculate Lot
-                lot = 0.01
-                if override_lot_sequence and i < len(override_lot_sequence):
-                    lot = float(override_lot_sequence[i])
-                else:
-                    lot = self.calculate_next_lot(base_count + i)
-                
-                orders.append({'type': 'limit_sell', 'price': lvl, 'tp': tp_price, 'volume': lot})
-                
-        return orders
-
-    # ... (Rest of existing methods: check_basket_tp, update_config, _update_positions_state) ...
     def check_grid_exit(self, positions, current_price, current_atr=None):
         """
-        Basket Exit Logic:
-        Close all positions if Total Profit > Dynamic Basket TP (calculated by AI + Algo).
+        Basket Exit Logic with Smart TP and Trailing
         """
-        # Update internal state (counts, last prices)
         self._update_positions_state(positions)
-        
         should_close_long = False
         should_close_short = False
         
         # --- Long Basket ---
         if self.long_pos_count > 0:
-            total_profit_long = 0.0
-            for pos in positions:
-                if pos.magic == self.magic_number and pos.type == mt5.POSITION_TYPE_BUY:
-                    total_profit_long += (pos.profit + pos.swap)
+            total_profit = sum([p.profit + p.swap for p in positions if p.magic == self.magic_number and p.type == mt5.POSITION_TYPE_BUY])
             
-            # [CHECK] Dynamic Basket TP
-            if self.dynamic_tp_long is not None and self.dynamic_tp_long > 0 and total_profit_long >= self.dynamic_tp_long:
-                logger.info(f"✅ Long Basket TP Hit! Profit: ${total_profit_long:.2f} >= Target: ${self.dynamic_tp_long:.2f}")
+            # 1. Dynamic TP
+            target_tp = self.dynamic_tp_long if self.dynamic_tp_long else self.global_tp
+            if total_profit >= target_tp:
                 should_close_long = True
-
-            # [CHECK] Dynamic Basket SL - [DISABLED BY USER REQUEST]
-            # if self.dynamic_sl_long is not None and self.dynamic_sl_long < 0 and total_profit_long <= self.dynamic_sl_long:
-            #     logger.warning(f"🛑 Long Basket SL Hit! Profit: ${total_profit_long:.2f} <= Limit: ${self.dynamic_sl_long:.2f}")
-            #     should_close_long = True
+                logger.info(f"Long Basket TP Hit: {total_profit} >= {target_tp}")
                 
-            # [CHECK] Lock Profit / Trailing Logic (Enhanced)
-            if not should_close_long and self.lock_profit_trigger and self.lock_profit_trigger > 0:
-                # 触发逻辑: 只要浮盈超过 trigger (例如 10)，就启动保本/追踪
-                if total_profit_long >= self.lock_profit_trigger:
-                    # 记录最大浮盈
-                    if total_profit_long > self.max_basket_profit_long:
-                        self.max_basket_profit_long = total_profit_long
-                        
-                    # 计算锁定线: 默认锁定 50% 的最大浮盈，或者至少保本 (+1.0)
-                    # 比如 Trigger=10, Max=20 -> Lock=10
-                    # Trigger=10, Max=10 -> Lock=5
+            # 2. Lock & Trail
+            if not should_close_long and self.lock_profit_trigger and total_profit >= self.lock_profit_trigger:
+                if total_profit > self.max_basket_profit_long:
+                    self.max_basket_profit_long = total_profit
                     
-                    # 简单逻辑: 启动后，锁定利润 = Max * 0.5 (可配置)
-                    current_lock = max(1.0, self.max_basket_profit_long * 0.5) 
+                # Lock 50% of Max Profit
+                lock_val = max(1.0, self.max_basket_profit_long * 0.5)
+                if self.basket_lock_level_long is None or lock_val > self.basket_lock_level_long:
+                    self.basket_lock_level_long = lock_val
                     
-                    if self.basket_lock_level_long is None or current_lock > self.basket_lock_level_long:
-                        self.basket_lock_level_long = current_lock
-                        # Log only on update
-                        # logger.info(f"Long Basket Lock Updated: ${self.basket_lock_level_long:.2f} (Max: ${self.max_basket_profit_long:.2f})")
-                
-                # 检查是否触及锁定线 (且当前必须为盈利状态，亏损则不触发 Trailing Close，依靠 SL)
-                if self.basket_lock_level_long is not None and total_profit_long < self.basket_lock_level_long:
-                     if total_profit_long > 0:
-                         logger.info(f"🛑 Long Basket Trailing Hit! Profit ${total_profit_long:.2f} dropped below Lock ${self.basket_lock_level_long:.2f}")
-                         should_close_long = True
-                     # else: Log debug? "Trailing Hit but Loss (ignored)"
+                if total_profit < self.basket_lock_level_long:
+                     should_close_long = True
+                     logger.info(f"Long Basket Trailing Hit: {total_profit} < {self.basket_lock_level_long}")
 
         # --- Short Basket ---
         if self.short_pos_count > 0:
-            total_profit_short = 0.0
-            for pos in positions:
-                if pos.magic == self.magic_number and pos.type == mt5.POSITION_TYPE_SELL:
-                    total_profit_short += (pos.profit + pos.swap)
+            total_profit = sum([p.profit + p.swap for p in positions if p.magic == self.magic_number and p.type == mt5.POSITION_TYPE_SELL])
             
-            # [CHECK] Dynamic Basket TP
-            if self.dynamic_tp_short is not None and self.dynamic_tp_short > 0 and total_profit_short >= self.dynamic_tp_short:
-                logger.info(f"✅ Short Basket TP Hit! Profit: ${total_profit_short:.2f} >= Target: ${self.dynamic_tp_short:.2f}")
+            target_tp = self.dynamic_tp_short if self.dynamic_tp_short else self.global_tp
+            if total_profit >= target_tp:
                 should_close_short = True
-
-            # [CHECK] Dynamic Basket SL - [DISABLED BY USER REQUEST]
-            # if self.dynamic_sl_short is not None and self.dynamic_sl_short < 0 and total_profit_short <= self.dynamic_sl_short:
-            #     logger.warning(f"🛑 Short Basket SL Hit! Profit: ${total_profit_short:.2f} <= Limit: ${self.dynamic_sl_short:.2f}")
-            #     should_close_short = True
-            
-            # [CHECK] Lock Profit / Trailing Logic (Enhanced)
-            if not should_close_short and self.lock_profit_trigger and self.lock_profit_trigger > 0:
-                if total_profit_short >= self.lock_profit_trigger:
-                    if total_profit_short > self.max_basket_profit_short:
-                        self.max_basket_profit_short = total_profit_short
-                        
-                    current_lock = max(1.0, self.max_basket_profit_short * 0.5)
+                logger.info(f"Short Basket TP Hit: {total_profit} >= {target_tp}")
+                
+            if not should_close_short and self.lock_profit_trigger and total_profit >= self.lock_profit_trigger:
+                if total_profit > self.max_basket_profit_short:
+                    self.max_basket_profit_short = total_profit
+                
+                lock_val = max(1.0, self.max_basket_profit_short * 0.5)
+                if self.basket_lock_level_short is None or lock_val > self.basket_lock_level_short:
+                    self.basket_lock_level_short = lock_val
                     
-                    if self.basket_lock_level_short is None or current_lock > self.basket_lock_level_short:
-                        self.basket_lock_level_short = current_lock
-                
-                if self.basket_lock_level_short is not None and total_profit_short < self.basket_lock_level_short:
-                     if total_profit_short > 0:
-                         logger.info(f"🛑 Short Basket Trailing Hit! Profit ${total_profit_short:.2f} dropped below Lock ${self.basket_lock_level_short:.2f}")
-                         should_close_short = True
-
-        
+                if total_profit < self.basket_lock_level_short:
+                     should_close_short = True
+                     logger.info(f"Short Basket Trailing Hit: {total_profit} < {self.basket_lock_level_short}")
+                     
         return should_close_long, should_close_short
-
-    def _check_single_basket(self, total_profit, count, total_volume, current_atr, is_long=True):
-        if count == 0:
-            if is_long:
-                self.max_basket_profit_long = 0.0
-                self.basket_lock_level_long = None
-            else:
-                self.max_basket_profit_short = 0.0
-                self.basket_lock_level_short = None
-            return False
-            
-        # Select state variables
-        if is_long:
-            max_profit = self.max_basket_profit_long
-            lock_level = self.basket_lock_level_long
-        else:
-            max_profit = self.max_basket_profit_short
-            lock_level = self.basket_lock_level_short
-            
-        # Update Max Profit
-        if total_profit > max_profit:
-            max_profit = total_profit
-            if is_long: self.max_basket_profit_long = max_profit
-            else: self.max_basket_profit_short = max_profit
-            
-        # --- 1. Regular Basket TP ---
-        target_tp = self.global_tp # Default fallback
-        
-        # Select Dynamic TP based on direction
-        dynamic_tp = self.dynamic_tp_long if is_long else self.dynamic_tp_short
-        
-        # Fallback to legacy single dynamic var if specific not set (backward compatibility)
-        if dynamic_tp is None:
-            dynamic_tp = self.dynamic_global_tp
-            
-        used_source = "Default/Step"
-        if dynamic_tp is not None and dynamic_tp > 0:
-            target_tp = dynamic_tp
-            used_source = f"Dynamic (Val={dynamic_tp})"
-        else:
-            # [NEW POLICY] If no Dynamic TP from LLM, do NOT fallback to small step TPs.
-            # In Trend Mode, we want to let profits run unless LLM says otherwise.
-            # We use a very high safety default if LLM is silent.
-            target_tp = 99999.0 
-            used_source = "Safety Max (No LLM TP)"
-            
-            # target_tp = self.tp_steps.get(count, self.global_tp)
-            # if count > 9: target_tp = self.global_tp
-            # used_source = f"Step (Count={count})"
-
-        if total_profit >= target_tp:
-            logger.info(f"Trend Position TP ({'LONG' if is_long else 'SHORT'}) Reached: Profit {total_profit:.2f} >= Target {target_tp} (Source: {used_source})")
-            return True
-            
-        # --- 2. Profit Locking Logic (Trailing Stop for Basket) ---
-        effective_trigger = 9999.0 # Default inactive
-        
-        if self.lock_profit_trigger is not None and self.lock_profit_trigger > 0:
-             effective_trigger = self.lock_profit_trigger
-             
-        if max_profit >= effective_trigger:
-            # We are in locking mode
-            lock_ratio = 0.7 # Default 70%
-            dynamic_sl_profit_dist = 0.0
-            step_size_usd = 5.0 # Minimum step size to update lock (USD)
-            
-            if self.trailing_stop_config:
-                t_type = self.trailing_stop_config.get('type', 'atr_distance')
-                t_value = float(self.trailing_stop_config.get('value', 2.0))
-                
-                if t_type == 'atr_distance' and current_atr is not None and current_atr > 0:
-                     contract_size = 100.0 
-                     if "ETH" in self.symbol.upper(): contract_size = 1.0
-                     if "EUR" in self.symbol.upper(): contract_size = 100000.0
-                     dynamic_sl_profit_dist = current_atr * t_value * total_volume * contract_size
-                elif t_type == 'fixed_pips':
-                     pip_value_per_lot = 10.0
-                     if "ETH" in self.symbol.upper(): pip_value_per_lot = 1.0
-                     price_dist_pips = t_value
-                     dynamic_sl_profit_dist = price_dist_pips * pip_value_per_lot * total_volume
-
-            ideal_lock = 0.0
-            if dynamic_sl_profit_dist > 0:
-                ideal_lock = max_profit - dynamic_sl_profit_dist
-            else:
-                surplus = max(0.0, max_profit - effective_trigger)
-                ideal_lock = effective_trigger + (surplus * lock_ratio)
-            
-            min_break_even = 2.0 
-            ideal_lock = max(ideal_lock, min_break_even)
-            
-            # Step Logic
-            new_lock_level = lock_level
-            if lock_level is None:
-                new_lock_level = ideal_lock
-                logger.info(f"Grid Profit Lock ({'LONG' if is_long else 'SHORT'}) ACTIVATED: Step Lock Level set at {new_lock_level:.2f} (Trigger: {effective_trigger}, MaxProfit: {max_profit:.2f})")
-            else:
-                if ideal_lock >= (lock_level + step_size_usd):
-                    new_lock_level = ideal_lock
-                    logger.info(f"Grid Profit Lock ({'LONG' if is_long else 'SHORT'}) STEP UP: {lock_level:.2f} -> {new_lock_level:.2f} (Peak: {max_profit:.2f}, StepSize: {step_size_usd})")
-
-            # Update state
-            if is_long: self.basket_lock_level_long = new_lock_level
-            else: self.basket_lock_level_short = new_lock_level
-            
-            if total_profit <= new_lock_level:
-                logger.info(f"Grid Profit Lock ({'LONG' if is_long else 'SHORT'}) Triggered: Profit {total_profit:.2f} <= Step Lock {new_lock_level:.2f}")
-                return True
-                
-        return False
-
-    def update_dynamic_params(self, basket_tp=None, basket_tp_long=None, basket_tp_short=None, 
-                              basket_sl_long=None, basket_sl_short=None,
-                              lock_trigger=None, trailing_config=None):
-        """Update dynamic parameters from AI analysis"""
-        try:
-            if basket_tp is not None:
-                val = float(basket_tp)
-                if val > 0:
-                    self.dynamic_global_tp = val
-                    # If specific ones are not provided, apply global to both
-                    if basket_tp_long is None: self.dynamic_tp_long = val
-                    if basket_tp_short is None: self.dynamic_tp_short = val
-                    logger.info(f"Updated Dynamic Basket TP (Global): {self.dynamic_global_tp}")
-        except (ValueError, TypeError):
-             logger.warning(f"Invalid basket_tp value: {basket_tp}")
-            
-        try:
-            if basket_tp_long is not None:
-                val = float(basket_tp_long)
-                if val > 0:
-                    self.dynamic_tp_long = val
-                    logger.info(f"Updated Dynamic Basket TP (Long): {self.dynamic_tp_long}")
-        except (ValueError, TypeError):
-             logger.warning(f"Invalid basket_tp_long value: {basket_tp_long}")
-            
-        try:
-            if basket_tp_short is not None:
-                val = float(basket_tp_short)
-                if val > 0:
-                    self.dynamic_tp_short = val
-                    logger.info(f"Updated Dynamic Basket TP (Short): {self.dynamic_tp_short}")
-        except (ValueError, TypeError):
-             logger.warning(f"Invalid basket_tp_short value: {basket_tp_short}")
-
-        # [NEW] Basket SL Updates - DISABLED
-        # try:
-        #     if basket_sl_long is not None:
-        #         val = float(basket_sl_long)
-        #         if val < 0: val = abs(val) # Store as positive value representing loss amount
-        #         if val > 0:
-        #             self.dynamic_sl_long = -val # Store as negative number
-        #             logger.info(f"Updated Dynamic Basket SL (Long): {self.dynamic_sl_long}")
-        # except (ValueError, TypeError):
-        #      logger.warning(f"Invalid basket_sl_long value: {basket_sl_long}")
-
-        # try:
-        #     if basket_sl_short is not None:
-        #         val = float(basket_sl_short)
-        #         if val < 0: val = abs(val)
-        #         if val > 0:
-        #             self.dynamic_sl_short = -val # Store as negative number
-        #             logger.info(f"Updated Dynamic Basket SL (Short): {self.dynamic_sl_short}")
-        # except (ValueError, TypeError):
-        #      logger.warning(f"Invalid basket_sl_short value: {basket_sl_short}")
-
-            
-        if lock_trigger is not None:
-            if lock_trigger > 0:
-                self.lock_profit_trigger = float(lock_trigger)
-                logger.info(f"Updated Dynamic Lock Trigger: {self.lock_profit_trigger}")
-            else:
-                self.lock_profit_trigger = None
-                logger.info("Dynamic Lock Trigger DISABLED (User Request)")
-            
-        if trailing_config is not None:
-            if isinstance(trailing_config, dict) and trailing_config:
-                self.trailing_stop_config = trailing_config
-                logger.info(f"Updated Dynamic Trailing Config: {self.trailing_stop_config}")
-            else:
-                self.trailing_stop_config = None
-                logger.info("Dynamic Trailing Config DISABLED (User Request)")
-
-    def update_config(self, params):
-        if not params: return
-        if 'grid_step_points' in params: self.grid_step_points = int(params['grid_step_points'])
-        if 'max_grid_steps' in params: self.max_grid_steps = int(params['max_grid_steps'])
-        if 'global_tp' in params: self.global_tp = float(params['global_tp'])
-        if 'tp_steps' in params: self.tp_steps.update(params['tp_steps'])
-        if 'max_risk_per_trade_percent' in params: self.max_risk_per_trade_percent = float(params['max_risk_per_trade_percent'])
-        
-        # ORB Params
-        if self.orb_strategy:
-            open_hour = params.get('orb_open_hour')
-            consolidation_candles = params.get('orb_consolidation_candles')
-            sl_points = params.get('orb_sl_points')
-            tp_points = params.get('orb_tp_points')
-            
-            if any(x is not None for x in [open_hour, consolidation_candles, sl_points, tp_points]):
-                self.orb_strategy.update_params(open_hour, consolidation_candles, sl_points, tp_points)
-                logger.info(f"Updated ORB Params: Hour={open_hour}, Candles={consolidation_candles}, SL={sl_points}, TP={tp_points}")
-
-    def get_config(self):
-        """
-        Return current configuration state for optimization/reporting
-        """
-        config = {
-            'grid_step_points': self.grid_step_points,
-            'max_grid_steps': self.max_grid_steps,
-            'lot_type': self.lot_type,
-            'global_tp': self.global_tp,
-            'tp_steps': self.tp_steps,
-            'kalman_measurement_variance': self.kalman_measurement_variance,
-            'kalman_process_variance': self.kalman_process_variance,
-            'max_risk_per_trade_percent': self.max_risk_per_trade_percent
-        }
-        if self.orb_strategy:
-            config['orb_open_hour'] = self.orb_strategy.open_hour
-            config['orb_consolidation_candles'] = self.orb_strategy.consolidation_candles
-            config['orb_sl_points'] = self.orb_strategy.fixed_sl_points
-            config['orb_tp_points'] = self.orb_strategy.fixed_tp_points
-        return config
 
     def _update_positions_state(self, positions):
         self.long_pos_count = 0
         self.short_pos_count = 0
-        self.last_long_price = 0.0
-        self.last_short_price = 0.0
-        last_long_time = 0
-        last_short_time = 0
-        
         for pos in positions:
             if pos.magic != self.magic_number: continue
-            if pos.type == mt5.POSITION_TYPE_BUY:
-                self.long_pos_count += 1
-                if pos.time_msc > last_long_time:
-                    last_long_time = pos.time_msc
-                    self.last_long_price = pos.price_open
-            elif pos.type == mt5.POSITION_TYPE_SELL:
-                self.short_pos_count += 1
-                if pos.time_msc > last_short_time:
-                    last_short_time = pos.time_msc
-                    self.last_short_price = pos.price_open
+            if pos.type == mt5.POSITION_TYPE_BUY: self.long_pos_count += 1
+            elif pos.type == mt5.POSITION_TYPE_SELL: self.short_pos_count += 1
