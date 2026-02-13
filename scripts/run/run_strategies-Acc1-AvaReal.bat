@@ -11,9 +11,6 @@ cd /d "%~dp0"
 echo Launching GOLD Strategy (Ava Real - Acc1)...
 start "Strategy - GOLD (Ava Real)" "%~dp0run_bot_watchdog.bat" GOLD 1
 
-echo Launching EURUSD Strategy (Ava Real - Acc1)...
-start "Strategy - EURUSD (Ava Real)" "%~dp0run_bot_watchdog.bat" EURUSD 1
-
 timeout /t 1 /nobreak >nul
 
 echo.
