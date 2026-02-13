@@ -614,10 +614,21 @@ class SymbolTrader:
 
         # Determine correct filling mode
         filling_mode = mt5.ORDER_FILLING_FOK # Default fallback
-        if symbol_info.filling_mode & mt5.SYMBOL_FILLING_IOC:
-            filling_mode = mt5.ORDER_FILLING_IOC
-        elif symbol_info.filling_mode & mt5.SYMBOL_FILLING_FOK:
-            filling_mode = mt5.ORDER_FILLING_FOK
+        try:
+            # Check Filling Modes using bitwise flags
+            # Note: mt5.SYMBOL_FILLING_IOC might not be exposed in some library versions directly as an attribute if imports vary,
+            # but usually it is. If error "no attribute", use integer values directly.
+            # SYMBOL_FILLING_FOK = 1, SYMBOL_FILLING_IOC = 2
+            
+            fill_flags = symbol_info.filling_mode
+            
+            if fill_flags & 2: # SYMBOL_FILLING_IOC
+                filling_mode = mt5.ORDER_FILLING_IOC
+            elif fill_flags & 1: # SYMBOL_FILLING_FOK
+                filling_mode = mt5.ORDER_FILLING_FOK
+        except Exception:
+            # Fallback if attribute access fails
+            filling_mode = mt5.ORDER_FILLING_IOC # Common default
             
         for pos in positions:
             if pos.magic == self.magic_number and pos.type == type_filter:
