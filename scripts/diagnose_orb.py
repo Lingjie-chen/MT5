@@ -62,6 +62,13 @@ def diagnose_orb():
     # Check Open Candle
     if orb.last_h1_df is not None:
         df = orb.last_h1_df
+        # Ensure time index
+        if 'time' in df.columns:
+            df['time'] = pd.to_datetime(df['time'])
+            df.set_index('time', inplace=True)
+        elif not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index, unit='s')
+            
         today = df.index[-1].date()
         today_data = df[df.index.date == today]
         open_candle = today_data[today_data.index.hour == orb.open_hour]
