@@ -29,6 +29,7 @@ try:
     from strategies.orb_strategy import GoldORBStrategy
     from analysis.smc_validator import SMCQualityValidator
     from position_engine.mt5_adapter import MT5RiskManager
+    from analysis.advanced_analysis import AdvancedMarketAnalysisAdapter
     from utils.file_watcher import FileWatcher # Restore FileWatcher
     from utils.telegram_notifier import TelegramNotifier # Add Telegram Notifier
 except ImportError as e:
@@ -69,6 +70,7 @@ class SymbolTrader:
         self.orb_strategy = GoldORBStrategy(symbol)
         self.grid_strategy = KalmanGridStrategy(symbol, self.magic_number)
         self.smc_validator = SMCQualityValidator()
+        self.advanced_analysis = AdvancedMarketAnalysisAdapter()
         self.data_processor = MT5DataProcessor()
         self.risk_manager = MT5RiskManager() # Assuming this exists in position_engine
         
