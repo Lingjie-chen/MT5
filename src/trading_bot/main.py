@@ -87,6 +87,7 @@ class SymbolTrader:
         self.current_strategy_mode = "ORB_MONITOR" # ORB_MONITOR, GRID_RANGING
         self.last_grid_update = 0
         self.last_orb_filter_time = 0 # Throttling for ORB logs
+        self.orb_cooldowns = {'buy': 0, 'sell': 0} # Cooldown for retrying rejected signals
         self.watcher = None # Initialize watcher attribute
         
         # 4. Data Buffers
