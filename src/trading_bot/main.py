@@ -53,7 +53,7 @@ class SymbolTrader:
         self.orb_strategy = GoldORBStrategy(symbol)
         self.grid_strategy = KalmanGridStrategy(symbol, self.magic_number)
         self.smc_validator = SMCQualityValidator()
-        self.data_processor = MT5DataProcessor(symbol)
+        self.data_processor = MT5DataProcessor()
         self.risk_manager = MT5RiskManager() # Assuming this exists in position_engine
         
         # 2. AI Client
