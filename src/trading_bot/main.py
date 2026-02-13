@@ -401,12 +401,17 @@ class SymbolTrader:
         """
         positions = mt5.positions_get(symbol=self.symbol)
         if positions:
-            close_long, close_short = self.grid_strategy.check_grid_exit(positions, current_price)
+            close_long, close_short, total_profit_long, total_profit_short, reason_long, reason_short = self.grid_strategy.check_grid_exit(positions, current_price)
             
             if close_long:
-                self.close_positions(positions, type_filter=mt5.POSITION_TYPE_BUY, reason="Basket TP/Lock")
+                self.close_positions(positions, type_filter=mt5.POSITION_TYPE_BUY, reason=reason_long)
+                # Notify Telegram
+                self.telegram.notify_basket_close(self.symbol, "LONG", total_profit_long, reason_long)
+                
             if close_short:
-                self.close_positions(positions, type_filter=mt5.POSITION_TYPE_SELL, reason="Basket TP/Lock")
+                self.close_positions(positions, type_filter=mt5.POSITION_TYPE_SELL, reason=reason_short)
+                # Notify Telegram
+                self.telegram.notify_basket_close(self.symbol, "SHORT", total_profit_short, reason_short)
 
     # --- Execution Helpers ---
     def execute_trade(self, signal, lot, sl, tp, comment):
