@@ -615,25 +615,32 @@ class SymbolTrader:
         # Determine correct filling mode
         filling_mode = mt5.ORDER_FILLING_FOK # Default fallback
         try:
-            # Check Filling Modes using bitwise flags
-            # Note: mt5.SYMBOL_FILLING_IOC might not be exposed in some library versions directly as an attribute if imports vary,
-            # but usually it is. If error "no attribute", use integer values directly.
-            # SYMBOL_FILLING_FOK = 1, SYMBOL_FILLING_IOC = 2
-            
             fill_flags = symbol_info.filling_mode
-            
             if fill_flags & 2: # SYMBOL_FILLING_IOC
                 filling_mode = mt5.ORDER_FILLING_IOC
             elif fill_flags & 1: # SYMBOL_FILLING_FOK
                 filling_mode = mt5.ORDER_FILLING_FOK
         except Exception:
-            # Fallback if attribute access fails
             filling_mode = mt5.ORDER_FILLING_IOC # Common default
             
         for pos in positions:
             if pos.magic == self.magic_number and pos.type == type_filter:
+                # Check if position still exists
+                if not mt5.positions_get(ticket=pos.ticket):
+                    logger.info(f"Position #{pos.ticket} already closed.")
+                    continue
+
                 # Retry logic for closing
+                # Try different filling modes in sequence if one fails
+                filling_modes_to_try = [filling_mode, mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_RETURN]
+                # Remove duplicates
+                filling_modes_to_try = list(dict.fromkeys(filling_modes_to_try))
+                
+                success = False
                 for attempt in range(3):
+                    if success: break
+                    
+                    # Refresh tick
                     tick = mt5.symbol_info_tick(self.symbol)
                     if tick is None:
                         time.sleep(0.5)
@@ -641,38 +648,44 @@ class SymbolTrader:
                         
                     price = tick.bid if pos.type == mt5.POSITION_TYPE_BUY else tick.ask
                     
-                    request = {
-                        "action": mt5.TRADE_ACTION_DEAL,
-                        "symbol": self.symbol,
-                        "volume": float(pos.volume), # Explicit float cast
-                        "type": mt5.ORDER_TYPE_SELL if pos.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY,
-                        "position": int(pos.ticket), # Explicit int cast
-                        "price": float(price),
-                        "deviation": 20,
-                        "magic": self.magic_number,
-                        "comment": str(reason),
-                        "type_time": mt5.ORDER_TIME_GTC,
-                        "type_filling": filling_mode,
-                    }
-                    
-                    result = mt5.order_send(request)
-                    
-                    if result is None:
-                        last_error = mt5.last_error()
-                        logger.error(f"Order Send Failed (None result) for Position #{pos.ticket}. MT5 Error: {last_error}")
-                        time.sleep(0.5)
-                        continue
+                    # Try filling modes
+                    for f_mode in filling_modes_to_try:
+                        request = {
+                            "action": mt5.TRADE_ACTION_DEAL,
+                            "symbol": self.symbol,
+                            "volume": float(pos.volume),
+                            "type": mt5.ORDER_TYPE_SELL if pos.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY,
+                            "position": int(pos.ticket),
+                            "price": float(price),
+                            "deviation": 50, # Increased deviation for closing
+                            "magic": self.magic_number,
+                            "comment": str(reason),
+                            "type_time": mt5.ORDER_TIME_GTC,
+                            "type_filling": f_mode,
+                        }
                         
-                    if result.retcode != mt5.TRADE_RETCODE_DONE:
-                        logger.error(f"Failed to Close Position #{pos.ticket} (Attempt {attempt+1}): {result.comment} ({result.retcode})")
-                        time.sleep(0.5)
-                    else:
-                        logger.info(f"Position #{pos.ticket} Closed: {reason} | Price: {result.price}")
-                        break # Success
-                else:
-                    # All attempts failed
+                        result = mt5.order_send(request)
+                        
+                        if result is None:
+                            logger.error(f"Order Send Failed (None) for #{pos.ticket}. Error: {mt5.last_error()}")
+                            continue
+                            
+                        if result.retcode == mt5.TRADE_RETCODE_DONE:
+                            logger.info(f"Position #{pos.ticket} Closed: {reason} | Price: {result.price}")
+                            success = True
+                            break # Break filling mode loop
+                        elif result.retcode == 10030: # Unsupported filling mode
+                            logger.warning(f"Filling mode {f_mode} unsupported, trying next...")
+                            continue # Try next filling mode
+                        else:
+                            logger.error(f"Failed to Close #{pos.ticket} (Att {attempt+1}, Mode {f_mode}): {result.comment} ({result.retcode})")
+                            
+                    if not success:
+                        time.sleep(0.5) # Wait before next attempt
+                
+                if not success:
                     try:
-                        self.telegram.notify_error(f"Close Fail #{pos.ticket}", "Max retries exceeded")
+                        self.telegram.notify_error(f"Close Fail #{pos.ticket}", "Max retries/modes exceeded")
                     except: pass
 
     def get_dataframe(self, timeframe, count):
