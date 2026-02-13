@@ -74,6 +74,15 @@ class SymbolTrader:
         if not mt5.initialize():
             logger.error("MT5 Initialize Failed")
             return False
+        
+        # Start File Watcher
+        try:
+            watcher = FileWatcher([src_dir])
+            watcher.start()
+            logger.info("FileWatcher started successfully")
+        except Exception as e:
+            logger.error(f"Failed to start FileWatcher: {e}")
+            
         logger.info(f"Bot Initialized for {self.symbol}")
         return True
 
