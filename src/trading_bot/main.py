@@ -644,6 +644,11 @@ class SymbolTrader:
         if rates is None: return None
         df = pd.DataFrame(rates)
         df['time'] = pd.to_datetime(df['time'], unit='s')
+        
+        # Rename tick_volume to volume for compatibility with analysis modules
+        if 'tick_volume' in df.columns and 'volume' not in df.columns:
+            df.rename(columns={'tick_volume': 'volume'}, inplace=True)
+            
         return df
 
 if __name__ == "__main__":
