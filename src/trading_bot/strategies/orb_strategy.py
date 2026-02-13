@@ -86,9 +86,24 @@ class GoldORBStrategy:
         # Store for check_signal usage
         self.last_h1_df = df_h1
 
-        # Ensure index is datetime
-        if not isinstance(df_h1.index, pd.DatetimeIndex):
-            df_h1.index = pd.to_datetime(df_h1.index)
+        # Ensure index uses the 'time' column (MT5 epoch seconds) instead of integer index
+        # This fixes incorrect 1970-01-01 dates when using default RangeIndex
+        if 'time' in df_h1.columns:
+            time_col = df_h1['time']
+            # Convert to datetime if not already
+            if not isinstance(time_col.dtype, np.dtype) or str(time_col.dtype) != 'datetime64[ns]':
+                # If MT5 provided epoch seconds (int), ensure proper unit conversion
+                try:
+                    if np.issubdtype(time_col.dtype, np.integer):
+                        df_h1['time'] = pd.to_datetime(df_h1['time'], unit='s')
+                    else:
+                        df_h1['time'] = pd.to_datetime(df_h1['time'])
+                except Exception:
+                    df_h1['time'] = pd.to_datetime(df_h1['time'], errors='coerce')
+            df_h1 = df_h1.set_index('time')
+        elif not isinstance(df_h1.index, pd.DatetimeIndex):
+            # Fallback: attempt to interpret index as datetime
+            df_h1.index = pd.to_datetime(df_h1.index, errors='coerce')
 
         # Use Completed Candles Only (Exclude current open candle at -1)
         # Assuming df_h1 includes current candle.
