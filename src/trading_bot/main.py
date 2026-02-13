@@ -29,6 +29,7 @@ try:
     from strategies.orb_strategy import GoldORBStrategy
     from analysis.smc_validator import SMCQualityValidator
     from position_engine.mt5_adapter import MT5RiskManager
+    from utils.file_watcher import FileWatcher # Restore FileWatcher
 except ImportError as e:
     print(f"Critical Import Error: {e}")
     sys.exit(1)
