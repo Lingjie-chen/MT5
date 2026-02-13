@@ -530,19 +530,44 @@ class SymbolTrader:
         # Check against current market to prevent 10015 (Limit vs Stop confusion)
         # Buy Limit must be < Ask, Sell Limit must be > Bid
         tick = mt5.symbol_info_tick(self.symbol)
+        
+        # Map strategy type strings to MT5 constants
+        order_type_str = order_dict['type']
+        mt5_type = mt5.ORDER_TYPE_BUY_LIMIT
+        
+        if order_type_str in ['buy_limit', 'limit_buy']:
+            mt5_type = mt5.ORDER_TYPE_BUY_LIMIT
+        elif order_type_str in ['sell_limit', 'limit_sell']:
+            mt5_type = mt5.ORDER_TYPE_SELL_LIMIT
+        else:
+            logger.error(f"Unknown order type: {order_type_str}")
+            return
+
         if tick:
-            if order_dict['type'] == 'buy_limit' and price >= tick.ask:
-                logger.warning(f"Skipping Buy Limit @ {price} >= Ask {tick.ask} (Would fail 10015/10016)")
-                return
-            if order_dict['type'] == 'sell_limit' and price <= tick.bid:
-                logger.warning(f"Skipping Sell Limit @ {price} <= Bid {tick.bid} (Would fail 10015/10016)")
-                return
+            # Check StopLevel (minimum distance from price)
+            stop_level = symbol_info.trade_stops_level * symbol_info.point
+            
+            if mt5_type == mt5.ORDER_TYPE_BUY_LIMIT:
+                if price >= tick.ask:
+                    logger.warning(f"Skipping Buy Limit @ {price} >= Ask {tick.ask}")
+                    return
+                if (tick.ask - price) < stop_level:
+                    logger.warning(f"Skipping Buy Limit @ {price} too close to Ask {tick.ask} (StopLevel {stop_level})")
+                    return
+                    
+            elif mt5_type == mt5.ORDER_TYPE_SELL_LIMIT:
+                if price <= tick.bid:
+                    logger.warning(f"Skipping Sell Limit @ {price} <= Bid {tick.bid}")
+                    return
+                if (price - tick.bid) < stop_level:
+                    logger.warning(f"Skipping Sell Limit @ {price} too close to Bid {tick.bid} (StopLevel {stop_level})")
+                    return
 
         request = {
             "action": mt5.TRADE_ACTION_PENDING,
             "symbol": self.symbol,
             "volume": float(order_dict.get('volume', 0.01)),
-            "type": mt5.ORDER_TYPE_BUY_LIMIT if order_dict['type'] == 'buy_limit' else mt5.ORDER_TYPE_SELL_LIMIT,
+            "type": mt5_type,
             "price": price,
             "sl": float(order_dict.get('sl', 0)),
             "tp": float(order_dict.get('tp', 0)),
