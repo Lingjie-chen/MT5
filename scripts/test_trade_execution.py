@@ -27,28 +27,64 @@ def test_trade_execution():
     Simulate a trading signal to verify execution logic.
     WARNING: This will attempt to place a pending order (Limit) to avoid market loss.
     """
-    symbol = "XAUUSD"
-    
-    # 1. Initialize Bot
-    logger.info("Initializing Bot for Test...")
-    bot = SymbolTrader(symbol)
-    if not bot.initialize():
-        logger.error("Bot initialization failed!")
+    # 1. Initialize Bot (without symbol first to check connection)
+    if not mt5.initialize():
+        logger.error("MT5 Initialize Failed")
         return
 
-    # 2. Get Current Price
-    tick = mt5.symbol_info_tick(symbol)
+    logger.info("MT5 Initialized Successfully")
+    
+    # 2. Check Available Symbols
+    symbols = mt5.symbols_get()
+    found_symbols = []
+    target_symbol = "XAUUSD"
+    
+    if symbols:
+        count = 0
+        for s in symbols:
+            if "XAU" in s.name.upper() or "GOLD" in s.name.upper():
+                found_symbols.append(s.name)
+                logger.info(f"Found Potential Symbol: {s.name} (Path: {s.path})")
+            
+    if not found_symbols:
+        logger.error("No Gold/XAU symbols found in Market Watch! Please add XAUUSD or GOLD to Market Watch in MT5.")
+        mt5.shutdown()
+        return
+        
+    # Prefer XAUUSD if available, otherwise take the first one
+    if "XAUUSD" in found_symbols:
+        target_symbol = "XAUUSD"
+    else:
+        target_symbol = found_symbols[0]
+        logger.warning(f"XAUUSD not found, using {target_symbol} instead.")
+
+    logger.info(f"Using Target Symbol: {target_symbol}")
+    
+    # 3. Initialize Bot with Correct Symbol
+    bot = SymbolTrader(target_symbol)
+    # Re-init bot logic (it calls mt5.initialize inside but that's fine)
+    # We manually set the symbol
+    bot.symbol = target_symbol
+
+    # 4. Get Current Price
+    # Ensure symbol is selected in Market Watch
+    if not mt5.symbol_select(target_symbol, True):
+        logger.error(f"Failed to select {target_symbol}")
+        mt5.shutdown()
+        return
+
+    tick = mt5.symbol_info_tick(target_symbol)
     if tick is None:
-        logger.error(f"Failed to get tick for {symbol}")
+        logger.error(f"Failed to get tick for {target_symbol} - Check Internet Connection or Market Hours")
+        last_error = mt5.last_error()
+        logger.error(f"MT5 Error Code: {last_error}")
+        mt5.shutdown()
         return
         
     current_price = tick.ask
-    logger.info(f"Current Price: {current_price}")
+    logger.info(f"Current Price for {target_symbol}: {current_price}")
     
-    # 3. Simulate ORB Signal (Mock)
-    # We will force a 'buy' signal logic manually to test execution flow
-    # Instead of waiting for market, we call execute_trade directly with a Limit Order far away
-    
+    # 5. Simulate ORB Signal (Mock)
     test_price = current_price - 50.0 # Buy Limit far below current price
     test_sl = test_price - 10.0
     test_tp = test_price + 20.0
@@ -56,18 +92,9 @@ def test_trade_execution():
     
     logger.info(f"Attempting to place TEST Buy Limit at {test_price}...")
     
-    # Custom Limit Order Execution (Since main.py executes Market Orders mostly)
-    # We'll use the bot's execute_trade method but modify it slightly or call order_send directly
-    # To test the EXACT path in main.py, we need to mock the signal handling.
-    
-    # Let's inject a fake signal into handle_orb_signal? 
-    # No, handle_orb_signal does validation which might fail if data isn't there.
-    
-    # Best way: Direct call to bot.execute_trade with a safe LIMIT order type
-    
     request = {
         "action": mt5.TRADE_ACTION_PENDING, # Pending Order for safety
-        "symbol": symbol,
+        "symbol": target_symbol,
         "volume": test_lot,
         "type": mt5.ORDER_TYPE_BUY_LIMIT,
         "price": test_price,
@@ -85,6 +112,7 @@ def test_trade_execution():
     
     if result.retcode != mt5.TRADE_RETCODE_DONE:
         logger.error(f"Order Send Failed: {result.comment} ({result.retcode})")
+        logger.error("Possible reasons: Algo Trading disabled, Invalid Volume, or Market Closed.")
     else:
         logger.info(f"Order Placed Successfully! Ticket: {result.order}")
         logger.info("Waiting 5 seconds before cleaning up...")
