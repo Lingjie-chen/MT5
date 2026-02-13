@@ -84,6 +84,22 @@ class TelegramNotifier:
         )
         return self.send_message(msg)
 
+    def notify_llm_analysis(self, symbol, mode, decision, reason, context_summary):
+        """
+        Notify about LLM analysis results (e.g., Grid Strategy Go/No-Go).
+        """
+        icon = "🧠"
+        status_icon = "✅" if decision in ["deploy_grid", "buy", "sell"] else "⏸️"
+        
+        msg = (
+            f"{icon} *LLM Analysis: {mode}*\n"
+            f"Symbol: `{symbol}`\n"
+            f"Decision: {status_icon} *{decision.upper()}*\n"
+            f"Reasoning: _{reason}_\n"
+            f"Context: `{context_summary}`"
+        )
+        return self.send_message(msg)
+
     def notify_error(self, context, error_msg):
         """
         Notify about critical errors.
