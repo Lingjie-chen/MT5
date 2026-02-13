@@ -30,6 +30,7 @@ try:
     from analysis.smc_validator import SMCQualityValidator
     from position_engine.mt5_adapter import MT5RiskManager
     from utils.file_watcher import FileWatcher # Restore FileWatcher
+    from utils.telegram_notifier import TelegramNotifier # Add Telegram Notifier
 except ImportError as e:
     # Handle FileWatcher Import separately
     if "FileWatcher" in str(e) or "utils.file_watcher" in str(e) or "utils" in str(e):
