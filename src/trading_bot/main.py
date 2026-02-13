@@ -374,9 +374,9 @@ class SymbolTrader:
             reason = llm_decision.get('reason', 'Market conditions not optimal')
             trend = llm_decision.get('direction', 'neutral')
             
-            # Send Analysis to Telegram
-            context_summary = f"Ranging:{grid_context.get('is_ranging')} | Vol:{grid_context.get('is_low_volume')} | Trend:{trend}"
-            self.telegram.notify_llm_analysis(self.symbol, "GRID_DEPLOYMENT", action, reason, context_summary)
+            # Send Analysis to Telegram - ONLY if Action is DEPLOY/EXECUTE
+            # context_summary = f"Ranging:{grid_context.get('is_ranging')} | Vol:{grid_context.get('is_low_volume')} | Trend:{trend}"
+            # self.telegram.notify_llm_analysis(self.symbol, "GRID_DEPLOYMENT", action, reason, context_summary)
             
             if action == 'deploy_grid' or self.grid_strategy.is_ranging: # Fallback to local logic if LLM is ambiguous but local is strong
                 
