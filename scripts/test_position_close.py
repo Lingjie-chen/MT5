@@ -53,6 +53,13 @@ def test_position_close():
         logger.error("Failed to get tick")
         return
 
+    symbol_info = mt5.symbol_info(target_symbol)
+    filling_mode = mt5.ORDER_FILLING_FOK
+    if symbol_info.filling_mode & 2:
+        filling_mode = mt5.ORDER_FILLING_IOC
+    elif symbol_info.filling_mode & 1:
+        filling_mode = mt5.ORDER_FILLING_FOK
+    
     request = {
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": target_symbol,
@@ -65,13 +72,22 @@ def test_position_close():
         "magic": bot.magic_number,
         "comment": "Test Open",
         "type_time": mt5.ORDER_TIME_GTC,
-        "type_filling": mt5.ORDER_FILLING_IOC,
+        "type_filling": filling_mode,
     }
     
     result = mt5.order_send(request)
     if result.retcode != mt5.TRADE_RETCODE_DONE:
         logger.error(f"Market Order Failed: {result.comment} ({result.retcode})")
-        return
+        # Retry with RETURN if failed
+        if result.retcode == 10030:
+             logger.info("Retrying with ORDER_FILLING_RETURN...")
+             request['type_filling'] = mt5.ORDER_FILLING_RETURN
+             result = mt5.order_send(request)
+             if result.retcode != mt5.TRADE_RETCODE_DONE:
+                  logger.error(f"Retry Failed: {result.comment} ({result.retcode})")
+                  return
+        else:
+             return
         
     logger.info(f"Market Order Opened: #{result.order}")
     
