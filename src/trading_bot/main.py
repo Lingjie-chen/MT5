@@ -295,6 +295,15 @@ class SymbolTrader:
                 else:
                     smart_sl = orb_signal['price'] + orb_signal['sl_dist']
             
+            # Notify Telegram about Analysis
+            self.telegram.notify_llm_analysis(
+                self.symbol, 
+                "ORB_OPTIMIZATION", 
+                "EXECUTE", 
+                reasoning, 
+                f"SMC:{score} | SL:{smart_sl} | BasketTP:{basket_tp}"
+            )
+
             # 3. Execute Trade (Millisecond Response)
             lot_size = llm_decision.get('position_size', 0.01)
             
@@ -423,8 +432,21 @@ class SymbolTrader:
 
     # --- Execution Helpers ---
     def execute_trade(self, signal, lot, sl, tp, comment):
+        symbol_info = mt5.symbol_info(self.symbol)
+        if symbol_info is None:
+            logger.error(f"Symbol {self.symbol} not found")
+            return
+
         order_type = mt5.ORDER_TYPE_BUY if signal == 'buy' else mt5.ORDER_TYPE_SELL
         price = mt5.symbol_info_tick(self.symbol).ask if signal == 'buy' else mt5.symbol_info_tick(self.symbol).bid
+        
+        # Normalize Prices
+        if symbol_info.trade_tick_size > 0:
+            sl = round(sl / symbol_info.trade_tick_size) * symbol_info.trade_tick_size
+            tp = round(tp / symbol_info.trade_tick_size) * symbol_info.trade_tick_size
+            
+        sl = round(sl, symbol_info.digits)
+        tp = round(tp, symbol_info.digits)
         
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
@@ -443,7 +465,8 @@ class SymbolTrader:
         
         result = mt5.order_send(request)
         if result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(f"Trade Failed: {result.comment}")
+            logger.error(f"Trade Failed: {result.comment} ({result.retcode})")
+            self.telegram.notify_error(f"Trade Execution ({signal})", f"{result.comment} ({result.retcode})")
         else:
             logger.info(f"Trade Executed: {result.order}")
 
