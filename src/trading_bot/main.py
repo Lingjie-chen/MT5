@@ -3721,14 +3721,19 @@ class SymbolTrader:
                             
                             strategy['exit_conditions'] = current_exit
                         else:
-                            # [User Requirement] Dual-Mode: Allow Grid/SMC Entries if conditions met
-                            # Previously blocked SMC/Trend signals here. Now we allow them.
-                            # But we still log what's happening.
+                            # [User Requirement] Dual-Mode Strict Enforcement
+                            # If ORB Strategy (Python) did NOT return a signal, it means Stats (Z/Score) are insufficient.
+                            # Therefore, we MUST BLOCK any 'buy'/'sell' (Market Orders) from AI, as they lack statistical support.
+                            # We ONLY allow 'grid_start' or limit orders (Grid Mode).
+                            
                             ai_action = strategy.get('action', 'hold').lower()
                             
-                            # Log the action but do NOT block it
                             if ai_action in ['buy', 'sell']:
-                                logger.info(f"✅ Allowing AI SMC/Trend Signal ({ai_action}) - Dual Mode Active")
+                                logger.warning(f"❌ Blocking AI SMC/Trend Signal ({ai_action}) - ORB conditions not met (Z<1.0 or Score<=60). Enforcing HOLD.")
+                                strategy['action'] = 'hold'
+                                ai_action = 'hold'
+                                strategy['reason'] = f"Blocked {ai_action.upper()}: Insufficient ORB Stats"
+                                
                             elif ai_action in ['grid_start', 'limit_buy', 'limit_sell']:
                                 logger.info(f"✅ Allowing AI Grid Signal ({ai_action}) - Dual Mode Active")
                                 
