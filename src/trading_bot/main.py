@@ -230,12 +230,15 @@ class SymbolTrader:
             df['time'] = pd.to_datetime(df['time'], unit='s')
             
             # Update Strategy States
-            # H1 Data for ORB
-            rates_h1 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_H1, 0, 100)
-            if rates_h1 is not None:
-                df_h1 = pd.DataFrame(rates_h1)
-                df_h1['time'] = pd.to_datetime(df_h1['time'], unit='s')
-                self.orb_strategy.calculate_orb_levels(df_h1)
+            # H1 Data for ORB (REPLACED WITH M15)
+            # rates_h1 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_H1, 0, 100)
+            # if rates_h1 is not None:
+            #     df_h1 = pd.DataFrame(rates_h1)
+            #     df_h1['time'] = pd.to_datetime(df_h1['time'], unit='s')
+            #     self.orb_strategy.calculate_orb_levels(df_h1)
+            
+            # Use M15 Data for ORB Calculation
+            self.orb_strategy.calculate_orb_levels(df) # df is already M15 from above
             
             # Update Grid Indicators
             self.grid_strategy.update_market_data(df)
