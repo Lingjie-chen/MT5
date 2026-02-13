@@ -308,57 +308,67 @@ class KalmanGridStrategy:
     def check_grid_exit(self, positions, current_price, current_atr=None):
         """
         Basket Exit Logic with Smart TP and Trailing
+        Returns: should_close_long, should_close_short, profit_long, profit_short, reason_long, reason_short
         """
         self._update_positions_state(positions)
         should_close_long = False
         should_close_short = False
         
+        profit_long = 0.0
+        profit_short = 0.0
+        reason_long = ""
+        reason_short = ""
+        
         # --- Long Basket ---
         if self.long_pos_count > 0:
-            total_profit = sum([p.profit + p.swap for p in positions if p.magic == self.magic_number and p.type == mt5.POSITION_TYPE_BUY])
+            profit_long = sum([p.profit + p.swap for p in positions if p.magic == self.magic_number and p.type == mt5.POSITION_TYPE_BUY])
             
             # 1. Dynamic TP
             target_tp = self.dynamic_tp_long if self.dynamic_tp_long else self.global_tp
-            if total_profit >= target_tp:
+            if profit_long >= target_tp:
                 should_close_long = True
-                logger.info(f"Long Basket TP Hit: {total_profit} >= {target_tp}")
+                reason_long = f"Basket TP Reached ({profit_long:.2f} >= {target_tp})"
+                logger.info(f"Long {reason_long}")
                 
             # 2. Lock & Trail
-            if not should_close_long and self.lock_profit_trigger and total_profit >= self.lock_profit_trigger:
-                if total_profit > self.max_basket_profit_long:
-                    self.max_basket_profit_long = total_profit
+            if not should_close_long and self.lock_profit_trigger and profit_long >= self.lock_profit_trigger:
+                if profit_long > self.max_basket_profit_long:
+                    self.max_basket_profit_long = profit_long
                     
                 # Lock 50% of Max Profit
                 lock_val = max(1.0, self.max_basket_profit_long * 0.5)
                 if self.basket_lock_level_long is None or lock_val > self.basket_lock_level_long:
                     self.basket_lock_level_long = lock_val
                     
-                if total_profit < self.basket_lock_level_long:
+                if profit_long < self.basket_lock_level_long:
                      should_close_long = True
-                     logger.info(f"Long Basket Trailing Hit: {total_profit} < {self.basket_lock_level_long}")
+                     reason_long = f"Basket Trailing Hit ({profit_long:.2f} < {self.basket_lock_level_long:.2f})"
+                     logger.info(f"Long {reason_long}")
 
         # --- Short Basket ---
         if self.short_pos_count > 0:
-            total_profit = sum([p.profit + p.swap for p in positions if p.magic == self.magic_number and p.type == mt5.POSITION_TYPE_SELL])
+            profit_short = sum([p.profit + p.swap for p in positions if p.magic == self.magic_number and p.type == mt5.POSITION_TYPE_SELL])
             
             target_tp = self.dynamic_tp_short if self.dynamic_tp_short else self.global_tp
-            if total_profit >= target_tp:
+            if profit_short >= target_tp:
                 should_close_short = True
-                logger.info(f"Short Basket TP Hit: {total_profit} >= {target_tp}")
+                reason_short = f"Basket TP Reached ({profit_short:.2f} >= {target_tp})"
+                logger.info(f"Short {reason_short}")
                 
-            if not should_close_short and self.lock_profit_trigger and total_profit >= self.lock_profit_trigger:
-                if total_profit > self.max_basket_profit_short:
-                    self.max_basket_profit_short = total_profit
+            if not should_close_short and self.lock_profit_trigger and profit_short >= self.lock_profit_trigger:
+                if profit_short > self.max_basket_profit_short:
+                    self.max_basket_profit_short = profit_short
                 
                 lock_val = max(1.0, self.max_basket_profit_short * 0.5)
                 if self.basket_lock_level_short is None or lock_val > self.basket_lock_level_short:
                     self.basket_lock_level_short = lock_val
                     
-                if total_profit < self.basket_lock_level_short:
+                if profit_short < self.basket_lock_level_short:
                      should_close_short = True
-                     logger.info(f"Short Basket Trailing Hit: {total_profit} < {self.basket_lock_level_short}")
+                     reason_short = f"Basket Trailing Hit ({profit_short:.2f} < {self.basket_lock_level_short:.2f})"
+                     logger.info(f"Short {reason_short}")
                      
-        return should_close_long, should_close_short
+        return should_close_long, should_close_short, profit_long, profit_short, reason_long, reason_short
 
     def _update_positions_state(self, positions):
         self.long_pos_count = 0
