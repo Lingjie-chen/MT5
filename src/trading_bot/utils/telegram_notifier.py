@@ -70,6 +70,20 @@ class TelegramNotifier:
         )
         return self.send_message(msg)
 
+    def notify_basket_close(self, symbol, side, profit, reason):
+        """
+        Notify about basket closure (TP/Lock).
+        """
+        icon = "💰" if profit > 0 else "🛡️"
+        msg = (
+            f"{icon} *Basket Closed*\n"
+            f"Symbol: `{symbol}`\n"
+            f"Side: *{side.upper()}*\n"
+            f"Total Profit: `${profit:.2f}`\n"
+            f"Reason: _{reason}_"
+        )
+        return self.send_message(msg)
+
     def notify_error(self, context, error_msg):
         """
         Notify about critical errors.
