@@ -363,7 +363,14 @@ class KalmanGridStrategy:
         if self.short_pos_count > 0:
             profit_short = sum([p.profit + p.swap for p in positions if p.magic == self.magic_number and p.type == mt5.POSITION_TYPE_SELL])
             
-            target_tp = self.dynamic_tp_short if self.dynamic_tp_short else self.global_tp
+            # 1. Dynamic TP
+            # PRIORITY: Use dynamic_tp_long / dynamic_tp_short from AI Analysis if available
+            target_tp = self.global_tp # Default fallback
+            
+            if self.dynamic_tp_short and self.dynamic_tp_short > 0:
+                target_tp = self.dynamic_tp_short
+                # logger.info(f"Using AI Dynamic Short TP: {target_tp}")
+            
             if profit_short >= target_tp:
                 should_close_short = True
                 reason_short = f"Basket TP Reached ({profit_short:.2f} >= {target_tp})"
