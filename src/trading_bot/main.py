@@ -295,14 +295,14 @@ class SymbolTrader:
                 else:
                     smart_sl = orb_signal['price'] + orb_signal['sl_dist']
             
-            # Notify Telegram about Analysis
-            self.telegram.notify_llm_analysis(
-                self.symbol, 
-                "ORB_OPTIMIZATION", 
-                "EXECUTE", 
-                reasoning, 
-                f"SMC:{score} | SL:{smart_sl} | BasketTP:{basket_tp}"
-            )
+            # Notify Telegram about Analysis - ONLY if Trade is Executed
+            # self.telegram.notify_llm_analysis(
+            #     self.symbol, 
+            #     "ORB_OPTIMIZATION", 
+            #     "EXECUTE", 
+            #     reasoning, 
+            #     f"SMC:{score} | SL:{smart_sl} | BasketTP:{basket_tp}"
+            # )
 
             # 3. Execute Trade (Millisecond Response)
             lot_size = llm_decision.get('position_size', 0.01)
