@@ -357,8 +357,9 @@ class SymbolTrader:
                 if orders:
                     logger.info(f"LLM Confirmed Grid Deployment ({len(orders)} orders, {trend}). Executing...")
                     
-                    # Safety: Cancel old grid orders before placing new ones?
-                    # For now, we just append, but ideally we should manage the grid set.
+                    # Safety: Cancel old grid orders before placing new ones
+                    logger.info("Cancelling existing Pending Orders before deploying new Grid...")
+                    self.cancel_all_pending()
                     
                     for order in orders:
                         self.place_limit_order(order)
@@ -415,10 +416,27 @@ class SymbolTrader:
         else:
             logger.info(f"Trade Executed: {result.order}")
 
-    def place_limit_order(self, order_dict):
+    def cancel_all_pending(self):
         """
-        Execute a Pending Limit Order for Grid Strategy
+        Cancel all pending orders for this symbol/magic number
         """
+        orders = mt5.orders_get(symbol=self.symbol)
+        if orders:
+            logger.info(f"Found {len(orders)} pending orders to cancel.")
+            for order in orders:
+                if order.magic == self.magic_number:
+                    request = {
+                        "action": mt5.TRADE_ACTION_REMOVE,
+                        "order": order.ticket,
+                        "magic": self.magic_number,
+                    }
+                    result = mt5.order_send(request)
+                    if result.retcode == mt5.TRADE_RETCODE_DONE:
+                        logger.info(f"Cancelled Order #{order.ticket}")
+                    else:
+                        logger.warning(f"Failed to cancel Order #{order.ticket}: {result.comment}")
+        else:
+            logger.info("No pending orders to cancel.")
         request = {
             "action": mt5.TRADE_ACTION_PENDING,
             "symbol": self.symbol,
