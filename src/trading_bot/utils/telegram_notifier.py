@@ -102,6 +102,16 @@ class TelegramNotifier:
         )
         return self.send_message(msg)
 
+    def notify_info(self, title, message):
+        """
+        Notify about general info/status updates.
+        """
+        msg = (
+            f"ℹ️ *{title}*\n"
+            f"{message}"
+        )
+        return self.send_message(msg)
+
     def notify_error(self, context, error_msg):
         """
         Notify about critical errors.

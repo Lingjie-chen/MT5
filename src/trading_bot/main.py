@@ -89,8 +89,13 @@ class SymbolTrader:
         self.last_orb_filter_time = 0 # Throttling for ORB logs
         self.orb_cooldowns = {'buy': 0, 'sell': 0} # Cooldown for retrying rejected signals
         self.watcher = None # Initialize watcher attribute
+        self.is_optimizing = False # Flag to prevent overlapping optimization runs
         
-        # 4. Data Buffers
+        # 5. Optimization Scheduler State
+        self.last_optimization_time = time.time() # Start counting from now
+        self.optimization_interval = 3600 # 1 Hour
+        
+        # 6. Data Buffers
         self.tick_buffer = []
         
     def initialize(self):
@@ -171,8 +176,23 @@ class SymbolTrader:
 
     def run(self):
         logger.info("Starting Main Trading Loop...")
+        
+        # Trigger initial optimization on startup (Blocking to ensure fresh config)
+        logger.info("Running Startup Strategy Optimization (Blocking)...")
+        self.run_periodic_optimization(blocking=True)
+        self.last_optimization_time = time.time()
+        
         while True:
             try:
+                # Periodic Tasks
+                current_time = time.time()
+                
+                # 1. Strategy Optimization (Every Hour - Non-blocking)
+                if current_time - self.last_optimization_time > self.optimization_interval:
+                    logger.info("Triggering Hourly Strategy Optimization...")
+                    self.run_periodic_optimization(blocking=False)
+                    self.last_optimization_time = current_time
+
                 tick = mt5.symbol_info_tick(self.symbol)
                 if tick is None:
                     time.sleep(1)
@@ -189,6 +209,71 @@ class SymbolTrader:
             except Exception as e:
                 logger.error(f"Loop Error: {e}")
                 time.sleep(1)
+
+    def run_periodic_optimization(self, blocking=False):
+        """
+        Runs the optimization script.
+        blocking: If True, waits for completion (good for startup).
+        """
+        if self.is_optimizing:
+            logger.warning("Optimization already running, skipping trigger.")
+            return
+
+        self.is_optimizing = True
+
+        def _optimization_task():
+            try:
+                import subprocess
+                # Locate the script: scripts/optimize_strategy_params.py
+                # current_dir is src/trading_bot
+                # script is in src/../scripts/
+                
+                script_path = os.path.join(src_dir, '..', 'scripts', 'optimize_strategy_params.py')
+                script_path = os.path.abspath(script_path)
+                
+                if not os.path.exists(script_path):
+                     logger.error(f"Optimization script not found at {script_path}")
+                     self.is_optimizing = False
+                     return
+
+                logger.info(f"Running Optimization Script: {script_path}")
+                
+                # Run as subprocess
+                process = subprocess.Popen(
+                    [sys.executable, script_path],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                
+                stdout, stderr = process.communicate()
+                
+                if process.returncode == 0:
+                    logger.info("Optimization Completed Successfully.")
+                    # Log last few lines of output
+                    lines = stdout.strip().split('\n')
+                    for line in lines[-5:]:
+                        logger.info(f"[Optimizer] {line}")
+                        
+                    # Reload Config in Grid Strategy
+                    new_config = self.grid_strategy.reload_config()
+                    logger.info(f"Grid Strategy Config Updated: {new_config}")
+                    
+                    # self.telegram.notify_info("Strategy Optimization", "Optimization completed. Grid parameters updated.")
+                else:
+                    logger.error(f"Optimization Failed (Code {process.returncode}):\n{stderr}")
+                    
+            except Exception as e:
+                logger.error(f"Error running optimization task: {e}")
+            finally:
+                self.is_optimizing = False
+
+        if blocking:
+            _optimization_task()
+        else:
+            # Run in Daemon Thread
+            t = threading.Thread(target=_optimization_task, daemon=True)
+            t.start()
 
     def process_tick(self, tick):
         current_price = tick.ask # Assume Buy Logic uses Ask, Sell uses Bid, simplified to Ask for trigger check
@@ -272,8 +357,8 @@ class SymbolTrader:
             
             # ORB works best in Trending or High Volatility
             if regime == "ranging" and confidence > 0.7:
-                if time.time() - self.last_orb_filter_time > 60:
-                     logger.warning(f"ORB Signal Filtered: Market is Ranging (Conf: {confidence})")
+                if time.time() - self.last_orb_filter_time > 300:
+                     logger.info(f"ORB Signal Filtered: Market is Ranging (Conf: {confidence})")
                      self.last_orb_filter_time = time.time()
                 
                 # Set Cooldown
@@ -302,8 +387,8 @@ class SymbolTrader:
         
         # Quality Threshold Filter: Score >= 75
         if score < 75:
-            if time.time() - self.last_orb_filter_time > 60:
-                logger.warning(f"ORB Signal Ignored: SMC Score {score} < 75. Details: {details}")
+            if time.time() - self.last_orb_filter_time > 300:
+                logger.debug(f"ORB Signal Ignored: SMC Score {score} < 75. Details: {details}")
                 self.last_orb_filter_time = time.time()
             
             # Set Cooldown
@@ -322,6 +407,16 @@ class SymbolTrader:
         # Request Smart SL and Basket TP Analysis
         logger.info(f"SMC Validated ({score} >= 75). Requesting LLM Smart Analysis...")
         
+        # Prepare Technical Signals including Grid Config
+        tech_signals = {
+            "grid_strategy": {
+                "config": self.grid_strategy.get_active_config(),
+                "orb_data": {
+                    "stats": orb_signal.get('stats', {})
+                }
+            }
+        }
+        
         market_context = {
             "symbol": self.symbol,
             "current_price": orb_signal['price'],
@@ -335,9 +430,14 @@ class SymbolTrader:
             # Call LLM to analyze Micro-structure, Volatility, and Order Flow
             llm_decision = self.llm_client.optimize_strategy_logic(
                 market_structure_analysis=details, 
-                current_market_data=market_context
+                current_market_data=market_context,
+                technical_signals=tech_signals # Pass optimization config here
             )
             
+            if not llm_decision:
+                logger.error("LLM Decision is None. Aborting ORB execution.")
+                return
+
             # Extract Smart SL (Optimal Stop Loss)
             smart_sl = llm_decision.get('exit_conditions', {}).get('sl_price', 0)
             
@@ -377,12 +477,23 @@ class SymbolTrader:
             
             logger.info(f"Executing ORB Trade: {orb_signal['signal'].upper()} | Lot: {lot_size} | Smart SL: {smart_sl} | Basket TP: ${basket_tp}")
             
-            # --- FORCE STOP GRID STRATEGY ---
+            # --- FORCE STOP GRID STRATEGY & CLOSE COUNTER-TREND POSITIONS ---
             if self.current_strategy_mode == "GRID_RANGING" or self.grid_strategy.is_ranging:
-                logger.warning("ORB Breakout Confirmed: STOPPING Grid Strategy & Cancelling Pending Orders.")
+                logger.warning("ORB Breakout Confirmed: STOPPING Grid Strategy & Closing Counter-Trend Positions.")
                 self.current_strategy_mode = "ORB_BREAKOUT" # Switch mode
                 self.grid_strategy.is_ranging = False # Disable ranging flag
                 self.cancel_all_pending() # Cancel all grid limit orders immediately
+                
+                # Close Counter-Trend Positions
+                # If ORB Signal is BUY, close SELLS. If SELL, close BUYS.
+                positions = mt5.positions_get(symbol=self.symbol)
+                if positions:
+                    counter_type = mt5.POSITION_TYPE_SELL if orb_signal['signal'] == 'buy' else mt5.POSITION_TYPE_BUY
+                    counter_positions = [p for p in positions if p.magic == self.magic_number and p.type == counter_type]
+                    
+                    if counter_positions:
+                        logger.info(f"Closing {len(counter_positions)} counter-trend positions...")
+                        self.close_positions(counter_positions, counter_type, reason="ORB Breakout Reversal")
             
             # Notify Telegram with LLM Reasoning
             self.telegram.notify_trade(
@@ -443,6 +554,14 @@ class SymbolTrader:
             # We reuse optimize_strategy_logic but with a specific flag or prompt structure
             # For now, we simulate a specific call or extend the prompt
             
+            # Prepare Technical Signals including Grid Config
+            tech_signals = {
+                "grid_strategy": {
+                    "config": self.grid_strategy.get_active_config(),
+                    "orb_data": {} # No ORB data for Grid check
+                }
+            }
+            
             # Construct a prompt-friendly context
             market_data_input = {
                 "symbol": self.symbol,
@@ -454,9 +573,14 @@ class SymbolTrader:
             # Call LLM
             llm_decision = self.llm_client.optimize_strategy_logic(
                 market_structure_analysis={"summary": "Checking for Ranging Market"},
-                current_market_data=market_data_input
+                current_market_data=market_data_input,
+                technical_signals=tech_signals # Pass optimization config here
             )
             
+            if not llm_decision:
+                logger.warning("LLM Grid Analysis returned None/Empty. Skipping.")
+                return
+
             # 3. Parse Decision
             # We expect LLM to return "action": "deploy_grid" or "hold"
             action = llm_decision.get('action', 'hold')
@@ -492,6 +616,10 @@ class SymbolTrader:
                 
                 if orders:
                     logger.info(f"LLM Confirmed Grid Deployment ({len(orders)} orders, {trend}). Executing...")
+                    
+                    # [NEW] Trigger Background Optimization on Grid Start
+                    logger.info("Grid Strategy Started: Triggering Background Optimization...")
+                    self.run_periodic_optimization(blocking=False)
                     
                     # Notify Telegram
                     self.telegram.notify_grid_deployment(self.symbol, len(orders), trend, current_price, basket_tp=basket_tp)
@@ -592,6 +720,42 @@ class SymbolTrader:
             self.telegram.notify_error(f"Trade Execution ({signal})", f"{result.comment} ({result.retcode})")
         else:
             logger.info(f"Trade Executed: {result.order}")
+            
+            # --- Post-Trade Validation (Smart SL/TP) ---
+            # Some brokers (ECN/STP) ignore SL/TP in Market Execution. We must verify and update if needed.
+            if sl > 0 or tp > 0:
+                time.sleep(0.5) # Wait for broker to process
+                positions = mt5.positions_get(ticket=result.order)
+                
+                if positions:
+                    pos = positions[0]
+                    needs_update = False
+                    
+                    # Check SL
+                    if sl > 0 and abs(pos.sl - sl) > 0.001:
+                        logger.warning(f"Order SL mismatch (Set: {sl}, Actual: {pos.sl}). Updating...")
+                        needs_update = True
+                        
+                    # Check TP (only if we set one, usually we use Basket)
+                    if tp > 0 and abs(pos.tp - tp) > 0.001:
+                        logger.warning(f"Order TP mismatch (Set: {tp}, Actual: {pos.tp}). Updating...")
+                        needs_update = True
+                        
+                    if needs_update:
+                        req_update = {
+                            "action": mt5.TRADE_ACTION_SLTP,
+                            "position": result.order,
+                            "symbol": self.symbol,
+                            "sl": float(sl),
+                            "tp": float(tp),
+                            "magic": self.magic_number
+                        }
+                        res_update = mt5.order_send(req_update)
+                        if res_update.retcode == mt5.TRADE_RETCODE_DONE:
+                            logger.info(f"Position #{result.order} SL/TP Updated Successfully.")
+                        else:
+                            logger.error(f"Failed to update SL/TP for #{result.order}: {res_update.comment}")
+                            self.telegram.notify_error(f"SL/TP Update Fail #{result.order}", res_update.comment)
 
     def place_limit_order(self, order_dict):
         """

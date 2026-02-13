@@ -57,6 +57,10 @@ class FileWatcher:
     def check_changes(self, new_mtimes):
         # Check for modified or new files
         for path, mtime in new_mtimes.items():
+            # Skip checking our own config file to avoid restart loops
+            if "grid_config.json" in path:
+                continue
+
             if path not in self.last_mtimes:
                 self.logger.info(f"New file detected: {path}")
                 return True
@@ -65,9 +69,21 @@ class FileWatcher:
                 return True
         
         # Check for deleted files
+        # Also ignore if grid_config.json is "deleted" (though unlikely)
         if len(new_mtimes) != len(self.last_mtimes):
-             self.logger.info("File deletion detected")
-             return True
+             # Filter out grid_config from the check if needed, but simpler to just return True for now
+             # unless we want to be very specific. 
+             # Let's be specific to avoid loop.
+             
+             old_keys = set(self.last_mtimes.keys())
+             new_keys = set(new_mtimes.keys())
+             deleted = old_keys - new_keys
+             
+             for d_path in deleted:
+                 if "grid_config.json" in d_path:
+                     continue
+                 self.logger.info(f"File deletion detected: {d_path}")
+                 return True
              
         return False
 

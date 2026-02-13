@@ -1397,13 +1397,15 @@ class QwenClient:
             
             grid_config_context = (
                 f"\n当前策略优化状态 (Self-Optimized Params):\n"
+                f"注意：以下参数来自 `optimize_strategy_params.py` 的最新优化结果，请在决策时优先参考。\n"
                 f"- ORB Open Hour: {grid_config.get('orb_open_hour', 'N/A')}\n"
                 f"- ORB Consolidation: {grid_config.get('orb_consolidation_candles', 'N/A')} Candles\n"
                 f"- ORB SL Points: {grid_config.get('orb_sl_points', 'N/A')}\n"
                 f"- ORB TP Points: {grid_config.get('orb_tp_points', 'N/A')}\n"
                 f"- Risk Per Trade: {grid_config.get('max_risk_per_trade_percent', 'N/A')}%\n"
-                f"- Grid Step: {grid_config.get('grid_step_points', 'N/A')} points\n"
-                f"- Global Grid TP: ${grid_config.get('global_tp', 'N/A')}\n"
+                f"- Grid Step: {grid_config.get('grid_step_points', 'N/A')} points (优化推荐值)\n"
+                f"- Lot Multiplier: {grid_config.get('lot_multiplier', 'N/A')} (优化推荐值)\n"
+                f"- Global Grid TP: ${grid_config.get('global_tp', 'N/A')} (优化推荐值)\n"
                 f"{orb_stats_str}\n"
             )
         else:
@@ -1514,6 +1516,12 @@ class QwenClient:
              - **不要**: 因为找不到特定的 FVG 就放弃有效的 ORB 突破；但**一定要**因为位置极差而拒绝入场。
 
         **拒绝模糊信号**: 如果 ORB 分数不足 (<= 60) 且未触及网格边界，则**强制观望 (WAIT)**，严禁强行开仓。
+
+        **数据集成与决策 (Data Integration & Decision)**:
+        - **优化参数集成**: 请重点参考 `当前策略优化状态` 中的 `Grid Step`, `Lot Multiplier` 和 `Global Grid TP`。这些是经过数学优化的最佳参数，请在配置网格或计算盈亏比时优先采纳。
+        - **舆论与情绪推断 (Sentiment Inference)**: 虽然没有直接的新闻数据，请通过 `SMC 结构` (如大额订单块位置) 和 `价格行为` (如急涨急跌、假突破) 来**反推**当前市场情绪。
+          - 如果出现无理由的剧烈波动，视为 "News Driven" (新闻驱动)，应收紧风控。
+          - 如果价格严格遵循技术位，视为 "Technical Driven" (技术驱动)，可放心执行策略。
 
         ## 强制输出格式要求 (Format Enforcement)
         你必须返回一个严格符合 JSON 格式的响应，并确保包含以下所有顶层字段（严禁遗漏）：
@@ -1793,13 +1801,17 @@ class QwenClient:
                     else:
                         # 限制范围，防止模型给出极端值
                         try:
-                            raw_size = trading_decision["position_size"]
+                            # Use default if None or empty string
+                            raw_size = trading_decision.get("position_size")
+                            if raw_size is None or raw_size == "":
+                                raw_size = 0.01
+                                
                             size = float(raw_size)
                             
                             # Log dynamic position size only if action implies potential entry
                             # Suppress log for 'hold' or 'wait' or 'close' to avoid noise as per user request
-                            action_val = trading_decision.get('action', 'hold').lower()
-                            if action_val not in ['hold', 'wait', 'close', 'neutral']:
+                            action_val = trading_decision.get('action', 'hold')
+                            if action_val and action_val.lower() not in ['hold', 'wait', 'close', 'neutral']:
                                 logger.info(f"✅ 模型返回动态仓位: {raw_size} (已根据资金动态计算)")
                             
                             # 0.0 到 10.0 手之间 (允许模型返回 0.0 以表示极高风险不交易)

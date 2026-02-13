@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import MetaTrader5 as mt5
 import logging
+import json
+import os
 from .orb_strategy import GoldORBStrategy
 
 logger = logging.getLogger("KalmanGrid")
@@ -73,7 +75,7 @@ class KalmanGridStrategy:
             "max_grid_steps": 10,
             "lot_type": 'FIBONACCI', # Default to Fibonacci as requested
             "lot_multiplier": 1.5,
-            "tp_steps": { 1: 5.0, 2: 8.0, 3: 12.0 },
+            "tp_steps": { "1": 5.0, "2": 8.0, "3": 12.0 }, # Keys as strings for JSON compat
             "global_tp": 10.0 
         }
         
@@ -83,7 +85,7 @@ class KalmanGridStrategy:
             "max_grid_steps": 20,    
             "lot_type": 'FIBONACCI',
             "lot_multiplier": 1.3,   
-            "tp_steps": { 1: 5.0, 2: 8.0, 3: 12.0 },
+            "tp_steps": { "1": 5.0, "2": 8.0, "3": 12.0 },
             "global_tp": 15.0 
         }
         
@@ -91,12 +93,50 @@ class KalmanGridStrategy:
         if "XAU" in self.symbol.upper() or "GOLD" in self.symbol.upper():
             config = xau_config
             
+        # [NEW] Check for external optimized config
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            # src/trading_bot/strategies/ -> src/trading_bot/config/grid_config.json
+            config_path = os.path.join(current_dir, '..', 'config', 'grid_config.json')
+            
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    optimized_config = json.load(f)
+                    logger.info(f"Loading optimized grid config from {config_path}")
+                    
+                    # Update allowed keys
+                    if "grid_step_points" in optimized_config:
+                        config["grid_step_points"] = optimized_config["grid_step_points"]
+                    if "lot_multiplier" in optimized_config:
+                        config["lot_multiplier"] = optimized_config["lot_multiplier"]
+                    if "global_tp" in optimized_config:
+                        config["global_tp"] = optimized_config["global_tp"]
+        except Exception as e:
+            logger.error(f"Failed to load optimized config: {e}")
+            
         self.grid_step_points = config["grid_step_points"]
         self.max_grid_steps = config["max_grid_steps"]
         self.lot_type = config["lot_type"]
         self.lot_multiplier = config["lot_multiplier"]
         self.tp_steps = config["tp_steps"]
         self.global_tp = config["global_tp"]
+
+    def get_active_config(self):
+        """Returns the current active configuration"""
+        return {
+            "grid_step_points": self.grid_step_points,
+            "max_grid_steps": self.max_grid_steps,
+            "lot_type": self.lot_type,
+            "lot_multiplier": self.lot_multiplier,
+            "tp_steps": self.tp_steps,
+            "global_tp": self.global_tp
+        }
+
+    def reload_config(self):
+        """Reload configuration from disk (used after optimization)"""
+        logger.info("Reloading Grid Configuration...")
+        self._load_config()
+        return self.get_active_config()
 
     def update_market_data(self, df, df_h1=None):
         """
@@ -229,26 +269,28 @@ class KalmanGridStrategy:
             # We deploy ALL valid levels found above
             
             # Buy Limits
-            for i, price in enumerate(levels_buy):
-                lot = self.calculate_next_lot(i + 1)
-                orders.append({
-                    'type': 'limit_buy',
-                    'price': price,
-                    'tp': 0.0, # Managed by Basket
-                    'volume': lot,
-                    'comment': f'Fib Grid {ratios[i]}'
-                })
+            if trend_direction == 'bullish' or trend_direction == 'neutral':
+                for i, price in enumerate(levels_buy):
+                    lot = self.calculate_next_lot(i + 1)
+                    orders.append({
+                        'type': 'limit_buy',
+                        'price': price,
+                        'tp': 0.0, # Managed by Basket
+                        'volume': lot,
+                        'comment': f'Fib Grid {ratios[i]}'
+                    })
                 
             # Sell Limits
-            for i, price in enumerate(levels_sell):
-                lot = self.calculate_next_lot(i + 1)
-                orders.append({
-                    'type': 'limit_sell',
-                    'price': price,
-                    'tp': 0.0,
-                    'volume': lot,
-                    'comment': f'Fib Grid {ratios[i]}' # Ratio logic might be inverted index-wise
-                })
+            if trend_direction == 'bearish' or trend_direction == 'neutral':
+                for i, price in enumerate(levels_sell):
+                    lot = self.calculate_next_lot(i + 1)
+                    orders.append({
+                        'type': 'limit_sell',
+                        'price': price,
+                        'tp': 0.0,
+                        'volume': lot,
+                        'comment': f'Fib Grid {ratios[i]}' # Ratio logic might be inverted index-wise
+                    })
                 
         return orders
 

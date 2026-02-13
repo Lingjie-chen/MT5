@@ -99,6 +99,25 @@ def main():
     print(f"grid_step_points = {int(best_params[0])}")
     print(f"lot_multiplier = {best_params[1]:.1f}")
     print(f"global_tp = {best_params[2]:.1f}")
+
+    # 6. Save to JSON for Bot Auto-Loading
+    config_path = os.path.join(src_dir, 'trading_bot', 'config', 'grid_config.json')
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+    
+    new_config = {
+        "grid_step_points": int(best_params[0]),
+        "lot_multiplier": round(float(best_params[1]), 2),
+        "global_tp": round(float(best_params[2]), 2),
+        "updated_at": datetime.now().isoformat()
+    }
+    
+    try:
+        import json
+        with open(config_path, 'w') as f:
+            json.dump(new_config, f, indent=4)
+        logger.info(f"Configuration saved to {config_path}")
+    except Exception as e:
+        logger.error(f"Failed to save configuration: {e}")
     
     processor.close()
 
