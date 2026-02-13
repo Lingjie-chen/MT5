@@ -213,22 +213,17 @@ class GoldORBStrategy:
         High-Frequency Breakout Check (Millisecond Level Response)
         Returns: Signal Dict or None
         """
+        # Ensure we have valid range levels
         if not self.is_range_final or self.final_range_high is None or self.final_range_low is None:
             return None
             
         if self.trades_today_count >= self.trades_per_day:
             return None
 
-        # Check Breakout
-        # Instant trigger on price cross (for millisecond response)
-        # Note: Strategy usually requires candle close, but for 'Millisecond Response' requirement,
-        # we can trigger on touch if configured, or wait for close but process immediately.
-        # Here we assume 'Breakout' means price > high. 
-        # To be safe and avoid fakeouts, we might check if price > high + buffer,
-        # or rely on the caller to pass 'confirmed' price (like 1-min close).
-        
-        # However, the user asked for "Immediate trigger when price breaks ORB interval".
-        # So we trigger on current_price.
+        # --- 24-Hour Monitor / Session Filter ---
+        # Although ORB is usually an "opening" range breakout, once the range is defined,
+        # we monitor it for the rest of the day (or until reset).
+        # This function is called on every TICK, so it satisfies the "Real-time Signal Detection" requirement.
         
         signal = None
         
@@ -240,9 +235,7 @@ class GoldORBStrategy:
                 signal = 'sell'
                 
         if signal:
-            # We need to ensure we don't trigger multiple times on the same 'event'.
-            # But since we have flags (long_signal_taken_today), it protects us.
-            
+            # Prevent double entry on same day
             if signal == 'buy':
                 self.long_signal_taken_today = True
                 self.trades_today_count += 1
