@@ -635,7 +635,7 @@ class SymbolTrader:
                 filling_modes_to_try = list(dict.fromkeys(filling_modes_to_try))
                 
                 success = False
-                for attempt in range(3):
+                for attempt in range(5): # Increased retries
                     if success: break
                     
                     # Refresh tick
@@ -655,9 +655,9 @@ class SymbolTrader:
                             "type": mt5.ORDER_TYPE_SELL if pos.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY,
                             "position": int(pos.ticket),
                             "price": float(price),
-                            "deviation": 50, # Increased deviation for closing
+                            "deviation": 100, # Increased deviation for closing
                             "magic": self.magic_number,
-                            "comment": str(reason),
+                            "comment": str(reason)[:31], # Truncate to avoid length errors
                             "type_time": mt5.ORDER_TIME_GTC,
                             "type_filling": f_mode,
                         }
@@ -675,6 +675,13 @@ class SymbolTrader:
                         elif result.retcode == 10030: # Unsupported filling mode
                             logger.warning(f"Filling mode {f_mode} unsupported, trying next...")
                             continue # Try next filling mode
+                        elif result.retcode == 10004: # Requote
+                             logger.warning(f"Requote for #{pos.ticket}, retrying...")
+                             break # Break filling loop to refresh price
+                        elif result.retcode == 10027: # AutoTrading Disabled
+                             logger.error("AutoTrading Disabled in Client! Please enable it.")
+                             success = True # Stop retrying to avoid spam
+                             break
                         else:
                             logger.error(f"Failed to Close #{pos.ticket} (Att {attempt+1}, Mode {f_mode}): {result.comment} ({result.retcode})")
                             
