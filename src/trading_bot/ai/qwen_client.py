@@ -106,7 +106,7 @@ class QwenClient:
     - **新一轮分析**: 保持敏锐，随时准备捕捉下一波 M5 级别的机会。
     - **拒绝追涨杀跌 (Anti-FOMO)**: 
       - 需等待 M15 级别的回调 (Pullback) 至合理区域 (Discount Zone) 或关键支撑位 (Order Block/FVG)。
-    - **Trend Surfing (趋势冲浪)**: 如果识别到强劲的单边趋势，果断利用 M15 信号进出或金字塔加仓。
+    - **Trend Surfing (趋势冲浪)**: 即使识别到强劲的单边趋势，也**必须**在满足 ORB Breakout 条件 (Score > 60 & Z > 1.0) 的前提下才能入场。不要在无信号支持的情况下盲目追单。
 
     **策略模式 (Strategy Mode) - 自适应切换**:
     *   **模式**: 根据市场分析，从 "orb_breakout" (突破) 或 "grid_consolidation" (震荡) 中选择最适合当前行情的模式。
