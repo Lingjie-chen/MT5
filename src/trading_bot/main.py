@@ -582,35 +582,62 @@ class SymbolTrader:
             logger.info("No pending orders to cancel.")
 
     def close_positions(self, positions, type_filter, reason):
+        symbol_info = mt5.symbol_info(self.symbol)
+        if symbol_info is None:
+            logger.error(f"Cannot close positions: Symbol {self.symbol} not found")
+            return
+
+        # Determine correct filling mode
+        filling_mode = mt5.ORDER_FILLING_FOK # Default fallback
+        if symbol_info.filling_mode & mt5.SYMBOL_FILLING_IOC:
+            filling_mode = mt5.ORDER_FILLING_IOC
+        elif symbol_info.filling_mode & mt5.SYMBOL_FILLING_FOK:
+            filling_mode = mt5.ORDER_FILLING_FOK
+            
         for pos in positions:
             if pos.magic == self.magic_number and pos.type == type_filter:
-                request = {
-                    "action": mt5.TRADE_ACTION_DEAL,
-                    "symbol": self.symbol,
-                    "volume": pos.volume,
-                    "type": mt5.ORDER_TYPE_SELL if pos.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY,
-                    "position": pos.ticket,
-                    "price": mt5.symbol_info_tick(self.symbol).bid if pos.type == mt5.POSITION_TYPE_BUY else mt5.symbol_info_tick(self.symbol).ask,
-                    "deviation": 20,
-                    "magic": self.magic_number,
-                    "comment": reason,
-                    "type_time": mt5.ORDER_TIME_GTC,
-                    "type_filling": mt5.ORDER_FILLING_IOC,
-                }
-                
-                result = mt5.order_send(request)
-                if result is None:
-                    logger.error(f"Order Send Failed (None result) for Position #{pos.ticket}")
-                    continue
+                # Retry logic for closing
+                for attempt in range(3):
+                    tick = mt5.symbol_info_tick(self.symbol)
+                    if tick is None:
+                        time.sleep(0.5)
+                        continue
+                        
+                    price = tick.bid if pos.type == mt5.POSITION_TYPE_BUY else tick.ask
                     
-                if result.retcode != mt5.TRADE_RETCODE_DONE:
-                    logger.error(f"Failed to Close Position #{pos.ticket}: {result.comment} ({result.retcode})")
-                    # Try to notify via Telegram if critical failure
-                    try:
-                        self.telegram.notify_error(f"Close Fail #{pos.ticket}", f"{result.comment} ({result.retcode})")
-                    except: pass
+                    request = {
+                        "action": mt5.TRADE_ACTION_DEAL,
+                        "symbol": self.symbol,
+                        "volume": float(pos.volume), # Explicit float cast
+                        "type": mt5.ORDER_TYPE_SELL if pos.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY,
+                        "position": int(pos.ticket), # Explicit int cast
+                        "price": float(price),
+                        "deviation": 20,
+                        "magic": self.magic_number,
+                        "comment": str(reason),
+                        "type_time": mt5.ORDER_TIME_GTC,
+                        "type_filling": filling_mode,
+                    }
+                    
+                    result = mt5.order_send(request)
+                    
+                    if result is None:
+                        last_error = mt5.last_error()
+                        logger.error(f"Order Send Failed (None result) for Position #{pos.ticket}. MT5 Error: {last_error}")
+                        time.sleep(0.5)
+                        continue
+                        
+                    if result.retcode != mt5.TRADE_RETCODE_DONE:
+                        logger.error(f"Failed to Close Position #{pos.ticket} (Attempt {attempt+1}): {result.comment} ({result.retcode})")
+                        time.sleep(0.5)
+                    else:
+                        logger.info(f"Position #{pos.ticket} Closed: {reason} | Price: {result.price}")
+                        break # Success
                 else:
-                    logger.info(f"Position #{pos.ticket} Closed: {reason}")
+                    # All attempts failed
+                    try:
+                        self.telegram.notify_error(f"Close Fail #{pos.ticket}", "Max retries exceeded")
+                    except: pass
 
     def get_dataframe(self, timeframe, count):
         rates = mt5.copy_rates_from_pos(self.symbol, timeframe, 0, count)
