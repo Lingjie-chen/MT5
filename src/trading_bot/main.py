@@ -387,4 +387,18 @@ class SymbolTrader:
 
 if __name__ == "__main__":
     # Support command line args for symbol and account index
-    # Usage: 
+    # Usage: python main.py [SYMBOL] [ACCOUNT_INDEX]
+    target_symbol = "GOLD"
+    target_account = 1
+    
+    if len(sys.argv) > 1:
+        target_symbol = sys.argv[1]
+    if len(sys.argv) > 2:
+        try:
+            target_account = int(sys.argv[2])
+        except ValueError:
+            pass
+
+    bot = SymbolTrader(target_symbol, account_index=target_account)
+    if bot.initialize():
+        bot.run()
