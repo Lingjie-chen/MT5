@@ -172,6 +172,6 @@ class SMCQualityValidator:
         if is_valid:
             logger.info(f"SMC Validation PASSED: Score {score}/{self.min_score_threshold} ({', '.join(details)})")
         else:
-            logger.info(f"SMC Validation FAILED: Score {score}/{self.min_score_threshold} ({', '.join(details)})")
+            logger.debug(f"SMC Validation FAILED: Score {score}/{self.min_score_threshold} ({', '.join(details)})")
             
         return is_valid, score, result_details
