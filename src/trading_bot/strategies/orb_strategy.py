@@ -206,11 +206,11 @@ class GoldORBStrategy:
             if signal == 'buy':
                 self.long_signal_taken_today = True
                 self.trades_today_count += 1
-                logger.info(f"ORB Realtime BUY Trigger: {current_price} > {self.final_range_high}")
+                # logger.info(f"ORB Realtime BUY Trigger: {current_price} > {self.final_range_high}") # Suppressed to reduce spam
             else:
                 self.short_signal_taken_today = True
                 self.trades_today_count += 1
-                logger.info(f"ORB Realtime SELL Trigger: {current_price} < {self.final_range_low}")
+                # logger.info(f"ORB Realtime SELL Trigger: {current_price} < {self.final_range_low}") # Suppressed to reduce spam
                 
             sl_dist = self.fixed_sl_points * point
             tp_dist = self.fixed_tp_points * point
