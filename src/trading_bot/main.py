@@ -714,6 +714,19 @@ class SymbolTrader:
         
         logger.info(f"❤️ Heartbeat | Price: {current_price:.2f} | Mode: {self.current_strategy_mode} | ORB: {orb_status} | Grid: {grid_status} | Pos: {pos_count} | Orders: {order_count}")
 
+        # Send to Telegram (formatted for readability)
+        tg_msg = (
+            f"Symbol: `{self.symbol}`\n"
+            f"Price: `{current_price:.2f}`\n"
+            f"Mode: `{self.current_strategy_mode}`\n"
+            f"ORB: `{orb_status}`\n"
+            f"Grid: `{grid_status}`\n"
+            f"Positions: `{pos_count}`\n"
+            f"Orders: `{order_count}`"
+        )
+        # Use a separate thread to avoid blocking tick processing
+        threading.Thread(target=self.telegram.notify_info, args=("Heartbeat Status", tg_msg), daemon=True).start()
+
     # --- Execution Helpers ---
     def execute_trade(self, signal, lot, sl, tp, comment):
         symbol_info = mt5.symbol_info(self.symbol)
