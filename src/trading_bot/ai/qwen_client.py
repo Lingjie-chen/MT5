@@ -57,8 +57,8 @@ class QwenClient:
         """从 docs/strategy_rules.md 加载最新的盘前交易规则"""
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            # src/trading_bot/ai/ -> ../../../docs/strategy_rules.md
-            rules_path = os.path.join(current_dir, "..", "..", "..", "docs", "strategy_rules.md")
+            # src/trading_bot/ai/ -> ../../docs/strategy_rules.md
+            rules_path = os.path.join(current_dir, "..", "..", "docs", "strategy_rules.md")
             
             if os.path.exists(rules_path):
                 with open(rules_path, "r", encoding="utf-8") as f:
