@@ -826,22 +826,35 @@ class SymbolTrader:
         if tick:
             # Check StopLevel (minimum distance from price)
             stop_level = symbol_info.trade_stops_level * symbol_info.point
+            # Add a small buffer to be safe (e.g. 2 points)
+            buffer = 2 * symbol_info.point
             
             if mt5_type == mt5.ORDER_TYPE_BUY_LIMIT:
                 if price >= tick.ask:
+                    # If price is already above Ask, Limit Buy is invalid (becomes market).
+                    # But for Grid, maybe we just want to skip or place at Ask?
+                    # Let's skip to be safe, or adjust to Ask - StopLevel if that was the intent.
                     logger.warning(f"Skipping Buy Limit @ {price} >= Ask {tick.ask}")
                     return
+                
                 if (tick.ask - price) < stop_level:
-                    logger.warning(f"Skipping Buy Limit @ {price} too close to Ask {tick.ask} (StopLevel {stop_level})")
-                    return
+                    # Auto-adjust price to be valid
+                    new_price = tick.ask - stop_level - buffer
+                    new_price = round(new_price, symbol_info.digits)
+                    logger.info(f"Adjusting Buy Limit Price: {price} -> {new_price} (Too close to Ask {tick.ask}, StopLevel {stop_level})")
+                    price = new_price
                     
             elif mt5_type == mt5.ORDER_TYPE_SELL_LIMIT:
                 if price <= tick.bid:
                     logger.warning(f"Skipping Sell Limit @ {price} <= Bid {tick.bid}")
                     return
+                
                 if (price - tick.bid) < stop_level:
-                    logger.warning(f"Skipping Sell Limit @ {price} too close to Bid {tick.bid} (StopLevel {stop_level})")
-                    return
+                    # Auto-adjust price to be valid
+                    new_price = tick.bid + stop_level + buffer
+                    new_price = round(new_price, symbol_info.digits)
+                    logger.info(f"Adjusting Sell Limit Price: {price} -> {new_price} (Too close to Bid {tick.bid}, StopLevel {stop_level})")
+                    price = new_price
 
         request = {
             "action": mt5.TRADE_ACTION_PENDING,
