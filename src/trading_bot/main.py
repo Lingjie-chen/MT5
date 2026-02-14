@@ -648,12 +648,16 @@ class SymbolTrader:
                     # Notify Telegram
                     self.telegram.notify_grid_deployment(self.symbol, len(orders), trend, current_price, basket_tp=basket_tp)
                     
-                    # Safety: Cancel old grid orders before placing new ones
-                    logger.info("Cancelling existing Pending Orders before deploying new Grid...")
-                    self.cancel_all_pending()
-                    
                     for order in orders:
-                        self.place_limit_order(order)
+                        # Handle Control Actions (Clean & Deploy)
+                        if order['type'] == 'cancel_all_buy_limits':
+                            logger.info("Cleaning up existing Buy Limits...")
+                            self.cancel_pending_by_type(mt5.ORDER_TYPE_BUY_LIMIT)
+                        elif order['type'] == 'cancel_all_sell_limits':
+                            logger.info("Cleaning up existing Sell Limits...")
+                            self.cancel_pending_by_type(mt5.ORDER_TYPE_SELL_LIMIT)
+                        else:
+                            self.place_limit_order(order)
                         
                     self.last_grid_update = time.time()
             else:
