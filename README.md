@@ -124,7 +124,38 @@ python -m src.trading_bot.main GOLD
 *   **Superpowers**: 集成 RED-GREEN-REFACTOR 工作流与两阶段评审的 AI 增强能力。
     *   配置: `skill/superpowers/`
 
-所有 Skill 资源统一管理在 `skill/` 目录下。
+所有 Skill 资源统一管理在 `skill/` 目录下，并已自动同步至 `.trae/skills/` 以供 Trae 助手调用。
+
+### 6.1 Skill Seekers 使用指南
+
+**Skill Seekers** 是一个强大的文档和代码库处理工具，已在本项目中全局配置。
+
+#### 方式 A: 通过 Trae 助手使用 (推荐)
+在对话中直接请求 Trae 执行相关任务，Trae 会自动调用 Skill Seekers 的能力：
+*   "请帮我学习 https://fastapi.tiangolo.com/ 的文档并生成 Skill"
+*   "分析当前代码库的架构和设计模式"
+*   "把这个 PDF 手册转换成 Skill"
+
+#### 方式 B: 命令行使用 (CLI)
+你也可以在终端中直接使用 `skill-seekers` 命令：
+
+```bash
+# 1. 抓取文档网站
+skill-seekers scrape --url https://react.dev --name react
+
+# 2. 分析 GitHub 仓库
+skill-seekers github --repo facebook/react
+
+# 3. 交互式配置
+skill-seekers config
+```
+
+#### 方式 C: 维护与更新
+如果你修改了 `skill/` 目录下的 Skill 配置，请运行以下命令同步给 Trae：
+```bash
+# Windows
+cp -r skill/* .trae/skills/
+```
 
 ## 7. 故障排除
 *   **PostgreSQL 错误**：检查 5432 端口是否处于活动状态，且 `.env` 中的凭据是否正确。
