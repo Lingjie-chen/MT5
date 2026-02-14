@@ -221,6 +221,12 @@ class KalmanGridStrategy:
         """
         Generate Fibonacci Grid Levels based on recent Swing High/Low.
         Ratios: 0.236, 0.382, 0.5, 0.618, 0.786
+        
+        [NEW LOGIC] Single Direction Enforcement & Order Cleanup:
+        1. Only generate orders in the requested 'trend_direction'.
+        2. Before placing new orders, existing pending orders of the SAME direction must be cancelled (handled by caller or here).
+           * Actually, `main.py` handles execution. This function just returns the PLAN.
+           * We will add a 'clear_existing' flag to the order dict to signal the executor.
         """
         orders = []
         
@@ -232,79 +238,80 @@ class KalmanGridStrategy:
         swing_range = self.swing_high - self.swing_low
         ratios = [0.236, 0.382, 0.5, 0.618, 0.786]
         
-        # Grid deployment logic:
-        # If Ranging/Neutral: Place Limit Buys at lower Fibs, Limit Sells at upper Fibs.
-        # If Trend Following (Bullish): Buy Dips at Fib levels.
+        # Calculate levels
+        levels_buy = []
+        levels_sell = []
         
-        # Assuming we use this for "Grid Strategy" in Ranging Market (Switching Logic)
+        # Retracements from Low to High
+        for r in ratios:
+            price_level_from_top = self.swing_high - (swing_range * r)
+            
+            # Filter Validity
+            if price_level_from_top < current_price:
+                levels_buy.append(price_level_from_top)
+            elif price_level_from_top > current_price:
+                levels_sell.append(price_level_from_top)
         
-        if self.is_ranging or True: # Force Fib Grid if called
-            
-            # Calculate levels
-            levels_buy = []
-            levels_sell = []
-            
-            # Retracements from Low to High
-            # 0.236 from Top is High - 0.236*Range
-            
-            for r in ratios:
-                price_level_from_top = self.swing_high - (swing_range * r)
-                # If price is below this level, it might be a resistance (Sell Limit candidate if above current)
-                # If price is above this level, it is a support (Buy Limit candidate if below current)
+        # Sort levels
+        levels_buy.sort(reverse=True) # Closest to price first
+        levels_sell.sort() # Closest to price first
+        
+        # Generate Orders - SINGLE DIRECTION ONLY
+        
+        # Buy Limits (Only if Bullish/Neutral)
+        if trend_direction == 'bullish' or trend_direction == 'neutral':
+            # Signal to clear existing Buy Limits first
+            if len(levels_buy) > 0:
+                orders.append({'type': 'cancel_all_buy_limits'}) 
                 
-                # To ensure we deploy ALL grid levels (batch deployment), we don't strictly filter by current price proximity for execution NOW,
-                # but we filter for Validity (Buy Limit must be < Current, Sell Limit must be > Current).
-                # The user requested "Deploy all at once", which we are doing.
-                
-                if price_level_from_top < current_price:
-                    levels_buy.append(price_level_from_top)
-                elif price_level_from_top > current_price:
-                    levels_sell.append(price_level_from_top)
+            for i, price in enumerate(levels_buy):
+                lot = self.calculate_next_lot(i + 1)
+                orders.append({
+                    'type': 'limit_buy',
+                    'price': price,
+                    'tp': 0.0, # Managed by Basket
+                    'volume': lot,
+                    'comment': f'Fib Grid {ratios[i]}'
+                })
             
-            # Sort levels
-            levels_buy.sort(reverse=True) # Closest to price first
-            levels_sell.sort() # Closest to price first
-            
-            # Generate Orders - BATCH DEPLOYMENT
-            # We deploy ALL valid levels found above
-            
-            # Buy Limits
-            if trend_direction == 'bullish' or trend_direction == 'neutral':
-                for i, price in enumerate(levels_buy):
-                    lot = self.calculate_next_lot(i + 1)
-                    orders.append({
-                        'type': 'limit_buy',
-                        'price': price,
-                        'tp': 0.0, # Managed by Basket
-                        'volume': lot,
-                        'comment': f'Fib Grid {ratios[i]}'
-                    })
-                
-            # Sell Limits
-            if trend_direction == 'bearish' or trend_direction == 'neutral':
-                for i, price in enumerate(levels_sell):
-                    lot = self.calculate_next_lot(i + 1)
-                    orders.append({
-                        'type': 'limit_sell',
-                        'price': price,
-                        'tp': 0.0,
-                        'volume': lot,
-                        'comment': f'Fib Grid {ratios[i]}' # Ratio logic might be inverted index-wise
-                    })
+        # Sell Limits (Only if Bearish/Neutral)
+        # Note: If Neutral, we might theoretically want both, but user requested "Single Direction" enforcement.
+        # Ideally, 'neutral' should split or pick one. For safety, let's strictly follow the 'trend_direction' passed.
+        # If 'neutral' is passed, we might skip or do both. Given "Only same direction", we assume trend_direction is explicit.
+        
+        if trend_direction == 'bearish':
+            # Signal to clear existing Sell Limits first
+            if len(levels_sell) > 0:
+                orders.append({'type': 'cancel_all_sell_limits'})
+
+            for i, price in enumerate(levels_sell):
+                lot = self.calculate_next_lot(i + 1)
+                orders.append({
+                    'type': 'limit_sell',
+                    'price': price,
+                    'tp': 0.0,
+                    'volume': lot,
+                    'comment': f'Fib Grid {ratios[i]}' 
+                })
                 
         return orders
 
     def generate_simple_grid(self, current_price, trend_direction, point=0.01):
-        # Fallback simple grid
+        # Fallback simple grid - Single Direction Enforced
         step = self.grid_step_points * point
         orders = []
-        for i in range(1, 6):
-            if trend_direction == 'bullish':
+        
+        if trend_direction == 'bullish':
+            orders.append({'type': 'cancel_all_buy_limits'})
+            for i in range(1, 6):
                 price = current_price - (step * i)
                 orders.append({'type': 'limit_buy', 'price': price, 'volume': self.calculate_next_lot(i), 'tp': 0.0})
-            else:
+        elif trend_direction == 'bearish':
+            orders.append({'type': 'cancel_all_sell_limits'})
+            for i in range(1, 6):
                 price = current_price + (step * i)
                 orders.append({'type': 'limit_sell', 'price': price, 'volume': self.calculate_next_lot(i), 'tp': 0.0})
+                
         return orders
 
     def calculate_next_lot(self, current_count):
