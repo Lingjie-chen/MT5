@@ -114,7 +114,19 @@ python -m src.trading_bot.main GOLD
 *   **Windows**: `scripts\run\可视化.bat`
 *   **Mac/Linux**: `bash scripts/run/run_dashboard.sh`
 
-## 6. 故障排除
+## 6. AI Skill System
+
+本项目集成了强大的 AI 技能系统，用于增强开发效率和自动化能力。
+
+*   **Skill Seekers**: 一个通用的 RAG 预处理工具，可以将文档、代码库和 PDF 转换为 AI 可用的 Skill。
+    *   源码: `skill/Skill_Seekers/`
+    *   技能包: `skill/skill-seekers/`
+*   **Superpowers**: 集成 RED-GREEN-REFACTOR 工作流与两阶段评审的 AI 增强能力。
+    *   配置: `skill/superpowers/`
+
+所有 Skill 资源统一管理在 `skill/` 目录下。
+
+## 7. 故障排除
 *   **PostgreSQL 错误**：检查 5432 端口是否处于活动状态，且 `.env` 中的凭据是否正确。
 *   **找不到 MT5**：交易机器人仅在安装了 MT5 的 Windows 上运行。
 *   **依赖缺失**：如果缺少模块，请重新运行 `pip install -r requirements.txt`。
