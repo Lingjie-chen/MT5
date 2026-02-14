@@ -886,6 +886,25 @@ class SymbolTrader:
         else:
             logger.info("No pending orders to cancel.")
 
+    def cancel_pending_by_type(self, order_type):
+        """
+        Cancel pending orders of a specific type (e.g. ORDER_TYPE_BUY_LIMIT)
+        """
+        orders = mt5.orders_get(symbol=self.symbol)
+        if orders:
+            for order in orders:
+                if order.magic == self.magic_number and order.type == order_type:
+                    request = {
+                        "action": mt5.TRADE_ACTION_REMOVE,
+                        "order": order.ticket,
+                        "magic": self.magic_number,
+                    }
+                    result = mt5.order_send(request)
+                    if result.retcode == mt5.TRADE_RETCODE_DONE:
+                        logger.info(f"Cancelled Specific Order #{order.ticket} (Type: {order_type})")
+                    else:
+                        logger.warning(f"Failed to cancel Specific Order #{order.ticket}: {result.comment}")
+
     def close_positions(self, positions, type_filter, reason):
         symbol_info = mt5.symbol_info(self.symbol)
         if symbol_info is None:
