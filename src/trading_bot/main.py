@@ -88,6 +88,7 @@ class SymbolTrader:
         self.last_grid_update = 0
         self.last_orb_filter_time = 0 # Throttling for ORB logs
         self.orb_cooldowns = {'buy': 0, 'sell': 0} # Cooldown for retrying rejected signals
+        self.last_heartbeat_time = 0 # Heartbeat timer
         self.watcher = None # Initialize watcher attribute
         self.is_optimizing = False # Flag to prevent overlapping optimization runs
         
