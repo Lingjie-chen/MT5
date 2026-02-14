@@ -123,7 +123,31 @@ class GoldORBStrategy:
             self.long_signal_taken_today = False
             self.short_signal_taken_today = False
             self.last_signal_candle_time = None
-        
+
+        # --- DYNAMIC MODE (Rolling Window) ---
+        if self.strategy_mode == 'DYNAMIC':
+            if len(completed_df) < self.dynamic_lookback:
+                return None, None, False
+            
+            # Take last N candles
+            consolidation_range = completed_df.iloc[-self.dynamic_lookback:]
+            
+            self.final_range_high = consolidation_range['high'].max()
+            self.final_range_low = consolidation_range['low'].min()
+            self.is_range_final = True
+            self.current_consolidation_count = len(consolidation_range)
+            
+            # Format Time Range
+            start_t = consolidation_range.index[0].strftime("%H:%M")
+            end_t = consolidation_range.index[-1].strftime("%H:%M")
+            self.range_time_str = f"Rolling {self.dynamic_lookback} ({start_t}-{end_t})"
+            
+            # Calculate Stats
+            self.calculate_range_statistics(consolidation_range)
+            
+            return self.final_range_high, self.final_range_low, True
+
+        # --- CLASSIC MODE (Fixed Open Hour) ---
         today_data = completed_df[completed_df.index.date == today]
         
         # Find Open Candle (Based on Hour)
