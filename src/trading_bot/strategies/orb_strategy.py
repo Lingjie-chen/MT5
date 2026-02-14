@@ -134,9 +134,18 @@ class GoldORBStrategy:
         target_time = dtime(self.open_hour, 0)
         start_candle = today_data[today_data.index.time == target_time]
         
+        # Robust Fallback: If exact 00:00 candle missing, take first candle of that hour
+        if start_candle.empty:
+            hour_candles = today_data[today_data.index.hour == self.open_hour]
+            if not hour_candles.empty:
+                start_candle = hour_candles.iloc[[0]]
+                # Only log info once per day to avoid spam
+                if self.last_warning_date != today:
+                    logger.info(f"ORB Open Candle Exact Match Failed. Using nearest in hour {self.open_hour}: {start_candle.index[0]}")
+        
         if start_candle.empty:
             if self.last_warning_date != today:
-                logger.warning(f"ORB Open M15 Candle not found for {today} (Time {target_time}).")
+                logger.warning(f"ORB Open M15 Candle not found for {today} (Hour {self.open_hour}).")
                 self.last_warning_date = today 
             self.final_range_high = None
             self.final_range_low = None
