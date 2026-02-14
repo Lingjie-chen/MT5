@@ -1239,32 +1239,39 @@ class DeepSeekClient:
         prompt = f"""
         {system_prompt}
         
-        ## 核心指令更新：动态仓位计算 (Dynamic Position Sizing)
-        你必须根据以下因素，精确计算本次交易的 **position_size (Lots)**：
-        1. **实时账户资金**: {current_market_data.get('account_info', {}).get('available_balance', 10000)} USD
-        2. **交易商特性与风险适配 (Broker Specifics)**:
-           - **Exness (高杠杆/低点差)**: 允许更激进的网格加仓和稍大的首单风险 (Risk% 可上浮 20%)。但需注意滑点。
-           - **AvaTrade (标准/监管严)**: 严格遵守标准风险模型，禁止过度激进。
-           - **合约规格**: 当前品种 {symbol} 的合约大小 (Contract Size) 为 **{current_market_data.get('contract_size', 100)}**。计算 Lots 时必须使用此数值。
-           - **ETHUSD 特别注意**: 
-             - ETHUSD 的波动性远高于黄金和外汇。请务必使用 **ATR (平均真实波幅)** 来辅助计算合理的止损距离。
-             - **最大仓位限制**: **严禁** ETHUSD 单笔仓位超过 **0.01 Lots**。这是硬性风控规则。任何超过 0.01 的建议都将被系统拒绝。
-             - 建议 ETHUSD 单笔风险不超过账户余额的 1.5%。
-             - 仔细检查合约大小 (Contract Size)，通常为 1 或 10，这与 XAUUSD (100) 不同，直接影响 Lots 计算结果。务必代入公式：Lots = (Balance * Risk%) / (SL_Distance * Contract_Size)。
-        3. **风险管理 (AI Driven Risk)**: 
-           - **单笔风险**: **完全由你分析决定，不设固定限制**。
-           - **建议范围**: 
-             - 低置信度 / 逆势 / 震荡: 建议 0.5% - 1.0%
-             - 中置信度 / 顺势 / 结构良好: 建议 1.0% - 3.0%
-             - 高置信度 (Strong Buy/Sell) / 极佳SMC结构: 可提升至 3.0% - 5.0% 甚至更高（如果你认为机会极佳）。
-           - **计算公式**: Position Size (Lots) = (Account Balance * Risk Percentage) / (Stop Loss Distance * Contract Size).
-        4. **具体示例**:
-           - 资金 $10,000, 风险 2% ($200). 止损距离 $4.
-           - Lots = 200 / (4 * 100) = 0.50 Lots.
-        5. **市场情绪**: 结合 {market_analysis.get('sentiment_analysis', {}).get('sentiment', 'neutral')} 情绪调整。
+        ## 核心指令更新：Quantum Position Engine 集成 (Quantum Position Engine Integration - CRITICAL)
+        你现在接入了 **Quantum Position Engine**，这是一个基于 Decimal 高精度计算的专业风控引擎。
         
-        **绝对不要**默认使用 0.01 手！必须基于资金量和你的分析信心计算。
-        请给出一个精确到小数点后两位的数字 (例如 0.15, 0.50, 1.20)，并在 `strategy_rationale` 中详细解释计算逻辑。
+        **你的新职责 (New Responsibility)**:
+        1. **不再负责具体的 Lots 计算**: 你不需要再纠结于 "0.01 还是 0.15"。
+        2. **专注于风险评估 (Focus on Risk Assessment)**: 你需要评估当前交易机会的质量，并给出一个 **推荐风险百分比 (Recommended Risk %)**。
+           - **Quantum Engine** 将根据你提供的 `risk_percent`、`sl_price` 和实时账户余额，自动计算出最精确的手数。
+
+        **风险等级指南 (Risk Tier Guide)**:
+        - **Tier 1 (保守 / Conservative)**: `0.5% - 0.8%`
+          - 适用: 逆势 (Counter-trend)、左侧交易、震荡市边界、信号置信度一般。
+        - **Tier 2 (标准 / Standard)**: `1.0% - 1.5%`
+          - 适用: 顺势 (Trend Following)、标准 ORB 突破、结构清晰。
+        - **Tier 3 (激进 / Aggressive)**: `2.0% - 3.0%`
+          - 适用: **A+ Setup** (完美结构 + 强趋势 + ORB高分 + 情绪共振)。
+        
+        **必须在 JSON 输出中包含 `risk_metrics` 字段**:
+        ```json
+        "risk_metrics": {
+            "recommended_risk_percent": 1.5, // 你的核心决策值
+            "risk_rationale": "趋势强劲且止损较小，给予 Tier 2 风险权重"
+        },
+        "position_size": 0.0, // 此字段保留作为参考，但系统会优先使用 Quantum Engine 的计算结果
+        ```
+
+        **具体指令**:
+        1. **SL 决定一切**: Quantum Engine 的计算完全依赖于你提供的 `sl_price`。**必须提供一个基于 SMC 结构的精准止损位**。如果 SL 不合理（如距离太近或太远），Engine 会拒绝交易或计算出异常手数。
+        2. **ETHUSD 特别提醒**: 鉴于 ETH 的高波动性，建议风险不超过 1.5%。
+        3. **强制风控**: 如果你认为当前不应交易，请将 `recommended_risk_percent` 设为 0.0。
+
+        **执行规则 (Execution Rules)**:
+        - **正常交易**: 请在 `risk_metrics` 中给出 0.5 到 3.0 之间的数值。
+        - **风控拦截**: 如果你认为当前风险极高、不宜入场，或者找不到合适的止损位，请务必输出 `action: WAIT` 并将 `recommended_risk_percent: 0.0`。
 
         **入场执行标准 (Entry Execution - Strict Validation)**:
         **你必须结合 SMC 算法策略仔细分析市场结构，严禁盲目开仓！**
