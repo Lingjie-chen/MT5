@@ -9,6 +9,11 @@
 
 ## 1. 交易节奏控制 (Trend Cycle Control)
 
+*   **ORB 策略底层运行优化 (ORB Execution)**:
+    *   **24/7 监控**: 建立全天候市场监控机制，不间断扫描价格行为。
+    *   **实时信号检测**: 价格一旦突破 ORB 定义的区间 (Opening Range)，系统必须立即触发信号处理流程。
+    *   **毫秒级响应**: 确保从信号触发到执行的延迟控制在毫秒级别。
+
 *   **拒绝频繁交易**: 不需要每根 K 线都交易。质量 > 数量。
 *   **趋势跟随模式 (Trend Following)**:
     *   以 **H1** 为主趋势方向 (Macro Trend)。
@@ -22,7 +27,22 @@
 
 ---
 
-## 2. 入场执行标准 (Entry Execution)
+## 2. 大模型集成分析系统 (LLM Integration)
+
+*   **智能止损模块 (Smart SL)**:
+    *   当 ORB 信号触发时，调用大模型实时分析市场微观结构、波动率 (ATR) 和订单流。
+    *   **输出**: 动态计算出的最优止损位 (基于结构而非固定点数)。
+*   **篮子止盈管理 (Basket TP)**:
+    *   大模型综合分析多币种相关性、波动率矩阵和风险敞口。
+    *   **输出**: 为整个交易篮子设定分层止盈目标 (Layered TP Targets)。
+*   **SMC 数据验证 (SMC Validation)**:
+    *   **数据接口**: 实时集成机构订单区块 (OB)、公允价值缺口 (FVG)、流动性池 (Liquidity Pools)。
+    *   **质量评分**: 将 SMC 数据与 ORB 信号交叉验证 (流动性匹配度、订单流一致性)。
+    *   **阈值过滤**: 仅当 SMC 验证分数 **≥75%** 时，才允许执行 ORB 交易。
+
+---
+
+## 3. 入场执行标准 (Entry Execution)
 
 **必须满足以下所有条件才能开仓 (AND Logic):**
 
@@ -41,19 +61,20 @@
 
 ---
 
-## 3. 仓位管理 (Position Sizing)
+## 4. 仓位管理 (Position Sizing) - Powered by Quantum Engine
 
-*   **完全动态计算**:
-    *   **禁止**使用固定手数 (如 0.01)。
-    *   **计算公式**: `Position Size (Lots) = (Account Balance * Risk %) / (Stop Loss Distance * Contract Size)`
-*   **风险偏好**:
-    *   **低置信度 / 逆势**: Risk 0.5% - 1.0%
-    *   **中置信度 / 顺势**: Risk 1.0% - 3.0%
-    *   **高置信度 (Sniper Entry)**: Risk 3.0% - 5.0%
+*   **Quantum Position Engine 集成**:
+    *   所有仓位计算必须通过 **Quantum Position Engine** 进行，确保 `Decimal` 级精度。
+    *   **AI 角色**: AI 仅负责评估风险等级 (Risk Tier)，不直接计算手数。
+*   **风险偏好 (Risk Tiers)**:
+    *   **Tier 1 (保守)**: Risk 0.5% - 0.8% (逆势/震荡)
+    *   **Tier 2 (标准)**: Risk 1.0% - 1.5% (顺势/ORB突破)
+    *   **Tier 3 (激进)**: Risk 2.0% - 3.0% (A+ Setup/SMC高分)
+*   **计算公式**: `Position Size (Lots) = (Account Balance * Risk %) / (Stop Loss Distance * Contract Size)`
 
 ---
 
-## 4. 止损与止盈 (SL & TP)
+## 5. 止损与止盈 (SL & TP)
 
 *   **Stop Loss (SL)**:
     *   必须基于 **SMC 结构失效位**。
@@ -65,7 +86,23 @@
 
 ---
 
-## 5. 马丁格尔与网格 (Martingale & Grid)
+## 6. Grid 策略智能切换系统 (Smart Grid Switching)
+
+*   **市场状态识别**:
+    *   当 ORB 无信号时，大模型分析价格行为、波动率收缩、成交量分布。
+    *   **特征**: 识别震荡行情 (Consolidation)。
+*   **斐波那契网格 (Fibonacci Grid)**:
+    *   基于当前震荡区间，自动部署限价单 (Limit Orders)。
+    *   **比例**: 0.236, 0.382, 0.5, 0.618, 0.786。
+*   **切换风控**:
+    *   **冷却期**: 策略切换必须有冷却时间，防止频繁震荡。
+    *   **最大滑点**: 严格控制滑点。
+    *   **无缝切换**: 确保 ORB 与 Grid 切换延迟 **<100ms**。
+    *   **统一风控**: 两种策略共享止损和仓位限制。
+
+---
+
+## 7. 马丁格尔与网格 (Martingale & Grid)
 
 *   **顺势加仓 (Pyramiding)**:
     *   仅当当前持仓 **盈利** 且趋势强劲时，允许顺势加仓。
@@ -79,7 +116,7 @@
 
 ---
 
-## 6. 盘前 8 问 (Pre-Market 8 Questions)
+## 8. 盘前 8 问 (Pre-Market 8 Questions)
 
 每次决策前必须回答：
 1.  **Q1 趋势**: 多头/空头/震荡?
@@ -92,3 +129,10 @@
 8.  **Q8 执行**: 条件是否完全满足? (Yes/No)
 
 **如果 Q8 为 No，Action 必须为 WAIT/HOLD。**
+
+---
+
+## 9. 系统日志与监控 (System Logs)
+
+*   **全链路记录**: 必须记录每次策略切换的依据、大模型分析结果 (JSON) 和执行质量。
+*   **故障排查**: 任何策略切换失败或风控拦截都必须生成 ERROR 级日志。
