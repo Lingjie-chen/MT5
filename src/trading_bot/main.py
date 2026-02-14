@@ -302,9 +302,9 @@ class SymbolTrader:
                     self.orb_strategy.trades_today_count = max(0, self.orb_strategy.trades_today_count - 1)
                 return
 
-        logger.debug(f"ORB Trigger Detected: {orb_signal['signal']}")
-        self.handle_orb_signal(orb_signal)
-        return # Skip Grid logic if ORB active
+            logger.debug(f"ORB Trigger Detected: {orb_signal['signal']}")
+            self.handle_orb_signal(orb_signal)
+            return # Skip Grid logic if ORB active
             
         # 3. Grid Strategy Logic (If ORB inactive)
         # Only check grid logic if we are in Ranging Mode or if we need to switch
