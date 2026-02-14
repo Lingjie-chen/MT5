@@ -22,11 +22,16 @@ src/
 │   ├── config.py             # 全局配置
 │   └── mt5_adapter.py        # [关键] MT5 专用适配器
 │
-└── trading_bot/              # [原有策略模块]
-    ├── ai/                   # AI 模型 (DeepSeek, Qwen)
-    ├── analysis/             # 仪表板、优化、可视化
-    ├── strategies/           # 交易策略 (网格, Martingale)
-    └── main.py               # 策略入口 (已集成 Quantum Engine)
+├── trading_bot/              # [原有策略模块]
+│   ├── ai/                   # AI 模型 (DeepSeek, Qwen)
+│   ├── analysis/             # 仪表板、优化、可视化
+│   ├── strategies/           # 交易策略 (网格, Martingale)
+│   └── main.py               # 策略入口 (已集成 Quantum Engine)
+│
+└── skill/                    # [AI 技能系统]
+    ├── Skill_Seekers/        # Skill Seekers 源码仓库
+    ├── skill-seekers/        # 生成的 AI 技能包
+    └── superpowers/          # Superpowers 工作流配置
 ```
 
 ## 2. 前置条件
