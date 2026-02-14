@@ -473,7 +473,31 @@ class SymbolTrader:
                 logger.warning("LLM returned 0 or missing Basket TP, keeping existing config.")
 
             # 3. Execute Trade (Millisecond Response)
-            lot_size = llm_decision.get('position_size', 0.01)
+            # Quantum Position Engine Integration
+            try:
+                # Extract Risk % from LLM (Default to 1.0% if missing)
+                risk_metrics = llm_decision.get('risk_metrics', {})
+                recommended_risk = float(risk_metrics.get('recommended_risk_percent', 1.0))
+                
+                # Calculate Precise Lot using Quantum Engine
+                calc_lot = self.risk_manager.calculate_lot_size(
+                    self.symbol, 
+                    orb_signal['price'], 
+                    smart_sl, 
+                    risk_percent=recommended_risk
+                )
+                
+                logger.info(f"Quantum Engine: AI Risk {recommended_risk}% -> Calc Lot {calc_lot} (vs LLM Raw {llm_decision.get('position_size')})")
+                
+                if calc_lot <= 0:
+                    logger.warning("Quantum Engine rejected trade (Lot=0). Risk too high or invalid SL.")
+                    return
+
+                lot_size = calc_lot
+                
+            except Exception as e:
+                logger.error(f"Quantum Engine Calc Failed: {e}, falling back to LLM size.")
+                lot_size = float(llm_decision.get('position_size', 0.01))
             
             logger.info(f"Executing ORB Trade: {orb_signal['signal'].upper()} | Lot: {lot_size} | Smart SL: {smart_sl} | Basket TP: ${basket_tp}")
             
