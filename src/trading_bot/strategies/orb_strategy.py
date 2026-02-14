@@ -32,6 +32,7 @@ class GoldORBStrategy:
         self.last_signal_candle_time = None
         self.last_warning_date = None
         self.last_success_date = None
+        self.range_time_str = "N/A"
         
         # Stats
         self.range_mean = 0.0
