@@ -7,10 +7,13 @@ from utils.math_lib import math_moments_normal, estimate_breakout_strength
 logger = logging.getLogger("GoldORB")
 
 class GoldORBStrategy:
-    def __init__(self, symbol, open_hour=1, consolidation_candles=3):
+    def __init__(self, symbol, open_hour=1, consolidation_candles=3, strategy_mode='DYNAMIC', dynamic_lookback=20):
         self.symbol = symbol
         self.open_hour = open_hour
         self.consolidation_candles = consolidation_candles
+        self.strategy_mode = strategy_mode # 'CLASSIC' (Fixed Time) or 'DYNAMIC' (Rolling Window)
+        self.dynamic_lookback = dynamic_lookback # Number of candles for dynamic range
+        
         self.final_range_high = None
         self.final_range_low = None
         self.is_range_final = False
