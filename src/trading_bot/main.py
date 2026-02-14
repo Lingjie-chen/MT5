@@ -712,18 +712,19 @@ class SymbolTrader:
         positions = mt5.positions_get(symbol=self.symbol)
         pos_count = len(positions) if positions else 0
         
-        logger.info(f"❤️ Heartbeat | Price: {current_price:.2f} | Mode: {self.current_strategy_mode} | ORB: {orb_status} | Grid: {grid_status} | Pos: {pos_count} | Orders: {order_count}")
-
-        # Send to Telegram - ONLY if active positions exist or orders placed (Active Trading)
+        # STRICT FILTER: Only log/send if there is active trading (Positions or Pending Orders)
         if pos_count > 0 or order_count > 0:
-             tg_msg = (
+            logger.info(f"❤️ Heartbeat | Price: {current_price:.2f} | Mode: {self.current_strategy_mode} | ORB: {orb_status} | Grid: {grid_status} | Pos: {pos_count} | Orders: {order_count}")
+
+            # Send to Telegram
+            tg_msg = (
                  f"Symbol: `{self.symbol}`\n"
                  f"Price: `{current_price:.2f}`\n"
                  f"Mode: `{self.current_strategy_mode}`\n"
                  f"Positions: `{pos_count}`\n"
                  f"Orders: `{order_count}`"
-             )
-             threading.Thread(target=self.telegram.notify_info, args=("Active Trading Status", tg_msg), daemon=True).start()
+            )
+            threading.Thread(target=self.telegram.notify_info, args=("Active Trading Status", tg_msg), daemon=True).start()
 
     # --- Execution Helpers ---
     def execute_trade(self, signal, lot, sl, tp, comment):
