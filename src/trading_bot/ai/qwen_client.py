@@ -1612,10 +1612,10 @@ class QwenClient:
         
         **必须在 JSON 输出中包含 `risk_metrics` 字段**:
         ```json
-        "risk_metrics": {
+        "risk_metrics": {{
             "recommended_risk_percent": 1.5, // 你的核心决策值
             "risk_rationale": "趋势强劲且止损较小，给予 Tier 2 风险权重"
-        },
+        }},
         "position_size": 0.0, // 此字段保留作为参考，但系统会优先使用 Quantum Engine 的计算结果
         ```
 
