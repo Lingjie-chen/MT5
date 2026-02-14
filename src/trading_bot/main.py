@@ -391,10 +391,10 @@ class SymbolTrader:
             volatility_stats=orb_signal.get('stats')
         )
         
-        # Quality Threshold Filter: Score >= 75
-        if score < 75:
+        # Quality Threshold Filter: Score >= 70
+        if score < 70:
             if time.time() - self.last_orb_filter_time > 300:
-                logger.info(f"ORB Signal Filtered: SMC Score {score} < 75. Details: {details}")
+                logger.info(f"ORB Signal Filtered: SMC Score {score} < 70. Details: {details}")
                 self.last_orb_filter_time = time.time()
             
             # Set Cooldown
@@ -411,7 +411,7 @@ class SymbolTrader:
 
         # 2. LLM Integrated Analysis System
         # Request Smart SL and Basket TP Analysis
-        logger.info(f"SMC Validated ({score} >= 75). Requesting LLM Smart Analysis...")
+        logger.info(f"SMC Validated ({score} >= 70). Requesting LLM Smart Analysis...")
         
         # Prepare Technical Signals including Grid Config
         tech_signals = {
