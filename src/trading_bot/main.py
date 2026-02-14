@@ -388,7 +388,7 @@ class SymbolTrader:
         # Quality Threshold Filter: Score >= 75
         if score < 75:
             if time.time() - self.last_orb_filter_time > 300:
-                logger.debug(f"ORB Signal Ignored: SMC Score {score} < 75. Details: {details}")
+                logger.info(f"ORB Signal Filtered: SMC Score {score} < 75. Details: {details}")
                 self.last_orb_filter_time = time.time()
             
             # Set Cooldown
