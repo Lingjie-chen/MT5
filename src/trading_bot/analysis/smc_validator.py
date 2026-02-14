@@ -115,21 +115,27 @@ class SMCQualityValidator:
             else:
                 details.append("Sentiment Divergence (Bullish Sentiment for Sell)")
                 
-        # 4. Volatility / Breakout Strength (Max 20)
+        # 4. Volatility / Breakout Strength (Max 40) - UPDATED for ORB Momentum Focus
         # This comes from 'volatility_context' (e.g. Z-Score, Breakout Score)
         breakout_score = volatility_context.get('breakout_score', 0) # 0-100
         z_score = volatility_context.get('z_score', 0)
         
         # Normalize breakout score contribution
-        # If score > 50, it's good.
-        if breakout_score > 50:
+        if breakout_score > 90:
+            score += 40
+            details.append(f"Extreme Breakout Momentum (Score {breakout_score:.1f})")
+        elif breakout_score > 70:
+            score += 30
+            details.append(f"Very Strong Breakout (Score {breakout_score:.1f})")
+        elif breakout_score > 50:
             score += 20
             details.append(f"Strong Breakout Metrics (Score {breakout_score:.1f})")
         elif breakout_score > 30:
             score += 10
             
         # Z-Score Check (Avoid extreme extensions unless momentum is super strong)
-        if abs(z_score) > 3.0:
+        # If momentum is extreme (>90), we ignore over-extension penalty because "Trend is your friend"
+        if abs(z_score) > 3.0 and breakout_score < 90:
             score -= 10 # Penalty for over-extension (Reversion Risk)
             details.append("Penalty: Extreme Z-Score (Overextended)")
             
