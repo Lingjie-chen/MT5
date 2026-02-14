@@ -712,8 +712,9 @@ class SymbolTrader:
         positions = mt5.positions_get(symbol=self.symbol)
         pos_count = len(positions) if positions else 0
         
-        # STRICT FILTER: Only log/send if there is active trading (Positions or Pending Orders)
-        if pos_count > 0 or order_count > 0:
+        # STRICT FILTER: Only log/send if there is ACTIVE POSITIONS (Open Trades)
+        # We ignore pending orders to reduce spam as requested.
+        if pos_count > 0:
             logger.info(f"❤️ Heartbeat | Price: {current_price:.2f} | Mode: {self.current_strategy_mode} | ORB: {orb_status} | Grid: {grid_status} | Pos: {pos_count} | Orders: {order_count}")
 
             # Send to Telegram
