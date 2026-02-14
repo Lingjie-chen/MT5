@@ -67,7 +67,7 @@ class SymbolTrader:
         self.magic_number = 888888
         
         # 1. Initialize Strategies & Analyzers
-        self.orb_strategy = GoldORBStrategy(symbol)
+        self.orb_strategy = GoldORBStrategy(symbol, strategy_mode='DYNAMIC', dynamic_lookback=20) # Use Dynamic Mode by default as requested
         self.grid_strategy = KalmanGridStrategy(symbol, self.magic_number)
         self.smc_validator = SMCQualityValidator()
         self.advanced_analysis = AdvancedMarketAnalysisAdapter()

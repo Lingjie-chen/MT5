@@ -44,7 +44,7 @@ class GoldORBStrategy:
         # Real-time state
         self.monitoring_active = True
         
-    def update_params(self, open_hour=None, consolidation_candles=None, sl_points=None, tp_points=None):
+    def update_params(self, open_hour=None, consolidation_candles=None, sl_points=None, tp_points=None, strategy_mode=None, dynamic_lookback=None):
         if open_hour is not None:
             self.open_hour = int(open_hour)
         if consolidation_candles is not None:
@@ -53,6 +53,10 @@ class GoldORBStrategy:
             self.fixed_sl_points = int(sl_points)
         if tp_points is not None:
             self.fixed_tp_points = int(tp_points)
+        if strategy_mode is not None:
+            self.strategy_mode = strategy_mode
+        if dynamic_lookback is not None:
+            self.dynamic_lookback = int(dynamic_lookback)
             
         # Reset calculation state
         self.final_range_high = None
