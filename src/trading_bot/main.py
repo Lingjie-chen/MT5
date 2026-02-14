@@ -700,7 +700,7 @@ class SymbolTrader:
         """Log periodic status update"""
         orb_status = "WAITING"
         if self.orb_strategy.is_range_final:
-            orb_status = f"READY [{self.orb_strategy.final_range_low:.2f} - {self.orb_strategy.final_range_high:.2f}]"
+            orb_status = f"READY [{self.orb_strategy.final_range_low:.2f} - {self.orb_strategy.final_range_high:.2f}] (Time: {self.orb_strategy.range_time_str})"
         
         grid_status = "INACTIVE"
         if self.grid_strategy.is_ranging:
