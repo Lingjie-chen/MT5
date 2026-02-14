@@ -16,19 +16,15 @@
 ```text
 src/
 ├── position_engine/          # [核心风控模块]
-│   ├── calculator.py         # 核心算法引擎 (Decimal)
-│   ├── models.py             # 数据模型 (Pydantic)
-│   ├── services.py           # 外部服务 (汇率 + 缓存)
-│   ├── config.py             # 全局配置
-│   └── mt5_adapter.py        # [关键] MT5 专用适配器
-│
 ├── trading_bot/              # [原有策略模块]
-│   ├── ai/                   # AI 模型 (DeepSeek, Qwen)
-│   ├── analysis/             # 仪表板、优化、可视化
-│   ├── strategies/           # 交易策略 (网格, Martingale)
-│   └── main.py               # 策略入口 (已集成 Quantum Engine)
-│
-└── skill/                    # [AI 技能系统]
+├── mql5_sources/             # [MQL5 策略源码]
+│   ├── Include/
+│   ├── MQL5/
+│   └── ...
+└── docs/                     # [策略文档]
+    └── strategy_rules.md
+
+skill/                        # [AI 技能系统]
     ├── Skill_Seekers/        # Skill Seekers 源码仓库
     ├── skill-seekers/        # 生成的 AI 技能包
     └── superpowers/          # Superpowers 工作流配置
