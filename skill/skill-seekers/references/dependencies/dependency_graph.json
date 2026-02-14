@@ -1,0 +1,1073 @@
+{
+  "nodes": [
+    {
+      "file": "api\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "api\\config_analyzer.py",
+      "language": "Python"
+    },
+    {
+      "file": "api\\main.py",
+      "language": "Python"
+    },
+    {
+      "file": "demo_conflicts.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\chroma-example\\1_generate_skill.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\chroma-example\\2_upload_to_chroma.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\chroma-example\\3_query_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\cline-django-assistant\\generate_clinerules.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\continue-dev-universal\\context_server.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\continue-dev-universal\\quickstart.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\cursor-react-skill\\example-project\\src\\App.tsx",
+      "language": "TypeScript"
+    },
+    {
+      "file": "examples\\cursor-react-skill\\example-project\\src\\index.tsx",
+      "language": "TypeScript"
+    },
+    {
+      "file": "examples\\cursor-react-skill\\generate_cursorrules.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\faiss-example\\1_generate_skill.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\faiss-example\\2_build_faiss_index.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\faiss-example\\3_query_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\haystack-pipeline\\quickstart.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\langchain-rag-pipeline\\quickstart.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\llama-index-query-engine\\quickstart.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\pinecone-upsert\\quickstart.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\qdrant-example\\1_generate_skill.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\qdrant-example\\2_upload_to_qdrant.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\qdrant-example\\3_query_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\test_http_server.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\weaviate-example\\1_generate_skill.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\weaviate-example\\2_upload_to_weaviate.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\weaviate-example\\3_query_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\windsurf-fastapi-context\\generate_windsurfrules.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\_version.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\benchmark\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\benchmark\\framework.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\benchmark\\models.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\benchmark\\runner.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\adaptors\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\adaptors\\base.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\adaptors\\chroma.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\adaptors\\claude.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\adaptors\\faiss_helpers.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\adaptors\\gemini.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\adaptors\\haystack.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\adaptors\\langchain.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\adaptors\\llama_index.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\adaptors\\markdown.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\adaptors\\openai.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\adaptors\\qdrant.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\adaptors\\streaming_adaptor.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\adaptors\\weaviate.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\ai_enhancer.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\api_reference_builder.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\architectural_pattern_detector.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\benchmark_cli.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\cloud_storage_cli.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\code_analyzer.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\codebase_scraper.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\config_command.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\config_enhancer.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\config_extractor.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\config_fetcher.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\config_manager.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\config_validator.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\conflict_detector.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\constants.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\dependency_analyzer.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\doc_scraper.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\embedding_pipeline.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\enhance_skill.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\enhance_skill_local.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\enhance_status.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\estimate_pages.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\generate_router.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\github_fetcher.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\github_scraper.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\guide_enhancer.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\how_to_guide_builder.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\incremental_updater.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\install_agent.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\install_skill.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\language_detector.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\llms_txt_detector.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\llms_txt_downloader.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\llms_txt_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\main.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\markdown_cleaner.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\merge_sources.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\multilang_support.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\package_multi.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\package_skill.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\analyze_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\base.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\config_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\enhance_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\enhance_status_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\estimate_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\github_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\install_agent_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\install_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\multilang_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\package_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\pdf_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\quality_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\resume_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\scrape_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\stream_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\test_examples_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\unified_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\update_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\parsers\\upload_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\pattern_recognizer.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\pdf_extractor_poc.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\pdf_scraper.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\presets.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\quality_checker.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\quality_metrics.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\rag_chunker.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\rate_limit_handler.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\resume_command.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\run_tests.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\setup_wizard.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\signal_flow_analyzer.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\split_config.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\storage\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\storage\\azure_storage.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\storage\\base_storage.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\storage\\gcs_storage.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\storage\\s3_storage.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\streaming_ingest.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\swift_patterns.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\sync_cli.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\test_example_extractor.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\test_unified_simple.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\unified_codebase_analyzer.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\unified_scraper.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\unified_skill_builder.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\upload_skill.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\cli\\utils.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\embedding\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\embedding\\cache.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\embedding\\generator.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\embedding\\models.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\embedding\\server.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\mcp\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\mcp\\agent_detector.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\mcp\\git_repo.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\mcp\\server.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\mcp\\server_fastmcp.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\mcp\\server_legacy.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\mcp\\source_manager.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\mcp\\tools\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\mcp\\tools\\config_tools.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\mcp\\tools\\packaging_tools.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\mcp\\tools\\scraping_tools.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\mcp\\tools\\source_tools.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\mcp\\tools\\splitting_tools.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\mcp\\tools\\vector_db_tools.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\sync\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\sync\\detector.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\sync\\models.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\sync\\monitor.py",
+      "language": "Python"
+    },
+    {
+      "file": "src\\skill_seekers\\sync\\notifier.py",
+      "language": "Python"
+    },
+    {
+      "file": "test_api.py",
+      "language": "Python"
+    },
+    {
+      "file": "test_week2_features.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\conftest.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_adaptor_benchmarks.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_adaptors\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_adaptors\\test_adaptors_e2e.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_adaptors\\test_base.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_adaptors\\test_chroma_adaptor.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_adaptors\\test_claude_adaptor.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_adaptors\\test_faiss_adaptor.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_adaptors\\test_gemini_adaptor.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_adaptors\\test_haystack_adaptor.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_adaptors\\test_langchain_adaptor.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_adaptors\\test_llama_index_adaptor.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_adaptors\\test_markdown_adaptor.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_adaptors\\test_openai_adaptor.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_adaptors\\test_qdrant_adaptor.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_adaptors\\test_weaviate_adaptor.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_analyze_command.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_analyze_e2e.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_api_reference_builder.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_architecture_scenarios.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_async_scraping.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_benchmark.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_bootstrap_skill.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_bootstrap_skill_e2e.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_c3_integration.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_chunking_integration.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_cli_parsers.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_cli_paths.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_cloud_storage.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_code_analyzer.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_codebase_scraper.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_config_extractor.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_config_fetcher.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_config_validation.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_constants.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_dependency_analyzer.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_e2e_three_stream_pipeline.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_embedding.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_embedding_pipeline.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_enhance_skill_local.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_estimate_pages.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_excluded_dirs_config.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_framework_detection.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_generate_router_github.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_git_repo.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_git_sources_e2e.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_github_fetcher.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_github_scraper.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_guide_enhancer.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_how_to_guide_builder.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_incremental_updates.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_install_agent.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_install_multiplatform.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_install_skill.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_install_skill_e2e.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_integration.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_integration_adaptors.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_issue_219_e2e.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_issue_277_real_world.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_language_detector.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_llms_txt_detector.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_llms_txt_downloader.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_llms_txt_parser.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_markdown_parsing.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_mcp_fastmcp.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_mcp_git_sources.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_mcp_server.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_mcp_vector_dbs.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_merge_sources_github.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_multi_source.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_multilang_support.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_package_skill.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_package_structure.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_parallel_scraping.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_pattern_recognizer.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_pdf_advanced_features.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_pdf_extractor.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_pdf_scraper.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_pr144_concerns.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_preset_system.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_quality_checker.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_quality_metrics.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_rag_chunker.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_rate_limit_handler.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_real_world_fastmcp.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_scraper_features.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_server_fastmcp_http.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_setup_scripts.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_skip_llms_txt.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_smart_summarization.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_source_manager.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_streaming_ingestion.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_swift_detection.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_terminal_detection.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_test_example_extractor.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_unified.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_unified_analyzer.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_unified_mcp_integration.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_upload_integration.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_upload_skill.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_url_conversion.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_utilities.py",
+      "language": "Python"
+    }
+  ],
+  "edges": []
+}
