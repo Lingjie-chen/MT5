@@ -78,7 +78,10 @@ class QwenClient:
         symbol = symbol.upper()
         
         # Load Strategy Rules from file (Synced from docs/strategy_rules.md)
-        strategy_rules_content = self._load_strategy_rules()
+        try:
+            strategy_rules_content = self._load_strategy_rules()
+        except Exception:
+            strategy_rules_content = "" # Fallback if file not found
         
         # --- 1. 核心策略架构 (通用) ---
         core_strategy = f"""
