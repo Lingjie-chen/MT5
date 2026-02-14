@@ -279,6 +279,11 @@ class SymbolTrader:
     def process_tick(self, tick):
         current_price = tick.ask # Assume Buy Logic uses Ask, Sell uses Bid, simplified to Ask for trigger check
         
+        # 0. Heartbeat (Every 60s)
+        if time.time() - self.last_heartbeat_time > 60:
+            self._log_heartbeat(current_price)
+            self.last_heartbeat_time = time.time()
+        
         # 1. Update Real-time Data
         # We need recent M15 data for SMC/ORB levels
         # Only update this periodically or if cache is stale
@@ -690,6 +695,24 @@ class SymbolTrader:
                 self.close_positions(positions, type_filter=mt5.POSITION_TYPE_SELL, reason=reason_short)
                 # Notify Telegram
                 self.telegram.notify_basket_close(self.symbol, "SHORT", total_profit_short, reason_short)
+
+    def _log_heartbeat(self, current_price):
+        """Log periodic status update"""
+        orb_status = "WAITING"
+        if self.orb_strategy.is_range_final:
+            orb_status = f"READY [{self.orb_strategy.final_range_low:.2f} - {self.orb_strategy.final_range_high:.2f}]"
+        
+        grid_status = "INACTIVE"
+        if self.grid_strategy.is_ranging:
+            grid_status = "RANGING"
+        
+        # Count active orders
+        orders = mt5.orders_get(symbol=self.symbol)
+        order_count = len(orders) if orders else 0
+        positions = mt5.positions_get(symbol=self.symbol)
+        pos_count = len(positions) if positions else 0
+        
+        logger.info(f"❤️ Heartbeat | Price: {current_price:.2f} | Mode: {self.current_strategy_mode} | ORB: {orb_status} | Grid: {grid_status} | Pos: {pos_count} | Orders: {order_count}")
 
     # --- Execution Helpers ---
     def execute_trade(self, signal, lot, sl, tp, comment):
