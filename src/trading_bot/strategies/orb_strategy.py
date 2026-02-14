@@ -183,6 +183,11 @@ class GoldORBStrategy:
         self.is_range_final = True
         self.current_consolidation_count = len(consolidation_range)
         
+        # Format Time Range for display
+        start_t = consolidation_range.index[0].strftime("%H:%M")
+        end_t = consolidation_range.index[-1].strftime("%H:%M")
+        self.range_time_str = f"{start_t}-{end_t}"
+        
         # Calculate Stats
         self.calculate_range_statistics(consolidation_range)
             
