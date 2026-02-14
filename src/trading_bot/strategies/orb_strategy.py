@@ -145,7 +145,12 @@ class GoldORBStrategy:
         
         if start_candle.empty:
             if self.last_warning_date != today:
-                logger.warning(f"ORB Open M15 Candle not found for {today} (Hour {self.open_hour}).")
+                # Debug Info
+                available_times = []
+                if not today_data.empty:
+                    available_times = [t.strftime("%H:%M") for t in today_data.index]
+                    
+                logger.warning(f"ORB Open M15 Candle not found for {today} (Hour {self.open_hour}). Available candles today: {available_times[:5]}...{available_times[-5:]}")
                 self.last_warning_date = today 
             self.final_range_high = None
             self.final_range_low = None
