@@ -163,6 +163,8 @@ class GoldORBStrategy:
         
         if end_idx > len(today_data):
             # Not enough candles yet to form the range
+            if self.last_warning_date != today:
+                logger.info(f"ORB Range Calculation Pending: Waiting for more candles (Need {self.consolidation_candles}, Have {len(today_data)-start_idx})")
             self.is_range_final = False
             return None, None, False
             
