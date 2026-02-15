@@ -40,7 +40,7 @@ class TelegramNotifier:
             logger.error(f"Failed to send Telegram message: {e}")
             return False
 
-    def notify_trade(self, symbol, signal, price, sl, tp, lot, reason=""):
+    def notify_trade(self, symbol, signal, price, sl, tp, lot, mode="N/A", win_rate="N/A", reason=""):
         """
         Format and send a trade notification.
         """
@@ -49,10 +49,12 @@ class TelegramNotifier:
             f"{icon} *Trade Executed*\n"
             f"Symbol: `{symbol}`\n"
             f"Action: *{signal.upper()}*\n"
+            f"Mode: `{mode}`\n"
             f"Price: `{price}`\n"
             f"Lot: `{lot}`\n"
             f"SL: `{sl}`\n"
             f"TP/Basket: `{tp}`\n"
+            f"Win Rate: `{win_rate}`\n"
             f"Reason: _{reason}_"
         )
         return self.send_message(msg)
