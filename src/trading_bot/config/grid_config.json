@@ -1,6 +1,6 @@
 {
-    "grid_step_points": 100,
-    "lot_multiplier": 1.5,
+    "grid_step_points": 240,
+    "lot_multiplier": 1.1,
     "global_tp": 100.0,
-    "updated_at": "2026-02-15T21:34:27.697415"
+    "updated_at": "2026-02-15T21:46:11.714482"
 }
