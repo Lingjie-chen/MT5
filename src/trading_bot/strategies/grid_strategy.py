@@ -5,7 +5,10 @@ import logging
 import json
 import os
 from .orb_strategy import GoldORBStrategy
-from ..analysis.advanced_analysis import AdvancedMarketAnalysis
+try:
+    from analysis.advanced_analysis import AdvancedMarketAnalysis
+except ImportError:
+    from src.trading_bot.analysis.advanced_analysis import AdvancedMarketAnalysis
 
 logger = logging.getLogger("KalmanGrid")
 
