@@ -921,6 +921,20 @@ class SymbolTrader:
         sl = round(sl, symbol_info.digits)
         tp = round(tp, symbol_info.digits)
         
+        # [NEW] Normalize Volume (Prevent 10014)
+        if symbol_info.volume_step > 0:
+            steps = round(lot / symbol_info.volume_step)
+            lot = steps * symbol_info.volume_step
+        
+        # Clamp to min/max
+        if symbol_info.volume_min > 0:
+            lot = max(symbol_info.volume_min, lot)
+        if symbol_info.volume_max > 0:
+            lot = min(symbol_info.volume_max, lot)
+            
+        lot = round(lot, 2) # Standard lot precision
+
+        
         # [NEW] Dynamic Stops Level Check (Prevent 10016)
         stop_level = symbol_info.trade_stops_level * symbol_info.point
         min_dist = stop_level + (2 * symbol_info.point) # Buffer
@@ -1041,6 +1055,20 @@ class SymbolTrader:
             price = round(price / tick_size) * tick_size
             
         price = round(price, symbol_info.digits)
+        
+        # [NEW] Normalize Volume for Pending Orders (Prevent 10014)
+        volume = float(order_dict.get('volume', 0.01))
+        
+        if symbol_info.volume_step > 0:
+            steps = round(volume / symbol_info.volume_step)
+            volume = steps * symbol_info.volume_step
+            
+        if symbol_info.volume_min > 0:
+            volume = max(symbol_info.volume_min, volume)
+        if symbol_info.volume_max > 0:
+            volume = min(symbol_info.volume_max, volume)
+            
+        volume = round(volume, 2)
 
         # Check against current market to prevent 10015 (Limit vs Stop confusion)
         # Buy Limit must be < Ask, Sell Limit must be > Bid
