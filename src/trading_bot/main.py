@@ -334,41 +334,43 @@ class SymbolTrader:
         # Extract Key Metrics
         adx = regime_info.get('regime', {}).get('adx', 0)
         chop = regime_info.get('chop_index', 50)
-        bb_upper = regime_info.get('indicators', {}).get('bb_upper', 0)
-        bb_lower = regime_info.get('indicators', {}).get('bb_lower', 0)
-        bb_mid = regime_info.get('indicators', {}).get('bb_middle', 1)
-        bb_width = (bb_upper - bb_lower) / bb_mid
+        
+        # Calculate BB Width if not in dict (fallback)
+        bb_width = regime_info.get('indicators', {}).get('bb_width', 0)
+        if bb_width == 0:
+            bb_upper = regime_info.get('indicators', {}).get('bb_upper', 0)
+            bb_lower = regime_info.get('indicators', {}).get('bb_lower', 0)
+            bb_mid = regime_info.get('indicators', {}).get('bb_middle', 1)
+            if bb_mid > 0:
+                bb_width = (bb_upper - bb_lower) / bb_mid
         
         new_state = self.state
         
         # --- State Transition Logic ---
         
-        # 1. Check for Breakout / Squeeze (Highest Priority)
-        # Condition: Squeeze (Low BB Width) OR Low CHOP (Strong Trend) OR High ADX
-        # Note: ORB Breakout logic also forces this state via _process_orb_signal_with_state_transition
-        if bb_width < 0.002 or chop < 38.2 or adx > 30:
-            new_state = "BREAKOUT_ACTIVE"
-            
-        # 2. Check for Grid / Ranging
+        # 1. Check for Grid / Ranging (Only enter Grid if strict conditions met)
         # Condition: Low ADX AND High CHOP (True Ranging)
-        elif adx < 25 and chop > 61.8:
+        if adx < 25 and chop > 61.8:
             new_state = "GRID_ACTIVE"
             
-        # 3. Default to Observation
+        # 2. Default / Trending / Breakout Regime -> OBSERVATION
+        # If ADX is high, we stay in OBSERVATION. 
+        # BREAKOUT_ACTIVE is ONLY entered when a trade is actually taken (via _process_orb_signal).
         else:
             # Only switch to observation if we are not locked in a trade
-            # If in BREAKOUT_ACTIVE, we stay there until trade closes (handled in _state_breakout_logic)
             if self.state != "BREAKOUT_ACTIVE":
                 new_state = "OBSERVATION"
             
         # --- Handle Transitions ---
         if new_state != self.state:
-            # Special Case: Don't exit BREAKOUT_ACTIVE if positions exist (handled elsewhere)
+            # Special Case: Don't exit BREAKOUT_ACTIVE if WE have positions
             if self.state == "BREAKOUT_ACTIVE":
                  positions = mt5.positions_get(symbol=self.symbol)
-                 if positions: return # Stay in Breakout mode until positions closed
+                 # FIX: Filter by Magic Number to avoid staying stuck due to manual trades
+                 bot_positions = [p for p in positions if p.magic == self.magic_number] if positions else []
+                 if bot_positions: return # Stay in Breakout mode until OUR positions closed
             
-            logger.info(f"State Transition: {self.state} -> {new_state} (ADX:{adx:.1f}, CHOP:{chop:.1f}, BBW:{bb_width:.4f})")
+            logger.info(f"State Transition: {self.state} -> {new_state} (ADX:{adx:.1f}, CHOP:{chop:.1f})")
             
             # Exit Actions
             if self.state == "GRID_ACTIVE":
@@ -466,7 +468,16 @@ class SymbolTrader:
         """
         # Check if we still have active positions
         positions = mt5.positions_get(symbol=self.symbol)
-        if not positions:
+        
+        # FIX: Filter by Magic Number
+        has_active_trade = False
+        if positions:
+            for p in positions:
+                if p.magic == self.magic_number:
+                    has_active_trade = True
+                    break
+        
+        if not has_active_trade:
             # Trade closed, return to OBSERVATION
             # Add a small delay/cooldown?
             logger.info("Breakout Trade Closed. Returning to OBSERVATION.")
