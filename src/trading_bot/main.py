@@ -1,6 +1,7 @@
 import time
 import sys
 import os
+import math
 import json
 import logging
 import threading
@@ -897,6 +898,36 @@ class SymbolTrader:
                  f"Orders: `{order_count}`"
             )
             threading.Thread(target=self.telegram.notify_info, args=("Active Trading Status", tg_msg), daemon=True).start()
+
+    def normalize_volume(self, volume):
+        """
+        Normalize volume to symbol step and limits.
+        """
+        symbol_info = mt5.symbol_info(self.symbol)
+        if not symbol_info: return volume
+        
+        step = symbol_info.volume_step
+        v_min = symbol_info.volume_min
+        v_max = symbol_info.volume_max
+        
+        # 1. Align to Step
+        if step > 0:
+            steps = round(volume / step)
+            volume = steps * step
+            
+        # 2. Clamp to Limits
+        if v_min > 0: volume = max(v_min, volume)
+        if v_max > 0: volume = min(v_max, volume)
+        
+        # 3. Dynamic Rounding
+        decimals = 2
+        if step > 0:
+            try:
+                decimals = max(0, int(-math.log10(step) + 0.5)) 
+            except: pass
+            
+        volume = round(volume, decimals)
+        return volume
 
     # --- Execution Helpers ---
     def execute_trade(self, signal, lot, sl, tp, comment):
