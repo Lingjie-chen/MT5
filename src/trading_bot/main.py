@@ -510,12 +510,18 @@ class SymbolTrader:
         df_m15 = self.get_dataframe(self.timeframe, 200)
         regime_info = self.advanced_analysis.analyze_full(df_m15)
         
+        # [NEW] Check Hedging Condition
+        # If we are in GRID_ACTIVE and trigger ORB, it's a breakout against the grid.
+        # We need to hedge or reverse.
+        is_hedging = self.state == "GRID_ACTIVE"
+        
         if regime_info:
             regime = regime_info.get('regime', {}).get('regime', 'unknown')
             confidence = regime_info.get('regime', {}).get('confidence', 0)
             
             # ORB works best in Trending or High Volatility
-            if regime == "ranging" and confidence > 0.7:
+            # BUT if we are Hedging, we ignore the filter because we MUST protect the account
+            if not is_hedging and regime == "ranging" and confidence > 0.7:
                 if time.time() - self.last_orb_filter_time > 300:
                      logger.info(f"ORB Signal Filtered: Market is Ranging (Conf: {confidence})")
                      self.last_orb_filter_time = time.time()
@@ -545,9 +551,12 @@ class SymbolTrader:
         )
         
         # Quality Threshold Filter: Score >= 70
-        if score < 70:
+        # If Hedging, lower threshold or bypass
+        min_score = 50 if is_hedging else 70
+        
+        if score < min_score:
             if time.time() - self.last_orb_filter_time > 300:
-                logger.info(f"ORB Signal Filtered: SMC Score {score} < 70. Details: {details}")
+                logger.info(f"ORB Signal Filtered: SMC Score {score} < {min_score}. Details: {details}")
                 self.last_orb_filter_time = time.time()
             
             # Set Cooldown
@@ -564,7 +573,7 @@ class SymbolTrader:
 
         # 2. LLM Integrated Analysis System
         # Request Smart SL and Basket TP Analysis
-        logger.info(f"SMC Validated ({score} >= 70). Requesting LLM Smart Analysis...")
+        logger.info(f"SMC Validated ({score} >= {min_score}). Requesting LLM Smart Analysis...")
         
         # Prepare Technical Signals including Grid Config
         tech_signals = {
@@ -638,6 +647,12 @@ class SymbolTrader:
                 risk_metrics = llm_decision.get('risk_metrics', {})
                 recommended_risk = float(risk_metrics.get('recommended_risk_percent', 1.0))
                 
+                # [NEW] Hedging Multiplier
+                # If Hedging (Breakout from Grid), increase risk/size to recover loss
+                if is_hedging:
+                    recommended_risk *= 2.0 # Double Risk for Hedging
+                    logger.warning(f"Hedging Mode: Doubling Risk to {recommended_risk}%")
+                
                 # Calculate Precise Lot using Quantum Engine
                 calc_lot = self.risk_manager.calculate_lot_size(
                     self.symbol, 
@@ -657,15 +672,16 @@ class SymbolTrader:
             except Exception as e:
                 logger.error(f"Quantum Engine Calc Failed: {e}, falling back to LLM size.")
                 lot_size = float(llm_decision.get('position_size', 0.01))
+                if is_hedging: lot_size *= 2.0
             
             logger.info(f"Executing ORB Trade: {orb_signal['signal'].upper()} | Lot: {lot_size} | Smart SL: {smart_sl} | Basket TP: ${basket_tp}")
             
             # --- FORCE STOP GRID STRATEGY & CLOSE COUNTER-TREND POSITIONS ---
-            if self.current_strategy_mode == "GRID_RANGING" or self.grid_strategy.is_ranging:
+            if self.state == "GRID_ACTIVE":
                 logger.warning("ORB Breakout Confirmed: STOPPING Grid Strategy & Closing Counter-Trend Positions.")
-                self.current_strategy_mode = "ORB_BREAKOUT" # Switch mode
-                self.grid_strategy.is_ranging = False # Disable ranging flag
-                self.cancel_all_pending() # Cancel all grid limit orders immediately
+                # Note: State transition to BREAKOUT_ACTIVE happens in _process_orb_signal_with_state_transition caller
+                self.grid_strategy.is_ranging = False 
+                self.cancel_all_pending() 
                 
                 # Close Counter-Trend Positions
                 # If ORB Signal is BUY, close SELLS. If SELL, close BUYS.
@@ -697,9 +713,11 @@ class SymbolTrader:
                 tp=0.0, # TP is managed by Basket Logic
                 comment=f"ORB_SMC_{score}"
             )
+            return True # Success
             
         except Exception as e:
             logger.error(f"LLM/Execution Error: {e}")
+            return False
 
     def handle_grid_logic(self, current_price):
         """
