@@ -67,34 +67,36 @@ class SymbolTrader:
         self.magic_number = 888888
         
         # 1. Initialize Strategies & Analyzers
-        self.orb_strategy = GoldORBStrategy(symbol, strategy_mode='DYNAMIC', dynamic_lookback=20) # Use Dynamic Mode by default as requested
+        self.orb_strategy = GoldORBStrategy(symbol, strategy_mode='DYNAMIC', dynamic_lookback=20) 
         self.grid_strategy = KalmanGridStrategy(symbol, self.magic_number)
         self.smc_validator = SMCQualityValidator()
         self.advanced_analysis = AdvancedMarketAnalysisAdapter()
         self.data_processor = MT5DataProcessor()
-        self.risk_manager = MT5RiskManager() # Assuming this exists in position_engine
+        self.risk_manager = MT5RiskManager()
         
         # 2. AI Client
         self.ai_factory = AIClientFactory()
-        self.llm_client = self.ai_factory.create_client("qwen") # Use Qwen for logic
+        self.llm_client = self.ai_factory.create_client("qwen") 
         
         # 3. Notifiers
         self.telegram = TelegramNotifier()
         
-        # 4. State
+        # 4. State Machine (Dynamic Risk)
+        # States: OBSERVATION, GRID_ACTIVE, BREAKOUT_ACTIVE
+        self.state = "OBSERVATION" 
+        
         self.last_tick_time = 0
         self.last_analysis_time = 0
-        self.current_strategy_mode = "ORB_MONITOR" # ORB_MONITOR, GRID_RANGING
         self.last_grid_update = 0
-        self.last_orb_filter_time = 0 # Throttling for ORB logs
-        self.orb_cooldowns = {'buy': 0, 'sell': 0} # Cooldown for retrying rejected signals
-        self.last_heartbeat_time = 0 # Heartbeat timer
-        self.watcher = None # Initialize watcher attribute
-        self.is_optimizing = False # Flag to prevent overlapping optimization runs
+        self.last_orb_filter_time = 0 
+        self.orb_cooldowns = {'buy': 0, 'sell': 0} 
+        self.last_heartbeat_time = 0 
+        self.watcher = None 
+        self.is_optimizing = False 
         
         # 5. Optimization Scheduler State
-        self.last_optimization_time = time.time() # Start counting from now
-        self.optimization_interval = 3600 # 1 Hour
+        self.last_optimization_time = time.time() 
+        self.optimization_interval = 3600 
         
         # 6. Data Buffers
         self.tick_buffer = []
@@ -277,54 +279,196 @@ class SymbolTrader:
             t.start()
 
     def process_tick(self, tick):
-        current_price = tick.ask # Assume Buy Logic uses Ask, Sell uses Bid, simplified to Ask for trigger check
+        current_price = tick.ask
         
         # 0. Heartbeat (Every 60s)
         if time.time() - self.last_heartbeat_time > 60:
             self._log_heartbeat(current_price)
             self.last_heartbeat_time = time.time()
         
-        # 1. Update Real-time Data
-        # We need recent M15 data for SMC/ORB levels
-        # Only update this periodically or if cache is stale
-        if time.time() - self.last_analysis_time > 60: # Update every minute for candles
+        # 1. Update Real-time Data (M15 Candles) & State Machine
+        if time.time() - self.last_analysis_time > 60:
             self.update_candle_data()
             self.last_analysis_time = time.time()
             
-        # 2. ORB Real-time Check (Highest Priority)
-        # Returns immediate signal if price breaks range
-        orb_signal = self.orb_strategy.check_realtime_breakout(current_price, tick.time_msc)
-        
-        if orb_signal:
-            # Check Cooldown to prevent spamming rejected signals
-            signal_type = orb_signal['signal']
-            if time.time() - self.orb_cooldowns.get(signal_type, 0) < 60: # 60s cooldown
-                # Reset flags in strategy to allow future check, but skip processing NOW
-                if signal_type == 'buy':
-                    self.orb_strategy.long_signal_taken_today = False
-                    self.orb_strategy.trades_today_count = max(0, self.orb_strategy.trades_today_count - 1)
-                else:
-                    self.orb_strategy.short_signal_taken_today = False
-                    self.orb_strategy.trades_today_count = max(0, self.orb_strategy.trades_today_count - 1)
-                return
-
-            logger.debug(f"ORB Trigger Detected: {orb_signal['signal']}")
-            self.handle_orb_signal(orb_signal)
-            return # Skip Grid logic if ORB active
+            # [NEW] Update Market State Machine (Phase 2: Logic Refactoring)
+            self.update_market_regime_state(current_price)
             
-        # 3. Grid Strategy Logic (If ORB inactive)
-        # Only check grid logic if we are in Ranging Mode or if we need to switch
-        # We check market state periodically
-        
-        if self.current_strategy_mode == "GRID_RANGING" or self.grid_strategy.is_ranging:
-             # Check for Grid Updates (e.g. every 5 mins or if price moved significantly)
-             if time.time() - self.last_grid_update > 300:
-                 self.handle_grid_logic(current_price)
-                 self.last_grid_update = time.time()
-        
-        # 4. Position Management (Universal)
-        # Check Basket TP/SL/Trailing
+        # 2. State Machine Execution
+        # Priority Check: ORB Breakout (Can trigger in ANY state)
+        orb_signal = self.orb_strategy.check_realtime_breakout(current_price, tick.time_msc)
+        if orb_signal:
+            self._process_orb_signal_with_state_transition(orb_signal)
+            # If ORB triggered, we skip Grid logic for this tick
+        else:
+            # State Dispatch
+            if self.state == "OBSERVATION":
+                 # In Observation Mode, we monitor (transition handled in update_market_regime_state)
+                 pass
+                 
+            elif self.state == "GRID_ACTIVE":
+                 # In Grid Mode, we check for Grid updates
+                 if time.time() - self.last_grid_update > 300:
+                     self.handle_grid_logic(current_price)
+                     self.last_grid_update = time.time()
+                     
+            elif self.state == "BREAKOUT_ACTIVE":
+                 self._state_breakout_logic(current_price)
+
+        # 3. Position Management (Universal)
         self.manage_positions(current_price)
+
+    def update_market_regime_state(self, current_price):
+        """
+        Implements the Finite State Machine (FSM) from the Optimization Report.
+        Transitions: Observation <-> Grid <-> Breakout
+        """
+        # Fetch latest analysis
+        df_m15 = self.get_dataframe(self.timeframe, 200)
+        if df_m15 is None or len(df_m15) < 50: return
+
+        regime_info = self.advanced_analysis.analyze_full(df_m15)
+        if not regime_info: return
+        
+        # Extract Key Metrics
+        adx = regime_info.get('regime', {}).get('adx', 0)
+        chop = regime_info.get('chop_index', 50)
+        bb_upper = regime_info.get('indicators', {}).get('bb_upper', 0)
+        bb_lower = regime_info.get('indicators', {}).get('bb_lower', 0)
+        bb_mid = regime_info.get('indicators', {}).get('bb_middle', 1)
+        bb_width = (bb_upper - bb_lower) / bb_mid
+        
+        new_state = self.state
+        
+        # --- State Transition Logic ---
+        
+        # 1. Check for Breakout / Squeeze (Highest Priority)
+        # Condition: Squeeze (Low BB Width) OR Low CHOP (Strong Trend) OR High ADX
+        # Note: ORB Breakout logic also forces this state via _process_orb_signal_with_state_transition
+        if bb_width < 0.002 or chop < 38.2 or adx > 30:
+            new_state = "BREAKOUT_ACTIVE"
+            
+        # 2. Check for Grid / Ranging
+        # Condition: Low ADX AND High CHOP (True Ranging)
+        elif adx < 25 and chop > 61.8:
+            new_state = "GRID_ACTIVE"
+            
+        # 3. Default to Observation
+        else:
+            # Only switch to observation if we are not locked in a trade
+            # If in BREAKOUT_ACTIVE, we stay there until trade closes (handled in _state_breakout_logic)
+            if self.state != "BREAKOUT_ACTIVE":
+                new_state = "OBSERVATION"
+            
+        # --- Handle Transitions ---
+        if new_state != self.state:
+            # Special Case: Don't exit BREAKOUT_ACTIVE if positions exist (handled elsewhere)
+            if self.state == "BREAKOUT_ACTIVE":
+                 positions = mt5.positions_get(symbol=self.symbol)
+                 if positions: return # Stay in Breakout mode until positions closed
+            
+            logger.info(f"State Transition: {self.state} -> {new_state} (ADX:{adx:.1f}, CHOP:{chop:.1f}, BBW:{bb_width:.4f})")
+            
+            # Exit Actions
+            if self.state == "GRID_ACTIVE":
+                # Leaving Grid Mode -> Cancel Grid Orders
+                logger.info("Exiting Grid Mode: Cancelling all pending grid orders.")
+                self.cancel_all_pending()
+                self.grid_strategy.is_ranging = False
+                
+            # Entry Actions
+            if new_state == "GRID_ACTIVE":
+                self.grid_strategy.is_ranging = True
+                # Trigger immediate Grid Check
+                self.last_grid_update = 0 
+                
+            self.state = new_state
+            # Notify Telegram
+            self.telegram.notify_info("Market Regime Change", f"New Mode: **{new_state}**\nADX: {adx:.1f} | CHOP: {chop:.1f}")
+
+    def _process_orb_signal_with_state_transition(self, orb_signal):
+        # Check Cooldown
+        signal_type = orb_signal['signal']
+        if time.time() - self.orb_cooldowns.get(signal_type, 0) < 60:
+            self._reset_orb_flags(signal_type)
+            return
+
+        logger.info(f"ORB Trigger Detected in state {self.state}: {orb_signal['signal']}")
+        
+        # Handle the signal (SMC Validation -> LLM -> Execution)
+        success = self.handle_orb_signal(orb_signal)
+        
+        if success:
+            # Transition to BREAKOUT_ACTIVE
+            if self.state == "GRID_ACTIVE":
+                logger.warning("ORB Breakout! Stopping Grid & Closing Counter Positions.")
+                self.cancel_all_pending()
+                # Close counter positions logic is handled inside handle_orb_signal
+                
+            self.state = "BREAKOUT_ACTIVE"
+            self.grid_strategy.is_ranging = False
+        else:
+            # Signal rejected (SMC/Filter), return to previous state logic
+            pass
+
+    def _state_observation_logic(self, current_price):
+        """
+        Default State: Monitor for Ranging (Grid) or Breakout (ORB)
+        """
+        # Check if we should enter Grid Mode
+        # Condition: is_ranging (ADX < 25 & CHOP > 61.8)
+        if self.grid_strategy.is_ranging:
+            # Double check with time-based throttling
+            if time.time() - self.last_grid_update > 300:
+                logger.info("Market Ranging Detected (ADX<25, CHOP>61.8). transitioning to GRID_ACTIVE...")
+                self.state = "GRID_ACTIVE"
+                self.handle_grid_logic(current_price)
+                self.last_grid_update = time.time()
+
+    def _state_grid_logic(self, current_price):
+        """
+        Grid Active: Place/Manage Grid Orders
+        Exit if Trend Detected (ADX > 30)
+        """
+        # Check Exit Condition: Trend Forming
+        # We access the latest analysis from grid strategy update
+        details = getattr(self.grid_strategy, 'market_state_details', {})
+        adx = details.get('adx', 0)
+        
+        if adx > 30: # Trend Warning
+            logger.info(f"Trend Detected (ADX {adx:.1f} > 30). Exiting GRID_ACTIVE -> OBSERVATION.")
+            self.state = "OBSERVATION"
+            self.grid_strategy.is_ranging = False
+            self.cancel_all_pending() # Stop adding new risk
+            # Optional: Close all grid positions? Or let them hit TP/SL?
+            # User report says "Stop Grid immediately". Usually implies stopping new orders.
+            return
+
+        # Periodic Grid Maintenance
+        if time.time() - self.last_grid_update > 300:
+            self.handle_grid_logic(current_price)
+            self.last_grid_update = time.time()
+
+    def _state_breakout_logic(self, current_price):
+        """
+        Breakout Active: Managing ORB Trade
+        Exit when trade closes
+        """
+        # Check if we still have active positions
+        positions = mt5.positions_get(symbol=self.symbol)
+        if not positions:
+            # Trade closed, return to OBSERVATION
+            # Add a small delay/cooldown?
+            logger.info("Breakout Trade Closed. Returning to OBSERVATION.")
+            self.state = "OBSERVATION"
+
+    def _reset_orb_flags(self, signal_type):
+        if signal_type == 'buy':
+            self.orb_strategy.long_signal_taken_today = False
+            self.orb_strategy.trades_today_count = max(0, self.orb_strategy.trades_today_count - 1)
+        else:
+            self.orb_strategy.short_signal_taken_today = False
+            self.orb_strategy.trades_today_count = max(0, self.orb_strategy.trades_today_count - 1)
 
     def update_candle_data(self):
         # Fetch M15 Data
@@ -712,12 +856,12 @@ class SymbolTrader:
         positions = mt5.positions_get(symbol=self.symbol)
         pos_count = len(positions) if positions else 0
         
-        # STRICT FILTER: Only log/send if there is ACTIVE POSITIONS (Open Trades)
+        # Log Heartbeat always (Every 60s)
+        logger.info(f"❤️ Heartbeat | Price: {current_price:.2f} | Mode: {self.current_strategy_mode} | ORB: {orb_status} | Grid: {grid_status} | Pos: {pos_count} | Orders: {order_count}")
+
+        # Send to Telegram - STRICT FILTER: Only send if there is ACTIVE POSITIONS (Open Trades)
         # We ignore pending orders to reduce spam as requested.
         if pos_count > 0:
-            logger.info(f"❤️ Heartbeat | Price: {current_price:.2f} | Mode: {self.current_strategy_mode} | ORB: {orb_status} | Grid: {grid_status} | Pos: {pos_count} | Orders: {order_count}")
-
-            # Send to Telegram
             tg_msg = (
                  f"Symbol: `{self.symbol}`\n"
                  f"Price: `{current_price:.2f}`\n"
@@ -735,7 +879,8 @@ class SymbolTrader:
             return
 
         order_type = mt5.ORDER_TYPE_BUY if signal == 'buy' else mt5.ORDER_TYPE_SELL
-        price = mt5.symbol_info_tick(self.symbol).ask if signal == 'buy' else mt5.symbol_info_tick(self.symbol).bid
+        tick = mt5.symbol_info_tick(self.symbol)
+        price = tick.ask if signal == 'buy' else tick.bid
         
         # Normalize Prices
         tick_size = symbol_info.trade_tick_size
@@ -749,6 +894,32 @@ class SymbolTrader:
         sl = round(sl, symbol_info.digits)
         tp = round(tp, symbol_info.digits)
         
+        # [NEW] Dynamic Stops Level Check (Prevent 10016)
+        stop_level = symbol_info.trade_stops_level * symbol_info.point
+        min_dist = stop_level + (2 * symbol_info.point) # Buffer
+        
+        if sl > 0:
+            dist = abs(price - sl)
+            if dist < min_dist:
+                old_sl = sl
+                if signal == 'buy': # Buy: SL must be below price
+                    sl = price - min_dist
+                else: # Sell: SL must be above price
+                    sl = price + min_dist
+                sl = round(sl, symbol_info.digits)
+                logger.warning(f"Auto-Adjusting SL (Too Close): {old_sl} -> {sl} (Min Dist: {min_dist})")
+
+        if tp > 0:
+            dist = abs(price - tp)
+            if dist < min_dist:
+                old_tp = tp
+                if signal == 'buy': # Buy: TP must be above price
+                    tp = price + min_dist
+                else: # Sell: TP must be below price
+                    tp = price - min_dist
+                tp = round(tp, symbol_info.digits)
+                logger.warning(f"Auto-Adjusting TP (Too Close): {old_tp} -> {tp} (Min Dist: {min_dist})")
+
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": self.symbol,
@@ -893,14 +1064,42 @@ class SymbolTrader:
                     logger.info(f"Adjusting Sell Limit Price: {price} -> {new_price} (Too close to Bid {tick.bid}, StopLevel {stop_level})")
                     price = new_price
 
+        # [NEW] Check SL/TP vs Limit Price (Prevent 10016 for Pending Orders)
+        sl = float(order_dict.get('sl', 0))
+        tp = float(order_dict.get('tp', 0))
+        
+        # Re-calculate min_dist in case it wasn't set above (if tick was None)
+        stop_level = symbol_info.trade_stops_level * symbol_info.point
+        min_dist = stop_level + (2 * symbol_info.point)
+        
+        if sl > 0:
+            if abs(price - sl) < min_dist:
+                old_sl = sl
+                if mt5_type == mt5.ORDER_TYPE_BUY_LIMIT: # SL below Entry
+                    sl = price - min_dist
+                else: # SL above Entry
+                    sl = price + min_dist
+                sl = round(sl, symbol_info.digits)
+                logger.warning(f"Auto-Adjusting Grid Order SL: {old_sl} -> {sl} (Entry: {price})")
+
+        if tp > 0:
+            if abs(price - tp) < min_dist:
+                old_tp = tp
+                if mt5_type == mt5.ORDER_TYPE_BUY_LIMIT: # TP above Entry
+                    tp = price + min_dist
+                else: # TP below Entry
+                    tp = price - min_dist
+                tp = round(tp, symbol_info.digits)
+                logger.warning(f"Auto-Adjusting Grid Order TP: {old_tp} -> {tp} (Entry: {price})")
+
         request = {
             "action": mt5.TRADE_ACTION_PENDING,
             "symbol": self.symbol,
             "volume": float(order_dict.get('volume', 0.01)),
             "type": mt5_type,
             "price": price,
-            "sl": float(order_dict.get('sl', 0)),
-            "tp": float(order_dict.get('tp', 0)),
+            "sl": float(sl),
+            "tp": float(tp),
             "deviation": 20,
             "magic": self.magic_number,
             "comment": order_dict.get('comment', 'Grid Order'),

@@ -5,6 +5,7 @@ import logging
 import json
 import os
 from .orb_strategy import GoldORBStrategy
+from ..analysis.advanced_analysis import AdvancedMarketAnalysis
 
 logger = logging.getLogger("KalmanGrid")
 
@@ -14,6 +15,8 @@ class KalmanGridStrategy:
         self.magic_number = magic_number
         self.lot = initial_lot
         logger.info(f"KalmanGridStrategy Initialized for {symbol} (v2026.02.13.1)")
+        
+        self.analysis = AdvancedMarketAnalysis()
         
         # --- Load Symbol Specific Config ---
         self._load_config()
@@ -180,7 +183,7 @@ class KalmanGridStrategy:
         # 4. Detect Ranging State (Volatility Contraction & Market Profile)
         # Enhanced detection logic for LLM input preparation
         
-        # A. BB Bandwidth Squeeze
+        # A. BB Bandwidth Squeeze (Legacy/Monitoring)
         bb_width = (self.bb_upper - self.bb_lower) / self.ma_value
         is_bb_squeeze = bb_width < 0.002
         
@@ -198,10 +201,19 @@ class KalmanGridStrategy:
         current_vol = df['tick_volume'].iloc[-1]
         is_low_volume = current_vol < avg_volume
         
+        # D. [NEW] ADX & Choppiness Index (Volatility Paradox Resolution)
+        # Replaces BB Squeeze as primary trigger
+        regime = self.analysis.detect_market_regime(df)
+        adx_value = regime.get('adx', 0)
+        chop_value = self.analysis.calculate_choppiness_index(df)
+        
+        # Criteria: ADX < 25 (No Trend) AND CHOP > 61.8 (Consolidation)
+        is_true_ranging = adx_value < 25 and chop_value > 61.8
+        
         # Combine Signals
-        # We consider it ranging if BB is squeezing OR price is stuck in middle 50%
+        # We consider it ranging if ADX/CHOP confirms true ranging
         # The LLM will do the final confirmation
-        self.is_ranging = is_bb_squeeze or is_price_in_range
+        self.is_ranging = is_true_ranging
         
         # Store detailed state for LLM
         # Convert bools to native Python types (True/False) which are generally serializable,
@@ -214,7 +226,10 @@ class KalmanGridStrategy:
             "is_price_in_range": bool(is_price_in_range),
             "atr": float(self.atr_value),
             "is_low_volume": bool(is_low_volume),
-            "trend_ma": "bullish" if current_price > self.ma_value else "bearish"
+            "trend_ma": "bullish" if current_price > self.ma_value else "bearish",
+            "adx": float(adx_value),
+            "chop_index": float(chop_value),
+            "is_true_ranging": bool(is_true_ranging)
         }
 
     def generate_fibonacci_grid(self, current_price, trend_direction, point=0.01):

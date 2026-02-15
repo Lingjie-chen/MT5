@@ -117,6 +117,42 @@ class AdvancedMarketAnalysis:
         
         return {"regime": regime, "confidence": confidence, "description": description, "volatility": volatility, "adx": current_adx, "price_change": price_change}
     
+    def calculate_choppiness_index(self, df: pd.DataFrame, period: int = 14) -> float:
+        """
+        计算 Choppiness Index (CHOP)
+        Formula: 100 * LOG10(SUM(ATR(1), n) / (MaxHigh(n) - MinLow(n))) / LOG10(n)
+        Values > 61.8 indicate consolidation (chop).
+        Values < 38.2 indicate trend.
+        """
+        if len(df) < period + 1:
+            return 50.0
+            
+        highs = df['high']
+        lows = df['low']
+        closes = df['close']
+        
+        # True Range (ATR(1))
+        tr1 = highs - lows
+        tr2 = abs(highs - closes.shift(1))
+        tr3 = abs(lows - closes.shift(1))
+        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        
+        # Sum of True Range for n periods
+        sum_tr = true_range.rolling(window=period).sum()
+        
+        # Max High - Min Low for n periods
+        max_high = highs.rolling(window=period).max()
+        min_low = lows.rolling(window=period).min()
+        range_hl = max_high - min_low
+        
+        # Avoid division by zero
+        range_hl = range_hl.replace(0, 0.000001)
+        
+        # Calculate CHOP
+        chop = 100 * np.log10(sum_tr / range_hl) / np.log10(period)
+        
+        return chop.iloc[-1] if not pd.isna(chop.iloc[-1]) else 50.0
+
     def calculate_donchian_channels(self, df: pd.DataFrame, period: int = 20) -> Dict[str, float]:
         """
         计算唐奇安通道 (Turtle Trading 核心指标)
@@ -1171,6 +1207,7 @@ class AdvancedMarketAnalysisAdapter(AdvancedMarketAnalysis):
             # New Indicators
             donchian = self.calculate_donchian_channels(df, period=20)
             strict_sd = self.detect_strict_supply_demand(df)
+            chop_index = self.calculate_choppiness_index(df, period=14)
             
             return {
                 "indicators": indicators,
@@ -1182,7 +1219,8 @@ class AdvancedMarketAnalysisAdapter(AdvancedMarketAnalysis):
                 "ifvg": ifvg,
                 "rvgi_cci": rvgi_cci,
                 "donchian": donchian,
-                "strict_supply_demand": strict_sd
+                "strict_supply_demand": strict_sd,
+                "chop_index": chop_index
             }
         except Exception as e:
             logging.error(f"Full Analysis failed: {e}")
