@@ -884,7 +884,7 @@ class SymbolTrader:
         pos_count = len(positions) if positions else 0
         
         # Log Heartbeat always (Every 60s)
-        logger.info(f"❤️ Heartbeat | Price: {current_price:.2f} | Mode: {self.current_strategy_mode} | ORB: {orb_status} | Grid: {grid_status} | Pos: {pos_count} | Orders: {order_count}")
+        logger.info(f"❤️ Heartbeat | Price: {current_price:.2f} | Mode: {self.state} | ORB: {orb_status} | Grid: {grid_status} | Pos: {pos_count} | Orders: {order_count}")
 
         # Send to Telegram - STRICT FILTER: Only send if there is ACTIVE POSITIONS (Open Trades)
         # We ignore pending orders to reduce spam as requested.
@@ -892,7 +892,7 @@ class SymbolTrader:
             tg_msg = (
                  f"Symbol: `{self.symbol}`\n"
                  f"Price: `{current_price:.2f}`\n"
-                 f"Mode: `{self.current_strategy_mode}`\n"
+                 f"Mode: `{self.state}`\n"
                  f"Positions: `{pos_count}`\n"
                  f"Orders: `{order_count}`"
             )
