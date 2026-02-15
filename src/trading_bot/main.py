@@ -1081,18 +1081,11 @@ class SymbolTrader:
         price = round(price, symbol_info.digits)
         
         # [NEW] Normalize Volume for Pending Orders (Prevent 10014)
-        volume = float(order_dict.get('volume', 0.01))
+        raw_volume = float(order_dict.get('volume', 0.01))
+        volume = self.normalize_volume(raw_volume)
         
-        if symbol_info.volume_step > 0:
-            steps = round(volume / symbol_info.volume_step)
-            volume = steps * symbol_info.volume_step
-            
-        if symbol_info.volume_min > 0:
-            volume = max(symbol_info.volume_min, volume)
-        if symbol_info.volume_max > 0:
-            volume = min(symbol_info.volume_max, volume)
-            
-        volume = round(volume, 2)
+        if raw_volume != volume:
+            logger.info(f"Pending Order Volume Normalized: {raw_volume} -> {volume}")
 
         # Check against current market to prevent 10015 (Limit vs Stop confusion)
         # Buy Limit must be < Ask, Sell Limit must be > Bid
