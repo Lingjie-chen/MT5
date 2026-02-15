@@ -621,6 +621,9 @@ class SymbolTrader:
             # Extract Smart SL (Optimal Stop Loss)
             smart_sl = llm_decision.get('exit_conditions', {}).get('sl_price', 0)
             
+            # Extract Smart TP (Optimal Take Profit)
+            smart_tp = llm_decision.get('exit_conditions', {}).get('tp_price', 0)
+            
             # Extract Basket TP (Layered Take Profit for the Basket)
             # Prioritize 'position_management' -> 'dynamic_basket_tp', fallback to 'grid_config' -> 'basket_tp_usd'
             pos_mgmt = llm_decision.get('position_management', {})
@@ -633,12 +636,18 @@ class SymbolTrader:
             # Extract Reason for Telegram
             reason = llm_decision.get('reason', f"SMC Score: {score}")
 
-            # Fallback Logic if LLM returns invalid SL
+            # Fallback Logic if LLM returns invalid SL/TP (Math Model Fallback)
             if smart_sl == 0:
                 if orb_signal['signal'] == 'buy':
                     smart_sl = orb_signal['price'] - orb_signal['sl_dist']
                 else:
                     smart_sl = orb_signal['price'] + orb_signal['sl_dist']
+                    
+            if smart_tp == 0:
+                if orb_signal['signal'] == 'buy':
+                    smart_tp = orb_signal['price'] + orb_signal['tp_dist']
+                else:
+                    smart_tp = orb_signal['price'] - orb_signal['tp_dist']
             
             # Update Grid Strategy with Basket Params for Global Management
             # CRITICAL: This must be updated BEFORE execution to ensure the Basket Logic picks it up immediately
@@ -678,7 +687,7 @@ class SymbolTrader:
                 if calc_lot <= 0:
                     logger.warning("Quantum Engine rejected trade (Lot=0). Risk too high or invalid SL.")
                     return
-
+                
                 lot_size = calc_lot
                 
             except Exception as e:
@@ -686,7 +695,12 @@ class SymbolTrader:
                 lot_size = float(llm_decision.get('position_size', 0.01))
                 if is_hedging: lot_size *= 2.0
             
-            logger.info(f"Executing ORB Trade: {orb_signal['signal'].upper()} | Lot: {lot_size} | Smart SL: {smart_sl} | Basket TP: ${basket_tp}")
+            # Format TP Display for Telegram
+            tp_display = f"{smart_tp:.2f}"
+            if basket_tp > 0:
+                tp_display += f" (Basket: ${basket_tp})"
+            
+            logger.info(f"Executing ORB Trade: {orb_signal['signal'].upper()} | Lot: {lot_size} | Smart SL: {smart_sl} | TP: {smart_tp} | Basket TP: ${basket_tp}")
             
             # --- FORCE STOP GRID STRATEGY & CLOSE COUNTER-TREND POSITIONS ---
             if self.state == "GRID_ACTIVE":
@@ -712,19 +726,19 @@ class SymbolTrader:
                 orb_signal['signal'], 
                 orb_signal['price'], 
                 smart_sl, 
-                basket_tp, 
+                tp_display, 
                 lot_size, 
                 mode="BREAKOUT_ACTIVE",
                 win_rate=f"{score}% (SMC)",
                 reason=reason
             )
             
-            # Execute with Smart SL
+            # Execute with Smart SL and TP
             self.execute_trade(
                 signal=orb_signal['signal'],
                 lot=lot_size,
                 sl=smart_sl, # <--- Smart SL is passed here
-                tp=0.0, # TP is managed by Basket Logic
+                tp=smart_tp, # <--- Smart TP is passed here (Math Model Fallback)
                 comment=f"ORB_SMC_{score}"
             )
             return True # Success
