@@ -396,11 +396,22 @@ class KalmanGridStrategy:
         
         # --- Long Basket ---
         if self.long_pos_count > 0:
-            profit_long = sum([p.profit + p.swap for p in positions if p.magic == self.magic_number and p.type == mt5.POSITION_TYPE_BUY])
+            # Calculate Volume and Profit
+            long_positions = [p for p in positions if p.magic == self.magic_number and p.type == mt5.POSITION_TYPE_BUY]
+            profit_long = sum([p.profit + p.swap for p in positions if p.magic == self.magic_number and p.type == mt5.POSITION_TYPE_BUY]) # Note: loop repeated for clarity, optimized below
+            total_vol_long = sum([p.volume for p in long_positions])
             
             # 1. Dynamic TP
             # PRIORITY: Use dynamic_tp_long / dynamic_tp_short from AI Analysis if available
             target_tp = self.global_tp # Default fallback
+            
+            # [NEW] Volume-Based Scaling (Reasonable TP based on Position Size)
+            # If no AI dynamic TP, calculate based on volume to prevent fixed $ targets being too small/large
+            # Target ~400 points ($4.00 on Gold) average move
+            # 1.0 Lot * 400 pts * $1/pt = $400
+            # 0.01 Lot * 400 pts * $1/pt = $4
+            scaled_tp = total_vol_long * 400.0 
+            target_tp = max(self.global_tp, scaled_tp)
             
             if self.dynamic_tp_long and self.dynamic_tp_long > 0:
                 target_tp = self.dynamic_tp_long
