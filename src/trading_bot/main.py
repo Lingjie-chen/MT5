@@ -953,18 +953,11 @@ class SymbolTrader:
         tp = round(tp, symbol_info.digits)
         
         # [NEW] Normalize Volume (Prevent 10014)
-        if symbol_info.volume_step > 0:
-            steps = round(lot / symbol_info.volume_step)
-            lot = steps * symbol_info.volume_step
+        raw_lot = lot
+        lot = self.normalize_volume(lot)
         
-        # Clamp to min/max
-        if symbol_info.volume_min > 0:
-            lot = max(symbol_info.volume_min, lot)
-        if symbol_info.volume_max > 0:
-            lot = min(symbol_info.volume_max, lot)
-            
-        lot = round(lot, 2) # Standard lot precision
-
+        if raw_lot != lot:
+            logger.info(f"Volume Normalized: {raw_lot} -> {lot}")
         
         # [NEW] Dynamic Stops Level Check (Prevent 10016)
         stop_level = symbol_info.trade_stops_level * symbol_info.point
