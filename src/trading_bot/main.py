@@ -714,6 +714,8 @@ class SymbolTrader:
                 smart_sl, 
                 basket_tp, 
                 lot_size, 
+                mode="BREAKOUT_ACTIVE",
+                win_rate=f"{score}% (SMC)",
                 reason=reason
             )
             
