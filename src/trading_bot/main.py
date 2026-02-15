@@ -1150,9 +1150,10 @@ class SymbolTrader:
         request = {
             "action": mt5.TRADE_ACTION_PENDING,
             "symbol": self.symbol,
-            "volume": float(order_dict.get('volume', 0.01)),
+            "volume": float(volume),
             "type": mt5_type,
             "price": price,
+
             "sl": float(sl),
             "tp": float(tp),
             "deviation": 20,
