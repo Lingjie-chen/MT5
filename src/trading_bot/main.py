@@ -440,8 +440,17 @@ class SymbolTrader:
             self.state = "OBSERVATION"
             self.grid_strategy.is_ranging = False
             self.cancel_all_pending() # Stop adding new risk
-            # Optional: Close all grid positions? Or let them hit TP/SL?
-            # User report says "Stop Grid immediately". Usually implies stopping new orders.
+            
+            # [NEW] Circuit Breaker: Immediate Close All Grid Positions
+            # If ADX > 30, the ranging thesis is broken. Close to prevent drawdown.
+            positions = mt5.positions_get(symbol=self.symbol)
+            if positions:
+                grid_positions = [p for p in positions if p.magic == self.magic_number]
+                if grid_positions:
+                    logger.warning(f"Circuit Breaker Triggered (ADX {adx:.1f}). Closing {len(grid_positions)} Grid Positions.")
+                    self.close_positions(grid_positions, mt5.POSITION_TYPE_BUY, reason="Circuit Breaker (ADX)")
+                    self.close_positions(grid_positions, mt5.POSITION_TYPE_SELL, reason="Circuit Breaker (ADX)")
+                    self.telegram.notify_error("Circuit Breaker", f"ADX Spike ({adx:.1f}). Closed all grid positions.")
             return
 
         # Periodic Grid Maintenance
