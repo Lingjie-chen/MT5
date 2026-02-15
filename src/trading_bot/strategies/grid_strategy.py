@@ -439,11 +439,18 @@ class KalmanGridStrategy:
 
         # --- Short Basket ---
         if self.short_pos_count > 0:
+            # Calculate Volume and Profit
+            short_positions = [p for p in positions if p.magic == self.magic_number and p.type == mt5.POSITION_TYPE_SELL]
             profit_short = sum([p.profit + p.swap for p in positions if p.magic == self.magic_number and p.type == mt5.POSITION_TYPE_SELL])
+            total_vol_short = sum([p.volume for p in short_positions])
             
             # 1. Dynamic TP
             # PRIORITY: Use dynamic_tp_long / dynamic_tp_short from AI Analysis if available
             target_tp = self.global_tp # Default fallback
+            
+            # [NEW] Volume-Based Scaling
+            scaled_tp = total_vol_short * 400.0
+            target_tp = max(self.global_tp, scaled_tp)
             
             if self.dynamic_tp_short and self.dynamic_tp_short > 0:
                 target_tp = self.dynamic_tp_short
