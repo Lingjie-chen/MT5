@@ -44,15 +44,21 @@ class MT5RiskManager:
                 return 0.0
             
             # 最小手数检查 
-            if float(result.suggested_position_size) < symbol_info.volume_min:
-                logger.warning(f"Calculated lot {result.suggested_position_size} < Min Volume {symbol_info.volume_min}. Risk budget too low for this SL distance.")
-                # Fallback: 如果计算结果极小但未被 BLOCKED，且在一定容差范围内，强制返回最小手数?
-                # 或者直接返回 0.0 让上层决定
-                # [Optimization] 如果计算结果 > 0 但小于 min，尝试返回 min 并警告风险超标?
-                # 不，严格风控，返回 0.0
+            calculated_lot = float(result.suggested_position_size)
+            
+            if calculated_lot < symbol_info.volume_min:
+                logger.warning(f"Calculated lot {calculated_lot} < Min Volume {symbol_info.volume_min}. Risk budget too low for this SL distance.")
+                
+                # [Optimization] 如果计算出的手数非常接近最小手数（例如 > 50% 的最小手数），
+                # 我们可以稍微放宽风险限制，强制使用最小手数，但发出警告。
+                # 这避免了因为一点点资金不足而完全无法开仓的情况。
+                if calculated_lot > (symbol_info.volume_min * 0.5):
+                    logger.info(f"Forcing Min Lot {symbol_info.volume_min} (Calculated: {calculated_lot}) to allow trade execution.")
+                    return symbol_info.volume_min
+                
                 return 0.0
 
-            return float(result.suggested_position_size)
+            return calculated_lot
 
         except Exception as e:
             # 兼容性处理：如果 Decimal 转换失败，尝试使用 float 运算的简易版
