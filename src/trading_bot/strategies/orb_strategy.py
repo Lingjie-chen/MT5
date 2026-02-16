@@ -86,33 +86,33 @@ class GoldORBStrategy:
             self.range_mean = mu
             self.range_std = sigma
 
-    def calculate_orb_levels(self, df_m15, point=0.01):
+    def calculate_orb_levels(self, df_m5, point=0.01):
         """
-        Calculate ORB levels based on M15 data
+        Calculate ORB levels based on M5 data
         """
-        if df_m15 is None or len(df_m15) < 1:
+        if df_m5 is None or len(df_m5) < 1:
             return None, None, False
             
-        self.last_h1_df = df_m15 # Keep name for compatibility but it's M15
+        self.last_h1_df = df_m5 # Keep name for compatibility but it's M5
 
-        if 'time' in df_m15.columns:
-            time_col = df_m15['time']
+        if 'time' in df_m5.columns:
+            time_col = df_m5['time']
             if not isinstance(time_col.dtype, np.dtype) or str(time_col.dtype) != 'datetime64[ns]':
                 try:
                     if np.issubdtype(time_col.dtype, np.integer):
-                        df_m15['time'] = pd.to_datetime(df_m15['time'], unit='s')
+                        df_m5['time'] = pd.to_datetime(df_m5['time'], unit='s')
                     else:
-                        df_m15['time'] = pd.to_datetime(df_m15['time'])
+                        df_m5['time'] = pd.to_datetime(df_m5['time'])
                 except Exception:
-                    df_m15['time'] = pd.to_datetime(df_m15['time'], errors='coerce')
-            df_m15 = df_m15.set_index('time')
-        elif not isinstance(df_m15.index, pd.DatetimeIndex):
-            df_m15.index = pd.to_datetime(df_m15.index, errors='coerce')
+                    df_m5['time'] = pd.to_datetime(df_m5['time'], errors='coerce')
+            df_m5 = df_m5.set_index('time')
+        elif not isinstance(df_m5.index, pd.DatetimeIndex):
+            df_m5.index = pd.to_datetime(df_m5.index, errors='coerce')
 
         # Use Completed Candles Only
-        completed_df = df_m15
-        if len(df_m15) > 1:
-            completed_df = df_m15.iloc[:-1]
+        completed_df = df_m5
+        if len(df_m5) > 1:
+            completed_df = df_m5.iloc[:-1]
         
         if len(completed_df) < 1:
              return None, None, False
@@ -151,14 +151,12 @@ class GoldORBStrategy:
             
             return self.final_range_high, self.final_range_low, True
 
-        # --- CLASSIC MODE (Fixed Open Hour) ---
+        # --- CLASSIC MODE (Fixed Open Hour, M5 candles) ---
         today_data = completed_df[completed_df.index.date == today]
         
         # Find Open Candle (Based on Hour)
-        # For M15, we need the first M15 candle of that hour (e.g. 01:00)
-        # Or should we consider the whole hour range? Usually ORB is defined by the first hour range.
-        # If "based on 15 min", it usually means the "Opening Range" is the first 15 mins (or N candles of 15m).
-        # Let's assume standard "Open Range" is defined by the FIRST N candles of the session.
+        # For M5, we need the first M5 candle of that hour (e.g. 01:00)
+        # ORB Opening Range is defined by the first N M5 candles of the session.
         
         # Logic: Find the candle at self.open_hour:00
         # Then take 'consolidation_candles' starting from there.
