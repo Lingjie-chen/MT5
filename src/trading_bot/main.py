@@ -61,7 +61,7 @@ logger = logging.getLogger("TradingBot")
 load_dotenv()
 
 class SymbolTrader:
-    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M15, account_index=1):
+    def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M5, account_index=1):
         self.symbol = symbol
         self.timeframe = timeframe
         self.account_index = account_index
@@ -492,22 +492,22 @@ class SymbolTrader:
             self.orb_strategy.trades_today_count = max(0, self.orb_strategy.trades_today_count - 1)
 
     def update_candle_data(self):
-        # Fetch M15 Data
+        # Fetch M5 Data
         rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, 500)
         if rates is not None:
             df = pd.DataFrame(rates)
             df['time'] = pd.to_datetime(df['time'], unit='s')
             
             # Update Strategy States
-            # H1 Data for ORB (REPLACED WITH M15)
+            # H1 Data for ORB (REPLACED WITH M5)
             # rates_h1 = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_H1, 0, 100)
             # if rates_h1 is not None:
             #     df_h1 = pd.DataFrame(rates_h1)
             #     df_h1['time'] = pd.to_datetime(df_h1['time'], unit='s')
             #     self.orb_strategy.calculate_orb_levels(df_h1)
             
-            # Use M15 Data for ORB Calculation
-            self.orb_strategy.calculate_orb_levels(df) # df is already M15 from above
+            # Use M5 Data for ORB Calculation
+            self.orb_strategy.calculate_orb_levels(df) # df is already M5 from above
             
             # Update Grid Indicators
             self.grid_strategy.update_market_data(df)
@@ -519,8 +519,8 @@ class SymbolTrader:
         3. Execute with Millisecond Response
         """
         # 0. Regime Filter (Advanced Analysis)
-        df_m15 = self.get_dataframe(self.timeframe, 200)
-        regime_info = self.advanced_analysis.analyze_full(df_m15)
+        df_m5 = self.get_dataframe(self.timeframe, 200)
+        regime_info = self.advanced_analysis.analyze_full(df_m5)
         
         # [NEW] Check Hedging Condition
         # If we are in GRID_ACTIVE and trigger ORB, it's a breakout against the grid.
@@ -552,11 +552,11 @@ class SymbolTrader:
                 return
 
         # 1. SMC Validation - Integrated SMC Data Interface
-        # df_m15 already fetched above
+        # df_m5 already fetched above
         
         # Calculate Quality Score: Liquidity, Order Flow, Institutional Participation
         is_valid, score, details = self.smc_validator.validate_signal(
-            df_m15, 
+            df_m5, 
             orb_signal['price'], 
             orb_signal['signal'],
             volatility_stats=orb_signal.get('stats')
