@@ -1042,7 +1042,25 @@ class SymbolTrader:
                  logger.warning(f"Filling mode failed, retrying with RETURN...")
                  request['type_filling'] = mt5.ORDER_FILLING_RETURN
                  result = mt5.order_send(request)
-
+                 
+             # [NEW] Handle 10016 (Invalid Stops) with aggressive retry
+             elif result.retcode == 10016:
+                 logger.warning(f"Error 10016 (Invalid Stops) detected. Retrying with wider stops...")
+                 
+                 # Widen stops by 2x buffer
+                 stop_level = symbol_info.trade_stops_level * symbol_info.point
+                 buffer = max(stop_level * 2, 50 * symbol_info.point) # At least 50 points or 2x stop level
+                 
+                 if signal == 'buy':
+                     if sl > 0: request['sl'] = round(price - buffer, symbol_info.digits)
+                     if tp > 0: request['tp'] = round(price + buffer, symbol_info.digits)
+                 else:
+                     if sl > 0: request['sl'] = round(price + buffer, symbol_info.digits)
+                     if tp > 0: request['tp'] = round(price - buffer, symbol_info.digits)
+                     
+                 logger.info(f"Retrying trade with adjusted SL: {request['sl']} | TP: {request['tp']}")
+                 result = mt5.order_send(request)
+                 
         if result.retcode != mt5.TRADE_RETCODE_DONE:
             logger.error(f"Trade Failed: {result.comment} ({result.retcode})")
             self.telegram.notify_error(f"Trade Execution ({signal})", f"{result.comment} ({result.retcode})")
