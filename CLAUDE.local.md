@@ -61,3 +61,43 @@ Session Start (每当开启一个新的对话会话时).
     *   `qlib.workflow`: 学习完整的量化工作流.
 3.  **Apply Knowledge**: 在编写量化代码时，优先使用 Qlib 提供的原生接口，避免重复造轮子。
 4.  **Self-Correction**: 如果发现自己编写的代码可以用 Qlib 工具替代，请进行重构。
+
+---
+
+## AI Skills 全局注册表
+
+本项目部署了 12 个 AI Skills，统一注册在 `skill/skills-registry.yaml`。所有 Skills 已同步至 `.trae/skills/` 供 AI 助手调用。
+
+### 自定义交易策略 Skills
+
+| Skill | 路径 | 用途 |
+|-------|------|------|
+| `quant-strategy-rules` | `skill/quant-strategy-rules/` | SMC + 马丁策略规则引擎 |
+| `quantum-position-engine` | `skill/quantum-position-engine/` | Decimal 精度仓位计算引擎 |
+| `trading-risk-management` | `skill/trading-risk-management/` | 风控决策框架 (回撤/保证金/Basket TP) |
+| `market-analysis-precheck` | `skill/market-analysis-precheck/` | 盘前 8 问决策检查清单 |
+
+### 适配的外部 Skills
+
+| Skill | 路径 | 来源 |
+|-------|------|------|
+| `postgres-trading` | `skill/postgres-trading/` | awesome-claude-skills / postgres |
+| `changelog-generator` | `skill/changelog-generator/` | awesome-claude-skills |
+| `software-architecture` | `skill/software-architecture/` | context-engineering-kit / DDD |
+| `deep-research` | `skill/deep-research/` | awesome-claude-skills |
+| `csv-data-summarizer` | `skill/csv-data-summarizer/` | awesome-claude-skills |
+| `root-cause-tracing` | `skill/root-cause-tracing/` | superpowers |
+
+### 预装 Skills
+
+| Skill | 路径 | 用途 |
+|-------|------|------|
+| `superpowers` | `skill/superpowers/` | RED-GREEN-REFACTOR 与两阶段评审 |
+| `skill-seekers` | `skill/skill-seekers/` | 文档/代码库 RAG 与 Skill 生成 |
+
+### 同步命令
+
+更新 Skills 后，运行以下命令同步到 Trae：
+```bash
+cp -r skill/*/SKILL.md .trae/skills/ 2>/dev/null; for d in skill/*/; do name=$(basename "$d"); mkdir -p ".trae/skills/$name" && cp "$d/SKILL.md" ".trae/skills/$name/"; done
+```
