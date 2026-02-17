@@ -15,19 +15,30 @@
 
 ```text
 src/
-├── position_engine/          # [核心风控模块]
-├── trading_bot/              # [原有策略模块]
-├── mql5_sources/             # [MQL5 策略源码]
+├── position_engine/              # [核心风控模块]
+├── trading_bot/                  # [原有策略模块]
+├── mql5_sources/                 # [MQL5 策略源码]
 │   ├── Include/
 │   ├── MQL5/
 │   └── ...
-└── docs/                     # [策略文档]
+└── docs/                         # [策略文档]
     └── strategy_rules.md
 
-skill/                        # [AI 技能系统]
-    ├── Skill_Seekers/        # Skill Seekers 源码仓库
-    ├── skill-seekers/        # 生成的 AI 技能包
-    └── superpowers/          # Superpowers 工作流配置
+skill/                            # [AI 技能系统]
+    ├── skills-registry.yaml      # 全局技能注册表
+    ├── Skill_Seekers/            # Skill Seekers 源码仓库
+    ├── skill-seekers/            # 生成的 AI 技能包
+    ├── superpowers/              # Superpowers 工作流配置
+    ├── quant-strategy-rules/     # SMC+马丁策略规则
+    ├── quantum-position-engine/  # 仓位计算引擎指南
+    ├── trading-risk-management/  # 风控决策框架
+    ├── market-analysis-precheck/ # 盘前 8 问检查清单
+    ├── postgres-trading/         # 交易数据库查询
+    ├── changelog-generator/      # 策略变更日志
+    ├── software-architecture/    # 金融系统架构规范
+    ├── deep-research/            # 市场深度研究
+    ├── csv-data-summarizer/      # 交易日志分析
+    └── root-cause-tracing/       # 异常根因追踪
 ```
 
 ## 2. 前置条件
@@ -112,45 +123,69 @@ python -m src.trading_bot.main GOLD
 
 ## 6. AI Skill System
 
-本项目集成了强大的 AI 技能系统，用于增强开发效率和自动化能力。
+本项目集成了 **12 个 AI Skills**，统一注册在 `skill/skills-registry.yaml`，覆盖策略执行、风控决策、数据分析和开发工程全链路。
 
-*   **Skill Seekers**: 一个通用的 RAG 预处理工具，可以将文档、代码库和 PDF 转换为 AI 可用的 Skill。
-    *   源码: `skill/Skill_Seekers/`
-    *   技能包: `skill/skill-seekers/`
-*   **Superpowers**: 集成 RED-GREEN-REFACTOR 工作流与两阶段评审的 AI 增强能力。
-    *   配置: `skill/superpowers/`
+所有 Skill 资源统一管理在 `skill/` 目录下，并已自动同步至 `.trae/skills/` 以供 AI 助手调用。
 
-所有 Skill 资源统一管理在 `skill/` 目录下，并已自动同步至 `.trae/skills/` 以供 Trae 助手调用。
+### 6.1 交易策略 Skills（自定义）
 
-### 6.1 Skill Seekers 使用指南
+| Skill | 用途 |
+|-------|------|
+| `quant-strategy-rules` | SMC + 顺势马丁策略规则引擎（入场/出场/Grid 切换） |
+| `quantum-position-engine` | Decimal 精度仓位计算引擎（Risk Tier/保证金/汇率） |
+| `trading-risk-management` | 风控决策框架（回撤熔断/降仓/Basket TP/马丁加仓） |
+| `market-analysis-precheck` | 盘前 8 问质询清单（趋势/结构/偏见/执行条件） |
+
+### 6.2 数据与分析 Skills（适配自 awesome-claude-skills）
+
+| Skill | 用途 | 来源 |
+|-------|------|------|
+| `postgres-trading` | 交易数据库只读查询 + 绩效统计模板 | [postgres](https://github.com/sanjay3290/ai-skills/tree/main/skills/postgres) |
+| `csv-data-summarizer` | 交易日志 CSV 分析（胜率/盈亏比/Sharpe/回撤） | [csv-data-summarizer](https://github.com/coffeefuelbump/csv-data-summarizer-claude-skill) |
+| `deep-research` | 量化市场深度研究（宏观/技术面/相关性/微观结构） | [deep-research](https://github.com/sanjay3290/ai-skills/tree/main/skills/deep-research) |
+
+### 6.3 工程与开发 Skills（适配自 awesome-claude-skills）
+
+| Skill | 用途 | 来源 |
+|-------|------|------|
+| `software-architecture` | 金融系统架构规范（Decimal 精度/跨币种/DDD） | [software-architecture](https://github.com/NeoLabHQ/context-engineering-kit) |
+| `changelog-generator` | 策略迭代变更日志（📈策略/🛡️风控/⚡引擎分类） | [changelog-generator](https://github.com/ComposioHQ/awesome-claude-skills) |
+| `root-cause-tracing` | 交易系统异常根因追踪（信号/风控/执行/DB） | [superpowers](https://github.com/obra/superpowers) |
+
+### 6.4 预装 Skills
+
+| Skill | 用途 |
+|-------|------|
+| `superpowers` | RED-GREEN-REFACTOR 与两阶段评审工作流 |
+| `skill-seekers` | 文档/代码库 RAG 预处理与 Skill 生成 |
+
+### 6.5 Skill Seekers 使用指南
 
 **Skill Seekers** 是一个强大的文档和代码库处理工具，已在本项目中全局配置。
 
-#### 方式 A: 通过 Trae 助手使用 (推荐)
-在对话中直接请求 Trae 执行相关任务，Trae 会自动调用 Skill Seekers 的能力：
+#### 方式 A: 通过 AI 助手使用 (推荐)
+在对话中直接请求执行相关任务，AI 会自动调用 Skill Seekers 的能力：
 *   "请帮我学习 https://fastapi.tiangolo.com/ 的文档并生成 Skill"
 *   "分析当前代码库的架构和设计模式"
 *   "把这个 PDF 手册转换成 Skill"
 
 #### 方式 B: 命令行使用 (CLI)
-你也可以在终端中直接使用 `skill-seekers` 命令：
-
 ```bash
-# 1. 抓取文档网站
+# 抓取文档网站
 skill-seekers scrape --url https://react.dev --name react
 
-# 2. 分析 GitHub 仓库
+# 分析 GitHub 仓库
 skill-seekers github --repo facebook/react
 
-# 3. 交互式配置
+# 交互式配置
 skill-seekers config
 ```
 
-#### 方式 C: 维护与更新
-如果你修改了 `skill/` 目录下的 Skill 配置，请运行以下命令同步给 Trae：
+### 6.6 维护与同步
+
+修改 `skill/` 目录下的 Skill 后，运行以下命令同步到 `.trae/skills/`：
 ```bash
-# Windows
-cp -r skill/* .trae/skills/
+for d in skill/*/; do name=$(basename "$d"); mkdir -p ".trae/skills/$name" && cp "$d/SKILL.md" ".trae/skills/$name/" 2>/dev/null; done
 ```
 
 ## 7. 故障排除
