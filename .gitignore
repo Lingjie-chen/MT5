@@ -1,40 +1,84 @@
-# Python虚拟环境
-*.pyc
+# --- Python ---
 __pycache__/
-.pytest_cache/
-.coverage
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# 日志文件
+# --- Logs & Databases ---
 *.log
 logs/
-
-
-# SQLite 临时文件
+*.log.*
+*.sqlite
+*.db
 *.db-shm
 *.db-wal
-# Ignore actual DB files to prevent binary blobs in git
-*.db
 
-# 可视化图表文件
-figures/
-charts/
-reports/
+# --- Unit Test / Coverage ---
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
 
+# --- Operating System ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
 
-# MT5相关文件
+# --- IDE & Editors ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- Temp Files ---
+tmp/
+temp/
+*.tmp
+*.bak
+*.old
+
+# --- Environment Variables (Security) ---
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# --- MT5 Specific ---
 *.ex5
 *.mq5~
 *.mqh~
-*.ex5~
-
-# IDE配置
-.vscode/
-.idea/
-
-# 操作系统文件
-Thumbs.db
-.DS_Store
-
-# 临时文件
-*.tmp
-*.temp
