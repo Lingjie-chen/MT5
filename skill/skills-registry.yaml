@@ -1,0 +1,108 @@
+# Skills Registry - 量化交易系统技能统一注册表
+# 管理所有已部署的 AI Skills，统一配置与启用状态
+
+version: "1.0.0"
+updated: "2025-02-17"
+
+skills:
+  # ========================================
+  # A. 自定义交易策略 Skills
+  # ========================================
+  
+  - name: quant-strategy-rules
+    path: skill/quant-strategy-rules/
+    source: custom
+    enabled: true
+    description: "SMC + 顺势马丁格尔策略规则引擎"
+    tags: [strategy, smc, martingale, entry, exit]
+    
+  - name: quantum-position-engine
+    path: skill/quantum-position-engine/
+    source: custom
+    enabled: true
+    description: "Decimal 精度仓位计算引擎指南"
+    tags: [position-sizing, risk, decimal, engine]
+    
+  - name: trading-risk-management
+    path: skill/trading-risk-management/
+    source: custom
+    enabled: true
+    description: "交易风控决策框架 (回撤熔断、降仓、Basket TP)"
+    tags: [risk, drawdown, margin, circuit-breaker]
+    
+  - name: market-analysis-precheck
+    path: skill/market-analysis-precheck/
+    source: custom
+    enabled: true
+    description: "盘前 8 问和市场分析检查清单"
+    tags: [premarket, checklist, analysis, decision]
+  
+  # ========================================
+  # B. 从 awesome-claude-skills 适配的 Skills
+  # ========================================
+  
+  - name: postgres-trading
+    path: skill/postgres-trading/
+    source: adapted
+    origin: "https://github.com/sanjay3290/ai-skills/tree/main/skills/postgres"
+    enabled: true
+    description: "交易数据库 PostgreSQL 只读查询工具"
+    tags: [database, postgresql, query, analysis]
+    
+  - name: changelog-generator
+    path: skill/changelog-generator/
+    source: adapted
+    origin: "https://github.com/ComposioHQ/awesome-claude-skills/blob/master/changelog-generator"
+    enabled: true
+    description: "量化策略变更日志生成器"
+    tags: [changelog, git, versioning, release]
+    
+  - name: software-architecture
+    path: skill/software-architecture/
+    source: adapted
+    origin: "https://github.com/NeoLabHQ/context-engineering-kit/tree/master/plugins/ddd/skills/software-architecture"
+    enabled: true
+    description: "金融量化系统软件架构规范 (Clean Architecture + DDD)"
+    tags: [architecture, ddd, clean-arch, code-quality]
+    
+  - name: deep-research
+    path: skill/deep-research/
+    source: adapted
+    origin: "https://github.com/sanjay3290/ai-skills/tree/main/skills/deep-research"
+    enabled: true
+    description: "量化交易市场深度研究工具"
+    tags: [research, macro, technical, correlation]
+    
+  - name: csv-data-summarizer
+    path: skill/csv-data-summarizer/
+    source: adapted
+    origin: "https://github.com/coffeefuelbump/csv-data-summarizer-claude-skill"
+    enabled: true
+    description: "交易日志 CSV 数据分析 (胜率、盈亏比、Sharpe)"
+    tags: [csv, analysis, metrics, performance]
+    
+  - name: root-cause-tracing
+    path: skill/root-cause-tracing/
+    source: adapted
+    origin: "https://github.com/obra/superpowers/tree/main/skills/root-cause-tracing"
+    enabled: true
+    description: "量化交易系统异常根因追踪"
+    tags: [debugging, tracing, error, diagnosis]
+  
+  # ========================================
+  # C. 预装 Skills (已有)
+  # ========================================
+  
+  - name: superpowers
+    path: skill/superpowers/
+    source: pre-installed
+    enabled: true
+    description: "RED-GREEN-REFACTOR 与两阶段评审工作流"
+    tags: [workflow, tdd, review, git]
+    
+  - name: skill-seekers
+    path: skill/skill-seekers/
+    source: pre-installed
+    enabled: true
+    description: "文档/代码库 RAG 预处理与 Skill 生成"
+    tags: [rag, documentation, skill-generation]
