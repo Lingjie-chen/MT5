@@ -963,7 +963,7 @@ class QwenClient:
         return full_prompt
 
     
-    def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "Qwen/Qwen3-VL-235B-A22B-Thinking"):
+    def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "Pro/zai-org/GLM-5"):
         """
         初始化Qwen客户端
         
@@ -989,12 +989,12 @@ class QwenClient:
         # 加载环境变量中的 EURUSD 配置
         eurusd_key = os.getenv("EURUSD_API_KEY", api_key)
         eurusd_url = os.getenv("EURUSD_API_URL", "https://api.siliconflow.cn/v1")
-        eurusd_model = os.getenv("EURUSD_MODEL", "Qwen/Qwen3-VL-235B-A22B-Thinking")
+        eurusd_model = os.getenv("EURUSD_MODEL", "Pro/zai-org/GLM-5")
         
         # 加载环境变量中的 ETHUSD 配置
         ethusd_key = os.getenv("ETHUSD_API_KEY", api_key)
         ethusd_url = os.getenv("ETHUSD_API_URL", "https://api.siliconflow.cn/v1")
-        ethusd_model = os.getenv("ETHUSD_MODEL", "Qwen/Qwen3-VL-235B-A22B-Thinking")
+        ethusd_model = os.getenv("ETHUSD_MODEL", "Pro/zai-org/GLM-5")
         
         # 默认配置 (Gold/XAUUSD 使用 SiliconFlow GLM-4.7)
         default_config = {
