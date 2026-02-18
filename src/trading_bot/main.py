@@ -1096,6 +1096,23 @@ class SymbolTrader:
                         needs_update = True
                         
                     if needs_update:
+                        # Double-check validity against current market price before sending update
+                        current_tick = mt5.symbol_info_tick(self.symbol)
+                        if current_tick:
+                            current_price = current_tick.bid if pos.type == mt5.POSITION_TYPE_BUY else current_tick.ask
+                            min_dist = symbol_info.trade_stops_level * symbol_info.point
+                            
+                            # Validate SL distance
+                            if sl > 0 and abs(current_price - sl) < min_dist:
+                                logger.warning(f"Skipping SL update: {sl} is too close to current price {current_price} (Min: {min_dist})")
+                                needs_update = False
+                            
+                            # Validate TP distance
+                            if tp > 0 and abs(current_price - tp) < min_dist:
+                                logger.warning(f"Skipping TP update: {tp} is too close to current price {current_price} (Min: {min_dist})")
+                                needs_update = False
+
+                    if needs_update:
                         req_update = {
                             "action": mt5.TRADE_ACTION_SLTP,
                             "position": result.order,
