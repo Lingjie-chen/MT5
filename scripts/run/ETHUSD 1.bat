@@ -9,7 +9,7 @@ cd /d "%~dp0"
 :: -----------------------------------------------------------------------------
 
 echo Launching GOLD Strategy (Ava Real - Acc1)...
-start "Strategy - GOLD (Ava Real)" "%~dp0run_bot_watchdog.bat" GOLD 1
+start "Strategy - GOLD (Ava Real)" "%~dp0run_bot_watchdog.bat" ETHUSD 1
 
 timeout /t 1 /nobreak >nul
 
