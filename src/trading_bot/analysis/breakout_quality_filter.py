@@ -39,11 +39,8 @@ class BreakoutQualityFilter:
         
     def check_kill_zone(self, current_time: datetime) -> Tuple[bool, str]:
         """Gate 1: Check if current time is within high-probability trading windows."""
-        t = current_time.time()
-        for start, end in self.kill_zones:
-            if start <= t <= end:
-                return True, f"In Kill Zone ({start.strftime('%H:%M')}-{end.strftime('%H:%M')})"
-        return False, "Outside Kill Zones (Low Probability)"
+        # [MODIFIED] Kill Zone Disabled by User Request
+        return True, "Kill Zone Filter Disabled"
 
     def calculate_rvol(self, df: pd.DataFrame, period=20) -> float:
         """Gate 2: Relative Volume Calculation."""
@@ -198,8 +195,9 @@ class BreakoutQualityFilter:
             details.append("❌ No FVG Formed (Efficient Move)")
             
         # Final Validity Check
-        # Strict Mode: Must be in Kill Zone AND (RVOL OK OR FVG OK)
-        is_valid = in_zone and (rvol >= 1.0 or has_fvg)
+        # Final Validity Check
+        # Strict Mode: RVOL OK OR FVG OK (Kill Zone ignored)
+        is_valid = (rvol >= 1.0 or has_fvg)
         
         return QualityResult(
             is_valid=is_valid,
