@@ -10,28 +10,28 @@ skills:
   # ========================================
   
   - name: quant-strategy-rules
-    path: skill/quant-strategy-rules/
+    path: skills/quant-strategy-rules/
     source: custom
     enabled: true
     description: "SMC + 顺势马丁格尔策略规则引擎"
     tags: [strategy, smc, martingale, entry, exit]
     
   - name: quantum-position-engine
-    path: skill/quantum-position-engine/
+    path: skills/quantum-position-engine/
     source: custom
     enabled: true
     description: "Decimal 精度仓位计算引擎指南"
     tags: [position-sizing, risk, decimal, engine]
     
   - name: trading-risk-management
-    path: skill/trading-risk-management/
+    path: skills/trading-risk-management/
     source: custom
     enabled: true
     description: "交易风控决策框架 (回撤熔断、降仓、Basket TP)"
     tags: [risk, drawdown, margin, circuit-breaker]
     
   - name: market-analysis-precheck
-    path: skill/market-analysis-precheck/
+    path: skills/market-analysis-precheck/
     source: custom
     enabled: true
     description: "盘前 8 问和市场分析检查清单"
@@ -42,7 +42,7 @@ skills:
   # ========================================
   
   - name: postgres-trading
-    path: skill/postgres-trading/
+    path: skills/postgres-trading/
     source: adapted
     origin: "https://github.com/sanjay3290/ai-skills/tree/main/skills/postgres"
     enabled: true
@@ -50,7 +50,7 @@ skills:
     tags: [database, postgresql, query, analysis]
     
   - name: changelog-generator
-    path: skill/changelog-generator/
+    path: skills/changelog-generator/
     source: adapted
     origin: "https://github.com/ComposioHQ/awesome-claude-skills/blob/master/changelog-generator"
     enabled: true
@@ -58,7 +58,7 @@ skills:
     tags: [changelog, git, versioning, release]
     
   - name: software-architecture
-    path: skill/software-architecture/
+    path: skills/software-architecture/
     source: adapted
     origin: "https://github.com/NeoLabHQ/context-engineering-kit/tree/master/plugins/ddd/skills/software-architecture"
     enabled: true
@@ -66,7 +66,7 @@ skills:
     tags: [architecture, ddd, clean-arch, code-quality]
     
   - name: deep-research
-    path: skill/deep-research/
+    path: skills/deep-research/
     source: adapted
     origin: "https://github.com/sanjay3290/ai-skills/tree/main/skills/deep-research"
     enabled: true
@@ -74,7 +74,7 @@ skills:
     tags: [research, macro, technical, correlation]
     
   - name: csv-data-summarizer
-    path: skill/csv-data-summarizer/
+    path: skills/csv-data-summarizer/
     source: adapted
     origin: "https://github.com/coffeefuelbump/csv-data-summarizer-claude-skill"
     enabled: true
@@ -82,7 +82,7 @@ skills:
     tags: [csv, analysis, metrics, performance]
     
   - name: root-cause-tracing
-    path: skill/root-cause-tracing/
+    path: skills/root-cause-tracing/
     source: adapted
     origin: "https://github.com/obra/superpowers/tree/main/skills/root-cause-tracing"
     enabled: true
@@ -94,14 +94,14 @@ skills:
   # ========================================
   
   - name: superpowers
-    path: skill/superpowers/
+    path: skills/superpowers/
     source: pre-installed
     enabled: true
     description: "RED-GREEN-REFACTOR 与两阶段评审工作流"
     tags: [workflow, tdd, review, git]
     
   - name: skill-seekers
-    path: skill/skill-seekers/
+    path: skills/skill-seekers/
     source: pre-installed
     enabled: true
     description: "文档/代码库 RAG 预处理与 Skill 生成"
