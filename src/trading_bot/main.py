@@ -928,6 +928,10 @@ class SymbolTrader:
             tp_text = "None"
             profit_prob = "N/A"
             
+            # Retrieve symbol digits for formatting
+            symbol_info = mt5.symbol_info(self.symbol)
+            decimals = symbol_info.digits if symbol_info else 2
+            
             if positions:
                 # Use the first position's SL/TP as reference
                 first_pos = positions[0]
