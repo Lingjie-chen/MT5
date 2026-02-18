@@ -226,7 +226,13 @@ class GoldORBStrategy:
         
         return self.final_range_high, self.final_range_low, self.is_range_final
 
-    def check_realtime_breakout(self, current_price, current_time_msc=None, point=0.01):
+    def get_breakout_candle(self, df_m5):
+        """Helper to get the latest completed candle for analysis"""
+        if df_m5 is not None and len(df_m5) > 0:
+            return df_m5.iloc[-1]
+        return None
+
+    def check_realtime_breakout(self, current_price, current_time_msc=None, point=0.01, df_m5=None):
         """
         High-Frequency Breakout Check (Millisecond Level Response)
         Returns: Signal Dict or None
@@ -279,6 +285,13 @@ class GoldORBStrategy:
                     'range_std': self.range_std,
                     'breakout_score': breakout_score,
                     'z_score': (current_price - self.range_mean) / self.range_std if self.range_std > 0 else 0
+                },
+                'breakout_candle': self.get_breakout_candle(df_m5) if df_m5 is not None else None,
+                'range_height': self.final_range_high - self.final_range_low,
+                'breakout_impulse': {
+                    'high': current_price, 
+                    'low': self.final_range_low if signal == 'buy' else self.final_range_high 
+                    # Default impulse low is range limit, refined by BreakoutQualityFilter later
                 }
             }
             
