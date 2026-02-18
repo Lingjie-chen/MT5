@@ -700,7 +700,7 @@ class SymbolTrader:
             # Format TP Display for Telegram
             tp_display = f"{smart_tp:.2f}"
             if basket_tp > 0:
-                tp_display += f" (Basket: ${basket_tp})"
+                tp_display += f"\n💰 Basket TP: ${basket_tp} (USD)" # New line for clarity
             
             logger.info(f"Executing ORB Trade: {orb_signal['signal'].upper()} | Lot: {lot_size} | Smart SL: {smart_sl} | TP: {smart_tp} | Basket TP: ${basket_tp}")
             
