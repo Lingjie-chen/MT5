@@ -1052,13 +1052,21 @@ class SymbolTrader:
                  buffer = max(stop_level * 2, 50 * symbol_info.point) # At least 50 points or 2x stop level
                  
                  if signal == 'buy':
-                     if sl > 0: request['sl'] = round(price - buffer, symbol_info.digits)
-                     if tp > 0: request['tp'] = round(price + buffer, symbol_info.digits)
+                     if sl > 0: 
+                         sl = round(price - buffer, symbol_info.digits)
+                         request['sl'] = sl
+                     if tp > 0: 
+                         tp = round(price + buffer, symbol_info.digits)
+                         request['tp'] = tp
                  else:
-                     if sl > 0: request['sl'] = round(price + buffer, symbol_info.digits)
-                     if tp > 0: request['tp'] = round(price - buffer, symbol_info.digits)
+                     if sl > 0: 
+                         sl = round(price + buffer, symbol_info.digits)
+                         request['sl'] = sl
+                     if tp > 0: 
+                         tp = round(price - buffer, symbol_info.digits)
+                         request['tp'] = tp
                      
-                 logger.info(f"Retrying trade with adjusted SL: {request['sl']} | TP: {request['tp']}")
+                 logger.info(f"Retrying trade with adjusted SL: {sl} | TP: {tp}")
                  result = mt5.order_send(request)
                  
         if result.retcode != mt5.TRADE_RETCODE_DONE:
