@@ -183,9 +183,9 @@ skill-seekers config
 
 ### 6.6 维护与同步
 
-修改 `skills/` 目录下的 Skill 后，运行以下命令同步到 `.trae/skills/`：
+修改 `skills/` 目录下的 Skill 后，运行以下命令同步到 `.trae/skills/` 和 `.agent/skills/`：
 ```bash
-for d in skill/*/; do name=$(basename "$d"); mkdir -p ".trae/skills/$name" && cp "$d/SKILL.md" ".trae/skills/$name/" 2>/dev/null; done
+for d in skills/*/; do name=$(basename "$d"); mkdir -p ".trae/skills/$name" ".agent/skills/$name" && cp "$d/SKILL.md" ".trae/skills/$name/" && cp "$d/SKILL.md" ".agent/skills/$name/" 2>/dev/null; done
 ```
 
 ## 7. 故障排除
