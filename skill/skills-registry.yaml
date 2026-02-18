@@ -106,3 +106,15 @@ skills:
     enabled: true
     description: "文档/代码库 RAG 预处理与 Skill 生成"
     tags: [rag, documentation, skill-generation]
+
+  # ========================================
+  # D. 新增 Skills (User Added)
+  # ========================================
+
+  - name: ui-ux-pro-max
+    path: skill/ui-ux-pro-max/
+    source: adapted
+    origin: "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill"
+    enabled: true
+    description: "UI/UX 设计智能系统 (样式/配色/组件规范生成)"
+    tags: [ui, ux, design-system, styles, css]
