@@ -557,12 +557,34 @@ class SymbolTrader:
         # 1. SMC Validation - Integrated SMC Data Interface
         # df_m5 already fetched above
         
+        # [NEW] Waterfall Pipeline (Breakout Quality Filter)
+        # Gate 1-3: Kill Zone, RVOL, Displacement, FVG Formation
+        current_dt = datetime.fromtimestamp(orb_signal.get('time_msc', time.time()*1000)/1000.0)
+        quality_result = self.quality_filter.validate_breakout_quality(df_m5, orb_signal['signal'], current_dt)
+        
+        if not quality_result.is_valid:
+            if time.time() - self.last_orb_filter_time > 300:
+                logger.info(f"ORB Signal Filtered by Quality Gate: {quality_result.details}")
+                self.last_orb_filter_time = time.time()
+            
+            # Cooldown & Reset
+            self.orb_cooldowns[orb_signal['signal']] = time.time()
+            if orb_signal['signal'] == 'buy':
+                self.orb_strategy.long_signal_taken_today = False
+                self.orb_strategy.trades_today_count = max(0, self.orb_strategy.trades_today_count - 1)
+            else:
+                self.orb_strategy.short_signal_taken_today = False
+                self.orb_strategy.trades_today_count = max(0, self.orb_strategy.trades_today_count - 1)
+            return
+
         # Calculate Quality Score: Liquidity, Order Flow, Institutional Participation
+        # Pass quality result context to validator
         is_valid, score, details = self.smc_validator.validate_signal(
             df_m5, 
             orb_signal['price'], 
             orb_signal['signal'],
-            volatility_stats=orb_signal.get('stats')
+            volatility_stats=orb_signal.get('stats'),
+            current_time=current_dt
         )
         
         # Quality Threshold Filter: Score >= 70
