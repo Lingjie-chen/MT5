@@ -92,6 +92,7 @@ class SymbolTrader:
         self.last_orb_filter_time = 0 
         self.orb_cooldowns = {'buy': 0, 'sell': 0} 
         self.last_heartbeat_time = 0 
+        self.last_pos_count = 0 # Track position count for notification logic
         self.watcher = None 
         self.is_optimizing = False 
         
