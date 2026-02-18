@@ -299,7 +299,8 @@ class SymbolTrader:
             
         # 2. State Machine Execution
         # Priority Check: ORB Breakout (Can trigger in ANY state)
-        orb_signal = self.orb_strategy.check_realtime_breakout(current_price, tick.time_msc)
+        df_m5_latest = self.get_dataframe(self.timeframe, 100)
+        orb_signal = self.orb_strategy.check_realtime_breakout(current_price, tick.time_msc, df_m5=df_m5_latest)
         if orb_signal:
             self._process_orb_signal_with_state_transition(orb_signal)
             # If ORB triggered, we skip Grid logic for this tick
