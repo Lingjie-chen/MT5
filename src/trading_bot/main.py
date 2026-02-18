@@ -1239,11 +1239,13 @@ class SymbolTrader:
             
             if mt5_type == mt5.ORDER_TYPE_BUY_LIMIT:
                 if price >= tick.ask:
-                    # If price is already above Ask, Limit Buy is invalid (becomes market).
-                    # But for Grid, maybe we just want to skip or place at Ask?
-                    # Let's skip to be safe, or adjust to Ask - StopLevel if that was the intent.
-                    logger.warning(f"Skipping Buy Limit @ {price} >= Ask {tick.ask}")
-                    return {"status": "skipped", "reason": f"buy_limit_price_ge_ask:{price}>= {tick.ask}"}
+                    new_price = tick.ask - stop_level - buffer
+                    new_price = round(new_price, symbol_info.digits)
+                    if new_price <= 0:
+                        logger.warning(f"Skipping Buy Limit @ {price} >= Ask {tick.ask}")
+                        return {"status": "skipped", "reason": f"buy_limit_price_ge_ask:{price}>= {tick.ask}"}
+                    logger.info(f"Adjusting Buy Limit Price: {price} -> {new_price} (>= Ask {tick.ask}, StopLevel {stop_level})")
+                    price = new_price
                 
                 if (tick.ask - price) < stop_level:
                     # Auto-adjust price to be valid
@@ -1254,8 +1256,10 @@ class SymbolTrader:
                     
             elif mt5_type == mt5.ORDER_TYPE_SELL_LIMIT:
                 if price <= tick.bid:
-                    logger.warning(f"Skipping Sell Limit @ {price} <= Bid {tick.bid}")
-                    return {"status": "skipped", "reason": f"sell_limit_price_le_bid:{price}<= {tick.bid}"}
+                    new_price = tick.bid + stop_level + buffer
+                    new_price = round(new_price, symbol_info.digits)
+                    logger.info(f"Adjusting Sell Limit Price: {price} -> {new_price} (<= Bid {tick.bid}, StopLevel {stop_level})")
+                    price = new_price
                 
                 if (price - tick.bid) < stop_level:
                     # Auto-adjust price to be valid
