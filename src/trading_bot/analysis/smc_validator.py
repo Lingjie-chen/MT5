@@ -37,10 +37,10 @@ class SMCQualityValidator:
         if df_m15 is not None and current_time is not None:
             quality_result = self.quality_filter.validate_breakout_quality(df_m15, signal_type, current_time)
             
-            # Kill Zone Failure = Immediate Rejection (handled in validate_signal, but penalty here)
-            if not quality_result.metrics.get('kill_zone', 0):
-                 details.append("❌ Outside Kill Zone (Penalty -50)")
-                 score -= 50
+            # Kill Zone Check removed as per user request (Gate 1 bypassed)
+            # if not quality_result.metrics.get('kill_zone', 0):
+            #      details.append("❌ Outside Kill Zone (Penalty -50)")
+            #      score -= 50
             
             # Add Quality Score (already 0-30 based on 3 metrics * 10)
             q_score = quality_result.score
