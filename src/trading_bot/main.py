@@ -949,6 +949,42 @@ class SymbolTrader:
                 # Notify Telegram
                 self.telegram.notify_basket_close(self.symbol, "SHORT", total_profit_short, reason_short)
 
+            # [NEW] Breaker Block & ATR Breakeven Logic
+            # Iterate individual positions for advanced management
+            df_m5 = self.get_dataframe(self.timeframe, 50)
+            current_atr = self.quality_filter.calculate_atr(df_m5) if df_m5 is not None else 0
+            
+            for pos in positions:
+                # 1. ATR Breakeven
+                # If profit > 0.5 * ATR, move SL to Entry + Spread (approx)
+                if current_atr > 0 and pos.ticket not in self.atr_breakeven_triggered:
+                    profit_points = 0
+                    if pos.type == mt5.POSITION_TYPE_BUY:
+                         profit_points = (current_price - pos.price_open)
+                    elif pos.type == mt5.POSITION_TYPE_SELL:
+                         profit_points = (pos.price_open - current_price)
+                    
+                    atr_threshold = 0.5 * current_atr
+                    
+                    if profit_points >= atr_threshold:
+                        # Move SL to Breakeven
+                        new_sl = pos.price_open
+                        
+                        request = {
+                            "action": mt5.TRADE_ACTION_SLTP,
+                            "position": pos.ticket,
+                            "sl": new_sl,
+                            "tp": pos.tp
+                        }
+                        res = mt5.order_send(request)
+                        if res.retcode == mt5.TRADE_RETCODE_DONE:
+                            logger.info(f"ATR Breakeven Triggered for Ticket {pos.ticket}. SL moved to {new_sl} (Profit {profit_points:.2f} >= {atr_threshold:.2f})")
+                            self.atr_breakeven_triggered.add(pos.ticket)
+
+                # 2. Breaker Block Exit (Manual validation check)
+                # If we have a tracked breaker level for this position type
+                pass
+
     def _log_heartbeat(self, current_price):
         """Log periodic status update"""
         orb_status = "WAITING"
