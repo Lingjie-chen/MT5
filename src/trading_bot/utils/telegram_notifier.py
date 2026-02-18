@@ -59,18 +59,26 @@ class TelegramNotifier:
         )
         return self.send_message(msg)
 
-    def notify_grid_deployment(self, symbol, count, trend, start_price, basket_tp=None):
+    def notify_grid_deployment(self, symbol, count, trend, start_price, basket_tp=None, planned_count=None, skipped_count=None, failed_count=None, first_issue=None):
         """
         Notify about grid deployment.
         """
         tp_text = f"`${basket_tp}`" if basket_tp else "N/A"
+        planned_text = f"`{planned_count}`" if planned_count is not None else "N/A"
+        skipped_text = f"`{skipped_count}`" if skipped_count is not None else "N/A"
+        failed_text = f"`{failed_count}`" if failed_count is not None else "N/A"
+        issue_line = f"\nFirst Issue: `{first_issue}`" if first_issue else ""
         msg = (
             f"🕸 *Grid Deployed*\n"
             f"Symbol: `{symbol}`\n"
             f"Trend: *{trend.upper()}*\n"
-            f"Orders: `{count}`\n"
+            f"Orders Placed: `{count}`\n"
+            f"Orders Planned: {planned_text}\n"
+            f"Skipped: {skipped_text}\n"
+            f"Failed: {failed_text}\n"
             f"Start Price: `{start_price}`\n"
             f"Basket TP: {tp_text}"
+            f"{issue_line}"
         )
         return self.send_message(msg)
 
