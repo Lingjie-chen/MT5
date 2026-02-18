@@ -735,6 +735,9 @@ class SymbolTrader:
                 reason=reason
             )
             
+            # Store analysis result for notification
+            self.last_analysis_result = llm_decision
+
             # Execute with Smart SL and TP
             self.execute_trade(
                 signal=orb_signal['signal'],
