@@ -24,7 +24,7 @@ src/
 └── docs/                         # [策略文档]
     └── strategy_rules.md
 
-skill/                            # [AI 技能系统]
+skills/                           # [AI 技能系统]
     ├── skills-registry.yaml      # 全局技能注册表
     ├── Skill_Seekers/            # Skill Seekers 源码仓库
     ├── skill-seekers/            # 生成的 AI 技能包
@@ -38,7 +38,8 @@ skill/                            # [AI 技能系统]
     ├── software-architecture/    # 金融系统架构规范
     ├── deep-research/            # 市场深度研究
     ├── csv-data-summarizer/      # 交易日志分析
-    └── root-cause-tracing/       # 异常根因追踪
+    ├── root-cause-tracing/       # 异常根因追踪
+    └── ui-ux-pro-max/            # UI/UX 设计智能系统
 ```
 
 ## 2. 前置条件
@@ -123,9 +124,9 @@ python -m src.trading_bot.main GOLD
 
 ## 6. AI Skill System
 
-本项目集成了 **12 个 AI Skills**，统一注册在 `skill/skills-registry.yaml`，覆盖策略执行、风控决策、数据分析和开发工程全链路。
+本项目集成了 **13 个 AI Skills**，统一注册在 `skills/skills-registry.yaml`，覆盖策略执行、风控决策、数据分析和开发工程全链路。
 
-所有 Skill 资源统一管理在 `skill/` 目录下，并已自动同步至 `.trae/skills/` 以供 AI 助手调用。
+所有 Skill 资源统一管理在 `skills/` 目录下，并已自动同步至 `.trae/skills/` 以供 AI 助手调用。
 
 ### 6.1 交易策略 Skills（自定义）
 
@@ -144,13 +145,14 @@ python -m src.trading_bot.main GOLD
 | `csv-data-summarizer` | 交易日志 CSV 分析（胜率/盈亏比/Sharpe/回撤） | [csv-data-summarizer](https://github.com/coffeefuelbump/csv-data-summarizer-claude-skill) |
 | `deep-research` | 量化市场深度研究（宏观/技术面/相关性/微观结构） | [deep-research](https://github.com/sanjay3290/ai-skills/tree/main/skills/deep-research) |
 
-### 6.3 工程与开发 Skills（适配自 awesome-claude-skills）
+### 6.3 工程与设计 Skills（适配自 awesome-claude-skills）
 
 | Skill | 用途 | 来源 |
 |-------|------|------|
 | `software-architecture` | 金融系统架构规范（Decimal 精度/跨币种/DDD） | [software-architecture](https://github.com/NeoLabHQ/context-engineering-kit) |
 | `changelog-generator` | 策略迭代变更日志（📈策略/🛡️风控/⚡引擎分类） | [changelog-generator](https://github.com/ComposioHQ/awesome-claude-skills) |
 | `root-cause-tracing` | 交易系统异常根因追踪（信号/风控/执行/DB） | [superpowers](https://github.com/obra/superpowers) |
+| `ui-ux-pro-max` | UI/UX 设计智能系统 (样式/配色/组件规范生成) | [ui-ux-pro-max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) |
 
 ### 6.4 预装 Skills
 
