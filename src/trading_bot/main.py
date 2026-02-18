@@ -917,7 +917,8 @@ class SymbolTrader:
 
         # Send to Telegram - STRICT FILTER: Only send if there is ACTIVE POSITIONS (Open Trades)
         # We ignore pending orders to reduce spam as requested.
-        if pos_count > 0:
+        # [MODIFIED] Only send when position count increases from 0 (First Open)
+        if pos_count > 0 and self.last_pos_count == 0:
             tg_msg = (
                  f"Symbol: `{self.symbol}`\n"
                  f"Price: `{current_price:.2f}`\n"
@@ -926,6 +927,9 @@ class SymbolTrader:
                  f"Orders: `{order_count}`"
             )
             threading.Thread(target=self.telegram.notify_info, args=("Active Trading Status", tg_msg), daemon=True).start()
+        
+        # Update state tracking
+        self.last_pos_count = pos_count
 
     def normalize_volume(self, volume):
         """
