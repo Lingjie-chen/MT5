@@ -919,11 +919,31 @@ class SymbolTrader:
         # We ignore pending orders to reduce spam as requested.
         # [MODIFIED] Only send when position count increases from 0 (First Open)
         if pos_count > 0 and self.last_pos_count == 0:
+            # Get Position Details (SL/TP)
+            sl_text = "None"
+            tp_text = "None"
+            profit_prob = "N/A"
+            
+            if positions:
+                # Use the first position's SL/TP as reference
+                first_pos = positions[0]
+                sl_text = f"{first_pos.sl:.{decimals}f}" if first_pos.sl > 0 else "None"
+                tp_text = f"{first_pos.tp:.{decimals}f}" if first_pos.tp > 0 else "None"
+                
+                # Try to retrieve Probability/Confidence from context if available
+                # Note: This is a simplified retrieval. For more accuracy, we'd need to store trade context by ticket.
+                # Assuming the latest analysis reflects the current trade.
+                if hasattr(self, 'last_analysis_result') and self.last_analysis_result:
+                     profit_prob = f"{self.last_analysis_result.get('confidence', 'N/A')}%"
+
             tg_msg = (
                  f"Symbol: `{self.symbol}`\n"
                  f"Price: `{current_price:.2f}`\n"
                  f"Mode: `{self.state}`\n"
                  f"Positions: `{pos_count}`\n"
+                 f"SL: `{sl_text}`\n"
+                 f"TP: `{tp_text}`\n"
+                 f"Win Prob: `{profit_prob}`\n"
                  f"Orders: `{order_count}`"
             )
             threading.Thread(target=self.telegram.notify_info, args=("Active Trading Status", tg_msg), daemon=True).start()
