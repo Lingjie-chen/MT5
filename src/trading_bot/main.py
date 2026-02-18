@@ -92,8 +92,8 @@ class SymbolTrader:
         self.last_orb_filter_time = 0 
         self.orb_cooldowns = {'buy': 0, 'sell': 0} 
         self.last_heartbeat_time = 0 
-        self.last_pos_count = 0 # Track position count for notification logic
-        self.last_analysis_result = {} # Store last analysis result for notifications
+        self.last_pos_count = 0
+        self.last_analysis_result = {}
         self.watcher = None 
         self.is_optimizing = False 
         
@@ -700,7 +700,7 @@ class SymbolTrader:
             # Format TP Display for Telegram
             tp_display = f"{smart_tp:.2f}"
             if basket_tp > 0:
-                tp_display += f"\n💰 Basket TP: ${basket_tp} (USD)" # New line for clarity
+                tp_display += f"\n💰 Basket TP: ${basket_tp} (USD)"
             
             logger.info(f"Executing ORB Trade: {orb_signal['signal'].upper()} | Lot: {lot_size} | Smart SL: {smart_sl} | TP: {smart_tp} | Basket TP: ${basket_tp}")
             
@@ -855,9 +855,13 @@ class SymbolTrader:
                     logger.info("Grid Strategy Started: Triggering Background Optimization...")
                     self.run_periodic_optimization(blocking=False)
                     
-                    # Notify Telegram
-                    self.telegram.notify_grid_deployment(self.symbol, len(orders), trend, current_price, basket_tp=basket_tp)
-                    
+                    planned_orders = [o for o in orders if o.get('type') in ['buy_limit', 'limit_buy', 'sell_limit', 'limit_sell']]
+                    planned_count = len(planned_orders)
+                    placed_count = 0
+                    skipped_count = 0
+                    failed_count = 0
+                    first_issue = None
+
                     for order in orders:
                         # Handle Control Actions (Clean & Deploy)
                         if order['type'] == 'cancel_all_buy_limits':
@@ -867,8 +871,30 @@ class SymbolTrader:
                             logger.info("Cleaning up existing Sell Limits...")
                             self.cancel_pending_by_type(mt5.ORDER_TYPE_SELL_LIMIT)
                         else:
-                            self.place_limit_order(order)
+                            res = self.place_limit_order(order)
+                            status = (res or {}).get('status')
+                            if status == 'placed':
+                                placed_count += 1
+                            elif status == 'skipped':
+                                skipped_count += 1
+                                if not first_issue:
+                                    first_issue = (res or {}).get('reason')
+                            else:
+                                failed_count += 1
+                                if not first_issue:
+                                    first_issue = (res or {}).get('reason')
                         
+                    self.telegram.notify_grid_deployment(
+                        self.symbol,
+                        count=placed_count,
+                        trend=trend,
+                        start_price=current_price,
+                        basket_tp=basket_tp,
+                        planned_count=planned_count,
+                        skipped_count=skipped_count,
+                        failed_count=failed_count,
+                        first_issue=first_issue
+                    )
                     self.last_grid_update = time.time()
             else:
                 logger.info(f"LLM Grid Analysis: {action} (Market not suitable for grid)")
@@ -928,7 +954,6 @@ class SymbolTrader:
             tp_text = "None"
             profit_prob = "N/A"
             
-            # Retrieve symbol digits for formatting
             symbol_info = mt5.symbol_info(self.symbol)
             decimals = symbol_info.digits if symbol_info else 2
             
@@ -1169,7 +1194,7 @@ class SymbolTrader:
         symbol_info = mt5.symbol_info(self.symbol)
         if symbol_info is None:
             logger.error(f"Cannot place order: Symbol {self.symbol} not found")
-            return
+            return {"status": "failed", "reason": "symbol_not_found"}
 
         price = float(order_dict['price'])
         
@@ -1204,7 +1229,7 @@ class SymbolTrader:
             mt5_type = mt5.ORDER_TYPE_SELL_LIMIT
         else:
             logger.error(f"Unknown order type: {order_type_str}")
-            return
+            return {"status": "failed", "reason": f"unknown_order_type:{order_type_str}"}
 
         if tick:
             # Check StopLevel (minimum distance from price)
@@ -1218,7 +1243,7 @@ class SymbolTrader:
                     # But for Grid, maybe we just want to skip or place at Ask?
                     # Let's skip to be safe, or adjust to Ask - StopLevel if that was the intent.
                     logger.warning(f"Skipping Buy Limit @ {price} >= Ask {tick.ask}")
-                    return
+                    return {"status": "skipped", "reason": f"buy_limit_price_ge_ask:{price}>= {tick.ask}"}
                 
                 if (tick.ask - price) < stop_level:
                     # Auto-adjust price to be valid
@@ -1230,7 +1255,7 @@ class SymbolTrader:
             elif mt5_type == mt5.ORDER_TYPE_SELL_LIMIT:
                 if price <= tick.bid:
                     logger.warning(f"Skipping Sell Limit @ {price} <= Bid {tick.bid}")
-                    return
+                    return {"status": "skipped", "reason": f"sell_limit_price_le_bid:{price}<= {tick.bid}"}
                 
                 if (price - tick.bid) < stop_level:
                     # Auto-adjust price to be valid
@@ -1286,8 +1311,10 @@ class SymbolTrader:
         result = mt5.order_send(request)
         if result.retcode != mt5.TRADE_RETCODE_DONE:
             logger.error(f"Grid Order Failed: {result.comment} ({result.retcode}) - Price: {price} | TickSize: {tick_size} | Digits: {symbol_info.digits}")
+            return {"status": "failed", "reason": f"{result.comment} ({result.retcode})"}
         else:
             logger.info(f"Grid Order Placed: {order_dict['type']} @ {price} | Ticket: {result.order}")
+            return {"status": "placed", "ticket": result.order}
 
     def cancel_all_pending(self):
         """
