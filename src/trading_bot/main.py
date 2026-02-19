@@ -98,6 +98,7 @@ class SymbolTrader:
         self.last_analysis_result = {}
         self.watcher = None 
         self.is_optimizing = False 
+        self.atr_breakeven_triggered = set()
         
         # 5. Optimization Scheduler State
         self.last_optimization_time = time.time() 
