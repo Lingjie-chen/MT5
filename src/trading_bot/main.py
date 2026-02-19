@@ -29,6 +29,7 @@ try:
     from strategies.grid_strategy import KalmanGridStrategy
     from strategies.orb_strategy import GoldORBStrategy
     from analysis.smc_validator import SMCQualityValidator
+    from analysis.breakout_quality_filter import BreakoutQualityFilter
     from position_engine.mt5_adapter import MT5RiskManager
     from analysis.advanced_analysis import AdvancedMarketAnalysisAdapter
     from utils.file_watcher import FileWatcher # Restore FileWatcher
@@ -71,6 +72,7 @@ class SymbolTrader:
         self.orb_strategy = GoldORBStrategy(symbol, strategy_mode='DYNAMIC', dynamic_lookback=20) 
         self.grid_strategy = KalmanGridStrategy(symbol, self.magic_number)
         self.smc_validator = SMCQualityValidator()
+        self.quality_filter = BreakoutQualityFilter()
         self.advanced_analysis = AdvancedMarketAnalysisAdapter()
         self.data_processor = MT5DataProcessor()
         self.risk_manager = MT5RiskManager()
