@@ -98,13 +98,12 @@ class SymbolTrader:
         self.telegram = TelegramNotifier()
         
         # 4. State Machine (Dynamic Risk)
-        # States: OBSERVATION, GRID_ACTIVE, BREAKOUT_ACTIVE
+        # States: OBSERVATION, BREAKOUT_ACTIVE
         self.state = "OBSERVATION" 
         
         self.last_tick_time = 0
         self.last_analysis_time = 0
-        self.last_grid_update = 0
-        self.last_orb_filter_time = 0 
+        self.last_state_change = 0 
         self.orb_cooldowns = {'buy': 0, 'sell': 0} 
         self.last_heartbeat_time = 0 
         self.last_pos_count = 0
