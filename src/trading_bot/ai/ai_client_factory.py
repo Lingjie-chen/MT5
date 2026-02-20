@@ -44,7 +44,7 @@ class AIClientFactory:
         try:
             if client_type == 'deepseek':
                 # 使用DeepSeek客户端
-                model_name = model or os.getenv("QWEN_MODEL", "Pro/zai-org/GLM-5")
+                model_name = model or os.getenv("QWEN_MODEL", "glm-5")
                 client = DeepSeekClient(
                     api_key=self.siliconflow_api_key,
                     base_url=siliconflow_api_url,
@@ -55,7 +55,7 @@ class AIClientFactory:
             
             elif client_type == 'qwen':
                 # 使用Qwen客户端
-                model_name = model or os.getenv("QWEN_MODEL", "Pro/zai-org/GLM-5")
+                model_name = model or os.getenv("QWEN_MODEL", "glm-5")
                 client = QwenClient(
                     api_key=self.siliconflow_api_key,
                     base_url=siliconflow_api_url,
