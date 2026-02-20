@@ -26,7 +26,7 @@ class TradingConfig:
     """交易配置类 - 高汇合度策略参数"""
     def __init__(self):
         # 交易品种设置
-        self.symbol = "XAUUSD"  # 默认交易黄金
+        self.symbol = " GOLD"  # 默认交易黄金
         self.timeframe = mt5.TIMEFRAME_M15  # 15分钟K线
         self.higher_timeframe = mt5.TIMEFRAME_H1  # H1时间框架用于SMC分析
         
