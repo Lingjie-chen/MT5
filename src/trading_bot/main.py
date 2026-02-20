@@ -857,7 +857,7 @@ class RiskManager:
             return False
         
         margin_free = Decimal(str(account_info.margin_free))
-        margin_used = Decimal(str(account_info.margin_used))
+        margin_used = Decimal(str(account_info.margin))
         
         # 如果使用的保证金大于可用保证金的80%，返回False
         if margin_used > 0 and (margin_free / margin_used) < Decimal('0.25'):
