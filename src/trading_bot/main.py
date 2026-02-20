@@ -63,7 +63,7 @@ load_dotenv()
 
 class SymbolTrader:
     def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M5, account_index=1):
-        self.symbol = symbol
+        self.symbol = symbol.strip() if isinstance(symbol, str) else symbol
         self.timeframe = timeframe
         self.account_index = account_index
         self.magic_number = 888888
