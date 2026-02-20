@@ -1043,8 +1043,8 @@ class OrderManager:
 class TradingBot:
     """高汇合度交易机器人"""
     
-    def __init__(self):
-        self.config = TradingConfig()
+    def __init__(self, symbol="GOLD"):
+        self.config = TradingConfig(symbol=symbol)
         self.position_engine = PositionEngine()
         self.smc_analyzer = SMCAnalyzer(self.config)
         self.trendline_analyzer = TrendlineAnalyzer(self.config)
