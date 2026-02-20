@@ -1531,7 +1531,7 @@ if __name__ == "__main__":
     target_account = 1
     
     if len(sys.argv) > 1:
-        target_symbol = sys.argv[1]
+        target_symbol = sys.argv[1].strip()
     if len(sys.argv) > 2:
         try:
             target_account = int(sys.argv[2])
