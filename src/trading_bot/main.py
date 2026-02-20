@@ -103,7 +103,8 @@ class SymbolTrader:
         
         self.last_tick_time = 0
         self.last_analysis_time = 0
-        self.last_state_change = 0 
+        self.last_state_change = 0
+        self.last_orb_filter_time = 0 
         self.orb_cooldowns = {'buy': 0, 'sell': 0} 
         self.last_heartbeat_time = 0 
         self.last_pos_count = 0
