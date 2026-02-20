@@ -63,8 +63,8 @@ class TestGridStrategy(unittest.TestCase):
         
         self.assertTrue(len(orders) > 0)
         # Check if orders are valid dicts
-        self.assertIn('price', orders[0])
-        self.assertIn('type', orders[0])
+        self.assertIn('price', orders[1])
+        self.assertIn('type', orders[1])
 
 class TestSMCValidator(unittest.TestCase):
     def setUp(self):
