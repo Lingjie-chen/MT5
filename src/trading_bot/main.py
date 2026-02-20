@@ -1291,7 +1291,9 @@ class TradingBot:
 
 def main():
     """主函数"""
-    bot = TradingBot()
+    import sys
+    symbol = sys.argv[1] if len(sys.argv) > 1 else "GOLD"
+    bot = TradingBot(symbol=symbol)
     bot.run()
 
 if __name__ == "__main__":
