@@ -26,8 +26,7 @@ try:
     from ai.ai_client_factory import AIClientFactory
     from data.mt5_data_processor import MT5DataProcessor
     from data.database_manager import DatabaseManager
-    from strategies.grid_strategy import KalmanGridStrategy
-    from strategies.orb_strategy import GoldORBStrategy
+    from analysis.confluence_analyzer import TrendlineAnalyzer, MomentumAnalyzer, ConfluenceAnalyzer
     from analysis.smc_validator import SMCQualityValidator
     from analysis.breakout_quality_filter import BreakoutQualityFilter
     from position_engine.mt5_adapter import MT5RiskManager
@@ -61,6 +60,16 @@ logger = logging.getLogger("TradingBot")
 
 load_dotenv()
 
+class DummyConfig:
+    def __init__(self):
+        self.smc_weight = 2.0
+        self.trendline_weight = 1.5
+        self.ema_weight = 1.0
+        self.macd_weight = 1.0
+        self.ob_fvg_weight = 1.5
+        self.full_position_threshold = 5.0
+        self.half_position_threshold = 3.5
+
 class SymbolTrader:
     def __init__(self, symbol="GOLD", timeframe=mt5.TIMEFRAME_M5, account_index=1):
         self.symbol = symbol.strip() if isinstance(symbol, str) else symbol
@@ -68,9 +77,13 @@ class SymbolTrader:
         self.account_index = account_index
         self.magic_number = 888888
         
+        # Confluence Config
+        self.confluence_config = DummyConfig()
+        
         # 1. Initialize Strategies & Analyzers
-        self.orb_strategy = GoldORBStrategy(self.symbol, strategy_mode='DYNAMIC', dynamic_lookback=20) 
-        self.grid_strategy = KalmanGridStrategy(self.symbol, self.magic_number)
+        self.trendline_analyzer = TrendlineAnalyzer(self.confluence_config)
+        self.momentum_analyzer = MomentumAnalyzer(self.confluence_config)
+        self.confluence_analyzer = ConfluenceAnalyzer(self.confluence_config)
         self.smc_validator = SMCQualityValidator()
         self.quality_filter = BreakoutQualityFilter()
         self.advanced_analysis = AdvancedMarketAnalysisAdapter()
