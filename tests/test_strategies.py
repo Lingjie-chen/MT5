@@ -87,7 +87,7 @@ class TestSMCValidator(unittest.TestCase):
             pd.DataFrame({'close': [1] * 60}), # Dummy DF with enough length
             current_price=2005,
             signal_type='buy',
-            volatility_stats={'breakout_score': 60, 'z_score': 1.5}
+            volatility_stats={'breakout_score': 95, 'z_score': 1.5}
         )
         
         self.assertTrue(is_valid)
