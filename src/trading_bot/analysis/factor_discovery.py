@@ -503,8 +503,8 @@ class FactorDiscovery:
             importance['correlation'] = correlations.abs().to_dict()
             
             # 3. 互信息分析
-            from sklearn.feature_selection import mutual_info_classif
-            mi = mutual_info_classif(features, target, random_state=42)
+            from sklearn.feature_selection import mutual_info_regression
+            mi = mutual_info_regression(features, target, random_state=42)
             importance['mutual_info'] = dict(zip(
                 features.columns,
                 mi[0]
