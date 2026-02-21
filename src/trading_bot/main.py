@@ -313,12 +313,16 @@ class SymbolTrader:
             # Look for recent FVG or EMA for SL
             if momentum_data and momentum_data.get('ema'):
                 sl = momentum_data['ema'] * 0.998
+            if sl >= current_price:
+                sl = current_price * 0.995
             tp = current_price + (current_price - sl) * 2 # 1:2 RRR fallback
         else:
             trade_type = mt5.ORDER_TYPE_SELL
             sl = current_price * 1.005 # fallback
             if momentum_data and momentum_data.get('ema'):
                 sl = momentum_data['ema'] * 1.002
+            if sl <= current_price:
+                sl = current_price * 1.005
             tp = current_price - (sl - current_price) * 2 # 1:2 RRR fallback
             
         symbol_info = mt5.symbol_info(self.symbol)
@@ -326,7 +330,9 @@ class SymbolTrader:
             digits = symbol_info.digits
             point = symbol_info.point
             stops_level = symbol_info.trade_stops_level * point
-            
+            if stops_level == 0:
+                stops_level = point * 10 # Some brokers return 0 but still have a minimum
+
             # Enforce minimal stop level distance 
             if direction == "bullish":
                 if current_price - sl <= stops_level:
