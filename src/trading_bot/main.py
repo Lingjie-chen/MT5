@@ -324,6 +324,21 @@ class SymbolTrader:
         symbol_info = mt5.symbol_info(self.symbol)
         if symbol_info:
             digits = symbol_info.digits
+            point = symbol_info.point
+            stops_level = symbol_info.trade_stops_level * point
+            
+            # Enforce minimal stop level distance 
+            if direction == "bullish":
+                if current_price - sl <= stops_level:
+                    sl = current_price - stops_level * 1.5
+                if tp - current_price <= stops_level:
+                    tp = current_price + stops_level * 1.5
+            else:
+                if sl - current_price <= stops_level:
+                    sl = current_price + stops_level * 1.5
+                if current_price - tp <= stops_level:
+                    tp = current_price - stops_level * 1.5
+                    
             sl = round(sl, digits)
             tp = round(tp, digits)
         
