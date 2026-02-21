@@ -1,0 +1,7 @@
+# 12
+The file 12 contained the full AI integration guide.
+It specified replacing strict rules with LLM patterns:
+1. Signal Generation (replace rules with LLM)
+2. Risk Management (Dynamic Size)
+3. Parameter Tuning (Online Optimization)
+4. AI integrations in main.py
