@@ -354,6 +354,9 @@ class SymbolTrader:
             price = tick.ask if trade_type == mt5.ORDER_TYPE_BUY else tick.bid
 
             for f_mode in filling_modes_to_try:
+                mode_name = {mt5.ORDER_FILLING_IOC: 'IOC', mt5.ORDER_FILLING_FOK: 'FOK', mt5.ORDER_FILLING_RETURN: 'RETURN'}.get(f_mode, str(f_mode))
+                logger.info(f"Attempting Confluence trade with {mode_name} mode (attempt {attempt+1}/3)")
+                
                 request = {
                     "action": mt5.TRADE_ACTION_DEAL,
                     "symbol": self.symbol,
@@ -376,6 +379,8 @@ class SymbolTrader:
                     logger.error(f"Confluence Execution Failed (None): {mt5.last_error()}")
                     continue
 
+                logger.info(f"Order send result with {mode_name}: retcode={result.retcode}, comment={result.comment}")
+
                 if result.retcode == mt5.TRADE_RETCODE_DONE:
                     logger.info(f"Confluence Trade Executed: {direction} Lot: {optimal_lot} Score: {multiplier}")
                     self.telegram.send_message(f"🏆 Confluence Trade\nDir: {direction}\nLot: {optimal_lot}\nEntry: {price}\nSL: {sl:.2f}\nTP: {tp:.2f}")
@@ -383,9 +388,11 @@ class SymbolTrader:
                     break
 
                 if result.retcode == 10030:
+                    logger.warning(f"Filling mode {mode_name} not supported (retcode 10030), trying next mode...")
                     continue
 
                 if result.retcode == 10004:
+                    logger.warning(f"Requote (retcode 10004), will refresh price and retry...")
                     break
 
                 if result.retcode == 10027:
