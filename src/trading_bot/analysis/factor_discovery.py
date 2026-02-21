@@ -61,8 +61,8 @@ class FactorDiscovery:
         
         # 特征选择器
         self.selectors = {
-            'rfe': RFE(),
-            'rfecv': RFECV(),
+            'rfe': RFE(estimator=RandomForestClassifier(n_estimators=100, random_state=42)),
+            'rfecv': RFECV(estimator=RandomForestClassifier(n_estimators=100, random_state=42)),
             'kbest': SelectKBest(k='all'),
             'sequential': SequentialFeatureSelector(
                 estimator=RandomForestClassifier(n_estimators=100, random_state=42),
