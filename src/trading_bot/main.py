@@ -394,6 +394,18 @@ class SymbolTrader:
         score = confluence_result['score']
         details = confluence_result['details']
         
+        # Inject Pattern Recognition Bias into Confluence Score
+        pattern_signal = None
+        if 'pattern_result' in locals() and pattern_result and 'comprehensive_analysis' in pattern_result:
+            pattern_signal = pattern_result['comprehensive_analysis'].get('signal')
+            conf = pattern_result['comprehensive_analysis'].get('confidence', 0)
+            if pattern_signal == 'buy':
+                score += (2.0 * conf) # Add up to 2 points for strong pattern buy
+                details['pattern_bonus'] = f"+{2.0 * conf:.2f} (Buy Pattern)"
+            elif pattern_signal == 'sell':
+                score += (2.0 * conf)
+                details['pattern_bonus'] = f"+{2.0 * conf:.2f} (Sell Pattern)"
+        
         if score >= self.confluence_config.half_position_threshold:
             multiplier = self.confluence_analyzer.determine_position_size_multiplier(confluence_result)
             
