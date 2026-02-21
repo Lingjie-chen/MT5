@@ -36,7 +36,6 @@ try:
     
     # AI System Integrations
     from analysis.factor_discovery import FactorDiscovery
-    from analysis.llm_optimizer import EnhancedOptimizationEngine
     from analysis.pattern_recognition_system import PatternRecognitionSystem
     
 except ImportError as e:
