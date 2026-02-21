@@ -33,6 +33,12 @@ try:
     from analysis.advanced_analysis import AdvancedMarketAnalysisAdapter
     from utils.file_watcher import FileWatcher # Restore FileWatcher
     from utils.telegram_notifier import TelegramNotifier # Add Telegram Notifier
+    
+    # AI System Integrations
+    from analysis.factor_discovery import FactorDiscovery
+    from analysis.llm_optimizer import EnhancedOptimizationEngine
+    from analysis.pattern_system.pattern_recognition_system import PatternRecognitionSystem
+    
 except ImportError as e:
     # Handle FileWatcher Import separately
     if "FileWatcher" in str(e) or "utils.file_watcher" in str(e) or "utils" in str(e):
