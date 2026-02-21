@@ -116,10 +116,48 @@ class SymbolTrader:
         
         self.pattern_recognizer = PatternRecognitionSystem() if PatternRecognitionSystem else None
         self.factor_discovery = FactorDiscovery() if FactorDiscovery else None
-        self.enhanced_optimizer = EnhancedOptimizationEngine(self.symbol, self.llm_client) if EnhancedOptimizationEngine else None
+        
+        if EnhancedOptimizationEngine:
+            param_bounds = {
+                'smc_weight': (0.5, 3.0),
+                'trendline_weight': (0.5, 3.0),
+                'ema_weight': (0.5, 2.0),
+                'macd_weight': (0.5, 2.0),
+                'ob_fvg_weight': (0.5, 3.0),
+                'full_position_threshold': (3.0, 7.0),
+                'half_position_threshold': (2.0, 5.0)
+            }
+            self.enhanced_optimizer = EnhancedOptimizationEngine(
+                param_bounds=param_bounds,
+                optimization_mode='adaptive',
+                model_type='qwen'
+            )
+            # Set initial params:
+            initial_params = {
+                'smc_weight': self.confluence_config.smc_weight,
+                'trendline_weight': self.confluence_config.trendline_weight,
+                'ema_weight': self.confluence_config.ema_weight,
+                'macd_weight': self.confluence_config.macd_weight,
+                'ob_fvg_weight': self.confluence_config.ob_fvg_weight,
+                'full_position_threshold': self.confluence_config.full_position_threshold,
+                'half_position_threshold': self.confluence_config.half_position_threshold
+            }
+            self.enhanced_optimizer.set_current_params(initial_params)
+        else:
+            self.enhanced_optimizer = None
         
         # 3. Notifiers
         self.telegram = TelegramNotifier()
+        
+        # Market State and Performance for AI Tuner
+        self.current_market_state = {}
+        self.performance_metrics = {
+            'return': 0.0,
+            'sharpe': 0.0,
+            'max_drawdown': 0.0,
+            'total_trades': 0,
+            'winning_trades': 0
+        }
         
         # 4. State Machine (Dynamic Risk)
         # States: OBSERVATION, BREAKOUT_ACTIVE
@@ -251,16 +289,22 @@ class SymbolTrader:
                     # Check for parameter optimization schedule
                     if self.enhanced_optimizer and (time.time() - self.last_optimization_time > self.optimization_interval):
                         try:
-                            logger.info("Executing periodic AI Parameter Optimization...")
-                            new_params = self.enhanced_optimizer.optimize(self.confluence_config)
-                            if new_params:
-                                for k, v in new_params.items():
-                                    if hasattr(self.confluence_config, k):
-                                        setattr(self.confluence_config, k, v)
-                                logger.info(f"Confluence config updated dynamically via AI: {new_params}")
+                            logger.info("Executing periodic AI Parameter Adjustments...")
+                            self.enhanced_optimizer.monitor_and_adjust(
+                                current_performance=self.performance_metrics,
+                                market_data=self.current_market_state
+                            )
+                            # Sync back changes
+                            if self.enhanced_optimizer.adaptive_tuner:
+                                new_params = self.enhanced_optimizer.adaptive_tuner.current_params
+                                if new_params:
+                                    for k, v in new_params.items():
+                                        if hasattr(self.confluence_config, k):
+                                            setattr(self.confluence_config, k, v)
+                                    logger.info(f"Confluence config synced with AI Tuner")
                             self.last_optimization_time = time.time()
                         except Exception as e:
-                            logger.error(f"Enhanced Optimization failed: {e}")
+                            logger.error(f"Enhanced Optimization failed: {e}", exc_info=True)
 
                 time.sleep(1.0) # 1s loop
                 
@@ -298,6 +342,19 @@ class SymbolTrader:
         smc_data = self.smc_validator.analyze_market_structure(self.symbol, htf)
         trendline_data = self.trendline_analyzer.analyze(self.symbol, ltf)
         momentum_data = self.momentum_analyzer.analyze(self.symbol, ltf)
+        
+        # Record Market State for AI Tuner
+        try:
+            self.current_market_state = {
+                'trend_strength': 1.0 if momentum_data and momentum_data.get('ema_position') != 0 else 0.0,
+                'volatility': 0.5, # Rough proxy until ATR integration
+                'volume_ratio': 1.0, 
+                'sentiment': smc_data.get('market_bias', 0) if smc_data else 0,
+                'momentum': momentum_data.get('ema_position', 0) if momentum_data else 0,
+                'choppiness_index': 0.5 
+            }
+        except Exception:
+            pass
         
         # AI System Integrations
         if self.pattern_recognizer:
@@ -537,6 +594,13 @@ class SymbolTrader:
         Unified Risk Management
         """
         positions = mt5.positions_get(symbol=self.symbol)
+        
+        # Record Performance for AI Tuner proxy
+        if self.enhanced_optimizer:
+            account_info = mt5.account_info()
+            if account_info:
+                self.performance_metrics['return'] = account_info.profit
+                
         if positions:
             # Simple check for positions opened by this bot
             bot_positions = [p for p in positions if p.magic == self.magic_number]
