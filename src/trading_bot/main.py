@@ -63,6 +63,21 @@ try:
 except Exception:
     GoldORBStrategy = None
 
+try:
+    from analysis.pattern_recognition_system import PatternRecognitionSystem
+except ImportError:
+    PatternRecognitionSystem = None
+
+try:
+    from analysis.factor_discovery import FactorDiscovery
+except ImportError:
+    FactorDiscovery = None
+
+try:
+    from analysis.enhanced_optimization import EnhancedOptimizationEngine
+except ImportError:
+    EnhancedOptimizationEngine = None
+
 load_dotenv()
 
 class DummyConfig:
@@ -98,6 +113,10 @@ class SymbolTrader:
         # 2. AI Client
         self.ai_factory = AIClientFactory()
         self.llm_client = self.ai_factory.create_client("qwen") 
+        
+        self.pattern_recognizer = PatternRecognitionSystem() if PatternRecognitionSystem else None
+        self.factor_discovery = FactorDiscovery() if FactorDiscovery else None
+        self.enhanced_optimizer = EnhancedOptimizationEngine(self.symbol, self.llm_client) if EnhancedOptimizationEngine else None
         
         # 3. Notifiers
         self.telegram = TelegramNotifier()
@@ -228,6 +247,21 @@ class SymbolTrader:
                 if tick:
                     self.process_tick(tick)
                     self._log_heartbeat(tick.bid)
+                    
+                    # Check for parameter optimization schedule
+                    if self.enhanced_optimizer and (time.time() - self.last_optimization_time > self.optimization_interval):
+                        try:
+                            logger.info("Executing periodic AI Parameter Optimization...")
+                            new_params = self.enhanced_optimizer.optimize(self.confluence_config)
+                            if new_params:
+                                for k, v in new_params.items():
+                                    if hasattr(self.confluence_config, k):
+                                        setattr(self.confluence_config, k, v)
+                                logger.info(f"Confluence config updated dynamically via AI: {new_params}")
+                            self.last_optimization_time = time.time()
+                        except Exception as e:
+                            logger.error(f"Enhanced Optimization failed: {e}")
+
                 time.sleep(1.0) # 1s loop
                 
         except KeyboardInterrupt:
@@ -265,6 +299,23 @@ class SymbolTrader:
         trendline_data = self.trendline_analyzer.analyze(self.symbol, ltf)
         momentum_data = self.momentum_analyzer.analyze(self.symbol, ltf)
         
+        # AI System Integrations
+        if self.pattern_recognizer:
+            try:
+                pattern_result = self.pattern_recognizer.recognize_patterns(self.symbol, ltf)
+                if pattern_result and 'pattern' in pattern_result:
+                    logger.info(f"AI Pattern Identified: {pattern_result['pattern']}")
+            except Exception as e:
+                logger.debug(f"Pattern Recognition failed softly: {e}")
+                
+        if self.factor_discovery:
+            try:
+                factors = self.factor_discovery.extract_factors(self.symbol)
+                if factors:
+                    logger.debug(f"AI Factors updated: {list(factors.keys())}")
+            except Exception as e:
+                logger.debug(f"Factor Discovery failed softly: {e}")
+            
         confluence_result = self.confluence_analyzer.calculate_confluence_score(
             smc_data, trendline_data, momentum_data
         )
