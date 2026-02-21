@@ -36,7 +36,7 @@ system = FactorDiscovery(n_features=20, feature_type='all', selection_method='hy
 print("分析市场...")
 factors = system.discover_factors(df, df['close'])
 
-print(f"\n发现 {len(factors.get('selected_features', [])) 个因子")
+print(f"\n发现 {len(factors.get('selected_features', []))} 个因子")
 
 # 获取排名前10的因子
 top_10_factors = system.get_factors(top_n=10)
