@@ -357,17 +357,25 @@ class SymbolTrader:
             pass
         
         # AI System Integrations
-        if self.pattern_recognizer:
+        df_ltf = None
+        try:
+            df_ltf = self.get_dataframe(ltf, 1000)
+        except Exception:
+            pass
+
+        if self.pattern_recognizer and df_ltf is not None and not df_ltf.empty:
             try:
-                pattern_result = self.pattern_recognizer.recognize_patterns(self.symbol, ltf)
-                if pattern_result and 'pattern' in pattern_result:
-                    logger.info(f"AI Pattern Identified: {pattern_result['pattern']}")
+                # Need to use the correct API `analyze_market`
+                pattern_result = self.pattern_recognizer.analyze_market(df_ltf)
+                if pattern_result and 'comprehensive_analysis' in pattern_result:
+                    signal = pattern_result['comprehensive_analysis'].get('signal')
+                    logger.info(f"AI Pattern Identified Signal: {signal}")
             except Exception as e:
                 logger.debug(f"Pattern Recognition failed softly: {e}")
                 
-        if self.factor_discovery:
+        if self.factor_discovery and df_ltf is not None and not df_ltf.empty:
             try:
-                factors = self.factor_discovery.extract_factors(self.symbol)
+                factors = self.factor_discovery.discover_factors(df_ltf)
                 if factors:
                     logger.debug(f"AI Factors updated: {list(factors.keys())}")
             except Exception as e:
