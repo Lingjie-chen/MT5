@@ -74,7 +74,7 @@ class FactorDiscovery:
                 estimator=RandomForestClassifier(n_estimators=100, random_state=42),
                 threshold='median'
             ),
-            'hybrid': RFE()  # 默认使用RFE
+            'hybrid': RFE(estimator=RandomForestClassifier(n_estimators=100, random_state=42))  # 默认使用RFE
         }
         
         # 标准化器
