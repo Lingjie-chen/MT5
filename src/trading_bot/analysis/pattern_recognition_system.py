@@ -4,13 +4,11 @@ from typing import Dict, List, Optional, Any
 import logging
 
 # 引入各子模块
-# 实际环境中需确保路径正确: from .pattern_discovery import PatternDiscovery ...
-# 此处假设类已在内存中或同目录
-# from pattern_discovery import PatternDiscovery
-# from microstructure_analyzer import MicrostructureAnalyzer
-# from multi_pattern_recognizer import MultiPatternRecognizer
-# from hidden_pattern_miner import HiddenPatternMiner
-# from pattern_validator import PatternValidator
+from .pattern_discovery import PatternDiscovery
+from .microstructure_analyzer import MicrostructureAnalyzer
+from .multi_pattern_recognizer import MultiPatternRecognizer
+from .hidden_pattern_miner import HiddenPatternMiner
+from .pattern_validator import PatternValidator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
