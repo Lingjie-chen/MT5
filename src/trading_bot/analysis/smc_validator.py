@@ -1,6 +1,8 @@
 import logging
 import json
 import pandas as pd
+import time
+import MetaTrader5 as mt5
 from .advanced_analysis import SMCAnalyzer, AdvancedMarketAnalysisAdapter
 from .breakout_quality_filter import BreakoutQualityFilter
 
@@ -17,6 +19,48 @@ class SMCQualityValidator:
         self.advanced_analyzer = AdvancedMarketAnalysisAdapter()
         self.quality_filter = BreakoutQualityFilter()
         self.min_score_threshold = min_score_threshold
+        self.cache = {}
+
+    def get_data(self, symbol, timeframe, lookback=500):
+        cache_key = f"{symbol}_{timeframe}"
+        cached = self.cache.get(cache_key)
+        if cached and time.time() - cached['time'] < 60:
+            return cached['data']
+
+        rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, lookback)
+        if rates is None or len(rates) == 0:
+            logger.error(f"获取SMC数据失败:  {symbol}")
+            return None
+
+        df = pd.DataFrame(rates)
+        if 'time' in df.columns:
+            df['time'] = pd.to_datetime(df['time'], unit='s')
+
+        self.cache[cache_key] = {
+            "data": df,
+            "time": time.time()
+        }
+        return df
+
+    def analyze_market_structure(self, symbol, timeframe):
+        df = self.get_data(symbol, timeframe)
+        if df is None or len(df) < 50:
+            return None
+
+        smc_result = self.smc_analyzer.analyze(df, symbol=symbol)
+        signal = smc_result.get("signal", "neutral")
+        market_bias = 0
+        if signal == "buy":
+            market_bias = 1
+        elif signal == "sell":
+            market_bias = -1
+
+        return {
+            "market_bias": market_bias,
+            "signal": signal,
+            "reason": smc_result.get("reason", ""),
+            "details": smc_result.get("details", {})
+        }
         
     def calculate_trade_quality_score(self, signal_type, current_price, smc_data, sentiment_score, volatility_context, df_m15=None, current_time=None):
         """
