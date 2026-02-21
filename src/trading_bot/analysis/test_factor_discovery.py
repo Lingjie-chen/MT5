@@ -3,10 +3,12 @@ import pandas as pd
 import numpy as np
 import os
 
+from factor_discovery import FactorDiscovery
+
 # 创建测试数据
 np.random.seed(42)
 dates = pd.date_range(start='2023-01-01', periods=1000)
-close_prices = np.cumsum(np.random.normal(0, 0.0005, 1000) + 100
+close_prices = np.cumsum(np.random.normal(0, 0.0005, 1000)) + 100
 high_prices = close_prices + np.random.normal(0, 0.002, 1000)
 low_prices = close_prices - np.random.normal(0, 0.001, 1000)
 volumes = np.random.randint(100, 1000, 1000)
