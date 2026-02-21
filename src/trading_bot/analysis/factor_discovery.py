@@ -623,7 +623,7 @@ class FactorDiscovery:
                 elif combo['type'] == 'ratio':
                     if features[factor2].iloc[-1] != 0:
                         derived_features[combo['name']] = features[factor1] / features[factor2]
-                        else:
+                    else:
                         derived_features[combo['name']] = 0.0
                 elif combo['type'] == 'product':
                     derived_features[combo['name']] = features[factor1] * features[factor2]
