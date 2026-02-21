@@ -16,7 +16,7 @@ from typing import Dict, List, Tuple, Optional, Any, Callable
 from datetime import datetime, timedelta
 from sklearn.feature_selection import (
     SelectKBest, f_classif, mutual_info_classif,
-    RFE, SelectFromModel, SequentialFeatureSelector,
+    RFE, RFECV, SelectFromModel, SequentialFeatureSelector,
     VarianceThreshold, SelectFpr, f_regression, mutual_info_regression
 )
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
