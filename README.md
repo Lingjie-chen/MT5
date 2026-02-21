@@ -16,7 +16,10 @@
 ```text
 src/
 ├── position_engine/              # [核心风控模块]
-├── trading_bot/                  # [原有策略模块]
+├── trading_bot/                  # [核心交易机器人]
+│   ├── ai/                       # [大模型推断底层客户端]
+│   ├── analysis/                 # [大模型多因子与模式识别分析系统]
+│   └── strategies/               # [交易动作执行策略]
 ├── mql5_sources/                 # [MQL5 策略源码]
 │   ├── Include/
 │   ├── MQL5/
