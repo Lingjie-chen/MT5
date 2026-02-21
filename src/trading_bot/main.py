@@ -407,7 +407,8 @@ class SymbolTrader:
             if last_result is None:
                 logger.error("Confluence Execution Failed: No result from MT5")
             else:
-                logger.error(f"Confluence Execution Failed: {last_result.comment}")
+                logger.error(f"Confluence Execution Failed: All filling modes failed. Last result: retcode={last_result.retcode}, comment={last_result.comment}, request_volume={optimal_lot}, symbol={self.symbol}")
+                logger.error(f"Last order details: price={price}, sl={sl}, tp={tp}")
 
     def update_candle_data(self):
         # Fetch M5 Data
