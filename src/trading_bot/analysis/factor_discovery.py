@@ -153,7 +153,7 @@ class FactorDiscovery:
         macd_signal = macd_line.ewm(span=9, adjust=False).mean()
         features['macd'] = macd_line / df['close']
         features['macd_diff'] = features['macd'].diff()
-        features['macd_signal'] = (features['macd'] > features['macd_signal']).astype(int)
+        features['macd_signal'] = (macd_line > macd_signal).astype(int)
         
         # 6. ADX指标特征
         features['adx'] = self._calculate_adx(df)
