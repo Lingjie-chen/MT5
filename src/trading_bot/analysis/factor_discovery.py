@@ -979,6 +979,8 @@ class FactorDiscovery:
         with np.errstate(divide='warn', invalid='ignore'):
             rs = avg_gain / avg_loss
             rsi = 100 - (100 / (1 + rs))
+            
+        rsi = np.insert(rsi, 0, 50.0)
         
         return rsi
     
