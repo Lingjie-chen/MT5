@@ -860,7 +860,7 @@ class FactorDiscovery:
   "limitations": "局限性说明",
   "recommendation": "推荐建议",
   "risk_warning": "风险提示"
-}
+}}
 """
         
         return prompt
