@@ -63,20 +63,20 @@ class FactorDiscovery:
         
         # 特征选择器
         self.selectors = {
-            'rfe': RFE(estimator=RandomForestClassifier(n_estimators=100, random_state=42)),
-            'rfecv': RFECV(estimator=RandomForestClassifier(n_estimators=100, random_state=42)),
+            'rfe': RFE(estimator=RandomForestRegressor(n_estimators=100, random_state=42)),
+            'rfecv': RFECV(estimator=RandomForestRegressor(n_estimators=100, random_state=42)),
             'kbest': SelectKBest(k='all'),
             'sequential': SequentialFeatureSelector(
-                estimator=RandomForestClassifier(n_estimators=100, random_state=42),
+                estimator=RandomForestRegressor(n_estimators=100, random_state=42),
                 direction='forward',
                 scoring='f1',
                 cv=5
             ),
             'from_model': SelectFromModel(
-                estimator=RandomForestClassifier(n_estimators=100, random_state=42),
+                estimator=RandomForestRegressor(n_estimators=100, random_state=42),
                 threshold='median'
             ),
-            'hybrid': RFE(estimator=RandomForestClassifier(n_estimators=100, random_state=42))  # 默认使用RFE
+            'hybrid': RFE(estimator=RandomForestRegressor(n_estimators=100, random_state=42))  # 默认使用RFE
         }
         
         # 标准化器
@@ -375,7 +375,7 @@ class FactorDiscovery:
         if self.selection_method == 'rfe':
             # 递归特征消除
             rfe = RFE(
-                estimator=RandomForestClassifier(n_estimators=100, random_state=42),
+                estimator=RandomForestRegressor(n_estimators=100, random_state=42),
                 n_features_to_select=min(self.n_features, len(features.columns)),
                 step=1
             )
@@ -391,7 +391,7 @@ class FactorDiscovery:
         elif self.selection_method == 'rfecv':
             # 交叉验证递归消除
             rfecv = RFECV(
-                estimator=RandomForestClassifier(n_estimators=100, random_state=42),
+                estimator=RandomForestRegressor(n_estimators=100, random_state=42),
                 step=1,
                 min_features=1,
                 cv=5
@@ -422,7 +422,7 @@ class FactorDiscovery:
         elif self.selection_method == 'sequential':
             # Sequential Feature Selector
             sfs = SequentialFeatureSelector(
-                estimator=RandomForestClassifier(n_estimators=100, random_state=42),
+                estimator=RandomForestRegressor(n_estimators=100, random_state=42),
                 direction='forward',
                 scoring='f1',
                 cv=5
@@ -449,7 +449,7 @@ class FactorDiscovery:
         elif self.selection_method == 'from_model':
             # SelectFromModel
             selector = SelectFromModel(
-                estimator=RandomForestClassifier(
+                estimator=RandomForestRegressor(
                     n_estimators=100,
                     random_state=42,
                     max_depth=10
@@ -472,7 +472,7 @@ class FactorDiscovery:
         else:  # hybrid (默认使用RFE)
             # 使用递归特征消除
             rfe = RFE(
-                estimator=RandomForestClassifier(n_estimators=100, random_state=42),
+                estimator=RandomForestRegressor(n_estimators=100, random_state=42),
                 n_features_to_select=min(self.n_features, len(features.columns)),
                 step=1
             )
@@ -511,8 +511,8 @@ class FactorDiscovery:
             ))
         
         # 4. 模型重要性
-        from sklearn.ensemble import RandomForestClassifier
-        rf = RandomForestClassifier(
+        from sklearn.ensemble import RandomForestRegressor
+        rf = RandomForestRegressor(
             n_estimators=100,
             random_state=42
         )
@@ -523,8 +523,8 @@ class FactorDiscovery:
         ))
         
         # 5. 梯度提升树重要性
-        from sklearn.ensemble import GradientBoostingClassifier
-        gb = GradientBoostingClassifier(
+        from sklearn.ensemble import GradientBoostingRegressor
+        gb = GradientBoostingRegressor(
             n_estimators=100,
             learning_rate=0.1,
             random_state=42
@@ -639,7 +639,7 @@ class FactorDiscovery:
             derived_importance[f"{col}_corr"] = abs(corr)
             
             # 使用树模型评估
-            rf = RandomForestClassifier(
+            rf = RandomForestRegressor(
                 n_estimators=100,
                 random_state=42
             )
