@@ -411,6 +411,32 @@ class SymbolTrader:
                     logger.warning(f"Filling mode {mode_name} not supported (retcode 10030), trying next mode...")
                     continue
 
+                if result.retcode == 10016:
+                    logger.warning(f"Invalid stops (10016). Retrying without SL/TP...")
+                    request["sl"] = 0.0
+                    request["tp"] = 0.0
+                    result_no_stops = mt5.order_send(request)
+                    if result_no_stops is not None and result_no_stops.retcode == mt5.TRADE_RETCODE_DONE:
+                        logger.info(f"Trade executed without stops. Attempting to modify position...")
+                        # Modify position
+                        mod_request = {
+                            "action": mt5.TRADE_ACTION_SLTP,
+                            "symbol": self.symbol,
+                            "sl": float(sl),
+                            "tp": float(tp),
+                            "position": result_no_stops.order
+                        }
+                        mod_result = mt5.order_send(mod_request)
+                        if mod_result is not None and mod_result.retcode == mt5.TRADE_RETCODE_DONE:
+                            logger.info("Successfully modified SL/TP.")
+                        else:
+                            logger.error(f"Failed to modify SL/TP: {mod_result.comment if mod_result else 'None'}")
+                        self.telegram.send_message(f"🏆 Confluence Trade (Modified SL/TP)\nDir: {direction}\nLot: {optimal_lot}\nEntry: {price}\nSL: {sl:.2f}\nTP: {tp:.2f}")
+                        success = True
+                        break
+                    else:
+                        logger.error(f"Failed to execute even without stops. Retcode: {result_no_stops.retcode if result_no_stops else 'None'}")
+
                 if result.retcode == 10004:
                     logger.warning(f"Requote (retcode 10004), will refresh price and retry...")
                     break
