@@ -322,6 +322,11 @@ class SymbolTrader:
             tp = current_price - (sl - current_price) * 2 # 1:2 RRR fallback
             
         symbol_info = mt5.symbol_info(self.symbol)
+        if symbol_info:
+            digits = symbol_info.digits
+            sl = round(sl, digits)
+            tp = round(tp, digits)
+        
         filling_mode = mt5.ORDER_FILLING_FOK
         try:
             fill_flags = symbol_info.filling_mode
