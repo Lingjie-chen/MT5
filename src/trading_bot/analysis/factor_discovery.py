@@ -19,7 +19,9 @@ from sklearn.feature_selection import (
     RFE, RFECV, SelectFromModel, SequentialFeatureSelector,
     VarianceThreshold, SelectFpr, f_regression, mutual_info_regression
 )
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+
+# ... (omitting irrelevant lines in the thought process - will just update lines around import and usages)
 from sklearn.linear_model import LinearRegression, Lasso, Ridge
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.model_selection import cross_val_score
