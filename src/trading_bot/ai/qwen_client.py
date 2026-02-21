@@ -44,7 +44,10 @@ class CustomJSONEncoder(json.JSONEncoder):
             return float(o)
         if isinstance(o, np.ndarray):
             return o.tolist()
-        return super().default(o)
+        if hasattr(o, 'to_dict'):
+            return o.to_dict()
+        logger.warning(f"Non-serializable object encountered: {type(o).__name__}, using string representation")
+        return str(o)
 
 class QwenClient:
     """
