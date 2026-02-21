@@ -283,6 +283,7 @@ class FactorDiscovery:
         
         # 2. 标准化
         features_scaled = self.scaler.fit_transform(features)
+        features_scaled = pd.DataFrame(features_scaled, columns=features.columns, index=features.index)
         
         # 3. 特征选择
         selected_features = self._select_features(features_scaled, target, df)
