@@ -471,10 +471,9 @@ class FactorDiscovery:
         else:  # hybrid (默认使用RFE)
             # 使用递归特征消除
             rfe = RFE(
+                estimator=RandomForestClassifier(n_estimators=100, random_state=42),
                 n_features_to_select=min(self.n_features, len(features.columns)),
-                step=1,
-                cv=5,
-                random_state=42
+                step=1
             )
             rfe.fit(features, target)
             mask = rfe.get_support()
