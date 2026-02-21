@@ -321,27 +321,81 @@ class SymbolTrader:
                 sl = momentum_data['ema'] * 1.002
             tp = current_price - (sl - current_price) * 2 # 1:2 RRR fallback
             
-        request = {
-            "action": mt5.TRADE_ACTION_DEAL,
-            "symbol": self.symbol,
-            "volume": float(optimal_lot),
-            "type": trade_type,
-            "price": current_price,
-            "sl": float(sl),
-            "tp": float(tp),
-            "deviation": 20,
-            "magic": self.magic_number,
-            "comment": "Confluence Exec",
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
-        }
-        
-        result = mt5.order_send(request)
-        if result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(f"Confluence Execution Failed: {result.comment}")
-        else:
-            logger.info(f"Confluence Trade Executed: {direction} Lot: {optimal_lot} Score: {multiplier}")
-            self.telegram.send_message(f"🏆 Confluence Trade\nDir: {direction}\nLot: {optimal_lot}\nEntry: {current_price}\nSL: {sl:.2f}\nTP: {tp:.2f}")
+        symbol_info = mt5.symbol_info(self.symbol)
+        filling_mode = mt5.ORDER_FILLING_FOK
+        try:
+            fill_flags = symbol_info.filling_mode
+            if fill_flags & 2:
+                filling_mode = mt5.ORDER_FILLING_IOC
+            elif fill_flags & 1:
+                filling_mode = mt5.ORDER_FILLING_FOK
+        except Exception:
+            filling_mode = mt5.ORDER_FILLING_IOC
+
+        filling_modes_to_try = [filling_mode, mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_RETURN]
+        filling_modes_to_try = list(dict.fromkeys(filling_modes_to_try))
+
+        success = False
+        last_result = None
+        for attempt in range(3):
+            if success:
+                break
+
+            tick = mt5.symbol_info_tick(self.symbol)
+            if tick is None:
+                time.sleep(0.5)
+                continue
+
+            price = tick.ask if trade_type == mt5.ORDER_TYPE_BUY else tick.bid
+
+            for f_mode in filling_modes_to_try:
+                request = {
+                    "action": mt5.TRADE_ACTION_DEAL,
+                    "symbol": self.symbol,
+                    "volume": float(optimal_lot),
+                    "type": trade_type,
+                    "price": float(price),
+                    "sl": float(sl),
+                    "tp": float(tp),
+                    "deviation": 20,
+                    "magic": self.magic_number,
+                    "comment": "Confluence Exec",
+                    "type_time": mt5.ORDER_TIME_GTC,
+                    "type_filling": f_mode,
+                }
+
+                result = mt5.order_send(request)
+                last_result = result
+
+                if result is None:
+                    logger.error(f"Confluence Execution Failed (None): {mt5.last_error()}")
+                    continue
+
+                if result.retcode == mt5.TRADE_RETCODE_DONE:
+                    logger.info(f"Confluence Trade Executed: {direction} Lot: {optimal_lot} Score: {multiplier}")
+                    self.telegram.send_message(f"🏆 Confluence Trade\nDir: {direction}\nLot: {optimal_lot}\nEntry: {price}\nSL: {sl:.2f}\nTP: {tp:.2f}")
+                    success = True
+                    break
+
+                if result.retcode == 10030:
+                    continue
+
+                if result.retcode == 10004:
+                    break
+
+                if result.retcode == 10027:
+                    logger.error("AutoTrading Disabled in Client! Please enable it.")
+                    success = True
+                    break
+
+            if not success:
+                time.sleep(0.5)
+
+        if not success:
+            if last_result is None:
+                logger.error("Confluence Execution Failed: No result from MT5")
+            else:
+                logger.error(f"Confluence Execution Failed: {last_result.comment}")
 
     def update_candle_data(self):
         # Fetch M5 Data
