@@ -1088,85 +1088,68 @@ class FactorDiscovery:
         else:
             return 0.0
     
-    def _is_hammer(self, df: pd.DataFrame) -> bool:
+    def _is_hammer(self, df: pd.DataFrame) -> np.ndarray:
         """识别锤子线"""
         close = df['close'].values
         high = df['high'].values
         low = df['low'].values
         open_ = df['open'].values
         
-        # 当前K线和前一根K线
-        if len(df) < 2:
-            return False
-        
-        # 上影线和下影线都很短
-        upper_shadow = high - max(close, open_)
-        lower_shadow = min(close, open_)
-        body = abs(close - open_)
-        
+        if len(df) < 1:
+            return np.zeros(len(df), dtype=int)
+            
+        upper_shadow = high - np.maximum(close, open_)
+        lower_shadow = np.minimum(close, open_) - low
         body_size = high - low
         
-        return (upper_shadow < body_size * 0.1 and 
-                lower_shadow < body_size * 0.1 and
-                body_size > 0)
+        with np.errstate(invalid='ignore'):
+            result = (upper_shadow < body_size * 0.1) & (lower_shadow > body_size * 0.6) & (body_size > 0)
+            
+        return result.astype(int)
     
-    def _is_doji(self, df: pd.DataFrame) -> bool:
+    def _is_doji(self, df: pd.DataFrame) -> np.ndarray:
         """识别十字星"""
         if len(df) < 1:
-            return False
-        
-        # 开盘价和收盘价接近
-        close = df['close'].iloc[-1]
-        open_ = df['open'].iloc[-1]
-        high = df['high'].iloc[-1]
-        low = df['low'].iloc[-1]
-        
-        # 开盘价约等于收盘价
-        if abs(close - open_) > 0.001:
-            # 检查影线
-            body = abs(close - open_)
-            upper_shadow = high - max(close, open_)
-            lower_shadow = min(close, open_)
-            body_size = high - low
+            return np.zeros(len(df), dtype=int)
             
-            if upper_shadow < body_size * 0.1 and lower_shadow < body_size * 0.1:
-                return True
+        close = df['close'].values
+        open_ = df['open'].values
+        high = df['high'].values
+        low = df['low'].values
         
-        return False
+        body = np.abs(close - open_)
+        body_size = high - low
+        
+        with np.errstate(invalid='ignore'):
+            result = (body < body_size * 0.1) & (body_size > 0)
+            
+        return result.astype(int)
     
-    def _is_engulfing(self, df: pd.DataFrame) -> bool:
+    def _is_engulfing(self, df: pd.DataFrame) -> np.ndarray:
         """识别吞噬形态"""
         if len(df) < 2:
-            return False
+            return np.zeros(len(df), dtype=int)
+            
+        prev_high = df['high'].shift(1).values
+        prev_low = df['low'].shift(1).values
         
-        # 上一根K线和当前K线
-        prev_high = df['high'].iloc[-2]
-        prev_low = df['low'].iloc[-2]
-        prev_close = df['close'].iloc[-2]
+        curr_high = df['high'].values
+        curr_low = df['low'].values
         
-        curr_high = df['high'].iloc[-1]
-        curr_low = df['low'].iloc[-1]
-        curr_close = df['close'].iloc[-1]
-        
-        # 当前K线完全包含上一根K线
-        if curr_high >= prev_high and curr_low <= prev_low:
-            return True
-        
-        return False
+        result = (curr_high >= prev_high) & (curr_low <= prev_low)
+        return np.nan_to_num(result, nan=0).astype(int)
     
-    def _is_piercing(self, df: pd.DataFrame) -> bool:
+    def _is_piercing(self, df: pd.DataFrame) -> np.ndarray:
         """识别穿刺形态"""
         if len(df) < 3:
-            return False
+            return np.zeros(len(df), dtype=int)
+            
+        close = df['close'].values
+        close_1 = df['close'].shift(1).values
+        close_2 = df['close'].shift(2).values
         
-        # 连续3根K线的实体依次增大
-        close_values = df['close'].iloc[-3:].values
-        if (close_values[1] > close_values[0] and
-            close_values[2] > close_values[1] and
-            close_values[2] > close_values[0]):
-            return True
-        
-        return False
+        result = (close > close_1) & (close_1 > close_2)
+        return np.nan_to_num(result, nan=0).astype(int)
 
     def get_export_summary(self) -> str:
         """获取导出摘要"""
