@@ -201,9 +201,7 @@ class FactorDiscovery:
         features['momentum_20'] = features['price_momentum_20']
         features['roc_10'] = self._calculate_roc(df, 10)
         features['roc_20'] = self._calculate_roc(df, 20)
-        features['roc_30'] = self._calculate_roc(df, 30)
-        
-        return features.fillna(0).bfill(0)
+        return features.fillna(0).bfill()
     
     def _extract_fundamental_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """提取基本面因子特征"""
