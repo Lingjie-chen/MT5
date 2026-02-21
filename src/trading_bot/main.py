@@ -58,6 +58,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("TradingBot")
 
+try:
+    from strategies.orb_strategy import GoldORBStrategy
+except Exception:
+    GoldORBStrategy = None
+
 load_dotenv()
 
 class DummyConfig:
@@ -112,6 +117,7 @@ class SymbolTrader:
         self.watcher = None 
         self.is_optimizing = False 
         self.atr_breakeven_triggered = set()
+        self.orb_strategy = None
         
         # 5. Optimization Scheduler State
         self.last_optimization_time = time.time() 
@@ -181,6 +187,9 @@ class SymbolTrader:
         if not mt5.symbol_select(self.symbol, True):
             logger.error(f"Failed to select symbol {self.symbol} in Market Watch")
             return False
+
+        if GoldORBStrategy:
+            self.orb_strategy = GoldORBStrategy(self.symbol)
         
         # Start File Watcher
         if FileWatcher:
