@@ -47,8 +47,8 @@ class CustomJSONEncoder(json.JSONEncoder):
             return o.tolist()
         if hasattr(o, 'to_dict'):
             return o.to_dict()
-        logger.warning(f"Non-serializable object encountered: {type(o).__name__}, using string representation")
-        return str(o)
+        logger.warning(f"Non-serializable object encountered: {type(o).__name__}")
+        return {"__type__": type(o).__name__}
 
 class DeepSeekClient:
     """
