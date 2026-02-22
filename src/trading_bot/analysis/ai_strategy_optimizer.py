@@ -16,6 +16,7 @@ class AIStrategyOptimizer:
     def __init__(self, model_name: str = "qwen"):
         self.ai_factory = AIClientFactory()
         self.llm_client = self.ai_factory.create_client(model_name)
+        self.model_name = model_name
         self.system_prompt = self._build_system_prompt()
         self.parameter_templates = self._load_parameter_templates()
 
