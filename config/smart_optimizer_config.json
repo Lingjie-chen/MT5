@@ -3,24 +3,24 @@
     "cache_dir": "cache/symbol_configs",
     "cache_expiry_hours": 24,
     "analysis_days": 30,
-    "default_risk_percent": 1.0,
+    "default_risk_percent": 2.0,
     "min_rr_ratio": 1.5
   },
   "ai_settings": {
-    "model": "qwen",
+    "model": "glm-5",
     "temperature": 0.3,
     "max_tokens": 2000,
     "fallback_enabled": true
   },
   "position_settings": {
-    "base_risk_percent": 1.0,
-    "max_risk_percent": 3.0,
-    "min_risk_percent": 0.5,
+    "base_risk_percent": 2.0,
+    "max_risk_percent": 5.0,
+    "min_risk_percent": 1,
     "volatility_adjustment": true,
     "confidence_scaling": true
   },
   "symbol_profiles": {
-    "XAUUSD": {
+    "GOLD": {
       "base_risk_percent": 1.5,
       "volatility_multiplier": 1.5,
       "spread_tolerance": 0.1,
@@ -45,7 +45,7 @@
       }
     },
     "ETHUSD": {
-      "base_risk_percent": 1.0,
+      "base_risk_percent": 2.0,
       "volatility_multiplier": 2.0,
       "spread_tolerance": 0.15,
       "optimal_timeframes": ["M5", "M15", "H1"],
@@ -59,7 +59,7 @@
   },
   "risk_levels": {
     "high": {
-      "max_risk_percent": 0.5,
+      "max_risk_percent": 5.0 ,
       "sl_atr_multiplier": 2.0,
       "tp_atr_multiplier": 3.0,
       "max_daily_trades": 5
