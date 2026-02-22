@@ -13,9 +13,9 @@ class AIStrategyOptimizer:
     根据品种画像自动生成最优交易策略参数
     """
 
-    def __init__(self, model_name: str = "glm-5"):
+    def __init__(self, client_type: str = "qwen", model_name: str = "glm-5"):
         self.ai_factory = AIClientFactory()
-        self.llm_client = self.ai_factory.create_client(model_name)
+        self.llm_client = self.ai_factory.create_client(client_type, model=model_name)
         self.model_name = model_name
         self.system_prompt = self._build_system_prompt()
         self.parameter_templates = self._load_parameter_templates()
