@@ -404,7 +404,8 @@ class FactorDiscovery:
                         target: Optional[pd.Series],
                         df: pd.DataFrame) -> List[str]:
         """选择特征"""
-        logger.info(f"使用 {self.selection_method} 方法选择因子...")
+        if self.verbose:
+            logger.info(f"使用 {self.selection_method} 方法选择因子...")
         
         if len(features.columns) == 0:
             return []
@@ -416,7 +417,8 @@ class FactorDiscovery:
             selector.fit(features)
             mask = selector.get_support()
             selected = features.columns[mask]
-            logger.info(f"方差过滤后剩余 {len(selected)} 个特征")
+            if self.verbose:
+                logger.info(f"方差过滤后剩余 {len(selected)} 个特征")
             return list(selected)
         
         # 有监督特征选择
@@ -434,7 +436,8 @@ class FactorDiscovery:
                 features.columns,
                 rfe.ranking_
             ))
-            logger.info(f"RFE选择了 {len(selected)} 个特征")
+            if self.verbose:
+                logger.info(f"RFE选择了 {len(selected)} 个特征")
             
         elif self.selection_method == 'rfecv':
             # 交叉验证递归消除
@@ -531,7 +534,8 @@ class FactorDiscovery:
                 features.columns,
                 rfe.ranking_
             ))
-            logger.info(f"混合方法(RFE)选择了 {len(selected)} 个特征")
+            if self.verbose:
+                logger.info(f"混合方法(RFE)选择了 {len(selected)} 个特征")
         
         return list(selected)
     
@@ -649,7 +653,8 @@ class FactorDiscovery:
                     'value': factor1_val * factor2_val
                 })
         
-        logger.info(f"生成了 {len(self.factor_combinations)} 个因子组合")
+        if self.verbose:
+            logger.info(f"生成 {len(self.factor_combinations)} 个因子组合")
     
     def _evaluate_derived_factors(self, features: pd.DataFrame, 
                            target: pd.Series) -> Dict[str, float]:
@@ -699,7 +704,8 @@ class FactorDiscovery:
             'combinations': self.factor_combinations
         }
         
-        logger.info(f"评估了 {len(derived_features.columns)} 个衍生因子")
+        if self.verbose:
+            logger.info(f"评估了 {len(derived_features.columns)} 个衍生因子")
         
         return self.derived_factors
     
@@ -743,11 +749,13 @@ class FactorDiscovery:
                             to_remove.append(pair[1])
                 
                 filtered = [f for f in filtered if f not in to_remove]
-                logger.info(f"因高相关性移除了 {len(to_remove)} 个因子")
+                if self.verbose:
+                    logger.info(f"因高相关性移除了 {len(to_remove)} 个因子")
         
         self.filtered_features = filtered
         
-        logger.info(f"过滤后剩余 {len(filtered)} 个因子")
+        if self.verbose:
+            logger.info(f"过滤后剩余 {len(filtered)} 个因子")
         
         return filtered
     
@@ -785,7 +793,8 @@ class FactorDiscovery:
             for idx, (feature, data) in enumerate(sorted_factors, 1)
         ]
         
-        logger.info("因子排名完成")
+        if self.verbose:
+            logger.info("因子排名完成")
         
         return rankings
     
@@ -799,7 +808,8 @@ class FactorDiscovery:
             logger.warning("大模型客户端未初始化，跳过大模型增强")
             return rankings
         
-        logger.info("使用大模型增强因子理解...")
+        if self.verbose:
+            logger.info("使用大模型增强因子理解...")
         
         enhanced_rankings = {}
         
@@ -838,7 +848,8 @@ class FactorDiscovery:
                             'average_score': factor_data['average_score'],
                             'llm_enhanced': enhanced_info
                         }
-                        logger.info(f"因子 {factor_name} 大模型增强完成")
+                        if self.verbose:
+                            logger.info(f"因子 {factor_name} 大模型增强完成")
                     else:
                         enhanced_rankings[factor_name] = factor_data
                 else:
