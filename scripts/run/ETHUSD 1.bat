@@ -8,8 +8,8 @@ cd /d "%~dp0"
 :: Launch Strategies for Account 1
 :: -----------------------------------------------------------------------------
 
-echo Launching GOLD Strategy (Ava Real - Acc1)...
-start "Strategy - GOLD (Ava Real)" "%~dp0run_bot_watchdog.bat" ETHUSD 1
+echo Launching ETHUSD Strategy (Ava Real - Acc1)...
+start "Strategy - ETHUSD (Ava Real)" "%~dp0run_bot_watchdog.bat" ETHUSD 1
 
 timeout /t 1 /nobreak >nul
 
