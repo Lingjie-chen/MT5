@@ -285,7 +285,23 @@ class FactorDiscovery:
         Returns:
             发现的因子字典
         """
-        logger.info("开始因子发现...")
+        # 生成缓存键
+        cache_key = self._generate_cache_key(df, target, self.feature_type, self.selection_method)
+        
+        # 检查缓存
+        if self.enable_cache and cache_key in self.factor_cache:
+            cached_data = self.factor_cache[cache_key]
+            cached_time = cached_data.get('timestamp')
+            
+            # 检查缓存是否过期
+            if cached_time and (datetime.now() - datetime.fromisoformat(cached_time)).total_seconds() < self.cache_expiry_minutes * 60:
+                if self.verbose:
+                    logger.info(f"使用缓存的因子结果: {cache_key}")
+                return cached_data['data']
+        
+        # 开始因子发现
+        if self.verbose:
+            logger.info("开始因子发现...")
         
         # 1. 提取特征
         features = self._extract_features(df, tick_data)
@@ -328,9 +344,30 @@ class FactorDiscovery:
             'factor_rankings': factor_rankings
         }
         
-        logger.info(f"因子发现完成，发现 {len(final_factors)} 个因子")
+        # 保存到缓存
+        if self.enable_cache:
+            self.factor_cache[cache_key] = {
+                'data': self.discovered_factors,
+                'timestamp': datetime.now().isoformat()
+            }
+        
+        if self.verbose:
+            logger.info(f"因子发现完成，发现 {len(final_factors)} 个因子")
         
         return self.discovered_factors
+    
+    def _generate_cache_key(self, df: pd.DataFrame, target: pd.Series,
+                          feature_type: str, selection_method: str) -> str:
+        """生成缓存键"""
+        # 使用数据哈希作为键的一部分
+        data_hash = hash((df.shape[0], df.shape[1], len(target) if target is not None else 0))
+        return f"{feature_type}_{selection_method}_{data_hash}"
+    
+    def clear_cache(self):
+        """清除缓存"""
+        self.factor_cache.clear()
+        if self.verbose:
+            logger.info("因子缓存已清除")
     
     def _extract_features(self, df: pd.DataFrame, 
                       tick_data: Optional[pd.DataFrame] = None) -> pd.DataFrame:
