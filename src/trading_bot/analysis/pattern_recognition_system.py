@@ -20,11 +20,13 @@ class PatternRecognitionSystem:
     提供全面的市场分析能力。
     """
     
-    def __init__(self, config: Optional[Dict] = None):
+    def __init__(self, config: Optional[Dict] = None, verbose: bool = False):
         self.config = config or {}
+        self.verbose = verbose
         
         # 初始化各模块
-        logger.info("Initializing Pattern Recognition System...")
+        if self.verbose:
+            logger.info("Initializing Pattern Recognition System...")
         
         self.discovery = PatternDiscovery(
             n_clusters=self.config.get('n_clusters', 5)
@@ -128,7 +130,8 @@ class PatternRecognitionSystem:
         """
         训练系统中的有监督学习组件
         """
-        logger.info("Training system models...")
+        if self.verbose:
+            logger.info("Training system models...")
         
         # 提取特征用于训练
         features = self.recognizer.extract_pattern_features(historical_data)
@@ -141,12 +144,15 @@ class PatternRecognitionSystem:
             y = labels.loc[common_idx].values
             
             self.recognizer.train_models(X, y)
-            logger.info("Recognizer models trained.")
+            if self.verbose:
+                logger.info("Recognizer models trained.")
         else:
-            logger.warning("No labels provided, skipping supervised training.")
+            if self.verbose:
+                logger.warning("No labels provided, skipping supervised training.")
 
     def export_all_data(self, filepath: str):
         """导出模型状态"""
         self.discovery.export_patterns(f"{filepath}_discovery.pkl")
         # 其他模块导出逻辑...
-        logger.info(f"System state exported to {filepath}")
+        if self.verbose:
+            logger.info(f"System state exported to {filepath}")
