@@ -418,10 +418,11 @@ class SymbolTrader:
             if direction and (time.time() - self.last_orb_filter_time > 300): # Repurposing last_orb_filter_time as trade cooldown
                 logger.info(f"High Confluence ({score}) Signal Detected: {direction}. Details: {details}")
                 self.last_orb_filter_time = time.time()
-                self._execute_confluence_trade(direction, multiplier, current_price, smc_data, momentum_data)
+                self._execute_confluence_trade(direction, multiplier, current_price, smc_data, momentum_data, score, details)
 
-    def _execute_confluence_trade(self, direction, multiplier, current_price, smc_data, momentum_data):
+    def _execute_confluence_trade(self, direction, multiplier, current_price, smc_data, momentum_data, score=0, details=None):
         """Execute trade based on Confluence Score"""
+        details = details or {}
         positions = mt5.positions_get(symbol=self.symbol)
         
         # Max open positions check (simple)
