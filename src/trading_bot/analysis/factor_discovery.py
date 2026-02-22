@@ -46,7 +46,9 @@ class FactorDiscovery:
                  n_features: int = 20,
                  feature_type: str = 'all',
                  selection_method: str = 'hybrid',
-                 use_llm: bool = True):
+                 use_llm: bool = True,
+                 enable_cache: bool = True,
+                 verbose: bool = False):
         """
         初始化因子发现器
         
@@ -55,11 +57,15 @@ class FactorDiscovery:
             feature_type: 因子类型 ('all', 'technical', 'fundamental', 'microstructure')
             selection_method: 选择方法 ('rfe', 'rfecv', 'kbest', 'hybrid')
             use_llm: 是否使用大模型辅助
+            enable_cache: 是否启用缓存（默认True）
+            verbose: 是否显示详细日志（默认False）
         """
         self.n_features = n_features
         self.feature_type = feature_type
         self.selection_method = selection_method
         self.use_llm = use_llm
+        self.enable_cache = enable_cache
+        self.verbose = verbose
         
         # 特征选择器
         self.selectors = {
@@ -105,7 +111,12 @@ class FactorDiscovery:
             'microstructure': self._extract_microstructure_features
         }
         
-        logger.info(f"因子发现器初始化完成，类型: {feature_type}, 方法: {selection_method}")
+        # 缓存
+        self.factor_cache = {}
+        self.cache_expiry_minutes = 30  # 缓存30分钟
+        
+        if self.verbose:
+            logger.info(f"因子发现器初始化完成，类型: {feature_type}, 方法: {selection_method}")
     
     def _initialize_llm_client(self):
         """初始化大模型客户端"""
