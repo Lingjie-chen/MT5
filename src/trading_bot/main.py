@@ -530,6 +530,20 @@ class SymbolTrader:
         return optimal_lot, sl, tp
 
         filling_mode = mt5.ORDER_FILLING_FOK
+        try:
+            fill_flags = symbol_info.filling_mode
+            logger.info(f"Symbol {self.symbol} filling_mode_flags: {fill_flags}")
+            if fill_flags & 2:
+                filling_mode = mt5.ORDER_FILLING_IOC
+                logger.info("Detected IOC support, will try IOC first")
+            elif fill_flags & 1:
+                filling_mode = mt5.ORDER_FILLING_FOK
+                logger.info("Detected FOK support, will try FOK first")
+        except Exception as e:
+            filling_mode = mt5.ORDER_FILLING_IOC
+            logger.warning(f"Could not detect filling mode, using IOC default. Error: {e}")
+
+        filling_modes_to_try = [filling_mode, mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_RETURN]
         filling_modes_to_try = list(dict.fromkeys(filling_modes_to_try))
         logger.info(f"Will try filling modes in order: {[{mt5.ORDER_FILLING_IOC: 'IOC', mt5.ORDER_FILLING_FOK: 'FOK', mt5.ORDER_FILLING_RETURN: 'RETURN'}.get(m, str(m)) for m in filling_modes_to_try]}")
 
