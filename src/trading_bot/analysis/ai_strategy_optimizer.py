@@ -37,6 +37,10 @@ class AIStrategyOptimizer:
         
         prompt = self._build_optimization_prompt(symbol_profile, historical_performance)
         
+        if self.llm_client is None:
+            logger.warning(f"AI client not initialized for {symbol}, using fallback")
+            return self._generate_fallback_params(symbol_profile)
+            
         try:
             payload = {
                 "model": self.model_name,
