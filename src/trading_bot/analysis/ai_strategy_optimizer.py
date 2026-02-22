@@ -13,7 +13,7 @@ class AIStrategyOptimizer:
     根据品种画像自动生成最优交易策略参数
     """
 
-    def __init__(self, model_name: str = "qwen"):
+    def __init__(self, model_name: str = "glm-5"):
         self.ai_factory = AIClientFactory()
         self.llm_client = self.ai_factory.create_client(model_name)
         self.model_name = model_name
@@ -205,15 +205,15 @@ class AIStrategyOptimizer:
         trending_ratio = regime_metrics.get('trending_up_ratio', 0) + regime_metrics.get('trending_down_ratio', 0)
         
         if risk_level == 'high':
-            base_risk = 0.5
+            base_risk = 0.5 * volatility_percent
             atr_multiplier_sl = 2.0
             atr_multiplier_tp = 3.0
         elif risk_level == 'low':
-            base_risk = 2.0
+            base_risk = 2.0 * volatility_percent
             atr_multiplier_sl = 1.0
             atr_multiplier_tp = 2.0
         else:
-            base_risk = 1.0
+            base_risk = 1.0 * volatility_percent
             atr_multiplier_sl = 1.5
             atr_multiplier_tp = 2.5
         
