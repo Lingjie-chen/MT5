@@ -115,7 +115,16 @@ class SymbolTrader:
         self.data_processor = MT5DataProcessor()
         self.risk_manager = MT5RiskManager()
         
-        # 2. AI Client
+        # 2. Smart Trading Optimizer (NEW)
+        try:
+            from analysis.smart_trading_optimizer import SmartTradingOptimizer
+            self.smart_optimizer = SmartTradingOptimizer(mt5_initialized=True)
+            logger.info(f"Smart Trading Optimizer initialized for {self.symbol}")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Smart Trading Optimizer: {e}")
+            self.smart_optimizer = None
+        
+        # 3. AI Client
         self.ai_factory = AIClientFactory()
         self.llm_client = self.ai_factory.create_client("qwen") 
         
