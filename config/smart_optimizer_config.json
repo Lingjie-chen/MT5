@@ -1,0 +1,80 @@
+{
+  "optimizer_settings": {
+    "cache_dir": "cache/symbol_configs",
+    "cache_expiry_hours": 24,
+    "analysis_days": 30,
+    "default_risk_percent": 1.0,
+    "min_rr_ratio": 1.5
+  },
+  "ai_settings": {
+    "model": "qwen",
+    "temperature": 0.3,
+    "max_tokens": 2000,
+    "fallback_enabled": true
+  },
+  "position_settings": {
+    "base_risk_percent": 1.0,
+    "max_risk_percent": 3.0,
+    "min_risk_percent": 0.5,
+    "volatility_adjustment": true,
+    "confidence_scaling": true
+  },
+  "symbol_profiles": {
+    "XAUUSD": {
+      "base_risk_percent": 1.5,
+      "volatility_multiplier": 1.5,
+      "spread_tolerance": 0.1,
+      "optimal_timeframes": ["M5", "M15", "H1"],
+      "session_filters": {
+        "asian_session": true,
+        "london_session": true,
+        "newyork_session": true,
+        "overlap_session": true
+      }
+    },
+    "EURUSD": {
+      "base_risk_percent": 1.0,
+      "volatility_multiplier": 1.2,
+      "spread_tolerance": 0.05,
+      "optimal_timeframes": ["M15", "H1", "H4"],
+      "session_filters": {
+        "asian_session": false,
+        "london_session": true,
+        "newyork_session": true,
+        "overlap_session": true
+      }
+    },
+    "ETHUSD": {
+      "base_risk_percent": 1.0,
+      "volatility_multiplier": 2.0,
+      "spread_tolerance": 0.15,
+      "optimal_timeframes": ["M5", "M15", "H1"],
+      "session_filters": {
+        "asian_session": true,
+        "london_session": true,
+        "newyork_session": true,
+        "overlap_session": true
+      }
+    }
+  },
+  "risk_levels": {
+    "high": {
+      "max_risk_percent": 0.5,
+      "sl_atr_multiplier": 2.0,
+      "tp_atr_multiplier": 3.0,
+      "max_daily_trades": 5
+    },
+    "medium": {
+      "max_risk_percent": 1.0,
+      "sl_atr_multiplier": 1.5,
+      "tp_atr_multiplier": 2.5,
+      "max_daily_trades": 10
+    },
+    "low": {
+      "max_risk_percent": 2.0,
+      "sl_atr_multiplier": 1.0,
+      "tp_atr_multiplier": 2.0,
+      "max_daily_trades": 15
+    }
+  }
+}
