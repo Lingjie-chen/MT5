@@ -686,7 +686,8 @@ class SymbolTrader:
                  f"TP: `{tp_text}`\n"
                  f"Orders: `{order_count}`"
             )
-            threading.Thread(target=self.telegram.notify_info, args=("Active Trading Status", tg_msg), daemon=True).start()
+            # DO NOT spam telegram with heartbeats as requested by user
+            # threading.Thread(target=self.telegram.notify_info, args=("Active Trading Status", tg_msg), daemon=True).start()
         
         # Update state tracking
         self.last_pos_count = pos_count
