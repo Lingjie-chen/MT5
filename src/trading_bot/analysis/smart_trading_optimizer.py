@@ -30,7 +30,7 @@ class SmartTradingOptimizer:
             raise RuntimeError("MT5 initialization failed")
         
         self.profiler = SymbolProfiler()
-        self.ai_optimizer = AIStrategyOptimizer(model_name="qwen")
+        self.ai_optimizer = AIStrategyOptimizer(model_name="glm-5")
         self.position_manager = DynamicPositionManager(self)
         self.cache = SymbolConfigCache()
         
