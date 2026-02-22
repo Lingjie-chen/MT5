@@ -128,8 +128,8 @@ class SymbolTrader:
         self.ai_factory = AIClientFactory()
         self.llm_client = self.ai_factory.create_client("qwen") 
         
-        self.pattern_recognizer = PatternRecognitionSystem() if PatternRecognitionSystem else None
-        self.factor_discovery = FactorDiscovery() if FactorDiscovery else None
+        self.pattern_recognizer = PatternRecognitionSystem(verbose=False) if PatternRecognitionSystem else None
+        self.factor_discovery = FactorDiscovery(verbose=False) if FactorDiscovery else None
         
         if EnhancedOptimizationEngine:
             param_bounds = {
