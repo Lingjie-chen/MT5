@@ -950,6 +950,40 @@ class SymbolTrader:
             
         return df
 
+    def shutdown(self):
+        """Clean shutdown of the bot and all its components"""
+        logger.info("Shutting down trading bot...")
+        
+        # Shutdown Smart Optimizer if initialized
+        if self.smart_optimizer:
+            try:
+                self.smart_optimizer.shutdown()
+                logger.info("Smart Trading Optimizer shutdown complete")
+            except Exception as e:
+                logger.error(f"Error shutting down Smart Optimizer: {e}")
+        
+        # Close any open positions if needed
+        try:
+            positions = mt5.positions_get(symbol=self.symbol)
+            if positions:
+                bot_positions = [p for p in positions if p.magic == self.magic_number]
+                if bot_positions:
+                    logger.info(f"Closing {len(bot_positions)} open positions...")
+                    for pos in bot_positions:
+                        self.close_positions([pos], pos.type, "Bot Shutdown")
+        except Exception as e:
+            logger.error(f"Error closing positions on shutdown: {e}")
+        
+        # Shutdown MT5
+        try:
+            if mt5.initialize():
+                mt5.shutdown()
+                logger.info("MT5 shutdown complete")
+        except Exception as e:
+            logger.error(f"Error shutting down MT5: {e}")
+        
+        logger.info("Trading bot shutdown complete")
+
 if __name__ == "__main__":
     # Support command line args for symbol and account index
     # Usage: python main.py [SYMBOL] [ACCOUNT_INDEX]
@@ -966,5 +1000,12 @@ if __name__ == "__main__":
 
     bot = SymbolTrader(target_symbol, account_index=target_account)
     if bot.initialize():
-        bot.run()
+        try:
+            bot.run()
+        except KeyboardInterrupt:
+            logger.info("Received keyboard interrupt, shutting down...")
+            bot.shutdown()
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            bot.shutdown()
 
