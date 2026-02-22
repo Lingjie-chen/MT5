@@ -503,6 +503,30 @@ class SymbolTrader:
                 sl = current_price * 1.005
             tp = current_price - (sl - current_price) * 2
         
+        # Validate and adjust SL/TP
+        symbol_info = mt5.symbol_info(self.symbol)
+        if symbol_info:
+            digits = symbol_info.digits
+            point = symbol_info.point
+            stops_level = symbol_info.trade_stops_level * point
+            if stops_level == 0:
+                stops_level = point * 10 # Some brokers return 0 but still have a minimum
+
+            # Enforce minimal stop level distance 
+            if direction == "bullish":
+                if current_price - sl <= stops_level:
+                    sl = current_price - stops_level * 1.5
+                if tp - current_price <= stops_level:
+                    tp = current_price + stops_level * 1.5
+            else:
+                if sl - current_price <= stops_level:
+                    sl = current_price + stops_level * 1.5
+                if current_price - tp <= stops_level:
+                    tp = current_price - stops_level * 1.5
+                    
+            sl = round(sl, digits)
+            tp = round(tp, digits)
+        
         return optimal_lot, sl, tp
             
         symbol_info = mt5.symbol_info(self.symbol)
