@@ -37,14 +37,18 @@ class AIStrategyOptimizer:
         prompt = self._build_optimization_prompt(symbol_profile, historical_performance)
         
         try:
-            response = self.llm_client.chat_completion(
-                messages=[
+            payload = {
+                "model": self.model_name,
+                "messages": [
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
-                max_tokens=2000
-            )
+                "temperature": 0.3,
+                "max_tokens": 2000,
+                "stream": False
+            }
+            
+            response = self.llm_client._call_api("chat/completions", payload, symbol=symbol)
             
             if response and 'choices' in response and len(response['choices']) > 0:
                 content = response['choices'][0]['message']['content']
