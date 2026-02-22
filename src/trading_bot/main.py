@@ -437,36 +437,73 @@ class SymbolTrader:
         # Max open positions check (simple)
         if positions and len(positions) >= 2:
             return
-            
-        # Calculate Lot Size
-        # Determine standard lot based on account free margin, then apply multiplier
+        
         account_info = mt5.account_info()
-        base_lot = 0.01  # Default fallback
-        if account_info:
-            margin_free = account_info.margin_free
-            base_lot = self.normalize_volume(margin_free * 0.00001) # Very rough risk
-            
-        optimal_lot = self.normalize_volume(base_lot * multiplier)
+        if not account_info:
+            logger.error("Cannot get account info")
+            return
+        
+        # Use Smart Trading Optimizer if available (NEW)
+        if self.smart_optimizer:
+            try:
+                trade_type_str = 'buy' if direction == "bullish" else 'sell'
+                recommendation = self.smart_optimizer.get_trading_recommendation(
+                    symbol=self.symbol,
+                    account_balance=account_info.balance,
+                    current_price=current_price,
+                    trade_type=trade_type_str
+                )
+                
+                if 'error' not in recommendation and recommendation.get('validation', {}).get('valid', False):
+                    optimal_lot = self.normalize_volume(
+                        recommendation['recommended_position_size'] * multiplier
+                    )
+                    sl = recommendation['recommended_sl']
+                    tp = recommendation['recommended_tp']
+                    
+                    logger.info(f"Using Smart Optimizer params: Lot={optimal_lot:.3f}, SL={sl:.2f}, TP={tp:.2f}, RR={recommendation['rr_ratio']:.2f}")
+                else:
+                    logger.warning(f"Smart Optimizer recommendation invalid, using fallback")
+                    optimal_lot, sl, tp = self._calculate_fallback_params(direction, current_price, momentum_data, account_info, multiplier)
+            except Exception as e:
+                logger.error(f"Smart Optimizer error: {e}, using fallback")
+                optimal_lot, sl, tp = self._calculate_fallback_params(direction, current_price, momentum_data, account_info, multiplier)
+        else:
+            optimal_lot, sl, tp = self._calculate_fallback_params(direction, current_price, momentum_data, account_info, multiplier)
+        
         if optimal_lot <= 0: return
 
-        # Calculate SL/TP
+        # Calculate SL/TP with fallback logic
         if direction == "bullish":
             trade_type = mt5.ORDER_TYPE_BUY
-            sl = current_price * 0.995 # fallback
-            # Look for recent FVG or EMA for SL
+        else:
+            trade_type = mt5.ORDER_TYPE_SELL
+    
+    def _calculate_fallback_params(self, direction, current_price, momentum_data, account_info, multiplier):
+        """Calculate fallback parameters when Smart Optimizer is unavailable"""
+        # Calculate Lot Size
+        base_lot = 0.01
+        margin_free = account_info.margin_free
+        base_lot = self.normalize_volume(margin_free * 0.00001)
+        optimal_lot = self.normalize_volume(base_lot * multiplier)
+        
+        # Calculate SL/TP
+        if direction == "bullish":
+            sl = current_price * 0.995
             if momentum_data and momentum_data.get('ema'):
                 sl = momentum_data['ema'] * 0.998
             if sl >= current_price:
                 sl = current_price * 0.995
-            tp = current_price + (current_price - sl) * 2 # 1:2 RRR fallback
+            tp = current_price + (current_price - sl) * 2
         else:
-            trade_type = mt5.ORDER_TYPE_SELL
-            sl = current_price * 1.005 # fallback
+            sl = current_price * 1.005
             if momentum_data and momentum_data.get('ema'):
                 sl = momentum_data['ema'] * 1.002
             if sl <= current_price:
                 sl = current_price * 1.005
-            tp = current_price - (sl - current_price) * 2 # 1:2 RRR fallback
+            tp = current_price - (sl - current_price) * 2
+        
+        return optimal_lot, sl, tp
             
         symbol_info = mt5.symbol_info(self.symbol)
         if symbol_info:
