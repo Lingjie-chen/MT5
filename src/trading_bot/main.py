@@ -704,12 +704,69 @@ class SymbolTrader:
             for pos in bot_positions:
                 profit = pos.profit
                 
-                # Close if profit is very high (e.g., 5% of initial margin)
-                # This is a placeholder for more sophisticated exit logic
-                if profit > 0 and profit / pos.volume / pos.price_open > 0.005: # 0.5% profit
-                    logger.info(f"Closing position #{pos.ticket} due to high profit: {profit:.2f}")
-                    self.close_positions([pos], pos.type, "High Profit Target")
-                    self.telegram.send_message(f"✅ Position #{pos.ticket} closed with profit: {profit:.2f}")
+                # Use Smart Optimizer for dynamic profit targets (NEW)
+                should_close = False
+                close_reason = ""
+                
+                if self.smart_optimizer:
+                    try:
+                        # Get cached optimized params for this symbol
+                        cached_params = self.smart_optimizer.cache.load_optimized_params(self.symbol)
+                        
+                        if cached_params and 'optimized_parameters' in cached_params:
+                            params = cached_params['optimized_parameters']
+                            
+                            # Calculate profit target based on optimized parameters
+                            profit_target_pct = params.get('min_profit_target', 0.5) / 100.0
+                            position_value = pos.volume * pos.price_open
+                            target_profit = position_value * profit_target_pct
+                            
+                            # Use minimum of $20 or calculated target
+                            min_profit = max(20.0, target_profit)
+                            
+                            if profit > 0 and profit >= min_profit:
+                                should_close = True
+                                close_reason = f"Smart Optimizer Target (${min_profit:.2f})"
+                                logger.info(f"Position #{pos.ticket} hit smart profit target: ${profit:.2f} >= ${min_profit:.2f}")
+                        else:
+                            # Fallback to 0.5% if no cached params
+                            if profit > 0 and profit / pos.volume / pos.price_open > 0.005:
+                                should_close = True
+                                close_reason = "Fallback Profit Target (0.5%)"
+                    except Exception as e:
+                        logger.error(f"Error in smart optimizer profit check: {e}, using fallback")
+                        # Fallback to 0.5%
+                        if profit > 0 and profit / pos.volume / pos.price_open > 0.005:
+                            should_close = True
+                            close_reason = "Fallback Profit Target (0.5%)"
+                else:
+                    # Original logic without Smart Optimizer
+                    if profit > 0 and profit / pos.volume / pos.price_open > 0.005:
+                        should_close = True
+                        close_reason = "High Profit Target (0.5%)"
+                
+                # Close if profit target met
+                if should_close:
+                    logger.info(f"Closing position #{pos.ticket} due to {close_reason}: {profit:.2f}")
+                    self.close_positions([pos], pos.type, close_reason)
+                    self.telegram.send_message(f"✅ Position #{pos.ticket} closed with profit: {profit:.2f} ({close_reason})")
+                    
+                    # Track performance with Smart Optimizer (NEW)
+                    if self.smart_optimizer:
+                        try:
+                            trade_data = {
+                                'ticket': pos.ticket,
+                                'symbol': pos.symbol,
+                                'profit': profit,
+                                'volume': pos.volume,
+                                'price_open': pos.price_open,
+                                'price_current': current_price,
+                                'opened_at': datetime.fromtimestamp(pos.time_msc / 1000).isoformat(),
+                                'closed_at': datetime.now().isoformat()
+                            }
+                            self.smart_optimizer.update_performance(self.symbol, trade_data)
+                        except Exception as e:
+                            logger.error(f"Error tracking performance: {e}")
                 
                 # Close if position is open for too long (e.g., 4 hours)
                 if (time.time() - pos.time_msc / 1000) > (4 * 3600):
