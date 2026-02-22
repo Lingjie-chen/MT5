@@ -582,7 +582,18 @@ class SymbolTrader:
                             logger.info("Successfully modified SL/TP.")
                         else:
                             logger.error(f"Failed to modify SL/TP: {mod_result.comment if mod_result else 'None'}")
-                        self.telegram.send_message(f"🏆 Confluence Trade (Modified SL/TP)\nDir: {direction}\nLot: {optimal_lot}\nEntry: {price}\nSL: {sl:.2f}\nTP: {tp:.2f}")
+                            
+                        acc_bal = account_info.balance if account_info else 0.0
+                        acc_free = account_info.margin_free if account_info else 0.0
+                        pattern_bonus = details.get('pattern_bonus', 'None')
+                        tg_msg = (
+                            f"🏆 [AI signal: {direction.upper()}] (Mod SL/TP)\n"
+                            f"🔹 Acc: Bal {acc_bal:.2f} | Free {acc_free:.2f}\n"
+                            f"🔹 Trade: {optimal_lot} Lot @ {price}\n"
+                            f"🔹 SL: {sl:.2f} | TP: {tp:.2f}\n"
+                            f"🤖 LLM Info: Conf Score {score:.2f} ({pattern_bonus})"
+                        )
+                        self.telegram.send_message(tg_msg)
                         success = True
                         break
                     else:
